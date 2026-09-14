@@ -10,6 +10,46 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  blender:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - name: Download fixed official Blender and verify publisher checksum
+        run: |
+          mkdir -p "$RUNNER_TEMP/blender"
+          cd "$RUNNER_TEMP/blender"
+          curl --fail --location --proto '=https' -o blender-4.5.13-linux-x64.tar.xz https://download.blender.org/release/Blender4.5/blender-4.5.13-linux-x64.tar.xz
+          curl --fail --location --proto '=https' -o blender-4.5.13.sha256 https://download.blender.org/release/Blender4.5/blender-4.5.13.sha256
+          sha256sum --check --ignore-missing blender-4.5.13.sha256
+          tar -xf blender-4.5.13-linux-x64.tar.xz
+          echo "BLENDER_BIN=$RUNNER_TEMP/blender/blender-4.5.13-linux-x64/blender" >> "$GITHUB_ENV"
+          echo "BLENDER_FIXTURES=$GITHUB_WORKSPACE/blender-results" >> "$GITHUB_ENV"
+      - name: Actual Blender camera render and save/reopen
+        run: python blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
+      - name: Candidate Rust lock and formatting review
+        run: |
+          cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+          cargo generate-lockfile --manifest-path tests/blender/Cargo.toml
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+      - name: Actual Rust to Blender IPC and restart
+        run: |
+          cargo test --locked --manifest-path tests/blender/Cargo.toml
+          cargo clippy --locked --manifest-path tests/blender/Cargo.toml --all-targets -- -D warnings
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Blender-candidate-review
+          path: |
+            blender-results/
+            src-tauri/Cargo.lock
+            src-tauri/src/main.rs
+            src-tauri/src/blender.rs
+            tests/blender/Cargo.lock
   storage:
     runs-on: ubuntu-latest
     steps:
@@ -41,7 +81,7 @@ jobs:
           path: test-results/
   mac:
     runs-on: macos-26
-    needs: [web, storage]
+    needs: [web, storage, blender]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262

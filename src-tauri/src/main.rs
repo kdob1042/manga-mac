@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod storage;
+mod blender;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -10,6 +11,7 @@ struct AppState {
     root: PathBuf,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
+    blender: tokio::sync::Mutex<()>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -278,6 +280,26 @@ fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<Stri
     file.sync_all().map_err(err)?;
     Ok(path.to_string_lossy().into_owned())
 }
+#[tauri::command]
+fn blender_register(input: blender::Registration, state: State<AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    blender::register(&db, input)
+}
+#[tauri::command]
+fn blender_status(session_id: String, state: State<AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    blender::status(&db, &session_id)
+}
+#[tauri::command]
+fn blender_latest(state: State<AppState>) -> Result<Option<Value>, String> {
+    let db = state.db.lock().map_err(err)?;
+    blender::latest(&db)
+}
+#[tauri::command]
+async fn blender_execute(request: blender::Request, state: State<'_, AppState>) -> Result<Value, String> {
+    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    blender::execute(&state.db, &state.root, request).await
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -285,14 +307,20 @@ fn main() {
             std::fs::create_dir_all(&dir)?;
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
+            blender::initialize(&db).map_err(std::io::Error::other)?;
             app.manage(AppState {
                 root: dir,
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
+                blender: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            blender_register,
+            blender_execute,
+            blender_status,
+            blender_latest,
             github_get,
             github_file,
             save_project,
