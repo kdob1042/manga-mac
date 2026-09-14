@@ -35,9 +35,9 @@
 - 原文の段落IDをLLMへ渡し、全IDの順序・一意性・完全性を検証。表示原文はスナップショットから直接取得。AI出力で台詞を上書きしません。
 - キャラの画像バイト列をSHA256で記録し、Rustでも照合してからSwiftのmoodboard入力へ渡します。入力順、人物ID、ハッシュ、モデル、seed、寸法、ステップ数をコマに記録します。見た目の一致は保証しません。
 - 画像生成は専用プロセスのMediaGenerationKit `.local` のみ。処理完了後プロセスが終了しモデルメモリを解放。Ollamaはkeep_alive: 0。
-- 同時画像ジョブは1つ。進行中/成功/失敗ジョブを保存。停止は現在の処理終了後。各コマ完了時にSQLiteへ保存し再起動後に再開可能。
+- 同時画像ジョブは1つ。要求にjob ID・原作版・対象・基準版を保持。変更済み入力への古い結果や停止後の結果は候補にとどめます。再起動時の実行中要求は応答未確定として保留し、無断再試行しません。
 - 編集履歴は保存済み画像を保持。選択外のコマは変更せず、undoは再推論しません。
-- SQLite WALで作品を保存。画像・スナップショット・ジョブ・履歴を含むJSONをトランザクションで更新。大量作品向けの画像ファイル分離は今後の改善項目です。
+- SQLite WALで作品を保存。画像はSHA-256付き不変ファイルへ分離し、検証・同期後にDB参照を更新。旧JSONは移行前にバックアップを保持。スキーマv2でも旧2Dコマは撮影版なしで開けます。
 
 ## 未完・制約
 
@@ -114,3 +114,4 @@ GitHub ActionsでWebテスト後、macOSのSwiftエンジンとTauri DMGをビ�
 接続アダプタはモック応答によるテスト済み。実APIキーを使った課金リクエストとMac実機通信は未検証です。
 
 API仕様: [Gemini互換API](https://ai.google.dev/gemini-api/docs/openai)、[Claude Messages](https://platform.claude.com/docs/en/api/overview)、[DeepSeek](https://api-docs.deepseek.com/)。
+

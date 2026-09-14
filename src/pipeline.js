@@ -22,19 +22,19 @@ export async function planScene(scene, snapshot, characters, model) {
   const result = await askLLM(model, { schema, prompt: JSON.stringify({ task: '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。最大4コマ/ページを想定。各コマに出演する人物IDを漏らさず含める。', units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
   return validatePlan(JSON.parse(result), units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '') {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null) {
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
     return { id, name: c.name, hash: c.hash, image: c.image };
   });
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  const image = await call('generate_image', { request: { prompt: `${panel.prompt}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${refs.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`, references: refs, original, seed } });
+  const image = await call('generate_image', { request: { job: job ? { id: job.id, base_revision: job.base_revision, source_revision: job.source_revision, scope: job.scope } : null, prompt: `${panel.prompt}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${refs.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`, references: refs, original, seed } });
   return { ...panel, image, generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width: 768, height: 768, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1 };
 }
-export async function editRegion(panel, characters, instruction, rect) {
+export async function editRegion(panel, characters, instruction, rect, job = null) {
   if (!panel.image) throw Error('先にコマを作画してください');
-  const next = await generatePanel(panel, characters, panel.image, instruction);
+  const next = await generatePanel(panel, characters, panel.image, instruction, job);
   const { mergeRegion } = await import('./render');
   return { ...next, image: await mergeRegion(panel.image, next.image, rect), instructions: [...panel.instructions, instruction] };
 }
@@ -47,3 +47,4 @@ export async function locateFace(panel, character, model) {
   if (!response.found || !Array.isArray(r) || r.length !== 4 || r.some(n => !Number.isFinite(n) || n < 0 || n > 1) || r[2] <= 0 || r[3] <= 0 || r[0] + r[2] > 1 || r[1] + r[3] > 1 || r[2] * r[3] > .4) throw Error('顔の範囲を特定できませんでした。画像をドラッグして修正範囲を指定してください');
   return r;
 }
+

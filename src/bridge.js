@@ -1,16 +1,19 @@
 import { invoke } from '@tauri-apps/api/core';
+import { migrateProject } from './revisions';
 export const desktop = () => !!window.__TAURI_INTERNALS__;
 export async function call(command, args = {}) {
   if (!desktop()) throw Error('この操作はMacアプリで利用できます。ブラウザではサンプルの組版を確認できます。');
   return invoke(command, args);
 }
 export async function saveProject(project) {
-  if (desktop()) await call('save_project', { data: JSON.stringify(project) });
-  else await idb('readwrite', store => store.put(project, 'project'));
+  const normalized = await migrateProject(project);
+  if (desktop()) await call('save_project', { data: JSON.stringify(normalized) });
+  else await idb('readwrite', store => store.put(normalized, 'project'));
+  return normalized;
 }
 export async function loadProject() {
-  if (desktop()) { const data = await call('load_project'); return data ? JSON.parse(data) : null; }
-  return idb('readonly', store => store.get('project'));
+  const data = desktop() ? await call('load_project') : await idb('readonly', store => store.get('project'));
+  return data ? migrateProject(typeof data === 'string' ? JSON.parse(data) : data, true) : null;
 }
 function idb(mode, action) {
   return new Promise((resolve, reject) => {
