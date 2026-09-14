@@ -1,0 +1,14 @@
+import React from 'react';
+import { providers, defaultConnection, askLLM } from './llm';
+export default function LLMSettings({ title, value, onChange, vision, disabled, run, notify }) {
+  const external = value.provider !== 'ollama';
+  const change = patch => onChange({ ...value, ...patch });
+  return <fieldset disabled={disabled} className="llm-settings"><legend>{title}</legend>
+    <label>接続先<select aria-label={`${title}の接続先`} value={value.provider} onChange={e => onChange(defaultConnection(e.target.value, vision))}>{Object.entries(providers).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label>
+    {value.provider === 'custom' && <label>APIベースURL（HTTPS）<input value={value.baseUrl} onChange={e => change({ baseUrl: e.target.value, apiKey: '' })} placeholder="https://example.com/v1"/></label>}
+    <label>モデルID<input aria-label={`${title}のモデルID`} value={value.model} onChange={e => change({ model: e.target.value })} placeholder={vision ? '画像入力に対応したモデルID' : '利用するモデルID'}/></label>
+    {external && <><label>APIキー<input type="password" autoComplete="off" aria-label={`${title}のAPIキー`} value={value.apiKey} onChange={e => change({ apiKey: e.target.value })}/></label><small>送信先：{value.provider === 'custom' ? value.baseUrl || '未設定' : providers[value.provider].baseUrl}<br/>{vision ? '生成画像と対象人物の正本画像を送信します。' : '脚本・設定・人物の説明を送信します。'} API利用料が発生します。キーは起動中のみ保持します。</small>{value.provider === 'custom' && <label><input type="checkbox" checked={value.jsonMode} onChange={e => change({ jsonMode: e.target.checked })}/> JSON出力モード（非対応APIではオフ）</label>}</>}
+    {vision && <small>顔の自動選択には画像入力対応モデルを指定してください。</small>}
+    <button type="button" onClick={() => run('LLMの接続を確認中', async () => { const result = JSON.parse(await askLLM(value, { prompt: 'Return {"ok":true}.', schema: { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'] } })); if (result.ok !== true) throw Error('接続先のJSON応答が不正です'); notify('LLMへの接続とJSON応答を確認しました。画像対応の確認は実際の顔選択時に行います。'); })}>接続をテスト</button>
+  </fieldset>;
+}

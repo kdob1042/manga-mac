@@ -44,10 +44,36 @@ fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     state.db.lock().map_err(err)?.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).optional().map_err(err)
 }
 #[tauri::command]
-async fn ollama(model: String, prompt: String, schema: Value, images: Option<Vec<String>>) -> Result<String, String> {
-    if model.contains("cloud") || model.contains('/') || model.is_empty() { return Err("ローカルモデル名を指定してください".into()); }
-    let response = client()?.post("http://127.0.0.1:11434/api/chat").json(&serde_json::json!({"model":model,"stream":false,"keep_alive":0,"format":schema,"messages":[{"role":"user","content":prompt,"images":images.unwrap_or_default()}]})).send().await.map_err(err)?.error_for_status().map_err(err)?.json::<Value>().await.map_err(err)?;
-    response["message"]["content"].as_str().map(str::to_string).ok_or("Ollamaの応答が不正です".into())
+async fn llm_request(provider: String, base_url: String, api_key: String, body: Value) -> Result<String, String> {
+    let base = match provider.as_str() {
+        "ollama" => "http://127.0.0.1:11434",
+        "openai" => "https://api.openai.com/v1",
+        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai",
+        "anthropic" => "https://api.anthropic.com/v1",
+        "deepseek" => "https://api.deepseek.com/v1",
+        "custom" => base_url.trim_end_matches('/'),
+        _ => return Err("未対応の接続先です".into()),
+    };
+    let url = reqwest::Url::parse(base).map_err(|_| "APIのベースURLが不正です")?;
+    if provider != "ollama" && (url.scheme() != "https" || url.host_str().is_none() || !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some()) {
+        return Err("認証情報・クエリを含まないHTTPSのベースURLを指定してください".into());
+    }
+    let model = body["model"].as_str().ok_or("モデルIDを指定してください")?;
+    if model.trim().is_empty() { return Err("モデルIDを指定してください".into()); }
+    if provider == "ollama" && (model.contains("cloud") || model.contains('/')) { return Err("Ollamaにはローカルモデルを指定してください".into()); }
+    if provider != "ollama" && api_key.trim().is_empty() { return Err("APIキーを入力してください".into()); }
+    let path = match provider.as_str() { "ollama" => "/api/chat", "anthropic" => "/messages", _ => "/chat/completions" };
+    let mut request = client()?.post(format!("{base}{path}")).json(&body);
+    if provider == "anthropic" { request = request.header("x-api-key", &api_key).header("anthropic-version", "2023-06-01"); }
+    else if provider != "ollama" { request = request.bearer_auth(&api_key); }
+    // Redirects are disabled in client(). Never forward keys to another host or retry another provider.
+    let response = request.send().await.map_err(|_| "LLMに接続できません。接続先とネットワークを確認してください")?;
+    let status = response.status();
+    if !status.is_success() {
+        let reason = match status.as_u16() { 401 | 403 => "APIキー・利用権限を確認してください", 404 => "モデルID・ベースURLを確認してください", 429 => "利用上限・残高・レート制限を確認してください", 400 | 422 => "モデルの画像入力・JSON出力への対応を確認してください", _ => "接続先サービスの状態を確認してください" };
+        return Err(format!("LLM HTTP {status}: {reason}"));
+    }
+    response.text().await.map_err(|_| "LLMの応答を受信できませんでした".into())
 }
 fn engine_path() -> Result<PathBuf, String> {
     let dir = std::env::current_exe().map_err(err)?.parent().ok_or("App directory missing")?.to_path_buf();
@@ -111,5 +137,5 @@ fn main() {
         db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS project(id INTEGER PRIMARY KEY,data TEXT NOT NULL);")?;
         app.manage(AppState { db: Mutex::new(db), engine: tokio::sync::Mutex::new(()) });
         Ok(())
-    }).invoke_handler(tauri::generate_handler![github_get, github_file, save_project, load_project, export_file, ollama, generate_image, prepare_engine]).run(tauri::generate_context!()).expect("Manga Mac failed");
+    }).invoke_handler(tauri::generate_handler![github_get, github_file, save_project, load_project, export_file, llm_request, generate_image, prepare_engine]).run(tauri::generate_context!()).expect("Manga Mac failed");
 }
