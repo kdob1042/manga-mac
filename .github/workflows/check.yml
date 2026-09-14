@@ -18,6 +18,13 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: UI-test-results
+          path: test-results/
   mac:
     runs-on: macos-14
     needs: web

@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { call, desktop } from './bridge';
 import { compositePixels, sourceForPanel } from './core';
 export function imageOf(src) { return new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = () => reject(Error('画像を読み込めません')); im.src = src; }); }
 export async function mergeRegion(before, after, rect) {
@@ -44,4 +45,4 @@ export async function exportCBZ(project) {
   zip.file('provenance.json', JSON.stringify({ sources: project.snapshots.map(({ repo, sha, id }) => ({ repo, sha, id })), panels: project.panels.map(({ image, ...p }) => p) }, null, 2));
   return zip.generateAsync({ type: 'blob' });
 }
-export function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
+export async function download(blob, name) { if (desktop()) { const data = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let i = 0; i < data.length; i += 32768) binary += String.fromCharCode(...data.subarray(i, i + 32768)); return call('export_file', { name, data: btoa(binary) }); } const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }

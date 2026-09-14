@@ -89,6 +89,20 @@ async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<St
     STANDARD.decode(encoded).map_err(err)?;
     Ok(format!("data:image/png;base64,{encoded}"))
 }
+#[tauri::command]
+fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<String, String> {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b)) || name.starts_with('.') { return Err("Invalid export filename".into()); }
+    let dir = app.path().download_dir().map_err(err)?.join("Manga Mac");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(err)?.as_millis();
+    let path = dir.join(format!("{stamp}-{name}"));
+    let bytes = STANDARD.decode(data).map_err(err)?;
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(err)?;
+    file.write_all(&bytes).map_err(err)?;
+    file.sync_all().map_err(err)?;
+    Ok(path.to_string_lossy().into_owned())
+}
 fn main() {
     tauri::Builder::default().setup(|app| {
         let dir = app.path().app_data_dir()?;
@@ -97,5 +111,5 @@ fn main() {
         db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS project(id INTEGER PRIMARY KEY,data TEXT NOT NULL);")?;
         app.manage(AppState { db: Mutex::new(db), engine: tokio::sync::Mutex::new(()) });
         Ok(())
-    }).invoke_handler(tauri::generate_handler![github_get, github_file, save_project, load_project, ollama, generate_image, prepare_engine]).run(tauri::generate_context!()).expect("Manga Mac failed");
+    }).invoke_handler(tauri::generate_handler![github_get, github_file, save_project, load_project, export_file, ollama, generate_image, prepare_engine]).run(tauri::generate_context!()).expect("Manga Mac failed");
 }
