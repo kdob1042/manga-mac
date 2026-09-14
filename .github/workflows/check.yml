@@ -13,27 +13,19 @@ jobs:
   storage:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
+          toolchain: 1.98.1
           components: rustfmt, clippy
-      - run: cargo test --manifest-path tests/storage/Cargo.toml
-      - run: cargo clippy --manifest-path tests/storage/Cargo.toml --all-targets -- -D warnings
-      - name: Prepare reproducible review inputs
-        run: |
-          cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
-          rustfmt --edition 2021 src-tauri/src/main.rs src-tauri/src/storage.rs
-          python3 - <<'PYCODE'
-          import json
-          from pathlib import Path
-          for path in ['src-tauri/Cargo.lock', 'tests/storage/Cargo.lock', 'src-tauri/src/main.rs', 'src-tauri/src/storage.rs']:
-              print('MANGA_REVIEW:' + json.dumps({'path': path, 'content': Path(path).read_text()}))
-          PYCODE
+      - run: cargo test --locked --manifest-path tests/storage/Cargo.toml
+      - run: cargo clippy --locked --manifest-path tests/storage/Cargo.toml --all-targets -- -D warnings
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
@@ -42,7 +34,7 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: UI-test-results
@@ -52,13 +44,15 @@ jobs:
     needs: [web, storage]
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
           targets: aarch64-apple-darwin
       - run: npm ci
       - name: Build native image engine
@@ -66,9 +60,15 @@ jobs:
           swift build -c release --package-path helper
           mkdir -p src-tauri/binaries
           cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-apple-darwin
+      - name: Native regression and static checks
+        run: |
+          npm run icons
+          npm run build
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
+          cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --all-targets -- -D warnings
       - name: Build unsigned Apple Silicon app and DMG
-        run: npm run tauri build -- --target aarch64-apple-darwin
-      - uses: actions/upload-artifact@v4
+        run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Manga-Mac-Apple-Silicon-unsigned
           path: |
