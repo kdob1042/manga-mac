@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Manga Mac",
+  "version": "0.1.0",
+  "identifier": "com.kdob1042.manga-mac",
+  "build": {
+    "beforeDevCommand": "npm run icons && npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run icons && npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Manga Mac",
+        "width": 1360,
+        "height": 920,
+        "minWidth": 900,
+        "minHeight": 650
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ],
+    "externalBin": [
+      "binaries/manga-engine"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "14.0"
+    },
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ]
+  }
+}
