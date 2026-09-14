@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "title": "旧作品回帰fixture",
+  "snapshots": [
+    {
+      "id": "source@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "settings": [],
+      "scenes": [
+        {
+          "id": "s",
+          "text": "「原文です」\n\n  次の段落。",
+          "design": ""
+        }
+      ]
+    }
+  ],
+  "active": "source@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "panels": [
+    {
+      "id": "s:p0",
+      "sceneId": "s",
+      "snapshotId": "source@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "unitIds": [
+        "s:u0",
+        "s:u1"
+      ],
+      "prompt": "Two people at a station",
+      "characterIds": [
+        "a"
+      ],
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+      "status": "review",
+      "instructions": [
+        "口元だけ"
+      ],
+      "attempts": 1
+    }
+  ],
+  "characters": [
+    {
+      "id": "a",
+      "name": "人物A",
+      "description": "固定参照",
+      "version": 1,
+      "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+      "hash": "2640059609118b695c139804676372eca75c30d30e5906775902d13e44f5356c"
+    }
+  ],
+  "history": [
+    {
+      "panels": [
+        {
+          "id": "s:p0",
+          "sceneId": "s",
+          "snapshotId": "source@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "unitIds": [
+            "s:u0",
+            "s:u1"
+          ],
+          "prompt": "Two people at a station",
+          "characterIds": [
+            "a"
+          ],
+          "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+          "status": "review",
+          "instructions": [],
+          "attempts": 1
+        }
+      ],
+      "label": "口元だけ",
+      "at": "2026-09-14T00:00:00Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "old-job",
+      "panelId": "s:p0",
+      "status": "complete"
+    }
+  ]
+}

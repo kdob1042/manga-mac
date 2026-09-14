@@ -7,6 +7,7 @@ import { exportCBZ, pagePNG, download } from './render';
 import './style.css';
 import LLMSettings from './LLMSettings';
 import { defaultConnection } from './llm';
+import { beginJob, finishJob } from './revisions';
 
 function App() {
   const [project, setProject] = useState(emptyProject), [ready, setReady] = useState(false), [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [settings, setSettings] = useState(false);
@@ -15,7 +16,7 @@ function App() {
   const [page, setPage] = useState(0), [selected, setSelected] = useState(null), [instruction, setInstruction] = useState(''), [pending, setPending] = useState(null), [rect, setRect] = useState(null), [name, setName] = useState(''), [description, setDescription] = useState('');
   const current = useRef(project), cancel = useRef(false), drag = useRef(null), lock = useRef(false);
   useEffect(() => { loadProject().then(p => { if (p) { current.current = p; setProject(p); const s = p.snapshots.find(s => s.id === p.active); if (s?.repo) setRepo(s.repo); } setReady(true); }).catch(e => setError(`保存作品を読み込めません: ${e.message}`)); }, []);
-  async function commit(p) { await saveProject(p); current.current = p; setProject(p); }
+  async function commit(p) { const saved = await saveProject({ ...p, revision: (current.current.revision ?? 0) + 1 }); current.current = saved; setProject(saved); return saved; }
   async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
   const snapshot = project.snapshots.find(s => s.id === project.active), panels = project.panels.slice(page * 4, page * 4 + 4), chosen = project.panels.find(p => p.id === selected);
   useEffect(() => {
@@ -56,12 +57,15 @@ function App() {
         if (cancel.current) break;
         if (panel.image) continue;
         setBusy(`${scene.id} ・ ${panel.id} を作画中`);
-        const job = { id: crypto.randomUUID(), panelId: panel.id, status: 'running', at: new Date().toISOString() };
+        p = current.current;
+        const livePanel = p.panels.find(x => x.id === panel.id);
+        if (p.jobs.some(j => j.panelId === panel.id && j.status === 'unknown')) throw Error('応答未確定の制作要求があります。再実行前に結果を確認してください');
+        const job = await beginJob(p, livePanel);
         p = { ...p, jobs: [...p.jobs, job] }; await commit(p);
         try {
-          const generated = await generatePanel(panel, p.characters);
-          p = { ...p, panels: p.panels.map(x => x.id === panel.id ? generated : x), jobs: p.jobs.map(j => j.id === job.id ? { ...j, status: 'complete' } : j) }; await commit(p);
-        } catch (e) { p = { ...p, jobs: p.jobs.map(j => j.id === job.id ? { ...j, status: 'failed', error: String(e) } : j) }; await commit(p); throw e; }
+          const generated = await generatePanel(livePanel, p.characters, null, '', job);
+          p = await commit(await finishJob(current.current, job, generated, cancel.current));
+        } catch (e) { p = { ...current.current, jobs: current.current.jobs.map(j => j.id === job.id ? { ...j, status: 'unknown' } : j) }; await commit(p); throw e; }
       }
     }
     setNotice(cancel.current ? '停止しました。完成したコマは保存済みです。' : '作画が終了しました。人物・衣装・原作との整合を確認してください。');
@@ -79,8 +83,15 @@ function App() {
     if (/台詞.*(変|直|書|言い換)|セリフ.*(変|直|書|言い換)/.test(instruction)) throw Error('台詞本文はGitHub側で改訂し、再同期してください');
     let region = rect;
     if (!region) { const character = project.characters.find(c => c.id === target && chosen.characterIds.includes(c.id)); if (!character) throw Error('顔を直す人物を選ぶか、画像をドラッグして範囲を指定してください'); setBusy('正本と照合して顔の範囲を特定中'); region = await locateFace(chosen, character, visionModel); setRect(region); setBusy('顔の表情を修正中'); }
-    const next = await editRegion(chosen, project.characters, instruction, region);
-    await commit(revise(current.current, current.current.panels.map(p => p.id === chosen.id ? next : p), instruction)); setInstruction(''); setRect(null);
+    const job = await beginJob(current.current, chosen, 'edit');
+    await commit({ ...current.current, jobs: [...current.current.jobs, job] });
+    try {
+      const next = await editRegion(chosen, project.characters, instruction, region, job);
+      await commit(await finishJob(current.current, job, next, cancel.current));
+    } catch (e) {
+      await commit({ ...current.current, jobs: current.current.jobs.map(j => j.id === job.id ? { ...j, status: 'unknown' } : j) });
+      throw e;
+    } setInstruction(''); setRect(null);
   }
   async function sample() {
     if (project.snapshots.length) throw Error('作品を保護するためサンプルは空の状態でのみ開けます');
@@ -100,3 +111,4 @@ function App() {
     </div></div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
+

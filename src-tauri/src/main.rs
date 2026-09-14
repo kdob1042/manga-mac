@@ -1,11 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod storage;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{path::PathBuf, sync::Mutex, time::Duration};
 use tauri::{Manager, State};
 use tokio::io::AsyncWriteExt;
-struct AppState { db: Mutex<rusqlite::Connection>, engine: tokio::sync::Mutex<()> }
+struct AppState { root: PathBuf, db: Mutex<rusqlite::Connection>, engine: tokio::sync::Mutex<()> }
 fn err(e: impl std::fmt::Display) -> String { e.to_string() }
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder().user_agent("manga-mac/0.1").timeout(Duration::from_secs(600)).redirect(reqwest::redirect::Policy::none()).build().map_err(err)
@@ -34,14 +35,13 @@ async fn github_file(repo: String, path: String, sha: String, token: String) -> 
 }
 #[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
-    let _: Value = serde_json::from_str(&data).map_err(err)?;
-    state.db.lock().map_err(err)?.execute("INSERT INTO project(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data", [&data]).map_err(err)?;
-    Ok(())
+    let mut db = state.db.lock().map_err(err)?;
+    storage::save(&mut db, &state.root, &data)
 }
 #[tauri::command]
 fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
-    use rusqlite::OptionalExtension;
-    state.db.lock().map_err(err)?.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).optional().map_err(err)
+    let db = state.db.lock().map_err(err)?;
+    storage::load(&db, &state.root)
 }
 #[tauri::command]
 async fn llm_request(provider: String, base_url: String, api_key: String, body: Value) -> Result<String, String> {
@@ -134,8 +134,9 @@ fn main() {
         let dir = app.path().app_data_dir()?;
         std::fs::create_dir_all(&dir)?;
         let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
-        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS project(id INTEGER PRIMARY KEY,data TEXT NOT NULL);")?;
-        app.manage(AppState { db: Mutex::new(db), engine: tokio::sync::Mutex::new(()) });
+        storage::initialize(&db).map_err(std::io::Error::other)?;
+        app.manage(AppState { root: dir, db: Mutex::new(db), engine: tokio::sync::Mutex::new(()) });
         Ok(())
     }).invoke_handler(tauri::generate_handler![github_get, github_file, save_project, load_project, export_file, llm_request, generate_image, prepare_engine]).run(tauri::generate_context!()).expect("Manga Mac failed");
 }
+
