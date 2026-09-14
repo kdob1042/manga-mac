@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import JSZip from 'jszip';
 const fixture = JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json', import.meta.url)));
 test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', async ({ page }) => {
   await page.goto('/');
@@ -14,12 +15,16 @@ test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', a
     const cbz = await exportCBZ(project);
     const originalZip = await exportCBZ(legacy);
     await saveProject(project);
-    return { samePNG: before === after, sameUndo: undo === before, cbzSize: cbz.size, legacyCbzSize: originalZip.size };
+    return { samePNG: before === after, sameUndo: undo === before, cbz: Array.from(new Uint8Array(await cbz.arrayBuffer())), originalZip: Array.from(new Uint8Array(await originalZip.arrayBuffer())) };
   }, fixture);
   expect(result.samePNG).toBe(true);
   expect(result.sameUndo).toBe(true);
-  expect(result.cbzSize).toBeGreaterThan(100);
-  expect(result.cbzSize).toBe(result.legacyCbzSize);
+  const beforeZip = await JSZip.loadAsync(result.originalZip), afterZip = await JSZip.loadAsync(result.cbz);
+  expect(Object.keys(afterZip.files)).toEqual(Object.keys(beforeZip.files));
+  for (const name of Object.keys(beforeZip.files).filter(n => n.endsWith('.png'))) expect(await afterZip.file(name).async('uint8array')).toEqual(await beforeZip.file(name).async('uint8array'));
+  const provenance = JSON.parse(await afterZip.file('provenance.json').async('string'));
+  expect(provenance.sources[0].sha).toBe(fixture.snapshots[0].sha);
+  expect(provenance.panels[0].unitIds).toEqual(fixture.panels[0].unitIds);
   await page.reload();
   await expect(page.locator('.caption')).toContainText('「原文です」');
   await expect(page.locator('.art img')).toHaveAttribute('src', fixture.panels[0].image);

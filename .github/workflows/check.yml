@@ -19,18 +19,16 @@ jobs:
           components: rustfmt, clippy
       - run: cargo test --manifest-path tests/storage/Cargo.toml
       - run: cargo clippy --manifest-path tests/storage/Cargo.toml --all-targets -- -D warnings
-      - name: Prepare lockfiles and formatting for review
+      - name: Prepare reproducible review inputs
         run: |
           cargo generate-lockfile --manifest-path src-tauri/Cargo.toml
           rustfmt --edition 2021 src-tauri/src/main.rs src-tauri/src/storage.rs
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Rust-review-inputs
-          path: |
-            src-tauri/Cargo.lock
-            tests/storage/Cargo.lock
-            src-tauri/src/main.rs
-            src-tauri/src/storage.rs
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          for path in ['src-tauri/Cargo.lock', 'tests/storage/Cargo.lock', 'src-tauri/src/main.rs', 'src-tauri/src/storage.rs']:
+              print('MANGA_REVIEW:' + json.dumps({'path': path, 'content': Path(path).read_text()}))
+          PYCODE
   web:
     runs-on: ubuntu-latest
     steps:
@@ -50,8 +48,8 @@ jobs:
           name: UI-test-results
           path: test-results/
   mac:
-    runs-on: macos-14
-    needs: web
+    runs-on: macos-26
+    needs: [web, storage]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4

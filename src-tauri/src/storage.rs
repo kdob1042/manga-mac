@@ -137,7 +137,7 @@ mod tests {
     fn interruption_reuses_files_and_preserves_previous_json() {
         let (mut db, dir) = setup(); let original = fixture();
         db.execute("INSERT INTO project VALUES(1,?1)", [original.to_string()]).unwrap();
-        let mut broken = original.clone(); broken["characters"][0]["image"] = json!("data:image/png;base64,!");
+        let mut broken = original.clone(); broken["panels"][0]["image"] = json!("data:image/png;base64,!");
         assert!(save(&mut db, &dir, &broken.to_string()).is_err());
         assert_eq!(serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(), original);
         save(&mut db, &dir, &original.to_string()).unwrap();
