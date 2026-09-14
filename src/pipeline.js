@@ -27,8 +27,9 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
     return { id, name: c.name, hash: c.hash, image: c.image };
   });
-  const image = await call('generate_image', { request: { prompt: `${panel.prompt}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${refs.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`, references: refs, original } });
-  return { ...panel, image, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1 };
+  const seed = crypto.getRandomValues(new Uint32Array(1))[0];
+  const image = await call('generate_image', { request: { prompt: `${panel.prompt}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${refs.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`, references: refs, original, seed } });
+  return { ...panel, image, generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width: 768, height: 768, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1 };
 }
 export async function editRegion(panel, characters, instruction, rect) {
   if (!panel.image) throw Error('先にコマを作画してください');

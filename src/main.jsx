@@ -15,6 +15,20 @@ function App() {
   async function commit(p) { await saveProject(p); current.current = p; setProject(p); }
   async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
   const snapshot = project.snapshots.find(s => s.id === project.active), panels = project.panels.slice(page * 4, page * 4 + 4), chosen = project.panels.find(p => p.id === selected);
+  useEffect(() => {
+    if (!ready || !desktop() || !snapshot?.repo || snapshot.repo !== repo) return;
+    let disposed = false;
+    async function check() {
+      if (lock.current) return;
+      try {
+        const next = await syncSource(repo, token, episode, snapshot);
+        if (!disposed && next.id !== snapshot.id) setPending(next);
+      } catch { if (!disposed) setNotice('原作の自動更新確認は未完了です。ネット接続・トークンを確認するか、取得済みの版で制作できます。'); }
+    }
+    const startup = setTimeout(check, 1500);
+    const timer = setInterval(check, 5 * 60 * 1000);
+    return () => { disposed = true; clearTimeout(startup); clearInterval(timer); };
+  }, [ready, repo, token, episode, snapshot?.id]);
   async function checkSync() { const s = await syncSource(repo, token, episode, snapshot); if (s.id === snapshot?.id) setNotice('原作は最新です'); else setPending(s); }
   async function applySync() {
     const p = current.current;

@@ -2,7 +2,7 @@ import Foundation
 import MediaGenerationKit
 
 struct Reference: Decodable { let id: String; let name: String; let hash: String; let image: String }
-struct Request: Decodable { let prompt: String; let references: [Reference]; let original: String? }
+struct Request: Decodable { let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32 }
 
 @main struct MangaEngine {
   static func main() async {
@@ -33,6 +33,7 @@ struct Request: Decodable { let prompt: String; let references: [Reference]; let
       pipeline.configuration.width = 768
       pipeline.configuration.height = 768
       pipeline.configuration.steps = 4
+      pipeline.configuration.seed = request.seed
       let results = try await pipeline.generate(prompt: request.prompt, negativePrompt: "text, lettering, watermark", inputs: inputs)
       guard let first = results.first else { throw NSError(domain: "No generated image", code: 2) }
       let output = temp.appendingPathComponent("result.png")
