@@ -1,0 +1,8 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/binaries/
+helper/.build/
+.DS_Store
+*.sqlite3*
+.env*
