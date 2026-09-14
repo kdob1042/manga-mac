@@ -55,6 +55,14 @@ jobs:
           components: rustfmt, clippy
           targets: aarch64-apple-darwin
       - run: npm ci
+      - name: Identify native compiler cache
+        id: native-cache
+        run: |
+          echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: helper/.build
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper

@@ -10,9 +10,9 @@
 |---|---|
 | Node契約・原文・領域保護・版試験 | 17件成功 |
 | Vite build | 成功。既存の静的/動的import混在の警告あり |
-| Chromium UI・再読込・Undo・PNG/CBZ | 3件成功（CI run 34823763907） |
-| Rust保存・中断復旧・改竄検出 | 3件成功、clippy成功（同CI） |
-| Mac package、DMG | 更新したmacOS 26 runnerで検証中 |
+| Chromium UI・再読込・Undo・PNG/CBZ | 3件成功（CI run 34824097915） |
+| Rust保存・中断復旧・改竄検出 | 3件成功、clippy・fmt成功（同CI、Mac本体のtest・clippyも成功） |
+| Mac package、DMG | 成功（CI run 34824097915、Apple Silicon unsigned DMG） |
 | 実Mac導入・実画像AI・24GB性能・署名公証 | `not_run` |
 | Blender、外部実API | 段階Aの対象外、`not_run` |
 
@@ -23,3 +23,5 @@
 バックアップはアプリ終了後に作品フォルダ全体（SQLiteと`artifacts`）を保存する。JSON書出しは画像を含む自己完結形式を維持する。旧アプリへ戻す場合は移行前のフォルダ全体を復元する。ファイル欠損・改竄時はエラーとし、最新作品を自動で過去版に置換しない。DB内の移行前JSONも保持するが、バックアップ復元UI・ファイルGCは未実装。
 
 応答不明jobは再起動時に`unknown`とし、無断再実行を止める。候補の採否UIと未確定jobの解決導線は段階Eで実装する。原作と採用版は保持され、既存画像の閲覧・Undo・出力は可能。
+
+最終追補：Undo前後が異なる画像のfixture、採用ポインタのhash不一致拒否、未確定jobの再実行拒否を追加。追補後のCI結果はPR #6へ記録する。Swiftビルドは同じcompilerとhelper入力に限ってキャッシュを再利用し、build・test・clippy・DMGのゲートは省略しない。

@@ -15,10 +15,11 @@ test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', a
     const cbz = await exportCBZ(project);
     const originalZip = await exportCBZ(legacy);
     await saveProject(project);
-    return { samePNG: before === after, sameUndo: undo === before, cbz: Array.from(new Uint8Array(await cbz.arrayBuffer())), originalZip: Array.from(new Uint8Array(await originalZip.arrayBuffer())) };
+    return { samePNG: before === after, sameUndo: undo === await pagePNG(legacy.history[0].panels, legacy.snapshots), undoDiffers: undo !== before, cbz: Array.from(new Uint8Array(await cbz.arrayBuffer())), originalZip: Array.from(new Uint8Array(await originalZip.arrayBuffer())) };
   }, fixture);
   expect(result.samePNG).toBe(true);
   expect(result.sameUndo).toBe(true);
+  expect(result.undoDiffers).toBe(true);
   const beforeZip = await JSZip.loadAsync(result.originalZip), afterZip = await JSZip.loadAsync(result.cbz);
   expect(Object.keys(afterZip.files)).toEqual(Object.keys(beforeZip.files));
   for (const name of Object.keys(beforeZip.files).filter(n => n.endsWith('.png'))) expect(await afterZip.file(name).async('uint8array')).toEqual(await beforeZip.file(name).async('uint8array'));

@@ -12,16 +12,22 @@ export async function migrateProject(input, recover = false) {
   const p = structuredClone(input);
   p.version = 2; p.revision ??= 0; p.artworks ??= []; p.jobs ??= []; p.history ??= [];
   const known = new Map(p.artworks.map(a => [a.id, a]));
+  const hashes = new Map();
+  const hashOf = image => { if (!hashes.has(image)) hashes.set(image, imageHash(image)); return hashes.get(image); };
   async function normalize(panel) {
     panel.capture_revision ??= null;
     panel.artwork_revision ??= null;
     if (panel.image && !panel.artwork_revision) {
-      const hash = await imageHash(panel.image), id = `legacy:${panel.id}:${hash}`;
+      const hash = await hashOf(panel.image), id = `legacy:${panel.id}:${hash}`;
       panel.artwork_revision = id;
       if (!known.has(id)) {
         const artwork = { id, hash, parent_revision: null, capture_revision: null, panel: structuredClone(panel), origin: 'legacy' };
         known.set(id, artwork); p.artworks.push(artwork);
       }
+    }
+    if (panel.image && panel.artwork_revision) {
+      const artwork = known.get(panel.artwork_revision);
+      if (!artwork || artwork.hash !== await hashOf(panel.image)) throw Error('採用画像と版のハッシュが一致しません');
     }
   }
   for (const h of p.history) for (const panel of h.panels) await normalize(panel);
@@ -33,6 +39,7 @@ function inputState(project, panel) {
   return { active: project.active, panel, characters: panel.characterIds.map(id => project.characters.find(c => c.id === id)) };
 }
 export async function beginJob(project, panel, kind = 'generate') {
+  if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');
   return { id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
     base_revision: panel.artwork_revision ?? null, input_hash: await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel)))),
     status: 'running', attempts: 1, at: new Date().toISOString() };

@@ -4,7 +4,7 @@
 
 > **このガイドの対象**：以下は現行の2D制作版の手順です。[設計・実装計画 v4.0](IMPLEMENTATION_PLAN.md) のBlender連携は未実装であり、Blenderを追加インストールするだけで現行版に3D機能が使えるようになるわけではありません。目標構成では同じMacにインストールした対応版Blenderと、検証済みのMCP／接続拡張を利用します。対応版・接続設定・導入手順は実装と検証後に本ガイドへ追加します。Tripo等の3D生成サービスは任意で、利用時だけ別途API認証・通信・料金が必要です。現行版のLLM接続先選択と、今後の画像生成先・3D生成先の選択は別機能です。
 
-> **配布状況（2026-09-14確認）**：最新mainビルドは実行中、直前のmainビルドは失敗。最新実行で確認できたのはUIテスト成果物のみで、DMGはまだ確認できていません。以下のインストール手順は、Macビルドが成功してDMGが作られた後に使います。実機の初回起動・生成も未検証です。現在の状況は[Actions](https://github.com/kdob1042/manga-mac/actions/workflows/check.yml)を確認してください。
+> **配布状況（2026-09-14確認）**：段階Aの[PR #6のCI](https://github.com/kdob1042/manga-mac/actions/runs/34824097915)でApple Silicon向け未署名DMGの生成を確認しました。mainの配布は、マージ後の成功実行とDMG成果物を確認して取得してください。実機のインストール・初回起動・画像生成・性能は未検証です。
 
 ## 1. Macで用意するもの
 
@@ -113,7 +113,7 @@ ollama pull qwen3-vl:4b
 
 - 新しいmainの成功実行からDMGを取得し、アプリを終了してからApplicationsのManga Mac.appを置き換えます。自動アップデートは未実装です。
 - 更新前は **作品データを書き出す**でJSONバックアップを取り、終了後にTime Machine等でMacもバックアップしてください。JSONを戻す画面はまだありません。
-- 作品DBの保存先は `~/Library/Application Support/com.kdob1042.manga-mac/manga.sqlite3` です。DBを手動バックアップする場合はアプリを終了し、同じフォルダごとコピーしてください。
+- 作品DBの保存先は `~/Library/Application Support/com.kdob1042.manga-mac/manga.sqlite3` です。DBを手動バックアップする場合はアプリを終了し、同じフォルダ（`artifacts`を含む）ごとコピーしてください。SQLiteだけでは画像を復元できません。
 - アプリ本体と作品DBは別ですが、版をまたいだ復元・移行の実機検証は未完了です。
 
 ## 困ったとき
@@ -130,3 +130,4 @@ ollama pull qwen3-vl:4b
 報告時はAPIキー・GitHubトークンを貼らず、エラー表示とビルド実行URLを共有してください。
 
 [READMEに戻る](../README.md)
+

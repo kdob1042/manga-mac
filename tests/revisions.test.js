@@ -14,8 +14,9 @@ test('LEGACY-01 migration is lossless and idempotent; Undo keeps source and exac
   assert.equal(sourceForPanel(p.panels[0], p.snapshots[0]), '「原文です」\n\n  次の段落。');
   assert.equal(p.history[0].panels[0].image, legacy.history[0].panels[0].image);
   assert.deepEqual(await migrateProject(p), p);
-  assert.equal(p.artworks[0].hash, await imageHash(legacy.panels[0].image));
+  assert.equal(p.artworks.find(a => a.id === p.panels[0].artwork_revision).hash, await imageHash(legacy.panels[0].image));
   assert.equal(legacy.version, 1);
+  await assert.rejects(migrateProject({ ...p, panels: [{ ...p.panels[0], image: legacy.history[0].panels[0].image }] }));
 });
 test('SOURCE-01 stale source, changed panel, changed reference and cancellation retain a candidate only', async () => {
   const p = await migrateProject(legacy), job = await beginJob(p, p.panels[0]);
@@ -44,5 +45,6 @@ test('successful job adopts once, retains prior version, and cannot replay after
   await assert.rejects(finishJob(result, job, p.panels[0]));
   const resumed = await migrateProject(running, true);
   assert.equal(resumed.jobs.at(-1).status, 'unknown');
+  await assert.rejects(beginJob(resumed, resumed.panels[0], 'edit'));
   await assert.rejects(finishJob(resumed, job, p.panels[0]));
 });
