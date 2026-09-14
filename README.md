@@ -65,7 +65,7 @@ GitHub ActionsでWebテスト後、macOSのSwiftエンジンとTauri DMGをビ�
 2. 一人の顔領域を選び表情を変更。保存PNGをRGBA比較してマスク外差分ゼロを確認する。
 3. 再起動し、履歴・参照・原作SHA・失敗ジョブを確認する。
 4. 元に戻す操作で旧画像が厳密一致することを確認する。
-5. モデル導入後にネットを遮断して、取得済み原作の生成・編集・保存・出力を試す。
+5. モデル導入後にネットを遮断して、Ollamaを選んだ状態で取得済み原作の生成・編集・保存・出力を試す。
 6. 二人の顔/衣装の混線、生成速度、ピークメモリを記録する。合格前に参照品質の数値を宣言しない。
 
 ## 出典と依存
@@ -76,3 +76,29 @@ GitHub ActionsでWebテスト後、macOSのSwiftエンジンとTauri DMGをビ�
 - [GitHub Contents API](https://docs.github.com/en/rest/repos/contents)
 
 原作リポジトリへの書き込み機能はありません。漫画アプリのコードはこのmanga-macリポジトリで管理します。
+
+## LLMの接続先を選ぶ
+
+「接続・人物設定」→「AIの接続」で、**演出・コマ計画**と**顔の範囲推定**を個別に選べます。
+
+| 接続先 | 方式 |
+|---|---|
+| Ollama | ローカル `/api/chat`（初期値） |
+| OpenAI | Chat Completions |
+| Google Gemini | OpenAI互換API |
+| Anthropic Claude | Messages API |
+| DeepSeek | OpenAI互換API |
+| OpenAI互換API | 自分のHTTPSベースURLを指定 |
+
+外部APIは利用可能なモデルIDとAPIキーを入力し、「接続をテスト」でJSON応答を確認します。顔の範囲推定には画像入力対応モデルが必要です。接続テストはテキストだけの少量リクエストであり、画像入力対応まで保証しません。互換APIがJSONモードを受け付けない場合は設定をオフにできます。返されたJSONと原文IDは引き続き検証します。
+
+- 演出用APIには脚本・設定・人物の説明を送信。顔推定用APIには生成画像・対象人物の正本画像を送信します。画面に送信先を表示します。
+- 画像作画そのものは引き続きMac内のFLUXです。外部LLMを選んでもWebサービス型アプリにはなりません。
+- APIキーとLLM接続設定は起動中だけ保持し、作品SQLite・バックアップ・生成履歴へ保存しません。接続先を切り替えるとキーはクリアされます。
+- 自動フォールバック、自動リトライはありません。別事業者に無断で原稿を送りません。
+- 外部APIはHTTPSのみ。リダイレクトは追従せず、HTTPエラー本文（原稿や認証情報を含み得るもの）は表示・保存しません。
+- 外部API利用料は利用者のAPIアカウントへ発生します。外部APIを選んだ処理はオンライン接続が必要です。
+
+接続アダプタはモック応答によるテスト済み。実APIキーを使った課金リクエストとMac実機通信は未検証です。
+
+API仕様: [Gemini互換API](https://ai.google.dev/gemini-api/docs/openai)、[Claude Messages](https://platform.claude.com/docs/en/api/overview)、[DeepSeek](https://api-docs.deepseek.com/)。
