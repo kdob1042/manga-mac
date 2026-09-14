@@ -8,37 +8,31 @@ export const providers = {
   custom: { label: 'OpenAI互換API', baseUrl: '' },
 };
 export function defaultConnection(provider = 'ollama', vision = false) {
-  return { provider, baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? (vision ? 'qwen3-vl:4b' : 'qwen3:8b') : '', apiKey: '', jsonMode: true };
+  return { provider, purpose: vision ? 'face' : 'plan', baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? (vision ? 'qwen3-vl:4b' : 'qwen3:8b') : '', apiKey: '', connectionId: '', jsonMode: true };
 }
-export function imageParts(image) {
-  const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\r\n]+)$/.exec(image);
-  if (!m) throw Error('対応していない画像形式です');
-  return { mime: m[1], data: m[2] };
-}
-export function buildLLMBody(config, { prompt, schema, images = [] }) {
-  if (!providers[config.provider]) throw Error('接続先を選択してください');
-  if (!config.model.trim()) throw Error('モデルIDを入力してください');
-  if (config.provider !== 'ollama' && !config.apiKey.trim()) throw Error('APIキーを入力してください');
-  const text = `${prompt}\n\nReturn only a JSON object matching this JSON schema. No markdown or commentary.\n${JSON.stringify(schema)}`;
-  if (config.provider === 'ollama') return { model: config.model, stream: false, keep_alive: 0, format: schema, messages: [{ role: 'user', content: text, images: images.map(i => imageParts(i).data) }] };
-  if (config.provider === 'anthropic') return { model: config.model, max_tokens: 8192, messages: [{ role: 'user', content: [...images.map(i => { const p = imageParts(i); return { type: 'image', source: { type: 'base64', media_type: p.mime, data: p.data } }; }), { type: 'text', text }] }] };
-  images.forEach(imageParts);
-  return { model: config.model, stream: false, messages: [{ role: 'user', content: images.length ? [{ type: 'text', text }, ...images.map(url => ({ type: 'image_url', image_url: { url } }))] : text }], ...(config.jsonMode ? { response_format: { type: 'json_object' } } : {}) };
-}
-export function parseLLMResponse(provider, response) {
-  let text;
-  if (provider === 'ollama') { if (response.done_reason === 'length') throw Error('LLMの応答が長さ制限で中断されました'); text = response.message?.content; }
-  else if (provider === 'anthropic') { if (response.stop_reason !== 'end_turn') throw Error('Claudeの応答が完了しませんでした'); text = response.content?.filter(c => c.type === 'text').map(c => c.text).join(''); }
-  else { const choice = response.choices?.[0]; if (choice?.finish_reason !== 'stop') throw Error('LLMの応答が完了しませんでした。モデルと出力上限を確認してください'); text = choice.message?.content; }
-  if (typeof text !== 'string' || !text.trim()) throw Error('LLMからJSON応答を取得できませんでした');
-  text = text.trim().replace(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i, '$1');
-  const value = JSON.parse(text);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('JSONオブジェクトが必要です');
-  return JSON.stringify(value);
-}
-export async function askLLM(config, request) {
-  const body = buildLLMBody(config, request);
+export async function registerConnection(config) {
   const { call } = await import('./bridge.js');
-  const response = await call('llm_request', { provider: config.provider, baseUrl: config.baseUrl, apiKey: config.apiKey, body });
-  return parseLLMResponse(config.provider, JSON.parse(response));
+  const connectionId = await call('register_llm', { input: { provider: config.provider, purpose: config.purpose, endpoint: config.baseUrl, model: config.model, credential: config.apiKey, json_mode: config.jsonMode } });
+  return { ...config, apiKey: '', connectionId };
+}
+export async function releaseConnection(connectionId) {
+  if (!connectionId) return;
+  const { call } = await import('./bridge.js');
+  await call('remove_llm', { connectionId });
+}
+const activeRequests = new Set();
+export async function cancelLLMRequests() {
+  const { call } = await import('./bridge.js');
+  await Promise.all([...activeRequests].map(requestId => call('cancel_llm', { requestId })));
+}
+export async function askLLM(config, { prompt, schema, images = [], purpose = config.purpose }) {
+  if (!config.connectionId) throw Error('AIの接続を登録・テストしてください');
+  const { call } = await import('./bridge.js');
+  const requestId = crypto.randomUUID();
+  activeRequests.add(requestId);
+  try {
+  const response = await call('llm_request', { request: { connection_id: config.connectionId, purpose, request_id: requestId, prompt, schema, images } });
+  if (response.request_id !== requestId || !response.value || typeof response.value !== 'object' || Array.isArray(response.value)) throw Error('LLMの応答が要求と一致しません');
+  return JSON.stringify(response.value);
+  } finally { activeRequests.delete(requestId); }
 }
