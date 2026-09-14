@@ -8,7 +8,8 @@
     "build": "vite build",
     "test": "node --test tests/*.test.js",
     "tauri": "tauri",
-    "test:ui": "playwright test"
+    "test:ui": "playwright test",
+    "icons": "tauri icon assets/icon.svg"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

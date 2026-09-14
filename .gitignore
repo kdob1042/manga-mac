@@ -8,3 +8,4 @@ helper/.build/
 .env*
 test-results/
 playwright-report/
+src-tauri/icons/

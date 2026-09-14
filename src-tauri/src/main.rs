@@ -44,9 +44,9 @@ fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     state.db.lock().map_err(err)?.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).optional().map_err(err)
 }
 #[tauri::command]
-async fn ollama(model: String, prompt: String, schema: Value) -> Result<String, String> {
+async fn ollama(model: String, prompt: String, schema: Value, images: Option<Vec<String>>) -> Result<String, String> {
     if model.contains("cloud") || model.contains('/') || model.is_empty() { return Err("ローカルモデル名を指定してください".into()); }
-    let response = client()?.post("http://127.0.0.1:11434/api/chat").json(&serde_json::json!({"model":model,"stream":false,"keep_alive":0,"format":schema,"messages":[{"role":"user","content":prompt}]})).send().await.map_err(err)?.error_for_status().map_err(err)?.json::<Value>().await.map_err(err)?;
+    let response = client()?.post("http://127.0.0.1:11434/api/chat").json(&serde_json::json!({"model":model,"stream":false,"keep_alive":0,"format":schema,"messages":[{"role":"user","content":prompt,"images":images.unwrap_or_default()}]})).send().await.map_err(err)?.error_for_status().map_err(err)?.json::<Value>().await.map_err(err)?;
     response["message"]["content"].as_str().map(str::to_string).ok_or("Ollamaの応答が不正です".into())
 }
 fn engine_path() -> Result<PathBuf, String> {
