@@ -42,7 +42,7 @@ fn session(db:&rusqlite::Connection,id:&str)->Result<Session,String> {
 }
 pub fn status(db:&rusqlite::Connection,id:&str)->Result<Value,String> {
     let session=session(db,id)?;
-    let mut statement=db.prepare("SELECT id,status,expected_revision FROM blender_jobs WHERE session_id=?1 ORDER BY rowid DESC LIMIT 20").map_err(|_|error())?;
+    let mut statement=db.prepare("SELECT id,status,expected_revision FROM blender_jobs WHERE session_id=?1 ORDER BY CASE WHEN status IN ('unknown','running','candidate') THEN 0 ELSE 1 END, rowid DESC LIMIT 20").map_err(|_|error())?;
     let jobs:Vec<Value>=statement.query_map([id],|r|Ok(json!({"id":r.get::<_,String>(0)?,"status":r.get::<_,String>(1)?,"expected_revision":r.get::<_,u64>(2)?}))).map_err(|_|error())?.collect::<Result<_,_>>().map_err(|_|error())?;
     Ok(json!({"session_id":session.id,"revision":session.revision,"state":session.state,"jobs":jobs}))
 }
@@ -62,6 +62,76 @@ fn verify_output(folder:&Path)->Result<Value,String> {
     }
     Ok(result)
 }
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RecoveryAction { Adopt, Abandon }
+
+pub fn recover(
+    db: &mut rusqlite::Connection,
+    root: &Path,
+    session_id: &str,
+    request_id: &str,
+    expected_revision: u64,
+    action: RecoveryAction,
+) -> Result<Value, String> {
+    if !valid_id(request_id) { return Err("要求IDが不正です".into()); }
+    let tx = db.transaction().map_err(|_| error())?;
+    let mut current = session(&tx, session_id)?;
+    if current.revision != expected_revision {
+        return Err("Blenderの版が更新されています。状態を再確認してください".into());
+    }
+    let (job_status, base): (String, u64) = tx.query_row(
+        "SELECT status,expected_revision FROM blender_jobs WHERE id=?1 AND session_id=?2",
+        rusqlite::params![request_id, session_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|_| error())?;
+    if !matches!(job_status.as_str(), "unknown" | "candidate") {
+        return Err("この要求は復旧対象ではありません".into());
+    }
+    match action {
+        RecoveryAction::Abandon => {
+            // Resolve the local job only. Do not delete output or claim a remote process was cancelled.
+            tx.execute("UPDATE blender_jobs SET status='abandoned' WHERE id=?1",
+                [request_id]).map_err(|_| error())?;
+        }
+        RecoveryAction::Adopt => {
+            if base != current.revision {
+                return Err("旧版の成果物は現在の接続版へ採用できません".into());
+            }
+            let folder = root.join("blender").join(request_id);
+            let metadata = std::fs::symlink_metadata(&folder).map_err(|_| error())?;
+            if !metadata.is_dir() || metadata.file_type().is_symlink() {
+                return Err(error());
+            }
+            let result = verify_output(&folder)?;
+            sync_output(&folder)?;
+            current.checkpoint = folder.join("checkpoint.blend");
+            current.hash = result["checkpoint"]["hash"].as_str().ok_or_else(error)?.into();
+            current.revision += 1;
+            current.state = result.clone();
+            tx.execute("UPDATE blender_sessions SET data=?2 WHERE id=?1",
+                rusqlite::params![session_id, serde_json::to_string(&current).map_err(|_| error())?])
+                .map_err(|_| error())?;
+            tx.execute("UPDATE blender_jobs SET status='complete',result=?2 WHERE id=?1",
+                rusqlite::params![request_id, result.to_string()]).map_err(|_| error())?;
+        }
+    }
+    tx.commit().map_err(|_| error())?;
+    status(db, session_id)
+}
+
+fn sync_output(folder: &Path) -> Result<(), String> {
+    for name in ["checkpoint.blend", "result.json", "capture.png"] {
+        let path = folder.join(name);
+        if path.exists() {
+            std::fs::File::open(path).map_err(|_| error())?.sync_all().map_err(|_| error())?;
+        }
+    }
+    std::fs::File::open(folder).map_err(|_| error())?.sync_all().map_err(|_| error())?;
+    Ok(())
+}
+
 pub async fn execute(db:&Mutex<rusqlite::Connection>,root:&Path,request:Request)->Result<Value,String> {
     if !valid_id(&request.request_id) {return Err("要求IDが不正です".into());}
     match request.operation {Operation::Camera{lens} if !lens.is_finite() || !(10.0..=250.0).contains(&lens)=>return Err("焦点距離は10〜250mmです".into()),Operation::Capture{width,height} if !(64..=4096).contains(&width) || !(64..=4096).contains(&height)=>return Err("撮影寸法は64〜4096です".into()),_=>{}}
@@ -102,7 +172,81 @@ async fn run(session:&Session,folder:&Path,operation:&Operation)->Result<Value,S
     let status=tokio::time::timeout(Duration::from_secs(600),child.wait()).await.map_err(|_|error())?.map_err(|_|error())?;
     if !status.success() {return Err(error());}
     let result=verify_output(folder)?;
-    for name in ["checkpoint.blend","result.json","capture.png"] {let path=folder.join(name);if path.exists(){std::fs::File::open(path).map_err(|_|error())?.sync_all().map_err(|_|error())?;}}
-    std::fs::File::open(folder).map_err(|_|error())?.sync_all().map_err(|_|error())?;
+    sync_output(folder)?;
     Ok(result)
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    struct Fixture { root: PathBuf, db: rusqlite::Connection, id: String }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.root); }
+    }
+    fn fixture() -> Fixture {
+        let id = "00000000-0000-4000-8000-000000000099".to_string();
+        let suffix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("manga-recovery-{}-{suffix}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let source = root.join("original.blend");
+        std::fs::write(&source, b"synthetic checkpoint for file integrity tests only").unwrap();
+        let session = Session { id: "test-session".into(), binary: PathBuf::new(),
+            library: root.clone(), checkpoint: source.clone(), hash: hash(&source).unwrap(),
+            revision: 0, state: Value::Null };
+        db.execute("INSERT INTO blender_sessions(id,data) VALUES(?1,?2)",
+            rusqlite::params![session.id, serde_json::to_string(&session).unwrap()]).unwrap();
+        db.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision) VALUES(?1,'test-session','running',0)", [&id]).unwrap();
+        let folder = root.join("blender").join(&id);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("checkpoint.blend"), b"synthetic completed checkpoint").unwrap();
+        let result = json!({"protocol":1,"blender_version":[4,5,13],
+            "checkpoint":{"file":"checkpoint.blend","hash":hash(&folder.join("checkpoint.blend")).unwrap()},
+            "image":null,"state":{"lens":70}});
+        std::fs::write(folder.join("result.json"), result.to_string()).unwrap();
+        Fixture { root, db, id }
+    }
+
+    #[test]
+    fn interrupted_output_is_adopted_once_without_starting_blender() {
+        let mut f = fixture();
+        assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Adopt).is_err());
+        initialize(&f.db).unwrap(); // A restart makes the running request unknown.
+        let restored = recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Adopt).unwrap();
+        assert_eq!(restored["revision"], 1);
+        assert_eq!(restored["jobs"][0]["status"], "complete");
+        assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 1, RecoveryAction::Adopt).is_err());
+        assert!(f.root.join("original.blend").exists());
+    }
+
+    #[test]
+    fn corrupt_or_stale_results_preserve_current_revision_and_can_be_abandoned() {
+        let mut f = fixture();
+        initialize(&f.db).unwrap();
+        assert!(recover(&mut f.db, &f.root, "other-session", &f.id, 0, RecoveryAction::Adopt).is_err());
+        assert!(recover(&mut f.db, &f.root, "test-session", "../escape", 0, RecoveryAction::Adopt).is_err());
+        assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 1, RecoveryAction::Adopt).is_err());
+        let output = f.root.join("blender").join(&f.id).join("checkpoint.blend");
+        std::fs::write(&output, b"corrupt").unwrap();
+        assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Adopt).is_err());
+        assert_eq!(status(&f.db, "test-session").unwrap()["revision"], 0);
+        let resolved = recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Abandon).unwrap();
+        assert_eq!(resolved["revision"], 0);
+        assert_eq!(resolved["jobs"][0]["status"], "abandoned");
+        assert!(output.exists());
+    }
+
+    #[test]
+    fn output_from_an_old_base_cannot_replace_newer_state() {
+        let mut f = fixture();
+        initialize(&f.db).unwrap();
+        let mut newer = session(&f.db, "test-session").unwrap();
+        newer.revision = 1;
+        f.db.execute("UPDATE blender_sessions SET data=?1 WHERE id='test-session'",
+            [serde_json::to_string(&newer).unwrap()]).unwrap();
+        assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 1, RecoveryAction::Adopt).is_err());
+        assert_eq!(status(&f.db, "test-session").unwrap()["revision"], 1);
+    }
 }

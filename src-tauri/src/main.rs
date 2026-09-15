@@ -300,6 +300,15 @@ async fn blender_execute(request: blender::Request, state: State<'_, AppState>) 
     let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
     blender::execute(&state.db, &state.root, request).await
 }
+#[tauri::command]
+async fn blender_recover(
+    session_id: String, request_id: String, expected_revision: u64,
+    action: blender::RecoveryAction, state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    let mut db = state.db.lock().map_err(err)?;
+    blender::recover(&mut db, &state.root, &session_id, &request_id, expected_revision, action)
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -321,6 +330,7 @@ fn main() {
             blender_execute,
             blender_status,
             blender_latest,
+            blender_recover,
             github_get,
             github_file,
             save_project,
