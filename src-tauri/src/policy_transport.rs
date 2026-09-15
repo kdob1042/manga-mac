@@ -197,7 +197,7 @@ mod tests {
                 attempted: Arc::new(AtomicBool::new(false)),
             };
             let sdk_clone = transport.clone();
-            let make_request = || Request::builder().method("POST").uri(&target)
+            let make_request = || Request::builder().method("POST").uri(target.as_str())
                 .body(Bytes::from_static(b"{}")).unwrap();
             let first = transport.send::<_, Bytes>(make_request()).await;
             assert_eq!(first.is_ok(), status == "200 OK");
