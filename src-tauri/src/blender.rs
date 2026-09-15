@@ -86,6 +86,7 @@ fn verify_output(folder:&Path)->Result<Value,String> {
         let path=folder.join(name);
         if result[key]["file"]!=name || std::fs::symlink_metadata(&path).map_err(|_|error())?.file_type().is_symlink() || result[key]["hash"]!=hash(&path)? {return Err("Blender成果物の検証に失敗しました".into());}
     }
+    if !result["image"].is_null() { preview(folder)?; }
     Ok(result)
 }
 
