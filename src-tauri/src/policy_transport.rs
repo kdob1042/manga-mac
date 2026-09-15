@@ -1,7 +1,7 @@
 // Transport policy only. Provider JSON and response parsing belong to rig-core.
 use bytes::Bytes;
 use rig_core::http_client::{self, HttpClientExt, LazyBody, MultipartForm, Request, Response, StreamingResponse};
-use std::{net::{IpAddr, SocketAddr}, time::Duration};
+use std::{net::{IpAddr, SocketAddr}, sync::{Arc, atomic::{AtomicBool, Ordering}}, time::Duration};
 
 const REQUEST_LIMIT: usize = 24 * 1024 * 1024;
 const RESPONSE_LIMIT: usize = 8 * 1024 * 1024;
@@ -34,6 +34,8 @@ fn public_ip(ip: IpAddr) -> bool {
 pub struct PolicyTransport {
     target: String,
     client: Option<reqwest::Client>,
+    // One transport is created per application request. SDK clones share its attempt budget.
+    attempted: Arc<AtomicBool>,
 }
 
 impl PolicyTransport {
@@ -61,7 +63,7 @@ impl PolicyTransport {
             .no_proxy().http1_only().redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(600))
             .resolve_to_addrs(host, &addresses).build().map_err(|_| "HTTP client initialization failed")?;
-        Ok(Self { target: format!("{}{path}", endpoint.trim_end_matches('/')), client: Some(client) })
+        Ok(Self { target: format!("{}{path}", endpoint.trim_end_matches('/')), client: Some(client), attempted: Arc::new(AtomicBool::new(false)) })
     }
 }
 
@@ -70,6 +72,7 @@ impl HttpClientExt for PolicyTransport {
     where T: Into<Bytes> + Send, U: From<Bytes> + Send + 'static {
         let client = self.client.clone();
         let target = self.target.clone();
+        let attempted = self.attempted.clone();
         let (parts, body) = request.into_parts();
         let body: Bytes = body.into();
         async move {
@@ -78,6 +81,10 @@ impl HttpClientExt for PolicyTransport {
                 || url.password().is_some() || url.query().is_some() || url.fragment().is_some()
                 || parts.headers.contains_key("host") || parts.headers.contains_key("proxy-authorization")
                 || parts.method != http_client::Method::POST || body.len() > REQUEST_LIMIT {
+                return Err(rejected());
+            }
+            // Consume before the network await: failures and cancellation must not reopen the budget.
+            if attempted.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
                 return Err(rejected());
             }
             let mut response = client.ok_or_else(rejected)?.post(url).headers(parts.headers).body(body).send().await.map_err(|_| rejected())?;
@@ -160,4 +167,47 @@ mod tests {
             assert!(client.send::<_,Bytes>(request).await.is_err());thread.join().unwrap();assert!(sink.accept().is_err());
         }
     }
+    #[tokio::test]
+    async fn sdk_clones_cannot_send_a_second_post_after_success_or_failure() {
+        for status in ["200 OK", "429 Too Many Requests"] {
+            let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = server.local_addr().unwrap();
+            let worker = server.try_clone().unwrap();
+            let response = format!("HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}");
+            let thread = std::thread::spawn(move || {
+                let (mut socket, _) = worker.accept().unwrap();
+                socket.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                let mut data = Vec::new();
+                let mut byte = [0; 1];
+                while !data.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    data.push(byte[0]);
+                }
+                let mut body = [0; 2];
+                socket.read_exact(&mut body).unwrap();
+                assert_eq!(&body, b"{}");
+                socket.write_all(response.as_bytes()).unwrap();
+            });
+            // Test-only ephemeral endpoint; production registration stays fixed to approved origins.
+            let target = format!("http://{address}/api/chat");
+            let transport = PolicyTransport {
+                target: target.clone(),
+                client: Some(reqwest::Client::builder().no_proxy().http1_only()
+                    .redirect(reqwest::redirect::Policy::none()).build().unwrap()),
+                attempted: Arc::new(AtomicBool::new(false)),
+            };
+            let sdk_clone = transport.clone();
+            let make_request = || Request::builder().method("POST").uri(&target)
+                .body(Bytes::from_static(b"{}")).unwrap();
+            let first = transport.send::<_, Bytes>(make_request()).await;
+            assert_eq!(first.is_ok(), status == "200 OK");
+            thread.join().unwrap();
+            let second = tokio::time::timeout(Duration::from_millis(200),
+                sdk_clone.send::<_, Bytes>(make_request())).await;
+            assert!(matches!(second, Ok(Err(_))));
+            server.set_nonblocking(true).unwrap();
+            assert_eq!(server.accept().unwrap_err().kind(), std::io::ErrorKind::WouldBlock);
+        }
+    }
+
 }
