@@ -44,12 +44,38 @@ pub fn status(db:&rusqlite::Connection,id:&str)->Result<Value,String> {
     let session=session(db,id)?;
     let mut statement=db.prepare("SELECT id,status,expected_revision FROM blender_jobs WHERE session_id=?1 ORDER BY CASE WHEN status IN ('unknown','running','candidate') THEN 0 ELSE 1 END, rowid DESC LIMIT 20").map_err(|_|error())?;
     let jobs:Vec<Value>=statement.query_map([id],|r|Ok(json!({"id":r.get::<_,String>(0)?,"status":r.get::<_,String>(1)?,"expected_revision":r.get::<_,u64>(2)?}))).map_err(|_|error())?.collect::<Result<_,_>>().map_err(|_|error())?;
-    Ok(json!({"session_id":session.id,"revision":session.revision,"state":session.state,"jobs":jobs}))
+    let mut response = json!({"session_id":session.id,"revision":session.revision,"state":session.state,"jobs":jobs});
+    if !response["state"]["image"].is_null() {
+        let folder = session.checkpoint.parent().ok_or_else(error)?;
+        let verified = verify_output(folder)?;
+        if verified != response["state"] || verified["checkpoint"]["hash"] != session.hash {
+            return Err("採用済みBlender成果物が変更されています".into());
+        }
+        response["preview"] = Value::String(preview(folder)?);
+    }
+    Ok(response)
 }
 pub fn latest(db: &rusqlite::Connection) -> Result<Option<Value>, String> {
     use rusqlite::OptionalExtension;
     let id: Option<String> = db.query_row("SELECT id FROM blender_sessions ORDER BY rowid DESC LIMIT 1", [], |r| r.get(0)).optional().map_err(|_|error())?;
     id.map(|id|status(db,&id)).transpose()
+}
+fn preview(folder: &Path) -> Result<String, String> {
+    use base64::Engine;
+    use std::io::Read;
+    let path = folder.join("capture.png");
+    let metadata = std::fs::symlink_metadata(&path).map_err(|_| error())?;
+    const LIMIT: u64 = 80 * 1024 * 1024;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > LIMIT {
+        return Err("Blenderプレビューの形式またはサイズが不正です".into());
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path).map_err(|_| error())?.take(LIMIT + 1)
+        .read_to_end(&mut bytes).map_err(|_| error())?;
+    if bytes.len() as u64 > LIMIT || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("Blenderプレビューの形式またはサイズが不正です".into());
+    }
+    Ok(format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
 }
 fn verify_output(folder:&Path)->Result<Value,String> {
     let path=folder.join("result.json");if std::fs::symlink_metadata(&path).map_err(|_|error())?.file_type().is_symlink() || std::fs::metadata(&path).map_err(|_|error())?.len()>1024*1024 {return Err(error());}
@@ -153,7 +179,7 @@ pub async fn execute(db:&Mutex<rusqlite::Connection>,root:&Path,request:Request)
             tx.execute("UPDATE blender_sessions SET data=?2 WHERE id=?1",rusqlite::params![current.id,serde_json::to_string(&current).map_err(|_|error())?]).map_err(|_|error())?;
             tx.execute("UPDATE blender_jobs SET status='complete',result=?2 WHERE id=?1",rusqlite::params![request.request_id,result.to_string()]).map_err(|_|error())?;tx.commit().map_err(|_|error())?;
             let mut response=json!({"session_id":current.id,"revision":current.revision,"request_id":request.request_id,"state":result});
-            if !response["state"]["image"].is_null() {use base64::Engine;response["preview"]=Value::String(format!("data:image/png;base64,{}",base64::engine::general_purpose::STANDARD.encode(std::fs::read(folder.join("capture.png")).map_err(|_|error())?)));}
+            if !response["state"]["image"].is_null() {response["preview"]=Value::String(preview(&folder)?);}
             Ok(response)
         },
         Err(e)=>{db.execute("UPDATE blender_jobs SET status='unknown' WHERE id=?1",[request.request_id]).map_err(|_|error())?;Err(e)}
@@ -249,4 +275,23 @@ mod recovery_tests {
         assert!(recover(&mut f.db, &f.root, "test-session", &f.id, 1, RecoveryAction::Adopt).is_err());
         assert_eq!(status(&f.db, "test-session").unwrap()["revision"], 1);
     }
+    #[test]
+    fn restored_preview_is_read_from_verified_output_and_tampering_is_rejected() {
+        let mut f = fixture();
+        initialize(&f.db).unwrap();
+        let folder = f.root.join("blender").join(&f.id);
+        // Signature-only synthetic data checks the transport contract, not PNG decoding.
+        std::fs::write(folder.join("capture.png"), b"\x89PNG\r\n\x1a\nsynthetic").unwrap();
+        let mut result = verify_output(&folder).unwrap();
+        result["image"] = json!({"file":"capture.png","hash":hash(&folder.join("capture.png")).unwrap()});
+        std::fs::write(folder.join("result.json"), result.to_string()).unwrap();
+        let adopted = recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Adopt).unwrap();
+        let reopened = status(&f.db, "test-session").unwrap();
+        assert_eq!(adopted["preview"], reopened["preview"]);
+        assert!(reopened["preview"].as_str().unwrap().starts_with("data:image/png;base64,"));
+        std::fs::write(folder.join("capture.png"), b"changed").unwrap();
+        assert!(status(&f.db, "test-session").is_err());
+        assert_eq!(session(&f.db, "test-session").unwrap().revision, 1);
+    }
+
 }
