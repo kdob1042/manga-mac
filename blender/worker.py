@@ -247,6 +247,10 @@ if __name__ == '__main__':
         execute(json.loads(data))
         print('MANGA_BLENDER_COMPLETE')
     except Exception:
-        # No manuscript, user paths, or environment values in the public error.
+        # Production errors stay generic. The acceptance harness enables a traceback
+        # only inside its isolated fixture workspace so CI can diagnose regressions.
+        if os.environ.get('MANGA_BLENDER_TEST_DIAGNOSTICS') == '1':
+            import traceback
+            traceback.print_exc()
         print('MANGA_BLENDER_FAILED', file=sys.stderr)
         sys.exit(1)
