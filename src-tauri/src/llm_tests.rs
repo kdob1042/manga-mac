@@ -82,4 +82,7 @@ fn typed_outputs_reject_wrong_field_types_and_unsafe_face_bounds() {
     assert!(validate_output(Purpose::Face,&json!({"found":true,"rect":[0.9,0.1,0.2,0.1]})).is_err());
     assert!(validate_output(Purpose::Face,&json!({"found":true,"rect":[0.1,0.1,0.1,0.1]})).is_ok());
     assert!(validate_output(Purpose::Plan,&json!({"panels":[{"unitIds":[42],"prompt":"synthetic","characterIds":[]}]})).is_err());
+    assert!(validate_output(Purpose::Translation,&json!({"units":[{"id":"S01:u0","text":"English"}]})).is_ok());
+    assert!(validate_output(Purpose::Translation,&json!({"units":[{"id":"S01:u0","text":"A"},{"id":"S01:u0","text":"B"}]})).is_err());
+    assert!(validate_output(Purpose::Translation,&json!({"units":[{"id":"S01:u0","text":""}]})).is_err());
 }
