@@ -30,6 +30,9 @@ test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', a
   await expect(page.locator('.caption')).toContainText('「原文です」');
   await expect(page.locator('.art img')).toHaveAttribute('src', fixture.panels[0].image);
   await page.getByRole('button', { name: '元に戻す' }).click();
+  // The click starts an async IndexedDB commit. Observe the committed UI state
+  // before reloading so this test verifies persistence instead of racing it.
+  await expect(page.locator('.art img')).toHaveAttribute('src', fixture.history[0].panels[0].image);
   await page.reload();
   await expect(page.locator('.art img')).toHaveAttribute('src', fixture.history[0].panels[0].image);
   await page.screenshot({ path: 'test-results/legacy-migrated.png', fullPage: true });
