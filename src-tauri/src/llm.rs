@@ -30,6 +30,7 @@ pub enum Provider {
 pub enum Purpose {
     Plan,
     Direction,
+    Layout,
     Translation,
     Probe,
 }
@@ -224,8 +225,10 @@ impl Connections {
             .ok_or("接続を登録してください")?;
         if request.purpose != Purpose::Probe
             && request.purpose != connection.purpose
-            && !(matches!(request.purpose, Purpose::Translation | Purpose::Direction)
-                && connection.purpose == Purpose::Plan)
+            && !(matches!(
+                request.purpose,
+                Purpose::Translation | Purpose::Direction | Purpose::Layout
+            ) && connection.purpose == Purpose::Plan)
         {
             return Err("用途に対応する接続を選択してください".into());
         }
@@ -447,6 +450,17 @@ struct DirectionOutput {
 }
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
+        Purpose::Layout => {
+            let object = value.as_object().ok_or_else(failure)?;
+            if object.len() != 2
+                || value["reason"]
+                    .as_str()
+                    .is_none_or(|s| s.trim().is_empty() || s.len() > 4000)
+            {
+                return Err(failure());
+            }
+            crate::storage::layout::validate(&json!({"version":1,"pages":value["pages"]}), None)?;
+        }
         Purpose::Direction => {
             let output: DirectionOutput =
                 serde_json::from_value(value.clone()).map_err(|_| failure())?;

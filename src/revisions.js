@@ -1,3 +1,4 @@
+import { ensureLayout } from './layout.js';
 // Manga revisions only: Blender remains the owner of 3D state.
 export async function digest(bytes) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -42,7 +43,7 @@ export async function migrateProject(input, recover = false) {
   for (const h of p.history) for (const panel of h.panels) await normalize(panel);
   for (const panel of p.panels) await normalize(panel);
   if (recover) p.jobs = p.jobs.map(j => j.status === 'running' ? { ...j, status: 'unknown' } : j);
-  return p;
+  return ensureLayout(p);
 }
 function inputState(project, panel) {
   return { active: project.active, panel, styles: project.style_references ?? [], characters: panel.characterIds.map(id => project.characters.find(c => c.id === id)) };
