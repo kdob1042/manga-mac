@@ -2,6 +2,9 @@
 pub mod backup;
 #[path = "image_recovery.rs"]
 pub mod image_recovery;
+#[path = "layout.rs"]
+pub mod layout;
+
 #[path = "live_export.rs"]
 pub mod live_export;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -409,6 +412,15 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
     }
+    if let Some(pages) = project.get("layout") {
+        let ids = project["panels"]
+            .as_array()
+            .ok_or("Missing panels")?
+            .iter()
+            .filter_map(|p| p["id"].as_str())
+            .collect();
+        layout::validate(pages, Some(&ids))?;
+    }
     if let Some(jobs) = project.get("jobs") {
         let mut ids = std::collections::HashSet::new();
         for job in jobs.as_array().ok_or("Invalid jobs")? {
@@ -425,7 +437,11 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
         .map_err(err)?;
     let backup = previous.as_deref().unwrap_or(data);
     if let Some(old) = previous.as_deref() {
-        preserve_remote_jobs(&serde_json::from_str(old).map_err(err)?, &mut project)?;
+        let old_project: Value = serde_json::from_str(old).map_err(err)?;
+        if old_project.get("layout").is_some() && project.get("layout").is_none() {
+            return Err("Page layout requires a compatible app version".into());
+        }
+        preserve_remote_jobs(&old_project, &mut project)?;
     }
     db.execute(
         "INSERT OR IGNORE INTO project_backups(hash,data) VALUES(?1,?2)",
@@ -553,6 +569,25 @@ mod tests {
         STANDARD
             .decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim())
             .unwrap()
+    }
+    #[test]
+    fn layout_roundtrip_rejects_corruption_and_old_app_downgrade() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let old = p.clone();
+        p["layout"] = json!({"version":1,"knownPanelIds":[p["panels"][0]["id"]],"pages":[{"id":"page","slots":[{"id":"s","panelId":p["panels"][0]["id"],"points":[[0.1,0.1],[0.9,0.1],[0.8,0.9],[0.2,0.9]]}]}]});
+        p["layoutHistory"] = json!([]);
+        p["layoutRedo"] = json!([]);
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap()["layout"],
+            p["layout"]
+        );
+        assert!(save(&mut db, &dir, &old.to_string()).is_err());
+        p["layout"]["pages"][0]["slots"][0]["points"][2] = json!([2, 2]);
+        assert!(save(&mut db, &dir, &p.to_string()).is_err());
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn stale_ui_cannot_erase_task_id_cost_or_mutate_submitted_input() {

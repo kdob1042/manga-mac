@@ -1,3 +1,4 @@
+import { assertLegacyLiveLayout } from './layout.js';
 import { validate, VERSION } from '../vendor/live-manga/contracts/validate.mjs';
 import { pageLayers, panelLayout, imageOf } from './render';
 import { imageHash } from './revisions';
@@ -6,6 +7,7 @@ import { textForPanel } from './localization';
 import { call } from './bridge';
 // The caller freezes a project snapshot before the first asynchronous operation.
 export async function prepareLiveManga(project, probeVideo) {
+ assertLegacyLiveLayout(project);
  if(!project.panels.length)throw Error('書き出すコマがありません');
  const assets=new Map(),sources={};
  async function image(data) {const hash=await imageHash(data),im=await imageOf(data),mime=data.slice(5,data.indexOf(';')),ext={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'}[mime];const a={id:hash,path:`assets/${hash}.${ext}`,sha256:hash,mime,bytes:atob(data.split(',')[1]).length,width:im.width,height:im.height};assets.set(hash,a);sources[hash]={image:data};return hash;}
