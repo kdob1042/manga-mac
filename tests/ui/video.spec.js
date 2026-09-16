@@ -35,7 +35,7 @@ test('video planning shares artwork and survives reload without changing manga',
   await page.reload();
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await page.getByRole('button', { name: '1 · s', exact: true }).click();
-  await expect(page.getByText('ゆっくりカメラが寄る', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('このショットの動き')).toHaveValue('ゆっくりカメラが寄る');
   await page.screenshot({ path: 'test-results/video-planning.png', fullPage: true });
   await page.getByRole('button', { name: '漫画', exact: true }).click();
   await expect(page.locator('.caption')).toHaveText(original);
