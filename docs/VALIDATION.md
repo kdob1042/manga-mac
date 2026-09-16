@@ -352,3 +352,13 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 標準macos-26の実測ではMetalのApple Paravirtual deviceが存在し、物理メモリ7GiB、推奨GPU working set約4.67GiBだった（run 35098338201）。これを根拠に、撮影PNGを製品のSwift画像helperへ渡し、実FLUX.2 klein 4Bで256×256を1回生成する追加試験を設けた。準備600秒・生成600秒で打ち切り、PNG寸法と永続receiptのhashを照合する。結果はReal-image-reviewへ保存。前段が途中で失敗しても既に生成済みのpanel-0.pngがあれば画像側を独立に検証できるが、前段失敗をE2E成功にはしない。画像が未作成なら画像側も失敗になる。作品品質や24GB機の性能受入を代替しない。
 
 実モデルの重い試験はdev向けPRと手動実行で行う。同じ変更を昇格するmain向けPRでは既存必須CIを実施し、実モデル試験を重複実行しない。
+
+## Live Manga / Issue #39
+
+開始dev `feefe253e0a013562af13779ae1005b82e315cf3`。既存作画、動画Job、採用版、不変media、PNG組版を再利用。コマ限定の開始画像と原文範囲の照合、固定動画版、独立Undo、レイヤー出力、native stream copy/ffprobe/stagingを追加。
+
+Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web buildを確認。`scripts/live-e2e.mjs`は実ブラウザのエクスポータを通し、通常PNGとart+overlayのRGBA完全一致を確認後、実nativeエクスポータから人工4コマ・5秒無音MP4パッケージを作る。手書きmanifestの成功で接続済みと扱わない。
+
+再現: `CHROMIUM_EXECUTABLE_PATH=... node scripts/live-e2e.mjs`（通常CIはPlaywright同梱Chromium）、FFmpeg/ffprobeとRustが必要。native受入は `cargo test --locked --manifest-path tests/storage/Cargo.toml live_export`。ブラウザ入力を使う試験は専用scriptから明示的に実行し、入力未指定を成功扱いしない。
+
+未実施: Mac GUI操作、実有料生成、実iPhone/Android、R2公開。新規割当は既存schema v4の任意配列として移行し、旧作品は空配列になる。rollbackは更新前のアプリと作品フォルダを保持する。刊行物は独立した不変出力なので旧版へ戻しても変更されない。

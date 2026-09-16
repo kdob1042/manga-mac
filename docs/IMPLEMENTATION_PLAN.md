@@ -356,3 +356,13 @@ SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約
 ### 14.1 実モデルの仮想環境受入
 
 #46の演出から撮影までの接続はLinux Actions上の実ローカルLLM＋実Blenderで検証する。公開合成素材を使い、製品の演出ループ・Rust接続・保存層を通して4コマ分離と1コマ修正を確認する。実画像モデルの作画・Mac固有動作・対象機種性能とは検証結果を分ける。手順と証跡はVALIDATIONの「仮想環境での実演出LLM受入」を参照。
+
+## Live Manga配信用出力（Issue #39）
+
+制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
+
+コマ動画は作品内の軽量`panelMotions`参照。採用作画ID/hash、公開動画版ID/hash、原文範囲・人物を固定し、実送信Jobのidentity開始画像と照合する。静止画・原文変更で不整合なら書き出し停止。ショットで新しい版を採用しても公開版は置換しない。`motionHistory`は漫画/動画のUndoと独立。
+
+既存`pagePNG`と共有する`panelLayout/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
+
+初期公開は矩形コマ・無音H.264。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。

@@ -41,6 +41,8 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo fetch --locked --manifest-path tests/llm/Cargo.toml
           cargo tree --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin -e features > review/features.txt
+      - name: Install media probe
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: SDK and real HTTP policy fixtures
         run: |
           env HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 NO_PROXY= cargo test --offline --locked --manifest-path tests/llm/Cargo.toml
@@ -120,6 +122,8 @@ jobs:
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
+      - name: Install media probe
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install checksum-pinned backup tools
         run: sh scripts/install-backup-tools.sh "$RUNNER_TEMP/manga-backup-tools"
       - run: cargo test --locked --manifest-path tests/storage/Cargo.toml
@@ -148,6 +152,10 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui
+      - name: Real Live Manga exporter integration
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          node scripts/live-e2e.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
@@ -197,6 +205,8 @@ jobs:
         with:
           path: helper/.build
           key: ${{ steps.native-restore.outputs.cache-primary-key }}
+      - name: Install media probe
+        run: command -v ffprobe || brew install ffmpeg
       - name: Native regression and static checks
         run: |
           npm run icons
