@@ -20,3 +20,10 @@ export function restoreVideoResults(project) {
 }
 
 export const videoStatusLabel = job => ({ running: '送信準備中', unknown: '受理の成否が未確定', submitted: 'サービスで処理中', output_pending: '生成成功・動画取得待ち', cancel_requested: '取消の成否を確認中', cancelled: 'サービスの取消・削除応答を受領', failed: '生成失敗', candidate: '候補を保存済み', complete: '採用履歴あり', abandoned: '採用せず解決済み' })[job.status] ?? '状態を確認してください';
+
+// Explicit local resolution only. This neither cancels a remote task nor refunds cost.
+export function resolveVideoTask(project, jobId, serviceChecked) {
+  const job = project.jobs.find(j => j.id === jobId);
+  if (serviceChecked !== true || job?.scope?.type !== 'videoShot' || !['unknown', 'submitted', 'output_pending', 'cancel_requested'].includes(job.status) || job.output_revision || job.remote?.artifact) throw Error('サービス側を確認した未確定・未取得の動画要求だけを解決できます');
+  return { ...project, jobs: project.jobs.map(j => j.id === jobId ? { ...j, status: 'abandoned', resolution: { kind: 'service_checked_not_adopted', at: new Date().toISOString() } } : j) };
+}

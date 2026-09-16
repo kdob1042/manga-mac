@@ -24,12 +24,11 @@ jobs:
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
-      - name: Prepare candidate dependency and formatting review
+      - name: Validate committed dependency locks
         run: |
           mkdir -p review
-          cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 > review/metadata.json
-          cargo generate-lockfile --manifest-path tests/llm/Cargo.toml
-          cargo fmt --manifest-path src-tauri/Cargo.toml
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > review/metadata.json
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
           cargo fetch --locked --manifest-path tests/llm/Cargo.toml
           cargo tree --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin -e features > review/features.txt
       - name: SDK and real HTTP policy fixtures
@@ -75,11 +74,10 @@ jobs:
           echo "BLENDER_FIXTURES=$GITHUB_WORKSPACE/blender-results" >> "$GITHUB_ENV"
       - name: Actual Blender camera render and save/reopen
         run: python blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
-      - name: Candidate Rust lock and formatting review
+      - name: Validate committed Blender test lock
         run: |
-          cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
-          cargo generate-lockfile --manifest-path tests/blender/Cargo.toml
-          cargo fmt --manifest-path src-tauri/Cargo.toml
+          cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
+          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
       - name: Actual Rust to Blender IPC and restart
         run: |
           cargo test --locked --manifest-path tests/blender/Cargo.toml

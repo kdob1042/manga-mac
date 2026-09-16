@@ -436,13 +436,23 @@ pub async fn collect(
     let task = fetch_status(db, id, connection).await?;
     let url = output_url(&task)?;
     let client = PolicyTransport::external_client(&url).await?;
-    // This separate GET has no bearer authorization or API-version headers.
-    let mut response = client
-        .get(url)
-        .timeout(Duration::from_secs(180))
+    let response = output_request(&client, url)
         .send()
         .await
         .map_err(|_| failure())?;
+    collect_response(db, root, id, response).await
+}
+
+// Kept separate from API requests: CDN must never receive the API credential.
+fn output_request(client: &reqwest::Client, url: reqwest::Url) -> reqwest::RequestBuilder {
+    client.get(url).timeout(Duration::from_secs(180))
+}
+async fn collect_response(
+    db: &Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    mut response: reqwest::Response,
+) -> Result<Value, String> {
     if !response.status().is_success()
         || response
             .content_length()
@@ -655,5 +665,147 @@ mod tests {
         .unwrap();
         assert!(json_response(response).await.unwrap()["id"].is_string());
         worker.join().unwrap();
+    }
+    fn local_response(
+        status: &str,
+        mime: &str,
+        body: Vec<u8>,
+        declared: usize,
+    ) -> (reqwest::Url, std::thread::JoinHandle<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let status = status.to_owned();
+        let mime = mime.to_owned();
+        let handle = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut headers = Vec::new();
+            let mut byte = [0; 1];
+            while !headers.ends_with(b"\r\n\r\n") {
+                socket.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+            }
+            write!(socket,"HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nContent-Length: {declared}\r\nConnection: close\r\n\r\n").unwrap();
+            let _ = socket.write_all(&body);
+            String::from_utf8(headers).unwrap().to_lowercase()
+        });
+        (
+            reqwest::Url::parse(&format!("http://{address}/v1/tasks/fixture?token=private"))
+                .unwrap(),
+            handle,
+        )
+    }
+    fn local_client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap()
+    }
+    #[tokio::test]
+    async fn task_get_delete_and_error_bodies_keep_credentials_on_api_only() {
+        let connection = VideoConnection {
+            credential: "fixture-secret".into(),
+            max_credits: 60,
+        };
+        for method in [reqwest::Method::GET, reqwest::Method::DELETE] {
+            let (url, worker) = local_response("200 OK", "application/json", b"{}".to_vec(), 2);
+            let response = request(&local_client(), method.clone(), url, &connection)
+                .send()
+                .await
+                .unwrap();
+            json_response(response).await.unwrap();
+            let headers = worker.join().unwrap();
+            assert!(headers.starts_with(&method.as_str().to_lowercase()));
+            assert!(headers.contains("authorization: bearer fixture-secret"));
+            assert!(headers.contains("x-runway-version: 2024-11-06"));
+        }
+        for (status, mime, body, declared) in [
+            (
+                "404 Not Found",
+                "application/json",
+                b"fixture-secret".to_vec(),
+                14,
+            ),
+            ("200 OK", "text/html", b"private".to_vec(), 7),
+            ("200 OK", "application/json", b"{}".to_vec(), 2_000_000),
+            ("200 OK", "application/json", b"{".to_vec(), 1),
+        ] {
+            let (url, worker) = local_response(status, mime, body, declared);
+            let response = request(&local_client(), reqwest::Method::GET, url, &connection)
+                .send()
+                .await
+                .unwrap();
+            let error = json_response(response).await.unwrap_err();
+            assert!(!error.contains("fixture-secret"));
+            assert!(!error.contains("private"));
+            worker.join().unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn output_http_stream_persists_before_ui_and_rejects_interruption_expiry_and_oversize() {
+        let root = std::env::temp_dir().join(format!("runway-stream-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let mut connection = Connection::open(root.join("test.sqlite3")).unwrap();
+        storage::initialize(&connection).unwrap();
+        let project = json!({"version":4,"revision":0,"panels":[],"history":[],"jobs":[{"id":"j","scope":{"type":"videoShot","id":"v"},"status":"output_pending","remote":{"status":"SUCCEEDED","reserved_credits":60}}]});
+        storage::save(&mut connection, &root, &project.to_string()).unwrap();
+        let db = Mutex::new(connection);
+        let bytes = STANDARD
+            .decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim())
+            .unwrap();
+        for (status, mime, body, declared, success) in [
+            (
+                "403 Forbidden",
+                "text/plain",
+                b"expired-private-url".to_vec(),
+                19,
+                false,
+            ),
+            (
+                "200 OK",
+                "video/mp4",
+                bytes[..16].to_vec(),
+                bytes.len(),
+                false,
+            ),
+            (
+                "200 OK",
+                "video/mp4",
+                Vec::new(),
+                storage::MAX_VIDEO_BYTES as usize + 1,
+                false,
+            ),
+            ("200 OK", "video/mp4", b"not an mp4".to_vec(), 10, false),
+            ("200 OK", "video/mp4", bytes.clone(), bytes.len(), true),
+        ] {
+            let (url, worker) = local_response(status, mime, body, declared);
+            let response = output_request(&local_client(), url).send().await.unwrap();
+            let result = collect_response(&db, &root, "j", response).await;
+            assert_eq!(result.is_ok(), success);
+            let headers = worker.join().unwrap();
+            assert!(headers.starts_with("get "));
+            assert!(!headers.contains("authorization:"));
+            assert!(!headers.contains("x-runway-version:"));
+            let saved = storage::raw_project(&db.lock().unwrap()).unwrap();
+            assert_eq!(saved["jobs"][0]["remote"]["reserved_credits"], 60);
+            assert_eq!(!saved["jobs"][0]["remote"]["artifact"].is_null(), success);
+            if success {
+                storage::verify_video(&root, &result.unwrap()).unwrap();
+            }
+            assert!(!std::fs::read_dir(&root).unwrap().any(|p| p
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".video-download-")));
+        }
+        drop(db);
+        let reopened = Connection::open(root.join("test.sqlite3")).unwrap();
+        let saved = storage::raw_project(&reopened).unwrap();
+        storage::verify_video(&root, &saved["jobs"][0]["remote"]["artifact"]).unwrap();
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

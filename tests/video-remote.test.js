@@ -44,3 +44,18 @@ test('unknown provider states and corrupted output metadata cannot become succes
   assert.throws(() => restoreVideoResults(fixture({ status: 'NEW_UNKNOWN_STATE' })));
   assert.throws(() => restoreVideoResults(fixture({ status: 'SUCCEEDED', artifact: { ...artifact, hash: 'wrong' } })));
 });
+
+test('MV-06/07: explicit service check resolves lost cancellation or expired output without cancelling, refunding or resubmitting', async () => {
+ const { resolveVideoTask } = await import('../src/video-remote.js');
+ for (const status of ['unknown', 'submitted', 'cancel_requested', 'output_pending']) {
+  const remote = { status: 'cancel_requested', task_id: 'task', reserved_credits: 60, last_poll: 123 };
+  const p = { jobs: [{ id: 'job', scope: { type: 'videoShot', id: 'v' }, status, remote }], videoShots: [{ id: 'v', adopted_revision: 'old' }], videoRevisions: [] };
+  assert.throws(() => resolveVideoTask(p, 'job', false));
+  const next = resolveVideoTask(p, 'job', true);
+  assert.equal(next.jobs[0].status, 'abandoned');
+  assert.deepEqual(next.jobs[0].remote, remote); assert.deepEqual(next.videoShots, p.videoShots);
+  assert.equal(restoreVideoResults(next).jobs[0].status, 'abandoned');
+  assert.throws(() => resolveVideoTask(next, 'job', true));
+  assert.throws(() => resolveVideoTask({ ...p, jobs: [{ ...p.jobs[0], output_revision: 'saved' }] }, 'job', true));
+ }
+});
