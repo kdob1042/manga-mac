@@ -29,7 +29,7 @@ pub enum Provider {
 #[serde(rename_all = "lowercase")]
 pub enum Purpose {
     Plan,
-    Face,
+    Direction,
     Translation,
     Probe,
 }
@@ -224,7 +224,8 @@ impl Connections {
             .ok_or("接続を登録してください")?;
         if request.purpose != Purpose::Probe
             && request.purpose != connection.purpose
-            && !(request.purpose == Purpose::Translation && connection.purpose == Purpose::Plan)
+            && !(matches!(request.purpose, Purpose::Translation | Purpose::Direction)
+                && connection.purpose == Purpose::Plan)
         {
             return Err("用途に対応する接続を選択してください".into());
         }
@@ -423,12 +424,6 @@ struct PanelPlan {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FaceOutput {
-    found: bool,
-    rect: [f64; 4],
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct TranslationOutput {
     units: Vec<TranslatedUnit>,
 }
@@ -443,8 +438,37 @@ struct TranslatedUnit {
 struct ProbeOutput {
     ok: bool,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DirectionOutput {
+    status: String,
+    reason: String,
+    operation: Option<crate::blender::Operation>,
+}
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
+        Purpose::Direction => {
+            let output: DirectionOutput =
+                serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            if output.reason.trim().is_empty() || output.reason.len() > 4000 {
+                return Err(failure());
+            }
+            match (output.status.as_str(), output.operation) {
+                ("action", Some(op))
+                    if !matches!(
+                        op,
+                        crate::blender::Operation::Inspect
+                            | crate::blender::Operation::Catalog
+                            | crate::blender::Operation::Capture { .. }
+                    ) =>
+                {
+                    crate::blender::validate_operation(&op)?;
+                }
+                ("ready" | "blocked", None) => {}
+                _ => return Err(failure()),
+            }
+        }
+
         Purpose::Plan => {
             let output: PlanOutput =
                 serde_json::from_value(value.clone()).map_err(|_| failure())?;
@@ -455,20 +479,6 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
                         || p.prompt.trim().is_empty()
                         || p.character_ids.iter().any(|id| id.is_empty())
                 })
-            {
-                return Err(failure());
-            }
-        }
-        Purpose::Face => {
-            let output: FaceOutput =
-                serde_json::from_value(value.clone()).map_err(|_| failure())?;
-            let [x, y, w, h] = output.rect;
-            if output
-                .rect
-                .iter()
-                .any(|n| !n.is_finite() || !(0.0..=1.0).contains(n))
-                || (output.found
-                    && (w <= 0.0 || h <= 0.0 || x + w > 1.0 || y + h > 1.0 || w * h > 0.4))
             {
                 return Err(failure());
             }

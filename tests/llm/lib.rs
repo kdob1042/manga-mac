@@ -6,3 +6,6 @@ pub mod llm;
 pub mod storage;
 #[path = "../../src-tauri/src/runway.rs"]
 pub mod runway;
+
+#[path = "../../src-tauri/src/blender.rs"]
+pub mod blender;

@@ -227,22 +227,8 @@ async fn registry_rejects_unknown_connections_and_cancelled_ids_without_network(
 }
 
 #[test]
-fn typed_outputs_reject_wrong_field_types_and_unsafe_face_bounds() {
-    assert!(validate_output(
-        Purpose::Face,
-        &json!({"found":"true","rect":[0.1,0.1,0.1,0.1]})
-    )
-    .is_err());
-    assert!(validate_output(
-        Purpose::Face,
-        &json!({"found":true,"rect":[0.9,0.1,0.2,0.1]})
-    )
-    .is_err());
-    assert!(validate_output(
-        Purpose::Face,
-        &json!({"found":true,"rect":[0.1,0.1,0.1,0.1]})
-    )
-    .is_ok());
+fn typed_outputs_reject_wrong_field_types_and_removed_face_purpose() {
+    assert!(serde_json::from_value::<Purpose>(json!("face")).is_err());
     assert!(validate_output(
         Purpose::Plan,
         &json!({"panels":[{"unitIds":[42],"prompt":"synthetic","characterIds":[]}]})
@@ -263,4 +249,28 @@ fn typed_outputs_reject_wrong_field_types_and_unsafe_face_bounds() {
         &json!({"units":[{"id":"S01:u0","text":""}]})
     )
     .is_err());
+}
+
+#[test]
+fn direction_uses_typed_blender_operations_and_rejects_code_and_invalid_bounds() {
+    for value in [
+        json!({"status":"action","reason":"寄る","operation":{"kind":"camera","lens":80}}),
+        json!({"status":"ready","reason":"撮影へ","operation":null}),
+        json!({"status":"blocked","reason":"素材不足","operation":null}),
+    ] {
+        assert!(validate_output(Purpose::Direction, &value).is_ok());
+    }
+    for operation in [
+        json!({"kind":"python","code":"anything"}),
+        json!({"kind":"capture","width":768,"height":768}),
+        json!({"kind":"aim","location":[0,0,0],"target":[0,0,0],"lens":50}),
+        json!({"kind":"camera","lens":999}),
+        json!({"kind":"light","object":"Light","energy":-1,"color":[1,1,1]}),
+    ] {
+        assert!(validate_output(
+            Purpose::Direction,
+            &json!({"status":"action","reason":"test","operation":operation})
+        )
+        .is_err());
+    }
 }

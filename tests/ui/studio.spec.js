@@ -14,13 +14,13 @@ test('opens a sample, preserves source on reload, and reports unavailable native
   expect(errors).toEqual([]);
 });
 
-test('LLM provider selection is independent for planning and vision; keys are ephemeral', async ({ page }) => {
+test('planning connection has no face estimator; keys are ephemeral', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '接続・人物設定' }).click();
   await page.getByLabel('演出・コマ計画の接続先').selectOption('gemini');
   await page.getByLabel('演出・コマ計画のモデルID').fill('example-model');
   await page.getByLabel('演出・コマ計画のAPIキー').fill('test-secret');
-  await expect(page.getByLabel('顔の範囲推定の接続先')).toHaveValue('ollama');
+  await expect(page.getByLabel('顔の範囲推定の接続先')).toHaveCount(0);
   await expect(page.getByText('脚本・設定・人物の説明を送信します。', { exact: false })).toBeVisible();
   await page.getByLabel('演出・コマ計画の接続先').selectOption('anthropic');
   await expect(page.getByLabel('演出・コマ計画のAPIキー')).toHaveValue('');

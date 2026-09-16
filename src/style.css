@@ -30,3 +30,5 @@
 .backup-settings details { margin-top: 20px; }
 .backup-settings summary { cursor: pointer; font-weight: 600; }
 .backup-settings li { margin: 10px 0; }
+
+.production-mode {display:block;font-size:11px;margin:14px 0;color:#526650}.production-mode select{width:100%;padding:8px;margin-top:6px;border:1px solid #d6d9d2;border-radius:6px;background:white}.shot-details{margin:16px}.shot-details>summary{cursor:pointer;color:#526650;font-size:12px;padding:12px}.shot-controls p{line-height:1.8}.shot-controls button{margin:4px}

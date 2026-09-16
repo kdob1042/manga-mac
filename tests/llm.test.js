@@ -7,7 +7,7 @@ test('provider changes never carry an old key or registered connection', () => {
     const config = defaultConnection(provider);
     assert.equal(config.apiKey, ''); assert.equal(config.connectionId, ''); assert.equal(config.purpose, 'plan');
   }
-  assert.equal(defaultConnection('ollama', true).purpose, 'face');
+  assert.equal(defaultConnection('ollama').purpose, 'plan');
 });
 test('normal requests require a registered connection before IPC', async () => {
   await assert.rejects(askLLM(defaultConnection(), { prompt: 'synthetic', schema: {} }), /登録/);
