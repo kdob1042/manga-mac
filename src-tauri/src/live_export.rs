@@ -299,6 +299,21 @@ pub fn export(db: &Connection, root: &Path, downloads: &Path, request: &Value) -
             if total > 1024 * 1024 * 1024 {
                 return Err("Package too large".into());
             }
+            for dimension in ["width", "height"] {
+                if asset[dimension]
+                    .as_u64()
+                    .is_none_or(|n| !(1..=8192).contains(&n))
+                {
+                    return Err("Invalid asset dimensions".into());
+                }
+            }
+            if ext == "mp4"
+                && asset["duration"]
+                    .as_f64()
+                    .is_none_or(|n| !n.is_finite() || n <= 0.0 || n > 30.0)
+            {
+                return Err("Video duration out of bounds".into());
+            }
             let target = staging.join(relative);
             let source = &request["sources"][id];
             if ext == "mp4" {
