@@ -91,3 +91,48 @@ export async function videoJobIsCurrent(project, job, loadCapture) {
   try { return (await videoManifest(project, shot, job.manifest.connection, loadCapture)).input_hash === job.input_hash; }
   catch { return false; }
 }
+
+export function validateVideoArtifact(artifact) {
+  exactKeys(artifact, ['artifact_id', 'hash', 'mime', 'size']);
+  if (!hashPattern.test(artifact.hash) || artifact.artifact_id !== artifact.hash || artifact.mime !== 'video/mp4' || !Number.isSafeInteger(artifact.size) || artifact.size < 32 || artifact.size > 128 * 1024 * 1024) throw Error('動画成果物が不正です');
+  return artifact;
+}
+
+// Collection never changes the accepted pointer, even for the first result.
+export function collectVideoResult(project, jobId, artifact) {
+  validateVideoArtifact(artifact);
+  const job = project.jobs.find(j => j.id === jobId);
+  if (!job || job.scope?.type !== 'videoShot' || !['running', 'submitted', 'unknown', 'cancel_requested', 'output_pending'].includes(job.status)) throw Error('結果を接続できる動画要求がありません');
+  const id = `video:${job.id}`;
+  if (project.videoRevisions.some(v => v.id === id)) throw Error('動画成果物は接続済みです');
+  const revision = { id, shot_id: job.scope.id, job_id: job.id, parent_revision: job.base_revision,
+    artifact: structuredClone(artifact), input_hash: job.input_hash, created_at: new Date().toISOString() };
+  return { ...project, videoRevisions: [...project.videoRevisions, revision],
+    jobs: project.jobs.map(j => j.id === jobId ? { ...j, output_revision: id, status: 'candidate' } : j) };
+}
+
+export async function adoptVideoCandidate(project, jobId, verifyArtifact, loadCapture) {
+  const job = project.jobs.find(j => j.id === jobId), revision = project.videoRevisions.find(v => v.id === job?.output_revision);
+  if (!job || job.status !== 'candidate' || !revision || revision.shot_id !== job.scope?.id || revision.input_hash !== job.input_hash || !(await videoJobIsCurrent(project, job, loadCapture))) throw Error('基準版が変わった動画候補は採用できません');
+  validateVideoArtifact(revision.artifact);
+  // Native hash verification is required at the point of adoption, not only download.
+  if (typeof verifyArtifact !== 'function') throw Error('動画ファイルの検証が必要です');
+  await verifyArtifact(revision.artifact);
+  const shot = project.videoShots.find(s => s.id === revision.shot_id);
+  return { ...project, videoShots: project.videoShots.map(s => s.id === shot.id ? { ...s, adopted_revision: revision.id } : s),
+    videoHistory: [...project.videoHistory, { shot_id: shot.id, previous_revision: shot.adopted_revision, next_revision: revision.id }],
+    jobs: project.jobs.map(j => j.id === jobId ? { ...j, status: 'complete' } : j) };
+}
+
+export async function undoVideo(project, shotId, verifyArtifact) {
+  const index = project.videoHistory.findLastIndex(h => h.shot_id === shotId);
+  const entry = project.videoHistory[index], shot = project.videoShots.find(s => s.id === shotId);
+  if (!entry || !shot || shot.adopted_revision !== entry.next_revision) throw Error('元に戻せる動画版がありません');
+  if (entry.previous_revision) {
+    const old = project.videoRevisions.find(v => v.id === entry.previous_revision && v.shot_id === shotId);
+    if (!old || typeof verifyArtifact !== 'function') throw Error('以前の動画版を確認できません');
+    validateVideoArtifact(old.artifact); await verifyArtifact(old.artifact);
+  }
+  return { ...project, videoShots: project.videoShots.map(s => s.id === shotId ? { ...s, adopted_revision: entry.previous_revision } : s),
+    videoHistory: project.videoHistory.filter((_, i) => i !== index) };
+}

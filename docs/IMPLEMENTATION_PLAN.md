@@ -282,7 +282,11 @@ schema 4へv1/v2/v3を互換移行し、既存panels/history/jobsと作品言語
 
 V-Aの実装は共通参照解決・manifest・保存移行まで。実API送信/動画ファイル保存/再生UIは後続V-B/Cであり、未接続の生成ボタンは表示しない。有料POST前にjobを永続化し、再起動でrunningはunknownへ変更する。未確定要求を再POSTせず、確定済taskを照会する。原作/入力/採用版の変更後に届く結果は候補に留める。試行上限は同じ採用版で3回、取下げでリセットしない。実行許可・予算・資格情報・task永続化はRust接続境界で追加検証するまで外部送信しない。
 
-V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、作品JSONにはartifact/hash/MIME/sizeのみを持つ。署名URL/秘密/巨大base64は保存しない。V-Cは既存接続境界を利用した薄いRESTアダプタ一つ、V-Dは既存Blender撮影の共通解決だけを追加する。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
+V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、作品JSONにはartifact/hash/MIME/sizeのみを持つ。署名URL/秘密/巨大base64は保存しない。上限128MiB、64KiBバッファでstream→一時ファイル→sync→MP4コンテナ境界/hash再検証→hash名へのno-clobber公開→DB参照保存とする。コンテナ境界確認はcodecの完全decodeではなく、再生時はOSの既存decoderで確認する。受領結果は最初も候補とし、採用前に基準manifestと実ファイルを再検証。videoHistoryのUndoは対象shotの採用ポインタのみを復元する。
+
+再生は[Tauri asset protocol](https://v2.tauri.app/reference/config/#assetprotocolconfig)を利用し、初期scopeは空。DBに記録されたrevision IDから正規ファイル/hashを照合して、その一ファイルのみallow_fileする。任意パス・フォルダの公開は行わない。MP4書出しはRust側でファイルcopyと再hashを行い、画像用base64 exportを経由しない。JSONバックアップには動画本体がないため、mediaディレクトリを含む作品フォルダ全体を保管する。
+
+V-Cは既存接続境界を利用した薄いRESTアダプタ一つ、V-Dは既存Blender撮影の共通解決だけを追加する。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
 ## 13. 参照資料と未確定事項
 

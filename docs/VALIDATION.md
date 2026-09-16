@@ -152,3 +152,17 @@ H-REAL: 対象mainのmacOS CI/DMGを確認後、12コマ比較（正本§11）�
 - V-D: resolveStartImageのloadCaptureへ既存blender_captureを接続。動画専用カメラ/frameからの撮影も同じBlenderセッション処理を利用する。二人/一場所の実Blender fixtureでMV-11、Mac再生と24GB計測は実環境待ち。
 
 Issue #5の残件: Dポーズ適用、E-RECOVERY、F既存Tripo拡張の安全な接続、G任意外部画像API、H実機受入。Tripo公式拡張の未認証汎用MCPをそのまま有効化しない。既存Blenderに取り込んだ素材はDのAsset Library経由で再利用できるが、生成サービス連携の完了とはしない。Issue #5/#9はopenを維持する。
+
+## Issue #9 V-B — 動画保存・候補・Undoの実装候補
+
+storage.rsを拡張し128MiB上限・64KiB単位stream・MP4 top-level box境界・SHA-256・no-clobber保存・書出し再照合を追加。MP4の完全decodeはOSプレイヤーに委ね、境界確認だけで再生可能とは断定しない。動画参照を追加する作品保存時は実ファイルを検証し、欠損/破損でDB採用を進めない。読込時は動画の欠損だけで漫画全体を読めなくせず、当該動画の再生・採用・書出しで拒否する。
+
+JSは既存jobsに対応する動画候補の収集→明示採用→動画専用Undoを追加。初回も候補扱い。古い入力・原作・基準版では採用不可。漫画のpanels/historyを変更しない。UIは漫画/動画切替、同じ原作・開始画像からショット保存、保存済み動画の再生/採用/Undo/MP4書出し。外部APIの未実装を明示し、未接続の生成ボタンは表示しない。
+
+実行済み: Node34件pass、Web build pass、diff check pass。FFmpegで人工1秒H.264動画を作成しffprobeで32×32/無音/1秒/1838 bytesを確認。fixtureはtests/fixtures/video-blue.mp4.base64。Rustテストには実ファイル往復/再起動/export hash/中断/不正hash/切詰め/128MiB上限/旧DB保持を追加したが、Rust環境なしでnot_run。Playwrightに共有画像→ショット保存→再起動→漫画保持の試験を追加、実行はnot_run。Tauri asset protocol/APIは公式文書で確認、Mac実再生は未検証。
+
+次の実行項目:
+
+- V-B-NATIVE: `cargo test --locked --manifest-path tests/storage/Cargo.toml` → clippy、app fmt/build。Macで保存済み候補の再生→採用→再起動→Undo→MP4書出しを行い、書出しhash一致を確認する。asset scopeが初期空、検証済み1ファイルだけ許可されることを確認。欠損動画の修復はバックアップからmediaファイルを復元する。
+- V-B-UI: `npm run test:ui`でtests/ui/video.spec.jsと既存漫画回帰。実画面の再生・seek・エラーを確認しscreenshotを保存。Web build合格をUI受入に代用しない。
+- V-Cは引き続き未実装。put_videoへのprovider出力stream接続、task ID永続化、キー/予算/送信許可、HTTP fixtureを実装後、V-Bと通しで確認する。API生成成功と動画採用を分ける。

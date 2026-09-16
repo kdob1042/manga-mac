@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrateProject, imageHash } from '../src/revisions.js';
-import { createVideoShot, videoManifest, beginVideoJob, videoJobIsCurrent, resolveStartImage } from '../src/video.js';
+import { createVideoShot, videoManifest, beginVideoJob, videoJobIsCurrent, resolveStartImage, collectVideoResult, adoptVideoCandidate, undoVideo } from '../src/video.js';
 
 const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 const connection = { id: 'test-only', provider: 'runway', model: 'gen4.5' };
@@ -91,4 +91,31 @@ test('MV-05 input/source/adopted version changes invalidate result; attempts sur
   await assert.rejects(beginVideoJob(attempts, shot.id, connection));
   assert.deepEqual(attempts.panels, p.panels);
   assert.deepEqual(attempts.history, p.history);
+});
+
+test('MV-07/08 candidates, native verification and per-shot Undo preserve manga across reload', async () => {
+  const p = await fixture(), shotId = p.videoShots[0].id;
+  const { project, job } = await beginVideoJob(p, shotId, connection);
+  const artifact = { artifact_id: 'a'.repeat(64), hash: 'a'.repeat(64), mime: 'video/mp4', size: 1838 };
+  const collected = collectVideoResult(project, job.id, artifact);
+  assert.equal(collected.videoShots[0].adopted_revision, null);
+  assert.equal(collected.jobs.at(-1).status, 'candidate');
+  assert.throws(() => collectVideoResult(collected, job.id, artifact));
+  await assert.rejects(adoptVideoCandidate(collected, job.id));
+  await assert.rejects(adoptVideoCandidate(collected, job.id, async () => { throw Error('corrupt file'); }));
+  const verify = async a => assert.deepEqual(a, artifact);
+  const adopted = await adoptVideoCandidate(collected, job.id, verify);
+  const next = await beginVideoJob(adopted, shotId, connection);
+  const second = await adoptVideoCandidate(collectVideoResult(next.project, next.job.id, artifact), next.job.id, verify);
+  const reloaded = await migrateProject(JSON.parse(JSON.stringify(second)), true);
+  const undone = await undoVideo(reloaded, shotId, verify);
+  assert.equal(undone.videoShots[0].adopted_revision, adopted.videoShots[0].adopted_revision);
+  assert.deepEqual(undone.panels, p.panels);
+  assert.deepEqual(undone.history, p.history);
+  assert.equal(undone.videoRevisions.length, 2);
+  const empty = await undoVideo(undone, shotId, verify);
+  assert.equal(empty.videoShots[0].adopted_revision, null);
+  await assert.rejects(undoVideo(empty, shotId, verify));
+  await assert.rejects(adoptVideoCandidate({ ...collected, active: 'changed' }, job.id, verify));
+  assert.throws(() => collectVideoResult(project, job.id, { ...artifact, hash: '../escape' }));
 });
