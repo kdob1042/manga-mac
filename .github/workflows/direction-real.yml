@@ -73,3 +73,33 @@ jobs:
           path: direction-results/
           if-no-files-found: error
           retention-days: 21
+
+  mac-image-capability:
+    runs-on: macos-26
+    timeout-minutes: 5
+    steps:
+      - name: Probe actual Metal device and memory
+        run: |
+          mkdir -p capability-results
+          cat > "$RUNNER_TEMP/probe.swift" <<'SWIFT'
+          import Foundation
+          import Metal
+          let device = MTLCreateSystemDefaultDevice()
+          let result: [String: Any] = [
+            "os": ProcessInfo.processInfo.operatingSystemVersionString,
+            "physical_memory_bytes": ProcessInfo.processInfo.physicalMemory,
+            "metal_available": device != nil,
+            "device": device?.name ?? "none",
+            "recommended_working_set_bytes": device?.recommendedMaxWorkingSetSize ?? 0,
+            "image_inference": "not_run"
+          ]
+          let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+          print(String(data: data, encoding: .utf8)!)
+          SWIFT
+          swift "$RUNNER_TEMP/probe.swift" > capability-results/mac-metal.json
+          cat capability-results/mac-metal.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Mac-image-capability
+          path: capability-results/
+          retention-days: 21
