@@ -1,8 +1,14 @@
 name: Check and build Mac app
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 concurrency:
   group: manga-${{ github.event.pull_request.head.ref || github.ref_name }}
@@ -118,6 +124,9 @@ jobs:
           name: UI-test-results
           path: test-results/
   mac:
+    # The 10x-priced macOS runner runs once after merge, or on explicit dispatch.
+    # Pull requests use the Linux jobs above so each commit is not billed twice.
+    if: github.event_name != 'pull_request'
     runs-on: macos-26
     needs: [web, storage, llm, blender]
     timeout-minutes: 90
