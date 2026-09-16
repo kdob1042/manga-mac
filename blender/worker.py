@@ -102,7 +102,7 @@ def library_assets(library):
             continue
         version = checksum(path)
         with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
-            for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections')]:
+            for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections'), ('ACTION', 'actions')]:
                 for name in getattr(source, field):
                     entries.append({'file': str(path.relative_to(library)), 'hash': version, 'kind': kind, 'name': name})
         if checksum(path) != version or len(entries) > 2000:
@@ -117,7 +117,7 @@ def import_asset(operation, library, scene):
     path = within(library / relative, [library])
     if checksum(path) != operation['hash']:
         raise ValueError('Asset version changed; refresh the library')
-    field = {'OBJECT': 'objects', 'COLLECTION': 'collections'}.get(operation['asset_type'])
+    field = {'OBJECT': 'objects', 'COLLECTION': 'collections', 'ACTION': 'actions'}.get(operation['asset_type'])
     if not field:
         raise ValueError('Unsupported asset type')
     # Native append reuses Blender dependency resolution, rigs and materials.
@@ -130,8 +130,11 @@ def import_asset(operation, library, scene):
         raise ValueError('Asset import failed or changed')
     if field == 'collections':
         scene.collection.children.link(block)
-    else:
+    elif field == 'objects':
         scene.collection.objects.link(block)
+    else:
+        # Unassigned pose assets must survive checkpoint save/reopen.
+        block.use_fake_user = True
     bpy.context.view_layer.update()
     return {'file': operation['file'], 'hash': operation['hash'], 'kind': operation['asset_type'], 'name': block.name}
 

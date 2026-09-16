@@ -137,3 +137,19 @@ operation('reject-rotation-mode', pose_source, {'kind': 'pose', 'rig': 'PoseActo
 operation('reject-pose-frame', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': True}, False)
 (root / 'acceptance-pose.json').write_text(json.dumps({'D-POSE-static-local': 'pass', 'four_panels_and_video_isolated': 'pass', 'shared_armature_other_actor_preserved': 'pass', 'action_asset_preserved': 'pass', 'saved_pose_reopened': 'pass', 'animated_target_rejected': 'pass', 'Mac': 'not_run'}))
 print('Actual Blender pose application, isolation, reopen and rejection checks passed')
+
+# Reuse the same native library browser and append path for an external pose asset.
+pose_catalog = operation('pose-library-catalog', source, {'kind': 'catalog'})
+def pose_asset(kind, name):
+    return next(a for a in pose_catalog['library_assets'] if a['file'] == 'pose-source.blend' and a['kind'] == kind and a['name'] == name)
+def append_pose_asset(folder, checkpoint, kind, name):
+    a = pose_asset(kind, name)
+    return operation(folder, checkpoint, {'kind': 'import', 'file': a['file'], 'hash': a['hash'], 'asset_type': a['kind'], 'name': a['name']})
+append_pose_asset('pose-library-rig', source, 'OBJECT', 'PoseActorA')
+appended = append_pose_asset('pose-library-action', root / 'pose-library-rig/checkpoint.blend', 'ACTION', 'LeanPose')
+assert any(a['kind'] == 'ACTION' and a['name'] == 'LeanPose' for a in appended['assets'])
+operation('pose-library-apply', root / 'pose-library-action/checkpoint.blend', {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': 1})
+inspect_pose.write_text("import bpy\nbpy.ops.wm.open_mainfile(filepath=" + repr(str(root / 'pose-library-apply/checkpoint.blend')) + ", load_ui=False, use_scripts=False)\nassert abs(bpy.data.objects['PoseActorA'].pose.bones[0].location.x - 0.75) < 1e-6\n")
+assert run(inspect_pose).returncode == 0
+assert sha(pose_source) == pose_original
+(root / 'acceptance-pose-library.json').write_text(json.dumps({'native_asset_search_append_reopen_apply': 'pass', 'source_unchanged': True, 'Mac': 'not_run'}))

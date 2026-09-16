@@ -6,6 +6,7 @@ path = sys.argv[sys.argv.index('--') + 1]
 bpy.ops.object.armature_add()
 first = bpy.context.object
 first.name = 'PoseActorA'
+first.asset_mark()
 first.pose.bones[0].rotation_mode = 'QUATERNION'
 first.pose.bones[0].location.x = 0.75
 first.pose.bones[0].keyframe_insert(data_path='location', frame=1)

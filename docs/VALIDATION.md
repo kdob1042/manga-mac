@@ -253,4 +253,4 @@ Armature dataを対象だけ分離して選択状態の共有を避け、Blender
 
 追加した実Blender fixtureは、Armature dataを共有する2人と、4つの漫画用＋1つの動画用checkpointを使用する。対象の保存後bone値、他人物のanimation/Action値、旧checkpoint hash、再読込、非対応対象拒否を検証し`acceptance-pose.json`へ記録する。UI fixtureは正しいsession/expected revisionへの型付き要求と、撮影前に作品/旧画像を変えないことを確認する。実行結果は対象PRの必須CIを参照し、未実行時点でpassとしない。
 
-残件: 外部Pose LibraryからのAction asset取込、アニメーション/制約付きリグへのPose Library workflow、実Macでの操作と演技品質。既存Asset LibraryのObject/Collection取込は維持。
+追補: 既存Asset Library検索/標準appendへAction assetを追加。選択したソースhashを照合し、未割当のActionもfake userでcheckpointへ保存する。実fixtureで外部の人物ObjectとポーズActionを別々に取込→保存/再読込→適用し、元ファイルの不変性を検証する。骨の回転方式に合わないActionチャンネルも拒否する。残件はアニメーション/制約付きリグのworkflow、実Mac操作と演技品質。
