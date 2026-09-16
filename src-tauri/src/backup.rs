@@ -541,10 +541,12 @@ pub fn restore(bundle: &Path, base: &Path) -> Result<String> {
     directory(&parent)?;
     let id = uuid::Uuid::new_v4().to_string();
     let target = parent.join(&id);
-    copy_tree(bundle, &target)?;
+    let staging = restic::Temp::new(&base.join("backup-work"))?;
+    let copy = staging.path.join("payload");
+    copy_tree(bundle, &copy)?;
     let result = (|| {
-        verify_bundle(&target)?;
-        let db = Connection::open(target.join("manga.sqlite3")).map_err(err)?;
+        verify_bundle(&copy)?;
+        let db = Connection::open(copy.join("manga.sqlite3")).map_err(err)?;
         if table(&db, "blender_sessions")? {
             let rows: Vec<(String, String)> = db
                 .prepare("SELECT id,data FROM blender_sessions")
@@ -566,18 +568,21 @@ pub fn restore(bundle: &Path, base: &Path) -> Result<String> {
             }
         }
         // Import is an independent workspace; never resubmit external jobs here.
-        atomic_json(&target.join("backup-series.json"), &id)?;
+        atomic_json(&copy.join("backup-series.json"), &id)?;
         atomic_json(
-            &target.join("restored-from.json"),
+            &copy.join("restored-from.json"),
             &json!({"series":manifest.series,"created_at":manifest.created_at,"restored_at":now()?}),
         )?;
-        fs::remove_file(target.join("manifest.json")).map_err(err)?;
-        sync_dir(&target)?;
+        fs::remove_file(copy.join("manifest.json")).map_err(err)?;
+        drop(db);
+        sync_dir(&copy)?;
+        if target.exists() {
+            return Err("復元作品IDが既に存在します".into());
+        }
+        fs::rename(&copy, &target).map_err(err)?;
+        sync_dir(&parent)?;
         Ok(id)
     })();
-    if result.is_err() {
-        let _ = fs::remove_dir_all(&target);
-    }
     result
 }
 /// Tracks native job and Blender changes as well as UI revisions.

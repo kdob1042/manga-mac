@@ -134,6 +134,11 @@ async fn process(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.as_std_mut().process_group(0);
+    }
     if let Some(c) = c {
         command.env("RCLONE_CONFIG", &c.rclone_config);
     }
@@ -151,6 +156,13 @@ async fn process(
     match result {
         Ok(value) => value,
         Err(_) => {
+            #[cfg(unix)]
+            if let Some(id) = child.id() {
+                // Only the live child group created above; terminate its rclone descendant too.
+                unsafe {
+                    libc::kill(-(id as i32), libc::SIGKILL);
+                }
+            }
             let _ = child.kill().await;
             Err("バックアップが時間切れになりました。旧正常版を保持します".into())
         }
