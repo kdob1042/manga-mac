@@ -2,7 +2,11 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::{Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}};
+use std::{
+    fs,
+    io::{Read, Seek, SeekFrom, Write},
+    path::{Path, PathBuf},
+};
 
 type Result<T> = std::result::Result<T, String>;
 fn err(e: impl std::fmt::Display) -> String {
@@ -165,7 +169,11 @@ pub const MAX_VIDEO_BYTES: u64 = 128 * 1024 * 1024;
 fn media_dir(root: &Path) -> Result<PathBuf> {
     let dir = root.join("media");
     fs::create_dir_all(&dir).map_err(err)?;
-    if fs::symlink_metadata(&dir).map_err(err)?.file_type().is_symlink() {
+    if fs::symlink_metadata(&dir)
+        .map_err(err)?
+        .file_type()
+        .is_symlink()
+    {
         return Err("Media directory symlink rejected".into());
     }
     Ok(dir)
@@ -174,14 +182,18 @@ fn media_dir(root: &Path) -> Result<PathBuf> {
 // Container bounds only. The platform video decoder remains responsible for
 // playback/codec validation; this is not a second media decoding engine.
 fn check_mp4(file: &mut fs::File, size: u64) -> Result<()> {
-    if !(32..=MAX_VIDEO_BYTES).contains(&size) { return Err("Invalid video size".into()); }
+    if !(32..=MAX_VIDEO_BYTES).contains(&size) {
+        return Err("Invalid video size".into());
+    }
     file.seek(SeekFrom::Start(0)).map_err(err)?;
     let mut offset = 0_u64;
     let mut boxes = 0;
     let (mut ftyp, mut moov, mut mdat) = (false, false, false);
     while offset < size {
         boxes += 1;
-        if boxes > 4096 || size - offset < 8 { return Err("Invalid MP4 structure".into()); }
+        if boxes > 4096 || size - offset < 8 {
+            return Err("Invalid MP4 structure".into());
+        }
         let mut header = [0_u8; 8];
         file.read_exact(&mut header).map_err(err)?;
         let mut length = u32::from_be_bytes(header[..4].try_into().map_err(err)?) as u64;
@@ -189,11 +201,21 @@ fn check_mp4(file: &mut fs::File, size: u64) -> Result<()> {
         if length == 1 {
             let mut extended = [0_u8; 8];
             file.read_exact(&mut extended).map_err(err)?;
-            length = u64::from_be_bytes(extended); header_size = 16;
-        } else if length == 0 { length = size - offset; }
-        if length < header_size || length > size - offset { return Err("Truncated MP4 box".into()); }
+            length = u64::from_be_bytes(extended);
+            header_size = 16;
+        } else if length == 0 {
+            length = size - offset;
+        }
+        if length < header_size || length > size - offset {
+            return Err("Truncated MP4 box".into());
+        }
         match &header[4..] {
-            b"ftyp" => { if offset != 0 || length < 16 { return Err("Invalid MP4 type".into()); } ftyp = true; }
+            b"ftyp" => {
+                if offset != 0 || length < 16 {
+                    return Err("Invalid MP4 type".into());
+                }
+                ftyp = true;
+            }
             b"moov" => moov = length > header_size,
             b"mdat" => mdat = length > header_size,
             _ => (),
@@ -201,7 +223,9 @@ fn check_mp4(file: &mut fs::File, size: u64) -> Result<()> {
         offset += length;
         file.seek(SeekFrom::Start(offset)).map_err(err)?;
     }
-    if !(ftyp && moov && mdat) { return Err("MP4 is missing required boxes".into()); }
+    if !(ftyp && moov && mdat) {
+        return Err("MP4 is missing required boxes".into());
+    }
     Ok(())
 }
 
@@ -212,9 +236,13 @@ fn file_hash(file: &mut fs::File) -> Result<String> {
     let mut size = 0_u64;
     loop {
         let count = file.read(&mut buffer).map_err(err)?;
-        if count == 0 { break; }
+        if count == 0 {
+            break;
+        }
         size += count as u64;
-        if size > MAX_VIDEO_BYTES { return Err("Video exceeds size limit".into()); }
+        if size > MAX_VIDEO_BYTES {
+            return Err("Video exceeds size limit".into());
+        }
         hash.update(&buffer[..count]);
     }
     Ok(format!("{:x}", hash.finalize()))
@@ -223,42 +251,71 @@ fn file_hash(file: &mut fs::File) -> Result<String> {
 pub fn verify_video(root: &Path, artifact: &Value) -> Result<PathBuf> {
     let id = artifact["hash"].as_str().ok_or("Missing video hash")?;
     let size = artifact["size"].as_u64().ok_or("Missing video size")?;
-    if !valid_hash(id) || artifact["artifact_id"].as_str() != Some(id)
-        || artifact["mime"].as_str() != Some("video/mp4") || !(32..=MAX_VIDEO_BYTES).contains(&size) {
+    if !valid_hash(id)
+        || artifact["artifact_id"].as_str() != Some(id)
+        || artifact["mime"].as_str() != Some("video/mp4")
+        || !(32..=MAX_VIDEO_BYTES).contains(&size)
+    {
         return Err("Invalid video reference".into());
     }
     let path = media_dir(root)?.join(format!("{id}.mp4"));
-    if !fs::symlink_metadata(&path).map_err(err)?.file_type().is_file() { return Err("Video is not a regular file".into()); }
+    if !fs::symlink_metadata(&path)
+        .map_err(err)?
+        .file_type()
+        .is_file()
+    {
+        return Err("Video is not a regular file".into());
+    }
     let mut file = fs::File::open(&path).map_err(err)?;
-    if file.metadata().map_err(err)?.len() != size { return Err("Video size mismatch".into()); }
+    if file.metadata().map_err(err)?.len() != size {
+        return Err("Video size mismatch".into());
+    }
     check_mp4(&mut file, size)?;
-    if file_hash(&mut file)? != id { return Err("Video hash mismatch".into()); }
+    if file_hash(&mut file)? != id {
+        return Err("Video hash mismatch".into());
+    }
     Ok(path)
 }
 
 // Used by provider collection and native fixtures, never an arbitrary-path IPC.
 pub fn put_video(root: &Path, mut input: impl Read, expected_hash: Option<&str>) -> Result<Value> {
     let dir = media_dir(root)?;
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(err)?.as_nanos();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(err)?
+        .as_nanos();
     let temp = dir.join(format!(".pending-{}-{stamp}", std::process::id()));
-    let mut file = fs::OpenOptions::new().write(true).read(true).create_new(true).open(&temp).map_err(err)?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .read(true)
+        .create_new(true)
+        .open(&temp)
+        .map_err(err)?;
     let result = (|| {
         let mut hash = Sha256::new();
         let mut buffer = [0_u8; 65536];
         let mut size = 0_u64;
         loop {
             let count = input.read(&mut buffer).map_err(err)?;
-            if count == 0 { break; }
+            if count == 0 {
+                break;
+            }
             size += count as u64;
-            if size > MAX_VIDEO_BYTES { return Err("Video exceeds size limit".into()); }
+            if size > MAX_VIDEO_BYTES {
+                return Err("Video exceeds size limit".into());
+            }
             file.write_all(&buffer[..count]).map_err(err)?;
             hash.update(&buffer[..count]);
         }
         file.sync_all().map_err(err)?;
         let id = format!("{:x}", hash.finalize());
-        if expected_hash.is_some_and(|h| h != id) { return Err("Downloaded video hash mismatch".into()); }
+        if expected_hash.is_some_and(|h| h != id) {
+            return Err("Downloaded video hash mismatch".into());
+        }
         check_mp4(&mut file, size)?;
-        if file_hash(&mut file)? != id { return Err("Video read-back mismatch".into()); }
+        if file_hash(&mut file)? != id {
+            return Err("Video read-back mismatch".into());
+        }
         let artifact = json!({"artifact_id":id,"hash":id,"mime":"video/mp4","size":size});
         let path = dir.join(format!("{id}.mp4"));
         match fs::hard_link(&temp, path) {
@@ -276,30 +333,52 @@ pub fn put_video(root: &Path, mut input: impl Read, expected_hash: Option<&str>)
 }
 
 pub fn video_reference(db: &Connection, revision_id: &str) -> Result<Value> {
-    let data: String = db.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    let data: String = db
+        .query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0))
+        .map_err(err)?;
     let project: Value = serde_json::from_str(&data).map_err(err)?;
-    let revision = project["videoRevisions"].as_array().ok_or("No video revisions")?.iter()
-        .find(|v| v["id"].as_str() == Some(revision_id)).ok_or("Unknown video revision")?;
+    let revision = project["videoRevisions"]
+        .as_array()
+        .ok_or("No video revisions")?
+        .iter()
+        .find(|v| v["id"].as_str() == Some(revision_id))
+        .ok_or("Unknown video revision")?;
     Ok(revision["artifact"].clone())
 }
 
 pub fn export_video(root: &Path, downloads: &Path, artifact: &Value) -> Result<PathBuf> {
     let source = verify_video(root, artifact)?;
     fs::create_dir_all(downloads).map_err(err)?;
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(err)?.as_nanos();
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(err)?
+        .as_nanos();
     let target = downloads.join(format!("{stamp}-video.mp4"));
-    let mut output = fs::OpenOptions::new().create_new(true).write(true).read(true).open(&target).map_err(err)?;
+    let mut output = fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .read(true)
+        .open(&target)
+        .map_err(err)?;
     let result = (|| {
-        let mut input = fs::File::open(source).map_err(err)?.take(MAX_VIDEO_BYTES + 1);
+        let mut input = fs::File::open(source)
+            .map_err(err)?
+            .take(MAX_VIDEO_BYTES + 1);
         let count = std::io::copy(&mut input, &mut output).map_err(err)?;
-        if Some(count) != artifact["size"].as_u64() { return Err("Video changed during export".into()); }
+        if Some(count) != artifact["size"].as_u64() {
+            return Err("Video changed during export".into());
+        }
         output.sync_all().map_err(err)?;
-        if Some(file_hash(&mut output)?.as_str()) != artifact["hash"].as_str() { return Err("Export hash mismatch".into()); }
+        if Some(file_hash(&mut output)?.as_str()) != artifact["hash"].as_str() {
+            return Err("Export hash mismatch".into());
+        }
         sync_dir(downloads)?;
         Ok(target.clone())
     })();
     drop(output);
-    if result.is_err() { let _ = fs::remove_file(target); }
+    if result.is_err() {
+        let _ = fs::remove_file(target);
+    }
     result
 }
 
@@ -321,14 +400,16 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
-    if !matches!(project["version"].as_u64(), Some(1 | 2 | 3 | 4)) {
+    if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
     }
     if let Some(jobs) = project.get("jobs") {
         let mut ids = std::collections::HashSet::new();
         for job in jobs.as_array().ok_or("Invalid jobs")? {
             let id = job["id"].as_str().ok_or("Missing job ID")?;
-            if id.is_empty() || !ids.insert(id) { return Err("Duplicate job ID".into()); }
+            if id.is_empty() || !ids.insert(id) {
+                return Err("Duplicate job ID".into());
+            }
         }
     }
     // Commit the previous exact JSON before starting file migration.
@@ -361,10 +442,23 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
 fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
     if let Some(jobs) = old["jobs"].as_array() {
         for job in jobs.iter().filter(|j| j.get("remote").is_some()) {
-            let target = next["jobs"].as_array_mut().ok_or("Missing jobs")?.iter_mut()
-                .find(|j| j["id"] == job["id"]).ok_or("Submitted jobs cannot be removed")?;
-            for field in ["manifest", "input_hash", "scope", "base_revision", "source_revision", "active_snapshot"] {
-                if target[field] != job[field] { return Err("Submitted job inputs are immutable".into()); }
+            let target = next["jobs"]
+                .as_array_mut()
+                .ok_or("Missing jobs")?
+                .iter_mut()
+                .find(|j| j["id"] == job["id"])
+                .ok_or("Submitted jobs cannot be removed")?;
+            for field in [
+                "manifest",
+                "input_hash",
+                "scope",
+                "base_revision",
+                "source_revision",
+                "active_snapshot",
+            ] {
+                if target[field] != job[field] {
+                    return Err("Submitted job inputs are immutable".into());
+                }
             }
             target["remote"] = job["remote"].clone();
         }
@@ -373,18 +467,33 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
 }
 
 pub fn raw_project(db: &Connection) -> Result<Value> {
-    let data: String = db.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    let data: String = db
+        .query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0))
+        .map_err(err)?;
     serde_json::from_str(&data).map_err(err)
 }
 
 // Native transport metadata lives on the existing job, not in a parallel queue.
-pub fn update_remote_job(db: &mut Connection, id: &str, update: impl FnOnce(&Value, &Value) -> Result<Value>) -> Result<Value> {
+pub fn update_remote_job(
+    db: &mut Connection,
+    id: &str,
+    update: impl FnOnce(&Value, &Value) -> Result<Value>,
+) -> Result<Value> {
     let tx = db.transaction().map_err(err)?;
     let mut project = raw_project(&tx)?;
-    let index = project["jobs"].as_array().ok_or("Missing jobs")?.iter().position(|j| j["id"].as_str() == Some(id)).ok_or("Job must be saved before submission")?;
+    let index = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .position(|j| j["id"].as_str() == Some(id))
+        .ok_or("Job must be saved before submission")?;
     let remote = update(&project, &project["jobs"][index])?;
     project["jobs"][index]["remote"] = remote.clone();
-    tx.execute("UPDATE project SET data=?1 WHERE id=1", [project.to_string()]).map_err(err)?;
+    tx.execute(
+        "UPDATE project SET data=?1 WHERE id=1",
+        [project.to_string()],
+    )
+    .map_err(err)?;
     tx.commit().map_err(err)?;
     Ok(remote)
 }
@@ -424,26 +533,28 @@ mod tests {
         serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap()
     }
     fn video_fixture() -> Vec<u8> {
-        STANDARD.decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim()).unwrap()
+        STANDARD
+            .decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim())
+            .unwrap()
     }
     #[test]
     fn stale_ui_cannot_erase_task_id_cost_or_mutate_submitted_input() {
         let (mut db, dir) = setup();
         let mut original = fixture();
         original["jobs"] = json!([{"id":"v","scope":{"type":"videoShot","id":"shot"},"manifest":{"prompt":"original"},"input_hash":"h","status":"running"}]);
-        save(&mut db,&dir,&original.to_string()).unwrap();
+        save(&mut db, &dir, &original.to_string()).unwrap();
         let remote = json!({"status":"PENDING","task_id":"task","reserved_credits":60});
-        update_remote_job(&mut db,"v",|_,_|Ok(remote.clone())).unwrap();
+        update_remote_job(&mut db, "v", |_, _| Ok(remote.clone())).unwrap();
         // A stale snapshot has no remote field at all, but saving it preserves native metadata.
-        save(&mut db,&dir,&original.to_string()).unwrap();
+        save(&mut db, &dir, &original.to_string()).unwrap();
         assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"], remote);
         original["jobs"][0]["manifest"]["prompt"] = json!("changed");
-        assert!(save(&mut db,&dir,&original.to_string()).is_err());
+        assert!(save(&mut db, &dir, &original.to_string()).is_err());
         original["jobs"] = json!([]);
-        assert!(save(&mut db,&dir,&original.to_string()).is_err());
+        assert!(save(&mut db, &dir, &original.to_string()).is_err());
         drop(db);
-        let db=Connection::open(dir.join("test.sqlite3")).unwrap();
-        assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"],remote);
+        let db = Connection::open(dir.join("test.sqlite3")).unwrap();
+        assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"], remote);
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -463,7 +574,10 @@ mod tests {
         assert!(video_reference(&db, "../outside").is_err());
         let export = export_video(&dir, &dir.join("exports"), &stored).unwrap();
         assert_eq!(fs::read(export).unwrap(), bytes);
-        assert_eq!(serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(), project);
+        assert_eq!(
+            serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(),
+            project
+        );
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -473,11 +587,13 @@ mod tests {
         save(&mut db, &dir, &original.to_string()).unwrap();
         let bytes = video_fixture();
         assert!(put_video(&dir, bytes.as_slice(), Some(&"0".repeat(64))).is_err());
-        assert!(put_video(&dir, &bytes[..bytes.len()-1], None).is_err());
+        assert!(put_video(&dir, &bytes[..bytes.len() - 1], None).is_err());
         assert!(put_video(&dir, std::io::repeat(0).take(MAX_VIDEO_BYTES + 1), None).is_err());
         struct Broken;
         impl Read for Broken {
-            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> { Err(std::io::Error::other("interrupted")) }
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("interrupted"))
+            }
         }
         assert!(put_video(&dir, Broken, None).is_err());
         assert_eq!(fs::read_dir(dir.join("media")).unwrap().count(), 0);
@@ -489,7 +605,10 @@ mod tests {
         let mut changed = original.clone();
         changed["videoRevisions"] = json!([{"id":"bad","artifact":artifact}]);
         assert!(save(&mut db, &dir, &changed.to_string()).is_err());
-        assert_eq!(serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(), original);
+        assert_eq!(
+            serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(),
+            original
+        );
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -565,7 +684,8 @@ mod tests {
         let mut project = fixture();
         project["version"] = json!(3);
         project["output_locale"] = json!("en");
-        project["localizations"] = json!([{"locale":"en","snapshot_id":"source","units":[{"id":"u1","text":"Hello"}]}]);
+        project["localizations"] =
+            json!([{"locale":"en","snapshot_id":"source","units":[{"id":"u1","text":"Hello"}]}]);
         save(&mut db, &dir, &project.to_string()).unwrap();
         let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
         assert_eq!(restored, project);
@@ -588,5 +708,4 @@ mod tests {
         assert!(save(&mut db, &dir, &project.to_string()).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
-
 }

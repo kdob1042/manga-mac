@@ -94,8 +94,12 @@ def library_assets(library):
     files = sorted(library.rglob('*.blend'))
     if len(files) > 256:
         raise ValueError('Select an asset folder with at most 256 blend files')
+    current = Path(bpy.data.filepath).resolve(strict=True)
     for file in files:
         path = within(file, [library])
+        # Blender refuses to open its current file as an external asset library.
+        if path == current:
+            continue
         version = checksum(path)
         with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
             for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections')]:
@@ -135,10 +139,17 @@ def import_asset(operation, library, scene):
 def pin_dependencies(roots):
     before = dependencies(roots)
     # Blender owns packing and reference resolution; no second asset store is introduced.
-    if bpy.ops.file.pack_all() != {'FINISHED'}:
-        raise ValueError('Blender could not pack dependencies')
+    # Blender only packs linked libraries referenced relatively to the current
+    # checkpoint. Validate the absolute source first, then rewrite that reference.
+    current_dir = Path(bpy.data.filepath).resolve(strict=True).parent
+    for linked in bpy.data.libraries:
+        absolute = within(bpy.path.abspath(linked.filepath), roots)
+        linked.filepath = bpy.path.relpath(str(absolute), start=str(current_dir))
+    # Linked blend libraries must be packed before generic external files.
     if bpy.data.libraries and bpy.ops.file.pack_libraries() != {'FINISHED'}:
         raise ValueError('Blender could not pack linked libraries')
+    if bpy.ops.file.pack_all() != {'FINISHED'}:
+        raise ValueError('Blender could not pack dependencies')
     if dependencies(roots):
         raise ValueError('Unpinned dependencies remain')
     return before
@@ -247,6 +258,10 @@ if __name__ == '__main__':
         execute(json.loads(data))
         print('MANGA_BLENDER_COMPLETE')
     except Exception:
-        # No manuscript, user paths, or environment values in the public error.
+        # Production errors stay generic. The acceptance harness enables a traceback
+        # only inside its isolated fixture workspace so CI can diagnose regressions.
+        if os.environ.get('MANGA_BLENDER_TEST_DIAGNOSTICS') == '1':
+            import traceback
+            traceback.print_exc()
         print('MANGA_BLENDER_FAILED', file=sys.stderr)
         sys.exit(1)

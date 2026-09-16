@@ -208,3 +208,9 @@ V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue
 - clippyは基点mainの3警告（policy_transportのmanual_async_fn 2件、storageのmanual_range_patterns 1件）で失敗。PR #20の修正後に再実行する。Runway追加コードの警告とは分ける。
 - Node **43 passed**、build/diff check成功。追加UI `tests/ui/video-recovery.spec.js` の結果はPR CIを参照。ローカルChromium downloadはtimeout/502で失敗。
 - なお、プロセス強制終了で残った孤立一時ファイルの自動整理、実APIの予算/料金照合、Mac内再生・実機品質は残件。起動時の無条件削除で別プロセスの取得を壊す処理は追加していない。
+
+### 依存固定の追加
+
+- PR #20の整形ゲートを復元したhead `bc0458d11e1025eff65461f2aa1b91c402845cbe` に対するCI run `35053023339` のBlender成功artifactから `tests/blender/Cargo.lock` を固定。ZIP SHA-256 `3f49e5c168cb675b4ff32c1822514a5a7e427131533280d52d2842f5a9a1e0fe` を検証して取得した。
+- tests/llm・tests/blenderともCI中のlock再生成をやめ、metadata/fetch/test/clippyを`--locked`で実行する。整形は自動修正ではなく`--check`とする。依存更新が必要な変更はlock差分と監査結果を別途提示する。
+- PR #20のpolicy_transport/storage/llm_tests修正とV-C2を合わせた作業用checkoutでも、Rust23件・clippy `-D warnings`・fmt check成功。これは統合後の必須CIの代わりにはしない。
