@@ -28,7 +28,7 @@ test('video planning shares artwork and survives reload without changing manga',
   const original = await page.locator('.caption').textContent();
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await page.getByLabel('原作の場面').selectOption('s');
-  await page.getByLabel('開始画像', { exact: true }).selectOption({ index: 1 });
+  await page.getByLabel('開始画像').selectOption({ index: 1 });
   await page.getByLabel('動きの指示').fill('ゆっくりカメラが寄る');
   await page.getByRole('button', { name: 'ショットを保存' }).click();
   await expect(page.locator('.video-source')).toContainText('原文です');
