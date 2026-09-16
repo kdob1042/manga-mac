@@ -16,5 +16,6 @@ try{
  },{legacy,hash,size:bytes.length});payload.video=bytes.toString('base64');const input=join(dir,'request.json');fs.writeFileSync(input,JSON.stringify(payload));
  const output=process.env.LIVE_MANGA_E2E_OUTPUT??join(dir,'output');
  execFileSync('cargo',['test','--locked','--manifest-path','tests/storage/Cargo.toml','browser_export_request_integration','--','--ignored','--nocapture'],{env:{...process.env,LIVE_MANGA_E2E_REQUEST:input,LIVE_MANGA_E2E_OUTPUT:output},stdio:'inherit'});
+ const {verifyPackage}=await import('../vendor/live-manga/contracts/package.mjs');await verifyPackage(join(output,'live-manga-'+payload.request.manifest.releaseId));
  console.log('LIVE_MANGA_PACKAGE='+join(output,'live-manga-'+payload.request.manifest.releaseId));
 }finally{if(browser)await browser.close();server.kill();}
