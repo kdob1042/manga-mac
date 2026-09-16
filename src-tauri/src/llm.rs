@@ -1,4 +1,5 @@
 //! Explicit connection registry; rig-core owns the wire protocol.
+use crate::policy_transport::PolicyTransport;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rig_core::{
     client::CompletionClient,
@@ -8,16 +9,30 @@ use rig_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{collections::{HashMap, HashSet}, sync::{Arc, Mutex}};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+};
 use tracing::instrument::WithSubscriber;
-use crate::policy_transport::PolicyTransport;
 
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Provider { Ollama, Openai, Gemini, Anthropic, Deepseek, Custom }
+pub enum Provider {
+    Ollama,
+    Openai,
+    Gemini,
+    Anthropic,
+    Deepseek,
+    Custom,
+}
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Purpose { Plan, Face, Translation, Probe }
+pub enum Purpose {
+    Plan,
+    Face,
+    Translation,
+    Probe,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registration {
@@ -29,15 +44,43 @@ pub struct Registration {
     pub json_mode: bool,
 }
 // Deliberately no Debug or Serialize: credentials never enter logs or project JSON.
-struct Connection { provider: Provider, purpose: Purpose, endpoint: String, model: String, credential: String, json_mode: bool }
-impl Connection { fn path(&self) -> &str { match self.provider { Provider::Ollama => "/api/chat", Provider::Anthropic => "/v1/messages", _ => "/chat/completions" } } }
+struct Connection {
+    provider: Provider,
+    purpose: Purpose,
+    endpoint: String,
+    model: String,
+    credential: String,
+    json_mode: bool,
+}
+impl Connection {
+    fn path(&self) -> &str {
+        match self.provider {
+            Provider::Ollama => "/api/chat",
+            Provider::Anthropic => "/v1/messages",
+            _ => "/chat/completions",
+        }
+    }
+}
 #[derive(Default)]
-pub struct Connections { entries: Mutex<HashMap<String, Arc<Connection>>>, submitted: Mutex<HashSet<String>>, active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>, cancelled: Mutex<HashSet<String>>, video: Mutex<HashMap<String, Arc<VideoConnection>>> }
+pub struct Connections {
+    entries: Mutex<HashMap<String, Arc<Connection>>>,
+    submitted: Mutex<HashSet<String>>,
+    active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
+    cancelled: Mutex<HashSet<String>>,
+    video: Mutex<HashMap<String, Arc<VideoConnection>>>,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct VideoRegistration { pub credential: String, pub max_credits: u64, pub approved: bool }
+pub struct VideoRegistration {
+    pub credential: String,
+    pub max_credits: u64,
+    pub approved: bool,
+}
 // Same ephemeral credential owner as LLM connections; no Debug/Serialize.
-pub struct VideoConnection { pub credential: String, pub max_credits: u64 }
+pub struct VideoConnection {
+    pub credential: String,
+    pub max_credits: u64,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
@@ -49,34 +92,64 @@ pub struct Request {
     pub images: Vec<String>,
 }
 #[derive(Serialize)]
-pub struct Response { pub request_id: String, pub value: Value }
-fn failure() -> String { "LLM要求を完了できませんでした。自動再送は行いません".into() }
-fn id() -> String { uuid::Uuid::new_v4().to_string() }
+pub struct Response {
+    pub request_id: String,
+    pub value: Value,
+}
+fn failure() -> String {
+    "LLM要求を完了できませんでした。自動再送は行いません".into()
+}
+fn id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
 impl Connections {
     pub async fn register_video(&self, input: VideoRegistration) -> Result<String, String> {
-        if !input.approved || !(60..=6000).contains(&input.max_credits) || input.credential.trim().is_empty()
-            || input.credential.len() > 4096 || input.credential.chars().any(char::is_control) {
+        if !input.approved
+            || !(60..=6000).contains(&input.max_credits)
+            || input.credential.trim().is_empty()
+            || input.credential.len() > 4096
+            || input.credential.chars().any(char::is_control)
+        {
             return Err("送信先・モデル・予算を承認し、APIキーを入力してください".into());
         }
         PolicyTransport::new("https://api.dev.runwayml.com", false, "").await?;
         let mut entries = self.video.lock().map_err(|_| failure())?;
-        if entries.len() >= 4 { return Err("不要な動画接続を解除してください".into()); }
+        if entries.len() >= 4 {
+            return Err("不要な動画接続を解除してください".into());
+        }
         let id = id();
-        entries.insert(id.clone(), Arc::new(VideoConnection { credential: input.credential, max_credits: input.max_credits }));
+        entries.insert(
+            id.clone(),
+            Arc::new(VideoConnection {
+                credential: input.credential,
+                max_credits: input.max_credits,
+            }),
+        );
         Ok(id)
     }
     pub fn video_connection(&self, id: &str) -> Result<Arc<VideoConnection>, String> {
-        self.video.lock().map_err(|_| failure())?.get(id).cloned().ok_or("動画接続を登録してください".into())
+        self.video
+            .lock()
+            .map_err(|_| failure())?
+            .get(id)
+            .cloned()
+            .ok_or("動画接続を登録してください".into())
     }
     pub fn remove_video(&self, id: &str) -> Result<(), String> {
-        self.video.lock().map_err(|_| failure())?.remove(id); Ok(())
+        self.video.lock().map_err(|_| failure())?.remove(id);
+        Ok(())
     }
     pub async fn register(&self, input: Registration) -> Result<String, String> {
-        if input.model.trim().is_empty() || input.model.len() > 256 || input.model.chars().any(char::is_control) {
+        if input.model.trim().is_empty()
+            || input.model.len() > 256
+            || input.model.chars().any(char::is_control)
+        {
             return Err("モデルIDが不正です".into());
         }
-        if input.credential.len() > 4096 || input.credential.chars().any(char::is_control)
-            || (input.provider != Provider::Ollama && input.credential.trim().is_empty()) {
+        if input.credential.len() > 4096
+            || input.credential.chars().any(char::is_control)
+            || (input.provider != Provider::Ollama && input.credential.trim().is_empty())
+        {
             return Err("認証情報が不正です".into());
         }
         let endpoint = match input.provider {
@@ -86,42 +159,96 @@ impl Connections {
             Provider::Anthropic => "https://api.anthropic.com",
             Provider::Deepseek => "https://api.deepseek.com/v1",
             Provider::Custom => input.endpoint.trim_end_matches('/'),
-        }.to_string();
+        }
+        .to_string();
         // Resolve at registration for feedback and again before every send to prevent DNS rebinding.
         PolicyTransport::new(&endpoint, input.provider == Provider::Ollama, "").await?;
-        let connection = Arc::new(Connection { provider: input.provider, purpose: input.purpose, endpoint, model: input.model,
-            credential: if input.provider == Provider::Ollama { String::new() } else { input.credential }, json_mode: input.json_mode });
+        let connection = Arc::new(Connection {
+            provider: input.provider,
+            purpose: input.purpose,
+            endpoint,
+            model: input.model,
+            credential: if input.provider == Provider::Ollama {
+                String::new()
+            } else {
+                input.credential
+            },
+            json_mode: input.json_mode,
+        });
         let mut entries = self.entries.lock().map_err(|_| failure())?;
-        if entries.len() >= 32 { return Err("登録接続の上限です。不要な接続を解除してください".into()); }
-        let id = id(); entries.insert(id.clone(), connection); Ok(id)
+        if entries.len() >= 32 {
+            return Err("登録接続の上限です。不要な接続を解除してください".into());
+        }
+        let id = id();
+        entries.insert(id.clone(), connection);
+        Ok(id)
     }
-    pub fn remove(&self, id: &str) -> Result<(), String> { self.entries.lock().map_err(|_| failure())?.remove(id); Ok(()) }
+    pub fn remove(&self, id: &str) -> Result<(), String> {
+        self.entries.lock().map_err(|_| failure())?.remove(id);
+        Ok(())
+    }
     pub fn cancel(&self, id: &str) -> Result<(), String> {
-        if uuid::Uuid::parse_str(id).is_err() { return Err(failure()); }
-        { let mut cancelled = self.cancelled.lock().map_err(|_| failure())?; if cancelled.len() < 4096 { cancelled.insert(id.to_string()); } }
-        if let Some(sender) = self.active.lock().map_err(|_| failure())?.remove(id) { let _ = sender.send(()); }
+        if uuid::Uuid::parse_str(id).is_err() {
+            return Err(failure());
+        }
+        {
+            let mut cancelled = self.cancelled.lock().map_err(|_| failure())?;
+            if cancelled.len() < 4096 {
+                cancelled.insert(id.to_string());
+            }
+        }
+        if let Some(sender) = self.active.lock().map_err(|_| failure())?.remove(id) {
+            let _ = sender.send(());
+        }
         let mut submitted = self.submitted.lock().map_err(|_| failure())?;
-        if submitted.len() < 4096 { submitted.insert(id.to_string()); }
+        if submitted.len() < 4096 {
+            submitted.insert(id.to_string());
+        }
         Ok(())
     }
     pub async fn request(&self, request: Request) -> Result<Response, String> {
-        if uuid::Uuid::parse_str(&request.request_id).is_err() || request.prompt.len() > 1024 * 1024
-            || request.images.len() > 8 || !request.schema.is_object() || request.schema.to_string().len() > 65536 {
+        if uuid::Uuid::parse_str(&request.request_id).is_err()
+            || request.prompt.len() > 1024 * 1024
+            || request.images.len() > 8
+            || !request.schema.is_object()
+            || request.schema.to_string().len() > 65536
+        {
             return Err("LLM要求が上限または形式に適合しません".into());
         }
-        let connection = self.entries.lock().map_err(|_| failure())?.get(&request.connection_id).cloned().ok_or("接続を登録してください")?;
-        if request.purpose != Purpose::Probe && request.purpose != connection.purpose
-            && !(request.purpose == Purpose::Translation && connection.purpose == Purpose::Plan) {
+        let connection = self
+            .entries
+            .lock()
+            .map_err(|_| failure())?
+            .get(&request.connection_id)
+            .cloned()
+            .ok_or("接続を登録してください")?;
+        if request.purpose != Purpose::Probe
+            && request.purpose != connection.purpose
+            && !(request.purpose == Purpose::Translation && connection.purpose == Purpose::Plan)
+        {
             return Err("用途に対応する接続を選択してください".into());
         }
         {
             let mut submitted = self.submitted.lock().map_err(|_| failure())?;
-            if submitted.len() >= 4096 || !submitted.insert(request.request_id.clone()) { return Err("送信済み要求または要求上限です".into()); }
+            if submitted.len() >= 4096 || !submitted.insert(request.request_id.clone()) {
+                return Err("送信済み要求または要求上限です".into());
+            }
         }
         let (cancel, cancelled) = tokio::sync::oneshot::channel();
-        self.active.lock().map_err(|_| failure())?.insert(request.request_id.clone(), cancel);
-        if self.cancelled.lock().map_err(|_| failure())?.contains(&request.request_id) {
-            self.active.lock().map_err(|_| failure())?.remove(&request.request_id);
+        self.active
+            .lock()
+            .map_err(|_| failure())?
+            .insert(request.request_id.clone(), cancel);
+        if self
+            .cancelled
+            .lock()
+            .map_err(|_| failure())?
+            .contains(&request.request_id)
+        {
+            self.active
+                .lock()
+                .map_err(|_| failure())?
+                .remove(&request.request_id);
             return Err("中止済みの要求です".into());
         }
         let result = tokio::select! {
@@ -131,10 +258,16 @@ impl Connections {
             } => result,
             _ = cancelled => Err("LLM要求を中止しました。送信済みの場合、処理・課金の有無は未確定です".into()),
         };
-        self.active.lock().map_err(|_| failure())?.remove(&request.request_id);
+        self.active
+            .lock()
+            .map_err(|_| failure())?
+            .remove(&request.request_id);
         let value = result?;
         validate_output(request.purpose, &value)?;
-        Ok(Response { request_id: request.request_id, value })
+        Ok(Response {
+            request_id: request.request_id,
+            value,
+        })
     }
 }
 fn message(request: &Request) -> Result<Message, String> {
@@ -149,91 +282,221 @@ fn message(request: &Request) -> Result<Message, String> {
             _ => return Err("画像形式が不正です".into()),
         };
         total += data.len();
-        if total > 20 * 1024 * 1024 || STANDARD.decode(data).is_err() { return Err("画像データが不正または大きすぎます".into()); }
-        content.push(UserContent::Image(Image { data: DocumentSourceKind::Base64(data.into()), media_type: Some(media_type), detail: None, additional_params: None }));
+        if total > 20 * 1024 * 1024 || STANDARD.decode(data).is_err() {
+            return Err("画像データが不正または大きすぎます".into());
+        }
+        content.push(UserContent::Image(Image {
+            data: DocumentSourceKind::Base64(data.into()),
+            media_type: Some(media_type),
+            detail: None,
+            additional_params: None,
+        }));
     }
-    content.push(UserContent::text(format!("{}\n\nReturn only a JSON object matching this JSON schema. No markdown or commentary.\n{}", request.prompt, request.schema)));
+    content.push(UserContent::text(format!(
+        "{}\n\nReturn only a JSON object matching this JSON schema. No markdown or commentary.\n{}",
+        request.prompt, request.schema
+    )));
     Ok(Message::User { content })
 }
-async fn perform<M: CompletionModel + Clone>(model: M, message: Message, schema: Option<schemars::Schema>, params: Value) -> Result<Value, String> {
-    let mut request = model.completion_request(message).max_tokens(8192).additional_params(params).build();
+async fn perform<M: CompletionModel + Clone>(
+    model: M,
+    message: Message,
+    schema: Option<schemars::Schema>,
+    params: Value,
+) -> Result<Value, String> {
+    let mut request = model
+        .completion_request(message)
+        .max_tokens(8192)
+        .additional_params(params)
+        .build();
     request.output_schema = schema;
     request.record_telemetry_content = false;
     normalize(model.completion(request).await.map_err(|_| failure())?)
 }
-async fn complete<H>(connection: &Connection, request: &Request, transport: H) -> Result<Value, String>
-where H: rig_core::http_client::HttpClientExt + Clone + std::fmt::Debug + Default + Send + Sync + 'static {
+async fn complete<H>(
+    connection: &Connection,
+    request: &Request,
+    transport: H,
+) -> Result<Value, String>
+where
+    H: rig_core::http_client::HttpClientExt
+        + Clone
+        + std::fmt::Debug
+        + Default
+        + Send
+        + Sync
+        + 'static,
+{
     let message = message(request)?;
     match connection.provider {
         Provider::Ollama => {
-            let client = ollama::Client::builder().api_key(rig_core::client::Nothing).base_url(&connection.endpoint).http_client(transport).build().map_err(|_| failure())?;
-            let schema: schemars::Schema = serde_json::from_value(request.schema.clone()).map_err(|_| failure())?;
-            perform(client.completion_model(&connection.model), message, Some(schema), json!({"keep_alive":"0"})).await
-        },
+            let client = ollama::Client::builder()
+                .api_key(rig_core::client::Nothing)
+                .base_url(&connection.endpoint)
+                .http_client(transport)
+                .build()
+                .map_err(|_| failure())?;
+            let schema: schemars::Schema =
+                serde_json::from_value(request.schema.clone()).map_err(|_| failure())?;
+            perform(
+                client.completion_model(&connection.model),
+                message,
+                Some(schema),
+                json!({"keep_alive":"0"}),
+            )
+            .await
+        }
         Provider::Anthropic => {
-            let client = anthropic::Client::builder().api_key(&connection.credential).base_url(&connection.endpoint).http_client(transport).build().map_err(|_| failure())?;
-            perform(client.completion_model(&connection.model), message, None, json!({})).await
-        },
+            let client = anthropic::Client::builder()
+                .api_key(&connection.credential)
+                .base_url(&connection.endpoint)
+                .http_client(transport)
+                .build()
+                .map_err(|_| failure())?;
+            perform(
+                client.completion_model(&connection.model),
+                message,
+                None,
+                json!({}),
+            )
+            .await
+        }
         _ => {
             // Gemini / DeepSeek / custom preserve their existing OpenAI-compatible endpoint contract.
-            let client = openai::CompletionsClient::builder().api_key(&connection.credential).base_url(&connection.endpoint).http_client(transport).build().map_err(|_| failure())?;
-            let params = if connection.json_mode { json!({"response_format":{"type":"json_object"}}) } else { json!({}) };
-            perform(client.completion_model(&connection.model), message, None, params).await
+            let client = openai::CompletionsClient::builder()
+                .api_key(&connection.credential)
+                .base_url(&connection.endpoint)
+                .http_client(transport)
+                .build()
+                .map_err(|_| failure())?;
+            let params = if connection.json_mode {
+                json!({"response_format":{"type":"json_object"}})
+            } else {
+                json!({})
+            };
+            perform(
+                client.completion_model(&connection.model),
+                message,
+                None,
+                params,
+            )
+            .await
         }
     }
 }
 fn normalize(response: CompletionResponse) -> Result<Value, String> {
-    if response.finish_reason() != Some(FinishReason::Stop) { return Err("LLM応答が正常終了していません".into()); }
+    if response.finish_reason() != Some(FinishReason::Stop) {
+        return Err("LLM応答が正常終了していません".into());
+    }
     let mut text = String::new();
     for part in response.choice {
-        match part { AssistantContent::Text(t) => text.push_str(&t.text), AssistantContent::Reasoning(_) => {}, _ => return Err("未対応のLLM応答です".into()) }
+        match part {
+            AssistantContent::Text(t) => text.push_str(&t.text),
+            AssistantContent::Reasoning(_) => {}
+            _ => return Err("未対応のLLM応答です".into()),
+        }
     }
     let text = text.trim();
-    let text = text.strip_prefix("```json\n").or_else(|| text.strip_prefix("```\n")).and_then(|s| s.strip_suffix("\n```")).unwrap_or(text);
+    let text = text
+        .strip_prefix("```json\n")
+        .or_else(|| text.strip_prefix("```\n"))
+        .and_then(|s| s.strip_suffix("\n```"))
+        .unwrap_or(text);
     let value: Value = serde_json::from_str(text).map_err(|_| "LLMのJSON応答が不正です")?;
-    if !value.is_object() { return Err("JSONオブジェクトが必要です".into()); }
+    if !value.is_object() {
+        return Err("JSONオブジェクトが必要です".into());
+    }
     Ok(value)
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PlanOutput { panels: Vec<PanelPlan> }
+struct PlanOutput {
+    panels: Vec<PanelPlan>,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-struct PanelPlan { unit_ids: Vec<String>, prompt: String, character_ids: Vec<String> }
+struct PanelPlan {
+    unit_ids: Vec<String>,
+    prompt: String,
+    character_ids: Vec<String>,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FaceOutput { found: bool, rect: [f64; 4] }
+struct FaceOutput {
+    found: bool,
+    rect: [f64; 4],
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TranslationOutput { units: Vec<TranslatedUnit> }
+struct TranslationOutput {
+    units: Vec<TranslatedUnit>,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct TranslatedUnit { id: String, text: String }
+struct TranslatedUnit {
+    id: String,
+    text: String,
+}
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ProbeOutput { ok: bool }
+struct ProbeOutput {
+    ok: bool,
+}
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
         Purpose::Plan => {
-            let output: PlanOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?;
-            if output.panels.is_empty() || output.panels.len() > 120 || output.panels.iter().any(|p| p.unit_ids.is_empty() || p.prompt.trim().is_empty() || p.character_ids.iter().any(|id| id.is_empty())) { return Err(failure()); }
-        },
+            let output: PlanOutput =
+                serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            if output.panels.is_empty()
+                || output.panels.len() > 120
+                || output.panels.iter().any(|p| {
+                    p.unit_ids.is_empty()
+                        || p.prompt.trim().is_empty()
+                        || p.character_ids.iter().any(|id| id.is_empty())
+                })
+            {
+                return Err(failure());
+            }
+        }
         Purpose::Face => {
-            let output: FaceOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?;
-            let [x,y,w,h] = output.rect;
-            if output.rect.iter().any(|n| !n.is_finite() || !(0.0..=1.0).contains(n)) || (output.found && (w <= 0.0 || h <= 0.0 || x+w > 1.0 || y+h > 1.0 || w*h > 0.4)) { return Err(failure()); }
-        },
+            let output: FaceOutput =
+                serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            let [x, y, w, h] = output.rect;
+            if output
+                .rect
+                .iter()
+                .any(|n| !n.is_finite() || !(0.0..=1.0).contains(n))
+                || (output.found
+                    && (w <= 0.0 || h <= 0.0 || x + w > 1.0 || y + h > 1.0 || w * h > 0.4))
+            {
+                return Err(failure());
+            }
+        }
         Purpose::Translation => {
-            let output: TranslationOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?;
-            if output.units.is_empty() || output.units.len() > 1000
-                || output.units.iter().any(|unit| unit.id.trim().is_empty() || unit.text.trim().is_empty()) {
+            let output: TranslationOutput =
+                serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            if output.units.is_empty()
+                || output.units.len() > 1000
+                || output
+                    .units
+                    .iter()
+                    .any(|unit| unit.id.trim().is_empty() || unit.text.trim().is_empty())
+            {
                 return Err(failure());
             }
             let mut ids = HashSet::new();
-            if output.units.iter().any(|unit| !ids.insert(&unit.id)) { return Err(failure()); }
-        },
-        Purpose::Probe => { let output: ProbeOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?; if !output.ok { return Err(failure()); } }
+            if output.units.iter().any(|unit| !ids.insert(&unit.id)) {
+                return Err(failure());
+            }
+        }
+        Purpose::Probe => {
+            let output: ProbeOutput =
+                serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            if !output.ok {
+                return Err(failure());
+            }
+        }
     }
     Ok(())
 }
