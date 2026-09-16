@@ -572,8 +572,7 @@ mod recovery_tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let sequence =
-            NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let root = std::env::temp_dir().join(format!(
             "manga-recovery-{}-{suffix}-{sequence}",
             std::process::id()
