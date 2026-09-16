@@ -94,8 +94,12 @@ def library_assets(library):
     files = sorted(library.rglob('*.blend'))
     if len(files) > 256:
         raise ValueError('Select an asset folder with at most 256 blend files')
+    current = Path(bpy.data.filepath).resolve(strict=True)
     for file in files:
         path = within(file, [library])
+        # Blender refuses to open its current file as an external asset library.
+        if path == current:
+            continue
         version = checksum(path)
         with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
             for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections')]:
