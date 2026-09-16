@@ -338,3 +338,11 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 - 新UI試験は4コマの自動演出→撮影→作画→顔推定なし局所修正を人工IPCで検証する。実モデルの作画品質とは別。
 - 実Blenderの配置・カメラ方向・照明・撮影・保存版不変・異常値拒否を既存CI試験へ追加。実行結果はPRとIssueへ追記する。
 - 実演出LLM・実画像AI・Mac GUI・複雑なリグ・24GB性能は未実施。視覚的な演技・人物一致を自動保証しない。素材の初回準備と不足時の対応は必要。
+
+## #46 — 仮想環境での実演出LLM受入
+
+`Real LLM and Blender acceptance` はLinux Actionsで実Ollama（固定バイナリSHA-256）とQwen2.5 3Bを動かし、製品の `directPanel` → Rust接続管理／rig-core → 実LLM → Rust Blender保存層 → 実Blenderまで接続する。テスト専用stdio bridgeは既存の公開関数を呼ぶだけで、推論結果やBlender応答をモックしない。APIキー・作品原稿・課金APIを使わず、公開可能な立方体シーンを使う。モデルタグ・取得digest・応答全文・操作履歴・実PNG・SQLiteをartifactに保存する。
+
+検証対象は4コマの焦点距離と異なる撮影画像、nativeプロセス再起動後の1コマ修正、他コマのcheckpoint不変、不足素材によるblockedと撮影抑止、原本hash不変。応答を正解に置き換えたり、失敗を成功まで再試行しない。最大30推論要求・35分で停止する。これは既に計画したコマの演出から撮影までの受入であり、実画像モデルによる漫画化、実人物素材の演技品質、Mac GUI、24GB実機性能は未実施として別管理する。
+
+関連PRとActionsの実行結果をIssue #46へ記録する。`acceptance.json`のpass、実PNG、transcriptを確認して判定し、ジョブを追加しただけでは受入成功にしない。
