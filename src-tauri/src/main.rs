@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod backup_commands;
 mod llm;
 mod policy_transport;
 mod runway;
@@ -12,6 +13,8 @@ use std::{path::PathBuf, sync::Mutex, time::Duration};
 use tauri::{Manager, State};
 use tokio::io::AsyncWriteExt;
 struct AppState {
+    base: PathBuf,
+    _workspace_gate: std::fs::File,
     root: PathBuf,
     connections: llm::Connections,
     db: Mutex<rusqlite::Connection>,
@@ -542,11 +545,18 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            let base = dir.canonicalize()?;
+            let dir = backup_commands::initial_root(&base).map_err(std::io::Error::other)?;
+            let workspace_gate =
+                storage::backup::gate(&dir, ".workspace.lock").map_err(std::io::Error::other)?;
+            storage::backup::recover_work(&base, &dir).map_err(std::io::Error::other)?;
             let _ = runway::cleanup_downloads(&dir);
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
             blender::initialize(&db).map_err(std::io::Error::other)?;
             app.manage(AppState {
+                base,
+                _workspace_gate: workspace_gate,
                 root: dir,
                 connections: llm::Connections::default(),
                 db: Mutex::new(db),
@@ -556,6 +566,14 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            backup_commands::backup_status,
+            backup_commands::backup_setup,
+            backup_commands::backup_disable,
+            backup_commands::backup_history,
+            backup_commands::backup_run,
+            backup_commands::backup_restore,
+            backup_commands::backup_open,
+            backup_commands::backup_rebind_blender,
             blender_fork,
             blender_capture,
             blender_register,

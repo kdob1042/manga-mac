@@ -326,3 +326,19 @@ V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作ら�
 - [B8: Tripo公式Blender拡張](https://github.com/VAST-AI-Research/tripo-3d-for-blender)
 
 未確定：採用Blenderと接続拡張の組合せ・固定版、Asset Browser操作のAPI到達範囲、プレビュー応答性能、外部画像APIの採用先、生成3Dのリグ品質、漫画化の一致率、24GB実機の同時常駐可否。これらは段階0〜4の実測で決め、既存機能があるという理由だけで自動化の品質まで保証しない。
+
+## 14. 作品のクラウドバックアップ（Issue #34）
+
+制作の正本はローカルSQLiteと不変素材のままとし、バックアップ先へは整合したコピーを送る。初期経路はrestic 0.19.1＋rclone 1.75.1のGoogle Drive/OneDrive remote。暗号化・重複排除・転送・repository排他・forget/pruneはresticを使用する。設定、認証、実行状態を作品DBから分離する。保存先・対象・保持方針への明示同意前は無効。
+
+SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約・履歴・候補・Jobを維持する。既存artifacts/media/blender/image-resultsの保存済み実体をコピーし、相対パス・サイズ・SHA-256の形式v1目録を作る。稼働中の画像/動画/Blender書込みは保留し、転送中の制作ロックは保持しない。Blenderの既存依存packing結果を使い、未固定外部素材は成功扱いしない。AIモデル・資格情報・一時ファイル・管理外Downloads出力・外部Blenderの未保存状態は対象外。既存JSON書出しは完全バックアップとは表示しない。
+
+転送後は同じsnapshotを空の専用領域へ全量restoreし、restic検査、目録、全ファイルhash、SQLite integrity_check、画像/動画/固定Blender参照を照合してから検証済みタグを付ける。検証完了UTC秒がcompleted_atであり、開始日時や原稿commitではない。manifestは復元目録のみで原作の第二正本にしない。
+
+系列はホストやstaging pathによらず永続UUID＋restic repository IDで区別する。既知形式かつ検証済みの各作品について、現在時刻から21×24時間以上経過した旧版だけを削除候補にし、最新1件は無期限保持する。同時刻はsnapshot IDで決定的に比較する。未知形式・未検証・他repositoryのsnapshotは自動削除しない。keep-within/keep-weeklyによる代用は禁止。整理は全量check、系列ごとの最新正常版の実復元、候補のdry-run、一覧再照合、明示IDのforget、prune、checkの順。転送/検証失敗の回は整理しない。整理失敗はバックアップ成功と別表示し、後日再試行する。クラウドの一律オブジェクト期限削除は使わない。
+
+アプリ起動・復帰・1分の軽量タイマーから週次期限を判定し、実処理は最大1回/時、失敗2回後は1日間隔へ落とす。週次保存が未到来でも日次の保守で期限切れ旧版を整理する。時計の逆行・未来の正常版は削除停止。アプリ終了中の実行は保証せず次の起動へ繰り越す。保存先を再接続した場合はスケジュールだけを再設定し、旧クラウドデータは変更しない。
+
+復元は新UUIDの独立workspaceへ行う。元作品や原稿を上書き・最新同期せず、原文と作品内IDを保持する。開く操作はworkspaceを切り替えてアプリを再起動し、元作品へ戻る導線を持つ。元系列と復元作品の系列は分離する。Blenderの実行ファイルは別Macで再指定し、保存版の相対パスを復元ルート内へ解決する。外部Jobは既存のunknown/recovery手順を維持し、新規課金要求を自動送信しない。
+
+パス逸脱・リンク・特殊ファイル・未知形式・欠損は拒否する。作業領域はアプリ専用UUIDディレクトリと所有ロックで限定し、再起動後に孤立領域を回収する。resticパスワードはmacOS Keychainへ保管し、子プロセスへ匿名pipeで渡す。シェル文字列や継承環境へ秘密を入れない。rclone OAuthは専用設定ファイル（利用者のみ読書き可）を明示指定する。復元パスワードはMac外にも保管する。採用版の公式archive SHA-256と導入方法はscripts/install-backup-tools.sh、配布ライセンス・手順はINSTALL_MAC、実行結果はVALIDATIONに記録する。

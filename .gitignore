@@ -9,3 +9,5 @@ helper/.build/
 test-results/
 playwright-report/
 src-tauri/icons/
+
+tests/*/target/

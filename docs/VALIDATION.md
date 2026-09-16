@@ -302,3 +302,26 @@ Swift helperはnativeで予約した`image-results/<job-IDのSHA256>/`へPNGを�
 Kamiya-Kawai `main`の構造をcommit `7eed2120eb93e2964cd188b5890f0247c83de540`、manifest blob `6fa270921f2f3fe59b4d912e1da68898897103b8`で確認した。これは脚本内容の採用版ではなく、アプリが原作リポジトリ構造へ整合した確認基準。対応はmanifest schema 4、`episodes[].scene_ids -> scenes[].path`、五つの`settings[].path`、VISUAL設定内のキャラクター基準画。旧`design_path`／`design/scenes/`は要求しない。
 
 Node契約試験は、未対応schema・未登録repo・VISUAL欠落・リポジトリ外パスを拒否し、基準画2件のパスと人物名、同名手動参照から原作連携参照への移行、画像hash変更時だけの版上げを確認する。Rustは取得画像を20MB以下のPNG/JPEG/WebP実形式に限定しSHA-256を返す。実private repoからのMac同期・画面表示・SQLite再起動はMac CI／実機で別確認し、Node/Web buildだけで完了扱いしない。
+
+## BK-A〜D: クラウドバックアップ候補（Issue #34）
+
+開始dev: `cb47fd24515846d813abaf0469b90587813b19ff`。`storage::backup`は既存storageの画像/動画検証、SQLite Online Backup API、既存Blender packing済み保存版を再利用。`restic`は暗号化・転送・restore・check・forget/pruneを委任する薄い接続層。原作・生成・保存の既存経路を置換しない。
+
+実行済み: Node 既存試験、Web build、Rust storage（WAL/履歴/別workspace復元/改変/リンク/秘密混入拒否/21日境界/同時刻/複数系列/未知snapshot除外）、storage clippy。restic 0.19.1公式Linux archiveのSHA-256 `f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c`を照合し、実バイナリで2世代upload→全量restore検証→21日後のforget/prune→最新再restore成功。クラウド通信成功の証拠ではない。
+
+再現: `cargo test --locked --manifest-path tests/storage/Cargo.toml`、`RESTIC_TEST_BIN=/絶対パス/restic cargo test --locked --manifest-path tests/storage/Cargo.toml real_restic -- --ignored`。実restic試験はバイナリ未指定で黙って成功にせずignoreし、CIの専用ステップでは必須実行する。Node/Web/Rust/実restic/画面/Macは個別に判定する。
+
+画面試験を追加: 初期無効、送信許可・別パスワード保管を確認して設定、秘密欄クリア、履歴復元が既存作品のsave/openを呼ばないことを検証する。ローカルPlaywrightはブラウザ実行ファイル未導入で開始できず、公式ブラウザ取得も接続timeout。CIのWebジョブで実行するまでUIを合格扱いしない。Mac native/Keychainビルド結果もPRのCIで記録する。
+
+### 残る受入（別の担当者が実施可能）
+
+- `BK-CLOUD-01` / `not_run`: 試験用Google DriveまたはOneDriveの専用remote、容量、送信同意が必要。INSTALL_MACに従い初期化→漫画・動画・固定Blenderを保存→接続を切断→別領域に復元し全内容を開く。失敗時には最新日時が進まず旧版削除されないことを確認する。契約・課金を伴う実サービス操作は未実行。
+- `BK-MAC-01` / `not_run`: Apple Silicon macOS 14以降の成功DMGでKeychain保存/再起動/解除、起動・スリープ復帰、元作品/復元作品切替、別MacのBlender再接続を確認する。画像/動画decoder・実Blenderの描画品質は共通hash試験と分ける。
+- `BK-FAULT-01` / `not_run`: 実クラウドの容量不足、転送中のアプリ強制終了、forget後/prune中の強制終了で再起動し、最新正常版の再復元、孤立staging回収、次回prune再試行を確認する。全量復元確認前のsnapshotは自動削除対象にも最新保護対象にもしない。
+- `BK-DISTRIBUTION` / `not_run`: 署名・公証・開発ツールのないMacのクリーン導入。ツールは固定公式配布物を別途導入する方式。自動課金・クラウド契約の追加・OS常駐スケジューラはない。
+
+rollback: 更新前のアプリと元作品フォルダを保持。復元は新しい`restored/<UUID>`へ作成するので元作品を上書きしない。旧版アプリへ戻す前に「元の作品を開く」でprimaryへ戻す。バックアップ設定/状態は作品SQLiteと別ファイル。クラウド側はアプリが初期化・設定された専用repositoryだけを扱う。
+
+PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/35070417529)ではLinux storage、実Blender、Web（画面14件）、LLM/HTTP/依存監査が成功。UI artifactのバックアップ設定・別作品復元のスクリーンショットを取得し確認した。PRのMacジョブは既存方針によりskip（失敗ではなく未実施）。別途workflow_dispatchまたはmainのビルド結果を確認する。
+
+追加: 復元前のディスク空き容量、旧撮影版のhash、画像/動画/固定Blender・原稿構造契約を含む別ルートへの往復試験を追加。公式rclone 1.75.1のarchive hashを照合し、restic→rclone stdio→一時local remoteで実通信、全量復元、管理外未検証snapshotの保持、破損した新規bundle拒否と旧正常版保護を確認した。このlocal remote試験を実Drive/OneDrive認証の成功とは扱わない。
