@@ -149,7 +149,7 @@ pub async fn backup_run(automatic: bool, state: State<'_, AppState>) -> Result<(
     status.phase = "preparing".into();
     status.failure.clear();
     restic::save_status(&state.root, &status)?;
-    let result = async {
+    let result: Result<(), String> = async {
         let client = client(&state).await?;
         if upload {
             let temp = restic::Temp::new(&work(&state)?)?;
