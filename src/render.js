@@ -38,15 +38,21 @@ function drawLettering(ctx, text, box, balloon) {
   ctx.fillStyle = '#111'; ctx.textBaseline = 'top';
   wrapped.forEach((line, i) => ctx.fillText(line, box.x + padding, box.y + padding + i * size * 1.25));
 }
-export async function pagePNG(panels, snapshots, localizations = [], locale = 'ja') {
+export function panelLayout(i, width, height) {
+  const x = i % 2 === 0 ? 820 : 60, y = 60 + Math.floor(i / 2) * 1080;
+  const fit = containRect(width, height, 716, 716);
+  return { frame: { x, y, width: 720, height: 1030 }, artRect: { x: x + 2 + fit.x, y: y + 2 + fit.y, width: fit.width, height: fit.height } };
+}
+export async function pageLayers(panels, snapshots, localizations = [], locale = 'ja', layer = 'complete') {
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 2260;
-  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1600, 2260);
+  const ctx = canvas.getContext('2d'); if (layer !== 'overlay') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1600, 2260); }
   for (const [i, p] of panels.entries()) {
     const x = i % 2 === 0 ? 820 : 60, y = 60 + Math.floor(i / 2) * 1080;
-    ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.strokeRect(x, y, 720, 1030);
+    if (layer !== 'art') { ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.strokeRect(x, y, 720, 1030); }
     if (!p.image) throw Error('未作画のコマがあります');
-    const image = await imageOf(p.image), fit = containRect(image.width, image.height, 716, 716);
-    ctx.drawImage(image, x + 2 + fit.x, y + 2 + fit.y, fit.width, fit.height);
+    const image = await imageOf(p.image), { artRect: fit } = panelLayout(i, image.width, image.height);
+    if (layer !== 'overlay') ctx.drawImage(image, fit.x, fit.y, fit.width, fit.height);
+    if (layer === 'art') continue;
     const snapshot = snapshots.find(s => s.id === p.snapshotId);
     const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
     if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
@@ -61,6 +67,7 @@ export async function pagePNG(panels, snapshots, localizations = [], locale = 'j
   }
   return canvas.toDataURL('image/png');
 }
+export const pagePNG = (panels, snapshots, localizations = [], locale = 'ja') => pageLayers(panels, snapshots, localizations, locale);
 export async function exportCBZ(project) {
   if (!project.panels.length) throw Error('書き出すページがありません');
   const zip = new JSZip();
