@@ -8,6 +8,8 @@ Blenderの既存機能はAPI／既存MCP／アドオンで再利用する。新�
 
 変更はGitHubの最新`dev`を確認し、`dev`から作業ブランチを作ってPRで`dev`へ集約する。GitHubのdefault branchが`main`でも、通常作業の起点には使わない。Cloud Agent等でBase Branchを指定できる場合は`dev`を明示し、指定できない場合も作業開始前に最新`dev`へ切り替える。PRのbaseも通常は`dev`とし、ツール既定値の`main`へ誤ってPRを出さない。
 
+CIもこのブランチ運用に合わせる。非文書変更のPR（`feature/*`・`fix/*`・`docs/*`などから`dev`、および`dev`から`main`）では共通のLinuxチェックを実行する。非文書変更が`dev`へマージされたpushでは、macOSのSwift/Tauri arm64ビルド、Rust回帰試験、DMG生成まで実行する`macOS validation`を完了させる。これが失敗したコミットは`main`へ昇格させず、原因を修正して`dev`へ反映する。`main`へのマージ後は検証を重ねず、配布用DMGだけを作る`macOS release package`を実行する。Actionsの成功と実機での視覚・性能受入は別判定とする。
+
 受け入れ可能なまとまりごとに`dev → main`のPRを作り、必要な検証後に反映する。`main`と`dev`へ直接pushしない。公開・配布上の重大不具合だけ`hotfix/* → main`を許し、反映後は`main → dev`で同期する。ローカルに置いただけで完了としない。コード用リポジトリの更新と、アプリが読み取り専用で扱う原作リポジトリを混同しない。
 
 文書更新、実装、共通テスト、Macビルド、実Blender接続、実機の画像品質・性能検証を別々に報告する。文書のみの変更では既存実装を変更せず、設計上の機能を実装済みと表記しない。
