@@ -279,3 +279,8 @@ Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter�
 この失敗で、成功したSwiftビルドもジョブ終端のcache保存前に失われていた。固定済みactions/cacheのrestore/saveを分離し、Swift成功直後に同じcompiler/source/lockの完全一致キーで保存する。以後のRust test/clippy・app/DMGビルド・成果物確認は全て維持する。Macの署名/公証、実モデル品質/24GB、Mac内操作は引き続き別受入。
 
 追加の寸法検証式についてRust 1.98.1のclippy-driverで`manual_is_multiple_of` 2件を再現し、同じ64倍数判定を`is_multiple_of`へ修正した。修正した式のlintは成功。Mac本体全体のclippy成功はmain CIで別確認する。
+
+
+## LEGACY-01の保存完了待機
+
+統合main `59a0a16c629d2cfc7fcec78f43064971733e807a`のrun `35056832831`で、UI11件中10成功、Undo直後のreloadで旧表示が残る1件が失敗。commitはsaveProject完了後に画面状態を更新するが、テストのclick完了は非同期saveProject完了を意味しない。Undo後の画像表示を確認してからreloadし、reload後の画像厳密一致の検証も維持する。任意sleep・retries・テスト削除・期待値緩和は行わない。強制終了中の回復をこの正常保存/再読込試験で代用しない。
