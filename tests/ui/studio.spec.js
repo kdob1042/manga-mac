@@ -30,19 +30,42 @@ test('LLM provider selection is independent for planning and vision; keys are ep
 });
 
 
-test('switches UI language, persists it, and never translates stored source text', async ({ page }) => {
+test('switches manga content between Japanese source and shared English localization', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: '画面のサンプルを見る' }).click();
-  const source = '「ここ、空いてる？」';
-  await expect(page.locator('.caption').nth(1)).toHaveText(source);
-
-  await page.getByLabel('表示言語').selectOption('en');
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('button', { name: 'Connections & characters' })).toBeVisible();
-  await expect(page.locator('.caption').nth(1)).toHaveText(source);
-
+  await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
+  await page.evaluate(() => new Promise((resolve, reject) => {
+    const open = indexedDB.open('manga-mac', 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result;
+      const tx = db.transaction('data', 'readwrite');
+      const store = tx.objectStore('data');
+      const get = store.get('project');
+      get.onsuccess = () => {
+        const project = get.result;
+        project.version = 3;
+        project.output_locale = 'en';
+        project.localizations = [{
+          id: 'sample:en', snapshot_id: 'sample', locale: 'en',
+          units: [
+            { id: 'S01:u0', text: 'After school in the library. Light enters through the window.' },
+            { id: 'S01:u1', text: '“Is this seat free?”' },
+            { id: 'S01:u2', text: 'She looks up and pulls out the chair beside her.' },
+            { id: 'S01:u3', text: '“Go ahead.”' },
+          ],
+          model: { provider: 'fixture', model: 'fixture' }, created_at: '2026-09-16T00:00:00.000Z',
+        }];
+        store.put(project, 'project');
+      };
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+  }));
   await page.reload();
-  await expect(page.getByLabel('Display language')).toHaveValue('en');
-  await expect(page.getByRole('button', { name: 'Connections & characters' })).toBeVisible();
-  await expect(page.locator('.caption').nth(1)).toHaveText(source);
+  await expect(page.getByLabel('作品言語')).toHaveValue('en');
+  await expect(page.locator('.caption').nth(1)).toHaveText('“Is this seat free?”');
+  await expect(page.getByRole('button', { name: '接続・人物設定' })).toBeVisible();
+  await page.getByLabel('作品言語').selectOption('ja');
+  await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
 });
