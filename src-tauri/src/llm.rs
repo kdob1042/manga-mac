@@ -17,7 +17,7 @@ use crate::policy_transport::PolicyTransport;
 pub enum Provider { Ollama, Openai, Gemini, Anthropic, Deepseek, Custom }
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
-pub enum Purpose { Plan, Face, Probe }
+pub enum Purpose { Plan, Face, Translation, Probe }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registration {
@@ -87,7 +87,10 @@ impl Connections {
             return Err("LLM要求が上限または形式に適合しません".into());
         }
         let connection = self.entries.lock().map_err(|_| failure())?.get(&request.connection_id).cloned().ok_or("接続を登録してください")?;
-        if request.purpose != Purpose::Probe && request.purpose != connection.purpose { return Err("用途に対応する接続を選択してください".into()); }
+        if request.purpose != Purpose::Probe && request.purpose != connection.purpose
+            && !(request.purpose == Purpose::Translation && connection.purpose == Purpose::Plan) {
+            return Err("用途に対応する接続を選択してください".into());
+        }
         {
             let mut submitted = self.submitted.lock().map_err(|_| failure())?;
             if submitted.len() >= 4096 || !submitted.insert(request.request_id.clone()) { return Err("送信済み要求または要求上限です".into()); }
@@ -180,6 +183,12 @@ struct PanelPlan { unit_ids: Vec<String>, prompt: String, character_ids: Vec<Str
 struct FaceOutput { found: bool, rect: [f64; 4] }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct TranslationOutput { units: Vec<TranslatedUnit> }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TranslatedUnit { id: String, text: String }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ProbeOutput { ok: bool }
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
@@ -191,6 +200,15 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
             let output: FaceOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?;
             let [x,y,w,h] = output.rect;
             if output.rect.iter().any(|n| !n.is_finite() || !(0.0..=1.0).contains(n)) || (output.found && (w <= 0.0 || h <= 0.0 || x+w > 1.0 || y+h > 1.0 || w*h > 0.4)) { return Err(failure()); }
+        },
+        Purpose::Translation => {
+            let output: TranslationOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?;
+            if output.units.is_empty() || output.units.len() > 1000
+                || output.units.iter().any(|unit| unit.id.trim().is_empty() || unit.text.trim().is_empty()) {
+                return Err(failure());
+            }
+            let mut ids = HashSet::new();
+            if output.units.iter().any(|unit| !ids.insert(&unit.id)) { return Err(failure()); }
         },
         Purpose::Probe => { let output: ProbeOutput = serde_json::from_value(value.clone()).map_err(|_| failure())?; if !output.ok { return Err(failure()); } }
     }
