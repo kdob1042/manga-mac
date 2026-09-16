@@ -72,3 +72,9 @@ test('English localization survives migration without changing the source', asyn
   assert.deepEqual(migrated.snapshots, p.snapshots);
   await assert.rejects(migrateProject({ ...localized, localizations: [{ ...localized.localizations[0], units: [{ id: 'S01:u0', text: '' }] }] }));
 });
+
+test('duplicate translated unit IDs are rejected during project reload', async () => {
+  const p = await migrateProject(legacy);
+  p.localizations = [{ locale: 'en', snapshot_id: 'source', units: [{id:'u',text:'One'},{id:'u',text:'Two'}] }];
+  await assert.rejects(migrateProject(p));
+});

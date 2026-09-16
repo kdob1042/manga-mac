@@ -169,7 +169,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
-    if !matches!(project["version"].as_u64(), Some(1 | 2)) {
+    if !matches!(project["version"].as_u64(), Some(1 | 2 | 3)) {
         return Err("Unsupported project schema".into());
     }
     // Commit the previous exact JSON before starting file migration.
@@ -293,4 +293,17 @@ mod tests {
         assert!(verify(&dir, "../outside").is_err());
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn version_three_localization_survives_native_save_and_reload() {
+        let (mut db, dir) = setup();
+        let mut project = fixture();
+        project["version"] = json!(3);
+        project["output_locale"] = json!("en");
+        project["localizations"] = json!([{"locale":"en","snapshot_id":"source","units":[{"id":"u1","text":"Hello"}]}]);
+        save(&mut db, &dir, &project.to_string()).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        assert_eq!(restored, project);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
 }

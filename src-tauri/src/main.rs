@@ -184,6 +184,18 @@ async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<St
         .engine
         .try_lock()
         .map_err(|_| "画像エンジンは処理中です")?;
+    let width = request["width"].as_u64().unwrap_or(768);
+    let height = request["height"].as_u64().unwrap_or(768);
+    if !(256..=1024).contains(&width) || !(256..=1024).contains(&height) || width % 64 != 0 || height % 64 != 0 {
+        return Err("未対応の画像寸法です".into());
+    }
+    if let Some(original) = request["original"].as_str() {
+        let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
+        let bytes = STANDARD.decode(encoded).map_err(err)?;
+        if request["original_hash"].as_str() != Some(format!("{:x}", Sha256::digest(&bytes)).as_str()) {
+            return Err("元画像のハッシュが一致しません".into());
+        }
+    }
     let refs = request["references"]
         .as_array()
         .ok_or("Missing references")?;

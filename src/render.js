@@ -1,8 +1,17 @@
+import { containRect } from './image-input';
 import JSZip from 'jszip';
 import { call, desktop } from './bridge';
 import { compositePixels } from './core';
 import { textForPanel } from './localization';
 export function imageOf(src) { return new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = () => reject(Error('画像を読み込めません')); im.src = src; }); }
+export async function fitInput(image, width, height) {
+  const source = await imageOf(image), rect = containRect(source.width, source.height, width, height);
+  if (source.width === width && source.height === height) return { image, mapping: rect };
+  const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(source, rect.x, rect.y, rect.width, rect.height);
+  return { image: canvas.toDataURL('image/png'), mapping: rect };
+}
 export async function mergeRegion(before, after, rect) {
   if (!rect || rect.length !== 4 || rect.some(n => !Number.isFinite(n) || n < 0 || n > 1) || rect[2] <= 0 || rect[3] <= 0 || rect[0] + rect[2] > 1.00001 || rect[1] + rect[3] > 1.00001) throw Error('修正範囲を選択してください');
   const a = await imageOf(before), b = await imageOf(after);
@@ -30,7 +39,8 @@ export async function pagePNG(panels, snapshots, localizations = [], locale = 'j
     const x = i % 2 === 0 ? 820 : 60, y = 60 + Math.floor(i / 2) * 1080;
     ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.strokeRect(x, y, 720, 1030);
     if (!p.image) throw Error('未作画のコマがあります');
-    ctx.drawImage(await imageOf(p.image), x + 2, y + 2, 716, 716);
+    const image = await imageOf(p.image), fit = containRect(image.width, image.height, 716, 716);
+    ctx.drawImage(image, x + 2 + fit.x, y + 2 + fit.y, fit.width, fit.height);
     const snapshot = snapshots.find(s => s.id === p.snapshotId);
     const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
     if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');

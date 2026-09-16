@@ -111,3 +111,21 @@ Blender標準pack_all/pack_librariesで依存を格納し、保存したblendを
 `blender/test_real.py`に検索→再検索→hash指定取込・古いhash/パス逸脱拒否の実fixtureを追加（not_run）。D-ASSETの横断取得・選択UIは実装候補ありへ更新。任意pose適用UI、入れ子リンク、再起動含む実Blender受入は未検証。Python構文とWeb buildはpass。
 
 参考: Blender公式 [BlendDataLibraries](https://docs.blender.org/api/current/bpy.types.BlendDataLibraries.html)、[File operators](https://docs.blender.org/api/current/bpy.ops.file.html)。固定対応版4.5.13での実行を受入ゲートとし、current文書の存在だけで動作確認済みとしない。
+
+
+## 段階E — 撮影原本から漫画化・候補採用（2026-09-16）
+
+`blender_capture`で不変撮影画像を再読込・hash照合し、既存Swiftのoriginal入力へ画像bytesを渡す。人物参照に加え任意の画風参照を設定画面から登録できる。再撮影では旧原稿を参照に付け、2D修正意図を引き継ぐ。旧作画があれば新画像は候補のまま保持し、明示採用とUndoを行う。古い原作/コマ/参照/画風の基準版候補は拒否。未確定要求は確認して解決でき、同じ基準版の試行上限3回は再起動/取下げでリセットしない。
+
+出力寸法は256〜1024・64の倍数へ制限し、撮影画像は縦横比を保って余白で合わせる。変換矩形を記録し、Swiftの出力寸法を照合する。ページ出力もcontainで描画する。画像AIの構造保持は品質保証ではない。顔推定は完成画像上の候補矩形を先に表示し、次の修正操作で確定。マスク外は既存RGBA合成で保護する。
+
+「カメラを寄る/引く/焦点距離N mm」は対象ショット変更→撮影→対象だけ漫画化。他のポーズ/配置はBlenderでの調整を明示案内し、2D編集へ黙って流さない。吹き出し指示も画像AIへ流さない。任意の自然言語から全Blender操作を解決する機能ではない。
+
+検証: Node24件/Web build。入力画像bytes・hash・参照順、padding計算、振分け、候補採用/古い基準拒否/Undo、試行上限維持の機械試験を追加。Swift upstream固定commitのCLIでwidth/heightのInt型・64倍数制約を確認。Rust/Swiftビルド、UI・実画像モデル・実Macはnot_run。
+
+- E-MODEL: Macで`npm run tauri build`、人工4コマの撮影→漫画化、人物/画風/旧表情参照を実入力監査。GPUメモリ・画像寸法・キャラ一致を計測し、画像品質を別判定する。
+- E-UI: 顔検出→矩形確認→局所編集→マスク外RGBA比較、カメラ寄り→候補比較→採用→Undo→再起動。候補が旧原稿を自動上書きしないことを確認。クラウドブラウザからlocalhost接続不可のためnot_run。
+- E-RECOVERY: ローカル画像エンジン応答と作品保存の間の強制終了ではjobはunknownとなる。元原稿は保持し、採用せず解決するまで新要求を送らない。画像出力のエンジン側永続化/再取得は残件（現時点は完了応答がUIへ届くまで画像を再取得できない）。
+
+
+E統合追補: PR #13のUI翻訳撤回・成果物英訳を保持して統合。統合確認でschema 3をRust保存が拒否する不整合を発見し、1/2/3を受け入れる修正とnative往復試験を追加（Rust試験not_run）。英訳unit ID重複の読込拒否も修正。追加後Node27件/Web build pass。PR #13由来の作品言語・字幕共有を撮影/作画変更で消さない。
