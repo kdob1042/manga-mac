@@ -46,5 +46,5 @@ test('video capture uses the shared controls without creating manga panels; rest
   await page.reload();
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await page.getByRole('button', { name: '1 · s', exact: true }).click();
-  await expect(page.getByText('カメラを固定する', { exact: true })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'このショットの動き', exact: true })).toHaveValue('カメラを固定する');
 });
