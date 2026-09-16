@@ -1,7 +1,8 @@
 name: Check and build Mac app
-# PRs run the Linux checks. A merge to dev runs the full macOS validation.
+# PRs always run the Linux checks, including docs-only PRs, because protected branches require these checks.
+# A merge to dev runs the full macOS validation.
 # A merge to main only packages the already validated source for distribution.
-# Markdown/docs-only changes are intentionally skipped unless this workflow changes.
+# Docs-only pushes skip the expensive post-merge jobs.
 on:
   push:
     branches: [dev, main]
@@ -10,13 +11,11 @@ on:
       - '**/*.md'
   pull_request:
     branches: [dev, main]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
   workflow_dispatch:
 
 concurrency:
-  group: manga-${{ github.event.pull_request.head.ref || github.ref_name }}
+  # Keep dev push validation separate from a dev-to-main PR; the latter must not cancel the former.
+  group: manga-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
