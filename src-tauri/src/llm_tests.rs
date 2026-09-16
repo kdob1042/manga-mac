@@ -13,7 +13,9 @@ impl HttpClientExt for Fixture {
         let data=Bytes::from(self.response.clone());
         async move { let body:LazyBody<U>=Box::pin(async move {Ok(U::from(data))}); Ok(HttpResponse::builder().status(200).header("content-type","application/json").body(body).unwrap()) }
     }
+    #[allow(clippy::manual_async_fn)]
     fn send_multipart<U>(&self,_:HttpRequest<MultipartForm>)->impl std::future::Future<Output=http_client::Result<HttpResponse<LazyBody<U>>>>+Send+'static where U:From<Bytes>+Send+'static { async {Err(denied())} }
+    #[allow(clippy::manual_async_fn)]
     fn send_streaming<T>(&self,_:HttpRequest<T>)->impl std::future::Future<Output=http_client::Result<StreamingResponse>>+Send where T:Into<Bytes>+Send {async {Err(denied())}}
 }
 fn response(provider:Provider, reason:&str, content:&str)->Value {
