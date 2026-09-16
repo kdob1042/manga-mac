@@ -1,7 +1,7 @@
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { sha256, probe, verifyPackage } from '../contracts/package.mjs';
-const root='public/demo';await mkdir(root+'/assets',{recursive:true});
+const root='public/demo';await rm(root,{recursive:true,force:true});await mkdir(root+'/assets',{recursive:true});
 const assets=[];
 async function make(name,filter,width,height,video=false) {
  const tmp=`/tmp/live-manga-fixture-${process.pid}-${name}.${video?'mp4':'png'}`;
@@ -17,7 +17,9 @@ execFileSync('python3',['scripts/fixture_overlay.py',`/tmp/live-overlay-${proces
 async function addPNG(file) {const b=await readFile(file),h=sha256(b);await writeFile(`${root}/assets/${h}.png`,b);assets.push({id:h,path:`assets/${h}.png`,sha256:h,mime:'image/png',bytes:b.length,width:800,height:1120});return h;}
 const overlay=await addPNG(`/tmp/live-overlay-${process.pid}.png`),fallback=await addPNG(`/tmp/live-fallback-${process.pid}.png`);
 const poster=await make('poster','color=c=0xD5E4E5:s=350x350',350,350);
-const video=await make('motion',"color=c=0xD5E4E5:s=350x350:r=24,drawbox=x=140:y=140:w=70:h=70:color=0x38565D:t=fill",350,350,true);
+const video=await make('motion',"color=c=0xD5E4E5:s=350x350:r=24[bg];color=c=0x38565D:s=70x70:r=24[box];[bg][box]overlay=x='140+80*sin(t*2)':y=140:shortest=1",350,350,true);
 const panels=[420,30,420,30].map((x,i)=>({id:`panel-${i+1}`,frame:{x,y:i<2?30:570,width:350,height:510},artRect:{x,y:i<2?30:570,width:350,height:350},poster,text:['静かな午後。','ひとつのコマに、触れてみる。','時間は、あなたの手の中に。','続きは、自分のペースで。'][i],...(i===1?{motion:{asset:video,end:'poster'}}:{})}));
 await writeFile(`${root}/live-manga.json`,JSON.stringify({format:'live-manga',schemaVersion:'1.0.0',releaseId:'demo-v1',workId:'demo',episodeId:'one',title:'触れると、動き出す。',language:'ja',pages:[{id:'page-1',width:800,height:1120,art,overlay,fallback,panels}],assets},null,2));
 await verifyPackage(root);console.log('Verified artificial 4-panel / 5-second fixture');
+
+const manifest=JSON.parse(await readFile(root+'/live-manga.json','utf8'));const files={};for(const a of manifest.assets)files[a.path]=(await readFile(root+'/'+a.path)).toString('base64');await writeFile('contracts/fixture-assets.json',JSON.stringify({manifest,files})+'\n');
