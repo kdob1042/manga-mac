@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-pub mod storage;
 mod llm;
 mod policy_transport;
 mod runway;
+pub mod storage;
 
 mod blender;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -101,7 +101,11 @@ fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     storage::load(&db, &state.root)
 }
 #[tauri::command]
-fn video_playback(app: tauri::AppHandle, revision_id: String, state: State<AppState>) -> Result<Value, String> {
+fn video_playback(
+    app: tauri::AppHandle,
+    revision_id: String,
+    state: State<AppState>,
+) -> Result<Value, String> {
     let db = state.db.lock().map_err(err)?;
     let artifact = storage::video_reference(&db, &revision_id)?;
     let path = storage::verify_video(&state.root, &artifact)?;
@@ -110,14 +114,25 @@ fn video_playback(app: tauri::AppHandle, revision_id: String, state: State<AppSt
     Ok(serde_json::json!({"path":path,"artifact":artifact}))
 }
 #[tauri::command]
-fn video_export(app: tauri::AppHandle, revision_id: String, state: State<AppState>) -> Result<String, String> {
+fn video_export(
+    app: tauri::AppHandle,
+    revision_id: String,
+    state: State<AppState>,
+) -> Result<String, String> {
     let db = state.db.lock().map_err(err)?;
     let artifact = storage::video_reference(&db, &revision_id)?;
-    let path = storage::export_video(&state.root, &app.path().download_dir().map_err(err)?.join("Manga Mac"), &artifact)?;
+    let path = storage::export_video(
+        &state.root,
+        &app.path().download_dir().map_err(err)?.join("Manga Mac"),
+        &artifact,
+    )?;
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
-async fn register_video(input: llm::VideoRegistration, state: State<'_, AppState>) -> Result<String, String> {
+async fn register_video(
+    input: llm::VideoRegistration,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     state.connections.register_video(input).await
 }
 #[tauri::command]
@@ -125,45 +140,97 @@ fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), Str
     state.connections.remove_video(&connection_id)
 }
 fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
-    let db=state.db.lock().map_err(err)?;
-    let project: Value=serde_json::from_str(&storage::load(&db,&state.root)?.ok_or("作品がありません")?).map_err(err)?;
-    let job=project["jobs"].as_array().ok_or("Missing jobs")?.iter().find(|j|j["id"].as_str()==Some(job_id)).ok_or("Missing job")?;
-    let shot=project["videoShots"].as_array().ok_or("Missing shots")?.iter().find(|s|s["id"]==job["scope"]["id"]).ok_or("Missing shot")?;
-    let reference=&shot["startImage"];
+    let db = state.db.lock().map_err(err)?;
+    let project: Value =
+        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
+            .map_err(err)?;
+    let job = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .find(|j| j["id"].as_str() == Some(job_id))
+        .ok_or("Missing job")?;
+    let shot = project["videoShots"]
+        .as_array()
+        .ok_or("Missing shots")?
+        .iter()
+        .find(|s| s["id"] == job["scope"]["id"])
+        .ok_or("Missing shot")?;
+    let reference = &shot["startImage"];
     match reference["kind"].as_str() {
         Some("artwork") => {
-            let artwork=project["artworks"].as_array().ok_or("Missing artwork")?.iter().find(|a|a["id"]==reference["id"] && a["hash"]==reference["hash"]).ok_or("作画版がありません")?;
-            artwork["panel"]["image"].as_str().map(str::to_owned).ok_or("作画画像がありません".into())
-        },
+            let artwork = project["artworks"]
+                .as_array()
+                .ok_or("Missing artwork")?
+                .iter()
+                .find(|a| a["id"] == reference["id"] && a["hash"] == reference["hash"])
+                .ok_or("作画版がありません")?;
+            artwork["panel"]["image"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or("作画画像がありません".into())
+        }
         Some("capture") => {
-            let c=project["captures"].as_array().ok_or("Missing captures")?.iter().find(|c|c["id"]==reference["id"] && c["image"]["hash"]==reference["hash"] && c["dependencies_pinned"]==true).ok_or("固定撮影版がありません")?;
-            let response=blender::capture(&db,&state.root,c["session_id"].as_str().ok_or("Missing session")?,c["request_id"].as_str().ok_or("Missing request")?)?;
-            if response["state"]["checkpoint"]["hash"]!=c["checkpoint"]["hash"] {return Err("撮影版が一致しません".into());}
-            response["preview"].as_str().map(str::to_owned).ok_or("撮影画像がありません".into())
-        },
-        _=>Err("開始画像の形式が未対応です".into()),
+            let c = project["captures"]
+                .as_array()
+                .ok_or("Missing captures")?
+                .iter()
+                .find(|c| {
+                    c["id"] == reference["id"]
+                        && c["image"]["hash"] == reference["hash"]
+                        && c["dependencies_pinned"] == true
+                })
+                .ok_or("固定撮影版がありません")?;
+            let response = blender::capture(
+                &db,
+                &state.root,
+                c["session_id"].as_str().ok_or("Missing session")?,
+                c["request_id"].as_str().ok_or("Missing request")?,
+            )?;
+            if response["state"]["checkpoint"]["hash"] != c["checkpoint"]["hash"] {
+                return Err("撮影版が一致しません".into());
+            }
+            response["preview"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or("撮影画像がありません".into())
+        }
+        _ => Err("開始画像の形式が未対応です".into()),
     }
 }
 #[tauri::command]
-async fn video_submit(job_id: String, connection_id: String, state: State<'_, AppState>) -> Result<Value, String> {
-    let _guard=state.video.try_lock().map_err(|_|"動画APIの操作中です")?;
-    let connection=state.connections.video_connection(&connection_id)?;
-    let image=video_start_image(&state,&job_id)?;
-    runway::submit(&state.db,&job_id,&connection_id,&connection,&image).await
+async fn video_submit(
+    job_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
+    let connection = state.connections.video_connection(&connection_id)?;
+    let image = video_start_image(&state, &job_id)?;
+    runway::submit(&state.db, &job_id, &connection_id, &connection, &image).await
 }
 #[tauri::command]
-async fn video_task(job_id: String, connection_id: String, action: String, accept_remote_deletion: bool, state: State<'_, AppState>) -> Result<Value, String> {
-    let _guard=state.video.try_lock().map_err(|_|"動画APIの操作中です")?;
-    let connection=state.connections.video_connection(&connection_id)?;
+async fn video_task(
+    job_id: String,
+    connection_id: String,
+    action: String,
+    accept_remote_deletion: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
+    let connection = state.connections.video_connection(&connection_id)?;
     match action.as_str() {
-        "status"=>runway::status(&state.db,&job_id,&connection).await,
-        "collect"=>runway::collect(&state.db,&state.root,&job_id,&connection).await,
-        "cancel"=>runway::cancel(&state.db,&job_id,&connection,accept_remote_deletion).await,
-        _=>Err("未対応の動画操作です".into()),
+        "status" => runway::status(&state.db, &job_id, &connection).await,
+        "collect" => runway::collect(&state.db, &state.root, &job_id, &connection).await,
+        "cancel" => runway::cancel(&state.db, &job_id, &connection, accept_remote_deletion).await,
+        _ => Err("未対応の動画操作です".into()),
     }
 }
 #[tauri::command]
-async fn register_llm(input: llm::Registration, state: State<'_, AppState>) -> Result<String, String> {
+async fn register_llm(
+    input: llm::Registration,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     state.connections.register(input).await
 }
 #[tauri::command]
@@ -175,7 +242,10 @@ fn cancel_llm(request_id: String, state: State<AppState>) -> Result<(), String> 
     state.connections.cancel(&request_id)
 }
 #[tauri::command]
-async fn llm_request(request: llm::Request, state: State<'_, AppState>) -> Result<llm::Response, String> {
+async fn llm_request(
+    request: llm::Request,
+    state: State<'_, AppState>,
+) -> Result<llm::Response, String> {
     state.connections.request(request).await
 }
 fn engine_path() -> Result<PathBuf, String> {
@@ -199,7 +269,9 @@ async fn run_engine(input: Option<String>) -> Result<String, String> {
     let mut command = tokio::process::Command::new(engine_path()?);
     command.env_clear();
     for name in ["HOME", "TMPDIR", "PATH", "LANG"] {
-        if let Some(value) = std::env::var_os(name) { command.env(name, value); }
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
     }
     command
         .kill_on_drop(true)
@@ -249,13 +321,19 @@ async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<St
         .map_err(|_| "画像エンジンは処理中です")?;
     let width = request["width"].as_u64().unwrap_or(768);
     let height = request["height"].as_u64().unwrap_or(768);
-    if !(256..=1024).contains(&width) || !(256..=1024).contains(&height) || width % 64 != 0 || height % 64 != 0 {
+    if !(256..=1024).contains(&width)
+        || !(256..=1024).contains(&height)
+        || width % 64 != 0
+        || height % 64 != 0
+    {
         return Err("未対応の画像寸法です".into());
     }
     if let Some(original) = request["original"].as_str() {
         let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
         let bytes = STANDARD.decode(encoded).map_err(err)?;
-        if request["original_hash"].as_str() != Some(format!("{:x}", Sha256::digest(&bytes)).as_str()) {
+        if request["original_hash"].as_str()
+            != Some(format!("{:x}", Sha256::digest(&bytes)).as_str())
+        {
             return Err("元画像のハッシュが一致しません".into());
         }
     }
@@ -310,13 +388,22 @@ fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<Stri
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
-async fn blender_fork(session_id: String, expected_revision: u64, ids: Vec<String>, state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+async fn blender_fork(
+    session_id: String,
+    expected_revision: u64,
+    ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<Value>, String> {
     let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     let mut db = state.db.lock().map_err(err)?;
     blender::fork_shots(&mut db, &session_id, expected_revision, ids)
 }
 #[tauri::command]
-fn blender_capture(session_id: String, request_id: String, state: State<AppState>) -> Result<Value, String> {
+fn blender_capture(
+    session_id: String,
+    request_id: String,
+    state: State<AppState>,
+) -> Result<Value, String> {
     let db = state.db.lock().map_err(err)?;
     blender::capture(&db, &state.root, &session_id, &request_id)
 }
@@ -336,18 +423,31 @@ fn blender_latest(state: State<AppState>) -> Result<Option<Value>, String> {
     blender::latest(&db)
 }
 #[tauri::command]
-async fn blender_execute(request: blender::Request, state: State<'_, AppState>) -> Result<Value, String> {
+async fn blender_execute(
+    request: blender::Request,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     blender::execute(&state.db, &state.root, request).await
 }
 #[tauri::command]
 async fn blender_recover(
-    session_id: String, request_id: String, expected_revision: u64,
-    action: blender::RecoveryAction, state: State<'_, AppState>,
+    session_id: String,
+    request_id: String,
+    expected_revision: u64,
+    action: blender::RecoveryAction,
+    state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     let mut db = state.db.lock().map_err(err)?;
-    blender::recover(&mut db, &state.root, &session_id, &request_id, expected_revision, action)
+    blender::recover(
+        &mut db,
+        &state.root,
+        &session_id,
+        &request_id,
+        expected_revision,
+        action,
+    )
 }
 fn main() {
     tauri::Builder::default()
