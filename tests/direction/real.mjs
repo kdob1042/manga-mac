@@ -58,9 +58,10 @@ try {
   await call('blender_execute',{request:{session_id:base.session_id,request_id:crypto.randomUUID(),expected_revision:0,operation:{kind:'inspect'}}});
   for (let i=0;i<4;i++) {
     const response = await direct(`p${i}`);
+    // Preserve actual output even when semantic assertions fail; image inference is a separate check.
+    await writeFile(`${root}/panel-${i}.png`,Buffer.from(response.preview.split(',')[1],'base64'));
     assert.equal(response.state.state.lens,[45,55,65,75][i]);
     console.log(`Panel ${i}: actual capture verified`);
-    await writeFile(`${root}/panel-${i}.png`,Buffer.from(response.preview.split(',')[1],'base64'));
   }
   assert.equal(new Set(project.panels.map(p=>p.shot_binding.session_id)).size,4);
   assert.equal(new Set(project.captures.map(c=>c.image.hash)).size,4);
