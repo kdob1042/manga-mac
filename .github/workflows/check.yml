@@ -144,7 +144,8 @@ jobs:
         id: native-cache
         run: |
           echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: native-restore
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
@@ -153,6 +154,13 @@ jobs:
           swift build -c release --package-path helper
           mkdir -p src-tauri/binaries
           cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-apple-darwin
+      # Save successful Swift output even if a later Rust regression fails.
+      # The exact compiler/input key and the following build/test gates stay required.
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.native-restore.outputs.cache-hit != 'true'
+        with:
+          path: helper/.build
+          key: ${{ steps.native-restore.outputs.cache-primary-key }}
       - name: Native regression and static checks
         run: |
           npm run icons

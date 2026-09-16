@@ -21,7 +21,7 @@
 
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
-| D-POSE | `blender/worker.py`の型付き操作、`src-tauri/src/blender.rs`の検証、`src/ShotControls.jsx`。固定版Blenderの既存Pose Library APIを確認し、選択したリグ/Actionだけを適用。独自骨格/ポーズエンジンを作らない | `blender/test_real.py`で2人/4ショットのうち対象だけ変化、他のAction/撮影hashと旧checkpoint保持、再読込一致。headless非対応なら非対応を明示 |
+| D-POSE | 静止リグへの適用・外部Action asset検索/取込は下記D-POSE1で実装済み。次は既存Pose Libraryでanimation/constraint付きリグを扱える範囲を検証 | 固定版の実Blenderで対象だけ変化、他人物/漫画4コマ/動画shotのAction・旧hash保持、再読込一致。未対応を黙って適用しない |
 | E-RECOVERY | `helper/Sources/MangaEngine/main.swift`と`src-tauri/src/main.rs`の画像完了応答、既存jobs/storage。UIへ返す前の不変保存と再取得を検討 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。Macの実helperが必要な試験を分離 |
 | V-C-TEMP | 新方式の所有権lock/孤立temp回収を下記追補で実装・子プロセス強制終了試験済み。Mac native試験を実行 | 新方式の使用中取得・リンク・採用成果物を保持。lockのない旧方式tempは稼働中判定不能のため自動削除しない |
 | V-D-REAL | `tests/ui/video-capture.spec.js`の操作と実Blenderを組合せ、正本MV-11を実行 | 漫画なし動画撮影、同じ素材の漫画4コマ/別動画shot、素材新版後の旧出力保持と影響先。モックUIと実nativeの結果を分ける |
@@ -268,3 +268,12 @@ Armature dataを対象だけ分離して選択状態の共有を避け、Blender
 公式拡張[固定commit d65412f](https://github.com/VAST-AI-Research/tripo-3d-for-blender/tree/d65412f4877f620aa2bb5027dc8cba087b79dabd)（自己申告版0.7.7、READMEのライセンス表示MIT）を確認した。`server.py`のlocalhost:9876には認証のない`execute_code`と、生のキーを返す`get_tripo_apikey`がある。`__init__.py`はキーをBlender Sceneプロパティに保持する。この窓口の有効化は本アプリの任意コード禁止・秘密を作品へ保存しない境界に合わないため、未変更の拡張MCPは接続しない。
 
 次の実装は、公式拡張が使うSDK/APIの必要部分だけを固定・監査して、既存の認可/予算/不変保存/job対応へ接続する。キーのメモリ限定、送信/取得先、retry、出力GLBの許可パス、再起動後の外部task照会をfixtureで先に確認する。キー未提供でも調査・fixture実装は可能だが、実生成/料金/リグ品質の受入とは分ける。今回Tripo拡張のインストール・MCP有効化・API送信は行っていない。
+
+
+## Mac native初回実行と並列fixture修正
+
+main `8f7d7b66ce773dce20eecb78250c73901aa4d3cc`の[CI 35054388978](https://github.com/kdob1042/manga-mac/actions/runs/35054388978)でSwift画像エンジンとMac Tauri/Rust本体のtestビルドが成功。native28件中27件成功、Blender復旧fixtureの`create_dir`がAlreadyExistsで1件失敗。時刻nanosecond値の表示精度は一意性を保証せず、並列開始で同じ名前になっていた。
+
+Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter＋排他的directory作成へ変更。衝突時は別名へ進み、既存directoryを再使用/削除しない。製品の保存/復旧コードや試験の合格条件は緩めていない。修正後はmain Macジョブで再実行する。
+
+この失敗で、成功したSwiftビルドもジョブ終端のcache保存前に失われていた。固定済みactions/cacheのrestore/saveを分離し、Swift成功直後に同じcompiler/source/lockの完全一致キーで保存する。以後のRust test/clippy・app/DMGビルド・成果物確認は全て維持する。Macの署名/公証、実モデル品質/24GB、Mac内操作は引き続き別受入。

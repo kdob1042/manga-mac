@@ -580,13 +580,19 @@ mod recovery_tests {
     }
     fn fixture() -> Fixture {
         let id = "00000000-0000-4000-8000-000000000099".to_string();
-        let suffix = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("manga-recovery-{}-{suffix}", std::process::id()));
-        std::fs::create_dir(&root).unwrap();
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        // Clock resolution can be coarser than simultaneous test starts on macOS.
+        // Reserve exclusively; a stale directory is never reused or removed.
+        let root = loop {
+            let suffix = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir()
+                .join(format!("manga-recovery-{}-{suffix}", std::process::id()));
+            match std::fs::create_dir(&path) {
+                Ok(()) => break path,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("Cannot reserve test directory: {error}"),
+            }
+        };
         let db = rusqlite::Connection::open_in_memory().unwrap();
         initialize(&db).unwrap();
         let source = root.join("original.blend");
