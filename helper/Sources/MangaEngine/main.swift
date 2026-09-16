@@ -1,8 +1,11 @@
 import Foundation
+import CryptoKit
+import Darwin
 import MediaGenerationKit
 
 struct Reference: Decodable { let id: String; let name: String; let hash: String; let image: String }
-struct Request: Decodable { let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int? }
+struct Output: Decodable { let directory: String; let request_hash: String }
+struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int? }
 
 @main struct MangaEngine {
   static func main() async {
@@ -40,8 +43,25 @@ struct Request: Decodable { let prompt: String; let references: [Reference]; let
       guard let first = results.first else { throw NSError(domain: "No generated image", code: 2) }
       let output = temp.appendingPathComponent("result.png")
       try first.write(to: output, type: .png)
-      // Prefix makes engine logs distinguishable from the result protocol.
-      print("MANGA_RESULT:" + (try Data(contentsOf: output)).base64EncodedString())
+      // Publish durable bytes and a hash receipt before signaling completion.
+      // The native process supplies this reserved directory, never a UI path.
+      let bytes = try Data(contentsOf: output)
+      let destination = URL(fileURLWithPath: request.output.directory, isDirectory: true)
+      let image = destination.appendingPathComponent("result.png")
+      try bytes.write(to: image, options: .withoutOverwriting)
+      let imageHandle = try FileHandle(forWritingTo: image)
+      try imageHandle.synchronize(); try imageHandle.close()
+      let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      let receipt = destination.appendingPathComponent("receipt.json")
+      let record = try JSONSerialization.data(withJSONObject: ["request_hash": request.output.request_hash, "hash": hash])
+      try record.write(to: receipt, options: .atomic)
+      let receiptHandle = try FileHandle(forWritingTo: receipt)
+      try receiptHandle.synchronize(); try receiptHandle.close()
+      let directoryFD = open(destination.path, O_RDONLY)
+      guard directoryFD >= 0 else { throw NSError(domain: "Output directory", code: 4) }
+      defer { close(directoryFD) }
+      guard fsync(directoryFD) == 0 else { throw NSError(domain: "Output sync", code: 5) }
+      print("MANGA_RESULT_SAVED")
     } catch {
       FileHandle.standardError.write(Data("Manga engine: \(error)\n".utf8))
       exit(1)
