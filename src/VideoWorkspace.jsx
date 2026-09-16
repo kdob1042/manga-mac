@@ -9,9 +9,10 @@ import ShotControls from './ShotControls';
 import { planVideoSource, attachShots, videoSources } from './shots';
 
 const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
-export default function VideoWorkspace({ project, current, commit, run, busy, notify, model }) {
+export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot }) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
   const [sceneId, setSceneId] = useState(''), [imageId, setImageId] = useState(''), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState('');
+  useEffect(() => { if (requestedShot) { setSelected(requestedShot); setPlayback(null); } }, [requestedShot]);
   const [playback, setPlayback] = useState(null), [playError, setPlayError] = useState('');
   const [ratio, setRatio] = useState('960:960'), [editRatio, setEditRatio] = useState('960:960');
   const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [connectionId, setConnectionId] = useState(''), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
