@@ -38,3 +38,33 @@ test('four corners, cancel, undo/redo and six-panel persistence keep artwork and
  const zip=await JSZip.loadAsync(result.cbz);expect(await zip.file('001.png').async('base64')).toBe(result.png.split(',')[1]);writeFileSync('test-results/free-layout-six-output.png',Buffer.from(result.png.split(',')[1],'base64'));
  await page.screenshot({path:'test-results/free-layout-six.png',fullPage:true});
 });
+
+test('AI layout uses registered router and explicit adoption without regenerating art',async({page})=>{
+ await page.addInitScript(fixture=>{
+   let project={...fixture,jobs:[],history:[]};window.nativeCalls=[];
+   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+     window.nativeCalls.push(command);
+     if(command==='load_project')return JSON.stringify(project);
+     if(command==='save_project'){project=JSON.parse(args.data);window.savedProject=project;return;}
+     if(command==='backup_status')return {config:null,status:{},restored:[]};
+     if(command==='register_llm')return 'layout-planner';
+     if(command==='remove_llm')return;
+     if(command==='llm_request'){
+       const r=args.request;if(r.purpose==='probe')return {request_id:r.request_id,value:{ok:true}};
+       if(r.purpose!=='layout'||r.connection_id!=='layout-planner')throw Error('Incorrect layout routing');
+       const input=JSON.parse(r.prompt),pages=structuredClone(input.pages);pages[0].slots[0].points[0][0]+=.03;
+       return {request_id:r.request_id,value:{reason:'最初のコマの上辺を斜めに',pages}};
+     }
+     throw Error('Unexpected command '+command);
+   }};
+ },legacy);
+ await page.goto('/');await page.getByRole('button',{name:'接続・人物設定',exact:true}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();await page.getByRole('button',{name:'閉じる',exact:true}).click();
+ await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();const initial=await page.getByTestId('layout-slot-0').getAttribute('points');
+ await page.getByText('演出AIでこのページを配置',{exact:true}).click();await page.getByLabel('コマ割りの指示',{exact:true}).fill('最初のコマを斜めに');await page.getByRole('button',{name:'コマ割りを提案',exact:true}).click();
+ await expect(page.getByRole('button',{name:'このコマ割りを採用',exact:true})).toBeEnabled();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',initial);
+ expect(await page.evaluate(()=>window.savedProject.jobs.at(-1).status)).toBe('candidate');
+ await page.getByRole('button',{name:'このコマ割りを採用',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).not.toHaveAttribute('points',initial);
+ const saved=await page.evaluate(()=>window.savedProject);expect(saved.panels[0].image).toBe(legacy.panels[0].image);expect(saved.jobs.at(-1).status).toBe('complete');
+ expect((await page.evaluate(()=>window.nativeCalls)).some(c=>/generate_image|blender_execute|video_generate/.test(c))).toBe(false);
+ await page.screenshot({path:'test-results/free-layout-ai.png',fullPage:true});
+});
