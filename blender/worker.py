@@ -102,7 +102,7 @@ def library_assets(library):
             continue
         version = checksum(path)
         with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
-            for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections')]:
+            for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections'), ('ACTION', 'actions')]:
                 for name in getattr(source, field):
                     entries.append({'file': str(path.relative_to(library)), 'hash': version, 'kind': kind, 'name': name})
         if checksum(path) != version or len(entries) > 2000:
@@ -117,7 +117,7 @@ def import_asset(operation, library, scene):
     path = within(library / relative, [library])
     if checksum(path) != operation['hash']:
         raise ValueError('Asset version changed; refresh the library')
-    field = {'OBJECT': 'objects', 'COLLECTION': 'collections'}.get(operation['asset_type'])
+    field = {'OBJECT': 'objects', 'COLLECTION': 'collections', 'ACTION': 'actions'}.get(operation['asset_type'])
     if not field:
         raise ValueError('Unsupported asset type')
     # Native append reuses Blender dependency resolution, rigs and materials.
@@ -130,10 +130,53 @@ def import_asset(operation, library, scene):
         raise ValueError('Asset import failed or changed')
     if field == 'collections':
         scene.collection.children.link(block)
-    else:
+    elif field == 'objects':
         scene.collection.objects.link(block)
+    else:
+        # Unassigned pose assets must survive checkpoint save/reopen.
+        block.use_fake_user = True
     bpy.context.view_layer.update()
     return {'file': operation['file'], 'hash': operation['hash'], 'kind': operation['asset_type'], 'name': block.name}
+
+
+def apply_pose(operation, scene):
+    # Reuse Blender's pose evaluator; accept one local, static rig and one pose asset.
+    rig = scene.objects.get(operation['rig'])
+    action = bpy.data.actions.get(operation['action'])
+    frame = operation['frame']
+    if (rig is None or rig.type != 'ARMATURE' or rig.library or rig.override_library
+            or rig.data.library or len(rig.users_scene) != 1
+            or action is None or not action.asset_data or action.library
+            or isinstance(frame, bool) or not isinstance(frame, int)
+            or not -1048574 <= frame <= 1048574):
+        raise ValueError('Select a local static rig and a local pose asset')
+    # Do not silently discard animation, constraints, or drivers to make a pose stick.
+    animation = rig.animation_data
+    if ((animation and (animation.action or animation.nla_tracks or animation.drivers))
+            or rig.data.animation_data or rig.constraints
+            or any(bone.constraints for bone in rig.pose.bones)):
+        raise ValueError('Animated or constrained rigs need a supported pose workflow')
+    if (len(action.slots) != 1 or action.slots[0].target_id_type != 'OBJECT'
+            or len(action.layers) != 1 or len(action.layers[0].strips) != 1
+            or action.layers[0].strips[0].type != 'KEYFRAME'):
+        raise ValueError('Select a single-slot keyframe pose asset')
+    bag = action.layers[0].strips[0].channelbag(action.slots[0])
+    allowed = {}
+    for bone in rig.pose.bones:
+        rotation = ('rotation_quaternion', 4) if bone.rotation_mode == 'QUATERNION' else ('rotation_axis_angle', 4) if bone.rotation_mode == 'AXIS_ANGLE' else ('rotation_euler', 3)
+        for prop, size in [('location', 3), rotation, ('scale', 3)]:
+            allowed[bone.path_from_id(prop)] = size
+    if (bag is None or not bag.fcurves or any(
+            curve.data_path not in allowed or not 0 <= curve.array_index < allowed[curve.data_path]
+            or curve.modifiers or not curve.keyframe_points for curve in bag.fcurves)):
+        raise ValueError('Pose channels must address existing bones only')
+    # Bone selection belongs to Armature data, which can be shared with another actor.
+    rig.data = rig.data.copy()
+    for bone in rig.data.bones:
+        bone.select = False
+    rig.pose.apply_pose_from_action(action, evaluation_time=frame)
+    bpy.context.view_layer.update()
+    return {'rig': rig.name, 'action': action.name, 'frame': frame}
 
 
 def pin_dependencies(roots):
@@ -169,7 +212,7 @@ def execute(request):
         raise ValueError('Input checkpoint changed')
     operation = request['operation']
     kind = operation.get('kind')
-    allowed = {'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
+    allowed = {'pose': {'kind', 'rig', 'action', 'frame'}, 'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
     if kind not in allowed or set(operation) != allowed[kind]:
         raise ValueError('Unsupported operation or unexpected arguments')
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
@@ -178,6 +221,7 @@ def execute(request):
     dependencies(roots)
     catalog = library_assets(library) if kind == 'catalog' else None
     imported = None
+    applied_pose = None
     scene = bpy.context.scene
     if kind == 'import':
         imported = import_asset(operation, library, scene)
@@ -204,6 +248,8 @@ def execute(request):
         scene.camera = camera
         scene.camera.data.lens = lens
         bpy.context.view_layer.update()
+    if kind == 'pose':
+        applied_pose = apply_pose(operation, scene)
     # Pack before rendering or persisting any new version. Unsupported dependencies fail closed.
     pinned_from = pin_dependencies(roots)
     image = None
@@ -235,10 +281,12 @@ def execute(request):
     result = {
         'protocol': 1, 'blender_version': list(bpy.app.version),
         'blender_build': bpy.app.build_hash.decode(), 'gui_required': False,
-        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import'], 'passes': ['color'],
+        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import', 'pose'], 'passes': ['color'],
         'checkpoint': {'file': checkpoint.name, 'hash': checksum(checkpoint)},
         'image': image, 'state': camera_state(scene), 'dependencies': remaining, 'packed_sources': pinned_from,
         'dependencies_pinned': True,
+        'applied_pose': applied_pose,
+        'rigs': [obj.name for obj in scene.objects if obj.type == 'ARMATURE'],
         'assets': asset_state(), 'library_assets': catalog, 'imported_asset': imported,
         'scenes': [{'name': item.name, 'cameras': [obj.name for obj in item.objects if obj.type == 'CAMERA'],
                     'objects': [obj.name for obj in item.objects], 'frame': item.frame_current} for item in bpy.data.scenes],

@@ -99,3 +99,57 @@ assert imported['imported_asset']['hash'] == asset['hash']
 assert imported['dependencies_pinned']
 operation('reject-stale-asset', source, {'kind': 'import', 'file': asset['file'], 'hash': '0' * 64, 'asset_type': asset['kind'], 'name': asset['name']}, False)
 operation('reject-asset-escape', source, {'kind': 'import', 'file': '../escape.blend', 'hash': asset['hash'], 'asset_type': asset['kind'], 'name': asset['name']}, False)
+
+# D-POSE: native Pose API, two actors sharing Armature data, four panels and a video shot.
+pose_source = root / 'pose-source.blend'
+pose_fixture = Path(__file__).with_name('fixture_pose.py').resolve()
+pose_setup = subprocess.run([binary, '--background', '--factory-startup', '--disable-autoexec', '--python-exit-code', '1', '--python', str(pose_fixture), '--', str(pose_source)], capture_output=True, text=True, timeout=180)
+with (root / 'blender-test.log').open('a') as log:
+    log.write(pose_setup.stdout + pose_setup.stderr)
+assert pose_setup.returncode == 0, pose_setup.stderr
+pose_original = sha(pose_source)
+pose_shots = []
+for i in range(5):
+    name = 'pose-shot-' + str(i)
+    operation(name, pose_source, {'kind': 'inspect'})
+    pose_shots.append(root / name / 'checkpoint.blend')
+pose_hashes = [sha(path) for path in pose_shots]
+posed = operation('apply-pose', pose_shots[1], {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': 1})
+assert posed['applied_pose'] == {'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': 1}
+assert pose_hashes == [sha(path) for path in pose_shots]
+assert sha(pose_source) == pose_original
+# Inspect the actual saved files, not just bridge metadata.
+inspect_pose = root / 'inspect-pose.py'
+inspect_pose.write_text("import bpy\n" + "\n".join(
+    "bpy.ops.wm.open_mainfile(filepath=" + repr(str(path)) + ", load_ui=False, use_scripts=False)\n"
+    "a=bpy.data.objects['PoseActorA']; b=bpy.data.objects['PoseActorB']\n"
+    "assert abs(a.pose.bones[0].location.x - " + str(expected) + ") < 1e-6\n"
+    "assert abs(b.pose.bones[0].location.x - 0.75) < 1e-6\n"
+    "assert a.animation_data is None\n"
+    "assert b.animation_data.action.name == 'LeanPose'\n"
+    "assert abs(b.animation_data.action.layers[0].strips[0].channelbag(b.animation_data.action.slots[0]).fcurves[0].keyframe_points[0].co.y - 0.75) < 1e-6\n"
+    for path, expected in [(root / 'apply-pose/checkpoint.blend', 0.75), *[(p, 0) for p in pose_shots]]))
+assert run(inspect_pose).returncode == 0
+operation('reject-animated-pose', pose_source, {'kind': 'pose', 'rig': 'PoseActorB', 'action': 'LeanPose', 'frame': 1}, False)
+operation('reject-missing-pose', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'Missing', 'frame': 1}, False)
+operation('reject-nonrig-pose', pose_source, {'kind': 'pose', 'rig': 'Cube', 'action': 'LeanPose', 'frame': 1}, False)
+operation('reject-rotation-mode', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'IncompatibleRotation', 'frame': 1}, False)
+operation('reject-pose-frame', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': True}, False)
+(root / 'acceptance-pose.json').write_text(json.dumps({'D-POSE-static-local': 'pass', 'four_panels_and_video_isolated': 'pass', 'shared_armature_other_actor_preserved': 'pass', 'action_asset_preserved': 'pass', 'saved_pose_reopened': 'pass', 'animated_target_rejected': 'pass', 'Mac': 'not_run'}))
+print('Actual Blender pose application, isolation, reopen and rejection checks passed')
+
+# Reuse the same native library browser and append path for an external pose asset.
+pose_catalog = operation('pose-library-catalog', source, {'kind': 'catalog'})
+def pose_asset(kind, name):
+    return next(a for a in pose_catalog['library_assets'] if a['file'] == 'pose-source.blend' and a['kind'] == kind and a['name'] == name)
+def append_pose_asset(folder, checkpoint, kind, name):
+    a = pose_asset(kind, name)
+    return operation(folder, checkpoint, {'kind': 'import', 'file': a['file'], 'hash': a['hash'], 'asset_type': a['kind'], 'name': a['name']})
+append_pose_asset('pose-library-rig', source, 'OBJECT', 'PoseActorA')
+appended = append_pose_asset('pose-library-action', root / 'pose-library-rig/checkpoint.blend', 'ACTION', 'LeanPose')
+assert any(a['kind'] == 'ACTION' and a['name'] == 'LeanPose' for a in appended['assets'])
+operation('pose-library-apply', root / 'pose-library-action/checkpoint.blend', {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': 1})
+inspect_pose.write_text("import bpy\nbpy.ops.wm.open_mainfile(filepath=" + repr(str(root / 'pose-library-apply/checkpoint.blend')) + ", load_ui=False, use_scripts=False)\nassert abs(bpy.data.objects['PoseActorA'].pose.bones[0].location.x - 0.75) < 1e-6\n")
+assert run(inspect_pose).returncode == 0
+assert sha(pose_source) == pose_original
+(root / 'acceptance-pose-library.json').write_text(json.dumps({'native_asset_search_append_reopen_apply': 'pass', 'source_unchanged': True, 'Mac': 'not_run'}))

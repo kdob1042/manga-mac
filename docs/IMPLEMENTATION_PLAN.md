@@ -110,6 +110,8 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 同じ駅の素材は再利用する。同じ瞬間の別アングルは同じScene/frameを別カメラで撮る。次の瞬間の演技はBlenderのScene、Action、frame等で表現し、別のポーズエンジンを作らない。
 
+静止リグへの初期ポーズ窓口は、固定checkpoint内のローカルAction assetをBlender既存`Pose.apply_pose_from_action`で評価する。単一slotのボーンtransformだけを許可し、アニメーション/NLA/driver/constraint付き・リンク/override・複数Scene共有の対象は拒否する。対象Armatureの共有選択状態を分離し、新checkpointへ保存・再読込してから確定する。既存Asset Library窓口からAction assetを検索・hash指定でappendできる。複雑なリグの対応完了とは扱わない。
+
 リンクした共通素材の一部を編集する場合は既存Library Overrides等を用いる。[B3] 別コマで同じObject／Actionを意図せず共有してポーズが連動しないよう、選択範囲に必要なBlenderデータだけを分離する。メッシュやテクスチャを無条件に毎コマ複製しない。一方、コマ単位の局所修正に必要なインスタンス分離は省略しない。
 
 ### 4.3 保存版と素材更新

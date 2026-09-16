@@ -21,9 +21,9 @@
 
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
-| D-POSE | `blender/worker.py`の型付き操作、`src-tauri/src/blender.rs`の検証、`src/ShotControls.jsx`。固定版Blenderの既存Pose Library APIを確認し、選択したリグ/Actionだけを適用。独自骨格/ポーズエンジンを作らない | `blender/test_real.py`で2人/4ショットのうち対象だけ変化、他のAction/撮影hashと旧checkpoint保持、再読込一致。headless非対応なら非対応を明示 |
+| D-POSE | 静止リグへの適用・外部Action asset検索/取込は下記D-POSE1で実装済み。次は既存Pose Libraryでanimation/constraint付きリグを扱える範囲を検証 | 固定版の実Blenderで対象だけ変化、他人物/漫画4コマ/動画shotのAction・旧hash保持、再読込一致。未対応を黙って適用しない |
 | E-RECOVERY | `helper/Sources/MangaEngine/main.swift`と`src-tauri/src/main.rs`の画像完了応答、既存jobs/storage。UIへ返す前の不変保存と再取得を検討 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。Macの実helperが必要な試験を分離 |
-| V-C-TEMP | `src-tauri/src/runway.rs`の`.video-download-*`とstorage。参照・所有権・別プロセス実行中を識別してから回収する | 強制終了の孤立ファイルだけ回収。別インスタンスの進行中取得・採用成果物を削除しない。起動時の無条件削除は禁止 |
+| V-C-TEMP | 新方式の所有権lock/孤立temp回収を下記追補で実装・子プロセス強制終了試験済み。Mac native試験を実行 | 新方式の使用中取得・リンク・採用成果物を保持。lockのない旧方式tempは稼働中判定不能のため自動削除しない |
 | V-D-REAL | `tests/ui/video-capture.spec.js`の操作と実Blenderを組合せ、正本MV-11を実行 | 漫画なし動画撮影、同じ素材の漫画4コマ/別動画shot、素材新版後の旧出力保持と影響先。モックUIと実nativeの結果を分ける |
 | F-TRIPO | 正本§2/5、Issue #5 F。公式拡張の固定版・認証窓口・ライセンス・依存を検証して既存Blenderへ接続 | 既存外部taskの再照会、二重課金防止、採用素材の再利用。実APIはテストキー/予算待ち。未認証の汎用MCPを有効化しない |
 | G-IMAGE | 正本§6/9とIssue #5 G。既存画像入力/候補/マスク外保護へ一つの検証済みAPIを接続 | 能力不足の送信前拒否、実bytes/送信先/費用、旧版保持。採用先の契約確認とテストキー/予算が必要 |
@@ -244,3 +244,38 @@ V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue
 - PR #20の整形ゲートを復元したhead `bc0458d11e1025eff65461f2aa1b91c402845cbe` に対するCI run `35053023339` のBlender成功artifactから `tests/blender/Cargo.lock` を固定。ZIP SHA-256 `3f49e5c168cb675b4ff32c1822514a5a7e427131533280d52d2842f5a9a1e0fe` を検証して取得した。
 - tests/llm・tests/blenderともCI中のlock再生成をやめ、metadata/fetch/test/clippyを`--locked`で実行する。整形は自動修正ではなく`--check`とする。依存更新が必要な変更はlock差分と監査結果を別途提示する。
 - PR #20のpolicy_transport/storage/llm_tests修正とV-C2を合わせた作業用checkoutでも、Rust23件・clippy `-D warnings`・fmt check成功。これは統合後の必須CIの代わりにはしない。
+
+## D-POSE1: 既存Blender Pose APIによる静止リグへの適用
+
+固定Blender 4.5.13の[Pose API実装](https://github.com/blender/blender/blob/daeeeca98fb0b6f0994b374d0069893186197a44/source/blender/makesrna/intern/rna_pose_api.cc)にある`Pose.apply_pose_from_action`を呼ぶ薄い型付き操作。対象は現在Scene内のローカル静止Armatureと、同じ固定checkpoint内のローカルAction asset。単一slot/layer/stripで、存在するボーンのtransformチャンネルだけを許可する。アニメーション/NLA/driver/constraint、リンク/override、複数Scene共有Object、複数slot、異なる骨格のチャンネルは拒否し、既存設定を削除して適用しない。初期範囲の制約であり、汎用リグ対応ではない。
+
+Armature dataを対象だけ分離して選択状態の共有を避け、Blenderの既存評価器で適用。既存job→新checkpoint→再読込/検証の流れを使い、採用中の撮影・作画・動画は再撮影まで保持する。独自リグ、Action台帳、ポーズ計算、3D描画は追加しない。UIは既存の漫画/動画共通ShotControlsの詳細欄。
+
+追加した実Blender fixtureは、Armature dataを共有する2人と、4つの漫画用＋1つの動画用checkpointを使用する。対象の保存後bone値、他人物のanimation/Action値、旧checkpoint hash、再読込、非対応対象拒否を検証し`acceptance-pose.json`へ記録する。UI fixtureは正しいsession/expected revisionへの型付き要求と、撮影前に作品/旧画像を変えないことを確認する。実行結果は対象PRの必須CIを参照し、未実行時点でpassとしない。
+
+追補: 既存Asset Library検索/標準appendへAction assetを追加。選択したソースhashを照合し、未割当のActionもfake userでcheckpointへ保存する。実fixtureで外部の人物ObjectとポーズActionを別々に取込→保存/再読込→適用し、元ファイルの不変性を検証する。骨の回転方式に合わないActionチャンネルも拒否する。残件はアニメーション/制約付きリグのworkflow、実Mac操作と演技品質。
+
+## V-C-TEMP: 強制終了した動画取得の一時ファイル回収
+
+新しい取得は`.video-download-v2-<UUID>`を使用し、Rust標準File lockで取得中の所有権を保持する。作成/回収の短い区間を共通gateで排他し、作成直後に別プロセスから削除される競合を防ぐ。gateファイル自体は削除しない。取得中は個別lockを保持し、通常完了/失敗/future破棄時はRAIIで一時ファイルを除去する。起動時はlockを取得できた孤立ファイルだけを回収し、busyや失敗で作品を開けなくしない。追加依存はない。
+
+回収対象はこのprotocolのUUID名の通常ファイルだけ。シンボリックリンク、hard link、directory、旧`.video-download-<UUID>`、保存済みmediaは対象外。旧バージョンにはlockがなく稼働中か判定できないため、旧tempの自動整理は行わない。強制終了が起きても新規生成POST・費用予約・採用版には触れない。
+
+ローカルnative **25 passed**（23既存+子プロセス用1+回収試験1）。実子プロセスがlockを持つ間は回収0、強制終了後はその1ファイルだけ回収し、別の進行中取得/旧方式/リンク/保存済みファイルを保持することを確認。既存のHTTP切断/期限切れ/oversize/保存/再起動も再実行。MacのFile lock動作はmainのnative regressionで別確認する。
+
+### F-TRIPOの接続前調査（2026-09-16）
+
+公式拡張[固定commit d65412f](https://github.com/VAST-AI-Research/tripo-3d-for-blender/tree/d65412f4877f620aa2bb5027dc8cba087b79dabd)（自己申告版0.7.7、READMEのライセンス表示MIT）を確認した。`server.py`のlocalhost:9876には認証のない`execute_code`と、生のキーを返す`get_tripo_apikey`がある。`__init__.py`はキーをBlender Sceneプロパティに保持する。この窓口の有効化は本アプリの任意コード禁止・秘密を作品へ保存しない境界に合わないため、未変更の拡張MCPは接続しない。
+
+次の実装は、公式拡張が使うSDK/APIの必要部分だけを固定・監査して、既存の認可/予算/不変保存/job対応へ接続する。キーのメモリ限定、送信/取得先、retry、出力GLBの許可パス、再起動後の外部task照会をfixtureで先に確認する。キー未提供でも調査・fixture実装は可能だが、実生成/料金/リグ品質の受入とは分ける。今回Tripo拡張のインストール・MCP有効化・API送信は行っていない。
+
+
+## Mac native初回実行と並列fixture修正
+
+main `8f7d7b66ce773dce20eecb78250c73901aa4d3cc`の[CI 35054388978](https://github.com/kdob1042/manga-mac/actions/runs/35054388978)でSwift画像エンジンとMac Tauri/Rust本体のtestビルドが成功。native28件中27件成功、Blender復旧fixtureの`create_dir`がAlreadyExistsで1件失敗。時刻nanosecond値の表示精度は一意性を保証せず、並列開始で同じ名前になっていた。
+
+Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter＋排他的directory作成へ変更。衝突時は別名へ進み、既存directoryを再使用/削除しない。製品の保存/復旧コードや試験の合格条件は緩めていない。修正後はmain Macジョブで再実行する。
+
+この失敗で、成功したSwiftビルドもジョブ終端のcache保存前に失われていた。固定済みactions/cacheのrestore/saveを分離し、Swift成功直後に同じcompiler/source/lockの完全一致キーで保存する。以後のRust test/clippy・app/DMGビルド・成果物確認は全て維持する。Macの署名/公証、実モデル品質/24GB、Mac内操作は引き続き別受入。
+
+追加の寸法検証式についてRust 1.98.1のclippy-driverで`manual_is_multiple_of` 2件を再現し、同じ64倍数判定を`is_multiple_of`へ修正した。修正した式のlintは成功。Mac本体全体のclippy成功はmain CIで別確認する。

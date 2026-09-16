@@ -323,8 +323,8 @@ async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<St
     let height = request["height"].as_u64().unwrap_or(768);
     if !(256..=1024).contains(&width)
         || !(256..=1024).contains(&height)
-        || width % 64 != 0
-        || height % 64 != 0
+        || !width.is_multiple_of(64)
+        || !height.is_multiple_of(64)
     {
         return Err("未対応の画像寸法です".into());
     }
@@ -454,6 +454,7 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            let _ = runway::cleanup_downloads(&dir);
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
             blender::initialize(&db).map_err(std::io::Error::other)?;

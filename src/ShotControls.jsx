@@ -7,6 +7,7 @@ export default function ShotControls({ project, current, commit, panels, chosen,
   const [session, setSession] = useState(null), [preview, setPreview] = useState(null);
   const [scene, setScene] = useState(''), [camera, setCamera] = useState(''), [frame, setFrame] = useState(1), [lens, setLens] = useState(50);
   const [width, setWidth] = useState(768), [height, setHeight] = useState(768);
+  const [rig, setRig] = useState(''), [pose, setPose] = useState(''), [poseFrame, setPoseFrame] = useState(1);
   const [character, setCharacter] = useState(''), [object, setObject] = useState('');
   function display(s) {
     setSession(s); setPreview(s.preview ?? null);
@@ -15,7 +16,7 @@ export default function ShotControls({ project, current, commit, panels, chosen,
     return s;
   }
   const refresh = async () => display(await call('blender_status', { sessionId: chosen.shot_binding.session_id }));
-  useEffect(() => { setSession(null); setPreview(null); setCharacter(''); setObject(''); }, [chosen?.id]);
+  useEffect(() => { setSession(null); setPreview(null); setCharacter(''); setObject(''); setRig(''); setPose(''); setPoseFrame(1); }, [chosen?.id]);
   const isVideo = scopeType === 'videoSource', targetLabel = isVideo ? '動画用撮影' : 'コマ';
   const unresolved = project.shot_batches?.filter(b => b.status === 'unknown' && (b.scope_type ?? 'panel') === scopeType) ?? [];
   async function attach() {
@@ -65,6 +66,13 @@ export default function ShotControls({ project, current, commit, panels, chosen,
           if (action === 'adopt' && result.state?.image) await commit(await recordCapture(current.current, chosen.id, { ...result, request_id: job.id }, scopeType));
         })}>{action === 'adopt' ? '保存結果を採用' : '採用せず解決'}</button>)}</div>)}
         {chosen.characterIds.length > 0 && <><label>人物<select aria-label="人物" value={character} onChange={e => setCharacter(e.target.value)}><option value="">選択</option>{chosen.characterIds.map(id => <option key={id} value={id}>{project.characters.find(c => c.id === id)?.name ?? id}</option>)}</select></label><label>BlenderのObject<select aria-label="BlenderのObject" value={object} onChange={e => setObject(e.target.value)}><option value="">選択</option>{session.state?.scenes?.find(s => s.name === session.state.state.scene)?.objects.map(name => <option key={name}>{name}</option>)}</select></label><button disabled={!object || !character} onClick={() => run('人物と素材を対応付け', async () => commit(bindCharacter(current.current, chosen.id, character, object, session, scopeType)))}>人物と素材を対応付ける</button></>}
+        {session.state?.operations?.includes('pose') && <details><summary>登録済みポーズを適用</summary>
+          <p>このSceneの静止リグへ、同じ撮影パック内のポーズ素材を適用します。アニメーション・制約付きリグは未対応です。適用後に撮影して比較してください。</p>
+          <label>ポーズ対象リグ<select aria-label="ポーズ対象リグ" value={rig} onChange={e => setRig(e.target.value)}><option value="">選択</option>{session.state.rigs?.map(name => <option key={name}>{name}</option>)}</select></label>
+          <label>ポーズ素材<select aria-label="ポーズ素材" value={pose} onChange={e => setPose(e.target.value)}><option value="">選択</option>{session.state.assets?.filter(a => a.kind === 'ACTION' && !a.library).map(a => <option key={a.name}>{a.name}</option>)}</select></label>
+          <label>ポーズのフレーム<input aria-label="ポーズのフレーム" type="number" min="-1048574" max="1048574" value={poseFrame} onChange={e => setPoseFrame(Number(e.target.value))}/></label>
+          <button disabled={!rig || !pose || pending.length > 0} onClick={() => run('対象リグへポーズを適用中', () => operate({ kind: 'pose', rig, action: pose, frame: poseFrame }))}>この{targetLabel}のポーズを適用</button>
+        </details>}
         <details><summary>Blenderに登録された素材</summary>{session.state?.assets?.map((a, i) => <p key={i}>{a.name} · {a.kind} · {a.tags?.join(', ')} · {a.catalog_id}</p>)}</details>
       </fieldset>}
       {chosen.capture_revision && <button disabled={busy} onClick={() => run('撮影原本を読み込み中', async () => { const c = current.current.captures.find(c => c.id === chosen.capture_revision); const result = await call('blender_capture', { sessionId: c.session_id, requestId: c.request_id }); setPreview(result.preview); })}>採用中の撮影原本を表示</button>}

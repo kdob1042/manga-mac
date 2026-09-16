@@ -516,15 +516,17 @@ pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
 mod tests {
     use super::*;
     fn setup() -> (Connection, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
-            "manga-storage-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
-        fs::create_dir(&dir).unwrap();
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let dir = loop {
+            let suffix = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path =
+                std::env::temp_dir().join(format!("manga-storage-{}-{suffix}", std::process::id()));
+            match fs::create_dir(&path) {
+                Ok(()) => break path,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("Cannot reserve test directory: {error}"),
+            }
+        };
         let db = Connection::open(dir.join("test.sqlite3")).unwrap();
         initialize(&db).unwrap();
         (db, dir)

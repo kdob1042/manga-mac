@@ -63,6 +63,11 @@ struct Session {
 pub enum Operation {
     Inspect,
     Catalog,
+    Pose {
+        rig: String,
+        action: String,
+        frame: i32,
+    },
     Import {
         file: String,
         hash: String,
@@ -416,11 +421,20 @@ pub async fn execute(
             || file.is_empty()
             || hash.len() != 64
             || !hash.bytes().all(|b| b.is_ascii_hexdigit())
-            || !matches!(asset_type.as_str(), "OBJECT" | "COLLECTION")
+            || !matches!(asset_type.as_str(), "OBJECT" | "COLLECTION" | "ACTION")
             || name.is_empty()
             || name.len() > 256 =>
         {
             return Err("素材参照が不正です".into())
+        }
+        Operation::Pose { rig, action, frame }
+            if rig.is_empty()
+                || rig.len() > 256
+                || action.is_empty()
+                || action.len() > 256
+                || !(-1048574..=1048574).contains(frame) =>
+        {
+            return Err("リグ・ポーズ・frameが不正です".into())
         }
         Operation::Shot {
             scene,
@@ -568,16 +582,24 @@ mod recovery_tests {
     }
     fn fixture() -> Fixture {
         let id = "00000000-0000-4000-8000-000000000099".to_string();
-        let suffix = std::time::SystemTime::now()
+        let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let root = std::env::temp_dir().join(format!(
-            "manga-recovery-{}-{suffix}-{sequence}",
-            std::process::id()
-        ));
-        std::fs::create_dir(&root).unwrap();
+        // Clock resolution can be coarser than simultaneous test starts on macOS.
+        // Reserve exclusively; a stale directory is never reused or removed.
+        let root = loop {
+            let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "manga-recovery-{}-{stamp}-{sequence}",
+                std::process::id()
+            ));
+            match std::fs::create_dir(&path) {
+                Ok(()) => break path,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => panic!("Cannot reserve test directory: {error}"),
+            }
+        };
         let db = rusqlite::Connection::open_in_memory().unwrap();
         initialize(&db).unwrap();
         let source = root.join("original.blend");
