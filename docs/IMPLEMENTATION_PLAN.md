@@ -352,3 +352,13 @@ SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約
 工程記録directing_runsは操作ID・対象コマ／原稿／採用版・Blender基準版・段階を既存作品保存に追加する。実行前に要求を保存し、再開時は既存native Jobの完了を照合する。未確定を再送せず、撮影完了後の保存中断は固定撮影の回収で継続する。停止は現在のBlender操作が完了したところで行う。取り下げは既存作画・撮影を削除せず、作業中のBlender状態も自動で巻き戻さない。
 
 顔推定専用のUI・接続用途・推論処理は廃止する。人物参照、画像生成・マスク外保護、共通LLMの画像入力能力は維持。2D局所修正は手動矩形を必須とし、範囲未指定を画像全体編集へ置き換えない。3D演出指示は2D矩形を要求しない。旧作品を読み込むための設定互換性を保ち、ユーザー所有のOllamaモデルを削除しない。
+
+## Live Manga配信用出力（Issue #39）
+
+制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
+
+コマ動画は作品内の軽量`panelMotions`参照。採用作画ID/hash、公開動画版ID/hash、原文範囲・人物を固定し、実送信Jobのidentity開始画像と照合する。静止画・原文変更で不整合なら書き出し停止。ショットで新しい版を採用しても公開版は置換しない。`motionHistory`は漫画/動画のUndoと独立。
+
+既存`pagePNG`と共有する`panelLayout/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
+
+初期公開は矩形コマ・無音H.264。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
