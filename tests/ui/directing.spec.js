@@ -46,7 +46,7 @@ test('one action directs four isolated shots, draws them, and edits without a fa
   await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();
   await page.getByRole('button',{name:'閉じる',exact:true}).click();
   await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();
-  await expect(page.getByText('作画が終了しました。人物・衣装・原作との整合を確認してください。')).toBeVisible({timeout:30000});
+  await expect(page.getByRole('status').filter({hasText:'作画が終了しました。人物・衣装・原作との整合を確認してください。'})).toBeVisible({timeout:30000});
   const saved=await page.evaluate(()=>window.savedProject);
   expect(saved.captures).toHaveLength(4);expect(saved.panels.every(p=>p.image&&p.shot_binding)).toBe(true);
   expect(new Set(saved.panels.map(p=>p.shot_binding.session_id)).size).toBe(4);
