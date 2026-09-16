@@ -1,0 +1,22 @@
+import { collectVideoResult } from './video.js';
+
+// Reconcile transport metadata persisted by Rust into the existing domain jobs.
+// This is called after IPC AND on restart; it never starts a network request.
+export function restoreVideoResults(project) {
+  let next = project;
+  for (const original of project.jobs.filter(j => j.scope?.type === 'videoShot' && j.remote)) {
+    const remote = original.remote;
+    if (remote.artifact && !original.output_revision) {
+      next = collectVideoResult({ ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status: 'output_pending' } : j) }, original.id, remote.artifact);
+      continue;
+    }
+    if (['candidate', 'complete', 'abandoned'].includes(original.status)) continue;
+    const status = ({ PENDING: 'submitted', THROTTLED: 'submitted', RUNNING: 'submitted', SUCCEEDED: 'output_pending', FAILED: 'failed', CANCELLED: 'cancelled', cancel_requested: 'cancel_requested', unknown: 'unknown' })[remote.status];
+    if (!status) throw Error('未対応の動画サービス状態です');
+    next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status,
+      cost: { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
+  }
+  return next;
+}
+
+export const videoStatusLabel = job => ({ running: '送信準備中', unknown: '受理の成否が未確定', submitted: 'サービスで処理中', output_pending: '生成成功・動画取得待ち', cancel_requested: '取消の成否を確認中', cancelled: 'サービスの取消・削除応答を受領', failed: '生成失敗', candidate: '候補を保存済み', complete: '採用履歴あり', abandoned: '採用せず解決済み' })[job.status] ?? '状態を確認してください';

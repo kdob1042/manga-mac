@@ -32,7 +32,12 @@ pub struct Registration {
 struct Connection { provider: Provider, purpose: Purpose, endpoint: String, model: String, credential: String, json_mode: bool }
 impl Connection { fn path(&self) -> &str { match self.provider { Provider::Ollama => "/api/chat", Provider::Anthropic => "/v1/messages", _ => "/chat/completions" } } }
 #[derive(Default)]
-pub struct Connections { entries: Mutex<HashMap<String, Arc<Connection>>>, submitted: Mutex<HashSet<String>>, active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>, cancelled: Mutex<HashSet<String>> }
+pub struct Connections { entries: Mutex<HashMap<String, Arc<Connection>>>, submitted: Mutex<HashSet<String>>, active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>, cancelled: Mutex<HashSet<String>>, video: Mutex<HashMap<String, Arc<VideoConnection>>> }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VideoRegistration { pub credential: String, pub max_credits: u64, pub approved: bool }
+// Same ephemeral credential owner as LLM connections; no Debug/Serialize.
+pub struct VideoConnection { pub credential: String, pub max_credits: u64 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {
@@ -48,6 +53,24 @@ pub struct Response { pub request_id: String, pub value: Value }
 fn failure() -> String { "LLM要求を完了できませんでした。自動再送は行いません".into() }
 fn id() -> String { uuid::Uuid::new_v4().to_string() }
 impl Connections {
+    pub async fn register_video(&self, input: VideoRegistration) -> Result<String, String> {
+        if !input.approved || !(60..=6000).contains(&input.max_credits) || input.credential.trim().is_empty()
+            || input.credential.len() > 4096 || input.credential.chars().any(char::is_control) {
+            return Err("送信先・モデル・予算を承認し、APIキーを入力してください".into());
+        }
+        PolicyTransport::new("https://api.dev.runwayml.com", false, "").await?;
+        let mut entries = self.video.lock().map_err(|_| failure())?;
+        if entries.len() >= 4 { return Err("不要な動画接続を解除してください".into()); }
+        let id = id();
+        entries.insert(id.clone(), Arc::new(VideoConnection { credential: input.credential, max_credits: input.max_credits }));
+        Ok(id)
+    }
+    pub fn video_connection(&self, id: &str) -> Result<Arc<VideoConnection>, String> {
+        self.video.lock().map_err(|_| failure())?.get(id).cloned().ok_or("動画接続を登録してください".into())
+    }
+    pub fn remove_video(&self, id: &str) -> Result<(), String> {
+        self.video.lock().map_err(|_| failure())?.remove(id); Ok(())
+    }
     pub async fn register(&self, input: Registration) -> Result<String, String> {
         if input.model.trim().is_empty() || input.model.len() > 256 || input.model.chars().any(char::is_control) {
             return Err("モデルIDが不正です".into());

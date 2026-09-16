@@ -1,17 +1,42 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
-import { call, desktop } from './bridge';
+import { call, desktop, loadProject } from './bridge';
 import { sourceUnits, sourceForPanel } from './core';
-import { createVideoShot, adoptVideoCandidate, undoVideo } from './video';
+import { createVideoShot, adoptVideoCandidate, undoVideo, beginVideoJob, validateVideoShot } from './video';
+import { abandonJob } from './revisions';
+import { videoStatusLabel } from './video-remote';
+import { draftVideoMotion } from './video-plan';
 
 const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
-export default function VideoWorkspace({ project, current, commit, run, busy, notify }) {
+export default function VideoWorkspace({ project, current, commit, run, busy, notify, model }) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
   const [sceneId, setSceneId] = useState(''), [imageId, setImageId] = useState(''), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState('');
   const [playback, setPlayback] = useState(null), [playError, setPlayError] = useState('');
+  const [ratio, setRatio] = useState('960:960'), [editRatio, setEditRatio] = useState('960:960');
+  const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [connectionId, setConnectionId] = useState(''), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
+  const connectionRef = useRef('');
+  useEffect(() => () => { if (connectionRef.current) call('remove_video', { connectionId: connectionRef.current }).catch(() => {}); }, []);
   const images = [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
     ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))];
   const shot = project.videoShots.find(s => s.id === selected);
+  useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setAcceptDeletion(false); }, [selected, shot?.prompt, shot?.ratio]);
+  async function refresh() {
+    const latest = await loadProject();
+    if (!latest) throw Error('作品を再読込できません');
+    await commit(latest);
+  }
+  async function generate() {
+    const connection = { id: connectionId, provider: 'runway', model: 'gen4.5' };
+    const started = await beginVideoJob(current.current, shot.id, connection, loadCapture);
+    await commit(started.project);
+    try { await call('video_submit', { jobId: started.job.id, connectionId }); }
+    finally { await refresh(); }
+    notify('動画要求を送信しました。「状態を更新」で確認できます。自動で生成を再送しません。');
+  }
+  async function task(jobId, action) {
+    try { await call('video_task', { jobId, connectionId, action, acceptRemoteDeletion: acceptDeletion }); }
+    finally { await refresh(); }
+  }
   async function verify(artifact) {
     const revision = current.current.videoRevisions.find(v => v.artifact.hash === artifact.hash && v.artifact.size === artifact.size);
     if (!revision) throw Error('保存された動画版がありません');
@@ -26,11 +51,25 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   }
   return <section className="video-workspace" aria-label="動画制作">
     <h2>動画ショット</h2><p>同じ原作・作画・撮影画像から、5秒の無音ショットを準備します。</p>
+    <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
+      <p>Runway / gen4.5 · 開始画像1枚と動きの指示を api.dev.runwayml.com へ送ります。</p>
+      <small>5秒あたり60 creditsの見積り（2026-09-16確認）。作品の累計予約枠を上限にします。失敗・成否不明も予約枠を消費し、再登録でリセットしません。実際の請求額はサービス側でも確認してください。</small>
+      <label>Runway APIキー<input type="password" autoComplete="off" disabled={!!connectionId} value={apiKey} onChange={e => setApiKey(e.target.value)}/></label>
+      <label>作品の上限（credits）<input type="number" min="60" max="6000" step="60" disabled={!!connectionId} value={budget} onChange={e => setBudget(Number(e.target.value))}/></label>
+      <label><input type="checkbox" disabled={!!connectionId} checked={approved} onChange={e => setApproved(e.target.checked)}/>この送信先・モデル・送信内容・予算内での生成を許可する</label>
+      {!connectionId ? <button disabled={!apiKey.trim() || !approved} onClick={() => run('動画接続を登録', async () => {
+        const id = await call('register_video', { input: { credential: apiKey, max_credits: budget, approved } });
+        connectionRef.current = id; setConnectionId(id); setApiKey('');
+        notify('動画接続を登録しました。キーは作品へ保存しません。');
+      })}>接続を登録する</button> : <button onClick={() => run('動画接続を解除', async () => { await call('remove_video', { connectionId }); connectionRef.current = ''; setConnectionId(''); setApproved(false); })}>接続を解除する</button>}
+      <small>再起動後は同じRunwayアカウントのキーを再登録して、保存済みtaskを確認してください。登録だけでは有料要求を送りません。</small>
+    </fieldset></details>
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
       <legend>ショットを追加</legend>
       <label>原作の場面<select value={sceneId} onChange={e => setSceneId(e.target.value)}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
       <label>開始画像<select value={imageId} onChange={e => setImageId(e.target.value)}><option value="">保存済みの画像を選択</option>{images.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
       <label>動きの指示<textarea value={prompt} maxLength={1000} onChange={e => setPrompt(e.target.value)} placeholder="カメラがゆっくり寄る。人物は小さくうなずく。"/></label>
+      <label>動画の寸法<select value={ratio} onChange={e => setRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label><small>PNGの開始画像と同じ縦横比を選んでください。比率が違う画像の自動切り抜きは拒否します。</small>
       <button disabled={!sceneId || !imageId || !prompt.trim()} onClick={() => run('動画ショットを保存', async () => {
         const p = current.current, scene = snapshot.scenes.find(s => s.id === sceneId), image = images.find(a => a.key === imageId);
         if (!scene || !image) throw Error('場面・画像を選び直してください');
@@ -38,7 +77,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         const captured = p.captures?.find(c => c.id === image.id);
         const characterIds = [...new Set(artwork?.panel.characterIds ?? captured?.character_bindings?.map(b => b.character_id) ?? [])];
         const next = createVideoShot(p, { snapshotId: snapshot.id, sceneId, unitIds: sourceUnits(sceneId, scene.text).map(u => u.id), characterIds,
-          startImage: { kind: image.kind, id: image.id, hash: image.hash }, prompt, duration: 5, ratio: '1280:720' });
+          startImage: { kind: image.kind, id: image.id, hash: image.hash }, prompt, duration: 5, ratio });
         await commit(next); setSelected(next.videoShots.at(-1).id); setPlayback(null);
       })}>ショットを保存</button>
       <small>選択した場面の原文全体を参照します。台詞音声は生成しません。</small>
@@ -48,7 +87,24 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
       <h3>{shot.sceneId} · 5秒 · 無音</h3>
       <p className="video-source">{sourceForPanel(shot, project.snapshots.find(s => s.id === shot.snapshotId))}</p>
       <p>{shot.prompt}</p><small>開始画像 {shot.startImage.hash.slice(0, 12)} · {shot.ratio}</small>
-      <p>動画API接続は次の実装段階です。現在はショットの保存と、保存済み動画の確認・採用を利用できます。</p>
+      <label>このショットの動き<textarea value={editPrompt} maxLength={1000} disabled={busy} onChange={e => setEditPrompt(e.target.value)}/></label>
+      <label>このショットの寸法<select disabled={busy} value={editRatio} onChange={e => setEditRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label>
+      <button disabled={busy || !model?.connectionId} onClick={() => run('動きの案を作成中', async () => { setEditPrompt(await draftVideoMotion(current.current, shot, model)); notify('動きの案を作りました。内容を確認して「指示を保存する」で反映できます。'); })}>演出LLMで動きの案を作る</button>
+      <button disabled={busy || !editPrompt.trim() || (editPrompt === shot.prompt && editRatio === shot.ratio)} onClick={() => run('動きの指示を保存', async () => {
+        const next = validateVideoShot(current.current, { ...shot, prompt: editPrompt, ratio: editRatio });
+        await commit({ ...current.current, videoShots: current.current.videoShots.map(s => s.id === shot.id ? next : s) });
+      })}>指示を保存する</button>
+      <button className="primary" disabled={busy || !desktop() || !connectionId} onClick={() => run('動画要求を送信中', generate)}>5秒の動画を生成する</button>
+      {!connectionId && <p>動画API接続を登録すると生成・状態照会を利用できます。</p>}
+      {project.jobs.filter(j => j.scope?.type === 'videoShot' && j.scope.id === shot.id).map(j => <article key={j.id}>
+        <p>{videoStatusLabel(j)} · 予約 {j.remote?.reserved_credits ?? 0} credits{j.remote?.actual_credits != null ? ` / 実績 ${j.remote.actual_credits} credits` : ''}</p>
+        {j.remote?.task_id && <><small>task {j.remote.task_id}</small>
+          <button disabled={busy || !connectionId || j.status === 'cancelled'} onClick={() => run('動画の状態を照会', () => task(j.id, 'status'))}>状態を更新</button>
+          <button disabled={busy || !connectionId || j.remote.status !== 'SUCCEEDED'} onClick={() => run('動画を取得・検証中', () => task(j.id, 'collect'))}>生成済み動画を取得</button>
+          {['submitted', 'cancel_requested'].includes(j.status) && <><label><input type="checkbox" checked={acceptDeletion} onChange={e => setAcceptDeletion(e.target.checked)}/>取消時に完了していた結果はサービス上から削除されることを了承する</label><button disabled={busy || !connectionId || !acceptDeletion} onClick={() => run('動画の取消・削除を要求', () => task(j.id, 'cancel'))}>サービスへ取消・削除を要求</button></>}
+        </>}
+        {j.status === 'unknown' && <><p>task IDが受領できなかった場合はRunway側を確認してください。この要求を再送する操作はありません。</p><button disabled={busy} onClick={() => run('未確定要求を解決', async () => commit(abandonJob(current.current, j.id)))}>サービス側を確認済み・採用せず解決する</button></>}
+      </article>)}
       <button disabled={busy || !desktop() || !project.videoHistory.some(h => h.shot_id === shot.id)} onClick={() => run('動画の採用を元に戻す', async () => { await commit(await undoVideo(current.current, shot.id, verify)); setPlayback(null); })}>この動画の採用を元に戻す</button>
       {project.videoRevisions.filter(v => v.shot_id === shot.id).map(v => {
         const job = project.jobs.find(j => j.id === v.job_id);

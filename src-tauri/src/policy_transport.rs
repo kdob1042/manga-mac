@@ -39,6 +39,14 @@ pub struct PolicyTransport {
 }
 
 impl PolicyTransport {
+    // Media uses the same DNS pinning/no-proxy/no-redirect boundary, with its
+    // own exact host/path/method checks and response limits in the adapter.
+    pub async fn external_client(url: &reqwest::Url) -> Result<reqwest::Client, String> {
+        if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
+            return Err("Invalid external URL".into());
+        }
+        Self::new(&url.origin().ascii_serialization(), false, "").await?.client.ok_or("Missing HTTP client".into())
+    }
     pub async fn new(endpoint: &str, local: bool, path: &str) -> Result<Self, String> {
         let url = reqwest::Url::parse(endpoint).map_err(|_| "Invalid endpoint")?;
         if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {

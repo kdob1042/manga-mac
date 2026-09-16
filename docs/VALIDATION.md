@@ -166,3 +166,25 @@ JSは既存jobsに対応する動画候補の収集→明示採用→動画専�
 - V-B-NATIVE: `cargo test --locked --manifest-path tests/storage/Cargo.toml` → clippy、app fmt/build。Macで保存済み候補の再生→採用→再起動→Undo→MP4書出しを行い、書出しhash一致を確認する。asset scopeが初期空、検証済み1ファイルだけ許可されることを確認。欠損動画の修復はバックアップからmediaファイルを復元する。
 - V-B-UI: `npm run test:ui`でtests/ui/video.spec.jsと既存漫画回帰。実画面の再生・seek・エラーを確認しscreenshotを保存。Web build合格をUI受入に代用しない。
 - V-Cは引き続き未実装。put_videoへのprovider出力stream接続、task ID永続化、キー/予算/送信許可、HTTP fixtureを実装後、V-Bと通しで確認する。API生成成功と動画採用を分ける。
+
+## Issue #9 V-C — Runway接続の実装候補（2026-09-16）
+
+上記V-C未実装の記録を更新。runway.rsに公式image_to_video POST、task GET/DELETE、出力取得を追加。既存Connectionsに用途を分けたメモリ限定キーを置き、PolicyTransportのDNS/private-address/no-proxy/no-redirect境界を利用する。作品の既存jobs.remoteへPOST前unknown/予約費用→task ID→状態→検証済みartifactを保存。古いUIでtask ID/費用/送信入力を消せないようstorage.saveを補強。別ジョブ台帳は追加しない。
+
+画面は初期未設定のRunway接続/予算/送信許可、動きの案（既存演出LLM）/手入力、生成、手動照会、取得、取消を接続。APIのDELETEが完了taskの削除も行うため、その影響を確認した場合にだけ呼ぶ。キー未設定で送信しない。媒体切替では登録接続を保持し、明示解除/終了で破棄する。取得後にUIが落ちてもnativeのartifactから候補を復元・保存してから再生できる。新規POSTは復旧処理から呼ばない。
+
+公式入力仕様の再確認で、5MBはdecode後でなくData URI全体の上限と判明し修正。また比率違いの自動中央cropを避けるため、現段階はPNG・8192px以下・縦横比0.5〜2・出力ratioと一致する画像だけを送信する。余白画像の自動生成/任意比率/JPEG-WebP入力は後続。v4の旧動画ショットは保持し、比率が合わない場合は画面で変更してから生成する。
+
+実行済み: `npm test` **40件pass**、`npm run build` pass、`git diff --check` pass。追加検証は原文範囲/人物ID維持、再起動時task状態復元、取得済み候補の一度だけの接続、停止後候補保持、encoded上限/比率不一致の拒否、空作品の共通配列初期化。空作品で動画画面を開く際のartworks未初期化も修正した。
+
+Rustに公式POST/header/実画像bytesを受けるローカルHTTP fixture、予約前予算拒否、永続送信マーカーによる再POST拒否、CDN/資格情報付きURL拒否、応答の署名URL除去、古いUI保存からtask/costを保護するSQLite試験を追加。これらは**Rustがないためnot_run**。tests/llmは既存appと同じrusqlite/sha2を追加しstorage/runwayを読み込む。lock/fmt/clippy/compileは未検証。PlaywrightはChromium不足でlaunch前に停止する既知状態、Mac/WebView/実API/実Blender/24GBもnot_run。今回、有料API要求は0回。
+
+残件・次のエージェント向け:
+
+- V-C-NATIVE: `cargo generate-lockfile --manifest-path tests/llm/Cargo.toml`→lock/依存差分をレビュー・保存→`cargo test --locked --manifest-path tests/llm/Cargo.toml`とclippy。`cargo test --locked --manifest-path tests/storage/Cargo.toml`、app fmt/clippy/buildも実行。既存の安全境界試験を削除しない。
+- V-C-HTTP: 現在のHTTP fixtureはPOST/header/bodyとJSON応答、永続状態は別DB fixture。実アダプタ全体のGET/DELETE/CDN streamingを差し替えtransportで通す追加試験、redirect/private DNS/レスポンス中断/期限切れ/予約費用超過の通し試験が残る。鍵と署名URLがログ/作品JSONへ出ないことを監査する。
+- V-C-UI/REAL: Native試験後、専用テストキーと明示予算内でPNG→5秒生成→手動照会→取得→Mac再生→採用→再起動→Undo→MP4 hash一致を実施。キー未提供なので有料実APIは未実施。公式例のCDN一ホスト以外は拒否するため、実際の応答ホストが違えば公式根拠・明示許可・安全境界テストを揃えて拡張する。無制限cloudfront wildcardにしない。
+- V-C-RECOVERY: 取消応答を失いtaskも削除済みなら照会は失敗し得る。サービス側で確認する導線と、二重課金せず明示的に未確定状態を解決する操作を追加検証する。ダウンロード中の強制終了で残る`.video-download-*`は未採用の一時ファイル。参照/実行中のものを消さない回収方針は残件。
+- V-D: 既存固定撮影→API実入力の橋渡しは追加済み。漫画コマ不要の動画専用Scene/Camera/frame撮影UI、共有素材新版の影響先表示、MV-11実Blender受入は残件。Issue #5のDポーズ/F/G/H/E-RECOVERYも継続。
+
+V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue #9完了とは扱わない。
