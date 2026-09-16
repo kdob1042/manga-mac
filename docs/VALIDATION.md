@@ -102,3 +102,12 @@ Blender標準pack_all/pack_librariesで依存を格納し、保存したblendを
 - D-UI: `npm run test:ui`に加え、4コマ割当→構図変更→撮影→旧原稿保持→再起動→保存済み撮影接続を実機で確認。割当結果の保存に失敗したら「保存済みショットを復元」、撮影結果の作品保存に失敗したら「保存済み撮影をこのコマへ接続」。再実行で同じjobを送らない。
 - D-ASSET: 正本§4/8、Issue #5 Dに従い既存Asset Library横断取得・選択とpose適用を追加。分類の正本はBlender。現在の窓口は開いたblendだけなのでREUSE-01全体はnot_run/未完。
 - BACKUP-3D: 3D履歴は`blender/`＋SQLiteを含む作品フォルダ全体で保管する。JSON書出しは画像とbinding情報のみでblendを含まない。作品フォルダ復元を実機で検証する。
+
+
+### D-2追補：既存Asset Libraryの検索・取込
+
+認可フォルダのblendをBlender `bpy.data.libraries.load(assets_only=True)`で読み、Blenderに登録済みのObject/Collectionだけ一覧化する窓口を追加。UIは名前・ファイルで絞込み、選択したソースhashが一致する場合だけ標準appendで舞台へ取り込む。検索キャッシュは保存しない。再検索で素材の追加/削除/改名を反映する。分類の追加DBは作らず、取込後のcatalog ID/tagsはBlenderのasset_dataから読む。大きなフォルダは256 blend/2000 assetを上限に明示拒否する。Collectionによるリグごとの取込を推奨。未対応依存は従来どおり保存前に拒否。
+
+`blender/test_real.py`に検索→再検索→hash指定取込・古いhash/パス逸脱拒否の実fixtureを追加（not_run）。D-ASSETの横断取得・選択UIは実装候補ありへ更新。任意pose適用UI、入れ子リンク、再起動含む実Blender受入は未検証。Python構文とWeb buildはpass。
+
+参考: Blender公式 [BlendDataLibraries](https://docs.blender.org/api/current/bpy.types.BlendDataLibraries.html)、[File operators](https://docs.blender.org/api/current/bpy.ops.file.html)。固定対応版4.5.13での実行を受入ゲートとし、current文書の存在だけで動作確認済みとしない。

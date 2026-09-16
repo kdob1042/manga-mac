@@ -89,6 +89,49 @@ def asset_state():
     return result
 
 
+def library_assets(library):
+    entries = []
+    files = sorted(library.rglob('*.blend'))
+    if len(files) > 256:
+        raise ValueError('Select an asset folder with at most 256 blend files')
+    for file in files:
+        path = within(file, [library])
+        version = checksum(path)
+        with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
+            for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections')]:
+                for name in getattr(source, field):
+                    entries.append({'file': str(path.relative_to(library)), 'hash': version, 'kind': kind, 'name': name})
+        if checksum(path) != version or len(entries) > 2000:
+            raise ValueError('Asset library changed or has too many entries')
+    return entries
+
+
+def import_asset(operation, library, scene):
+    relative = Path(operation['file'])
+    if relative.is_absolute() or '..' in relative.parts or not relative.parts or relative.suffix != '.blend':
+        raise ValueError('Invalid asset path')
+    path = within(library / relative, [library])
+    if checksum(path) != operation['hash']:
+        raise ValueError('Asset version changed; refresh the library')
+    field = {'OBJECT': 'objects', 'COLLECTION': 'collections'}.get(operation['asset_type'])
+    if not field:
+        raise ValueError('Unsupported asset type')
+    # Native append reuses Blender dependency resolution, rigs and materials.
+    with bpy.data.libraries.load(str(path), link=False, assets_only=True) as (source, target):
+        if operation['name'] not in getattr(source, field):
+            raise ValueError('Asset is no longer present')
+        setattr(target, field, [operation['name']])
+    block = getattr(target, field)[0]
+    if block is None or checksum(path) != operation['hash']:
+        raise ValueError('Asset import failed or changed')
+    if field == 'collections':
+        scene.collection.children.link(block)
+    else:
+        scene.collection.objects.link(block)
+    bpy.context.view_layer.update()
+    return {'file': operation['file'], 'hash': operation['hash'], 'kind': operation['asset_type'], 'name': block.name}
+
+
 def pin_dependencies(roots):
     before = dependencies(roots)
     # Blender owns packing and reference resolution; no second asset store is introduced.
@@ -115,14 +158,18 @@ def execute(request):
         raise ValueError('Input checkpoint changed')
     operation = request['operation']
     kind = operation.get('kind')
-    allowed = {'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}}
+    allowed = {'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
     if kind not in allowed or set(operation) != allowed[kind]:
         raise ValueError('Unsupported operation or unexpected arguments')
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     bpy.ops.wm.open_mainfile(filepath=str(source), load_ui=False, use_scripts=False)
     roots = [library, source.parent]
-    deps = dependencies(roots)
+    dependencies(roots)
+    catalog = library_assets(library) if kind == 'catalog' else None
+    imported = None
     scene = bpy.context.scene
+    if kind == 'import':
+        imported = import_asset(operation, library, scene)
     if kind == 'shot':
         scene = bpy.data.scenes.get(operation['scene'])
         if scene is None or scene.library:
@@ -177,11 +224,11 @@ def execute(request):
     result = {
         'protocol': 1, 'blender_version': list(bpy.app.version),
         'blender_build': bpy.app.build_hash.decode(), 'gui_required': False,
-        'operations': ['inspect', 'camera', 'capture', 'shot'], 'passes': ['color'],
+        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import'], 'passes': ['color'],
         'checkpoint': {'file': checkpoint.name, 'hash': checksum(checkpoint)},
         'image': image, 'state': camera_state(scene), 'dependencies': remaining, 'packed_sources': pinned_from,
         'dependencies_pinned': True,
-        'assets': asset_state(),
+        'assets': asset_state(), 'library_assets': catalog, 'imported_asset': imported,
         'scenes': [{'name': item.name, 'cameras': [obj.name for obj in item.objects if obj.type == 'CAMERA'],
                     'objects': [obj.name for obj in item.objects], 'frame': item.frame_current} for item in bpy.data.scenes],
     }

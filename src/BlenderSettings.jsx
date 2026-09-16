@@ -4,9 +4,10 @@ import { call, desktop } from './bridge';
 export default function BlenderSettings({ disabled, run, notify, t }) {
   const [binary, setBinary] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [library, setLibrary] = useState(''), [source, setSource] = useState('');
+  const [assets, setAssets] = useState([]), [asset, setAsset] = useState(''), [filter, setFilter] = useState('');
   const [session, setSession] = useState(null), [lens, setLens] = useState(50);
   useEffect(() => { if (desktop()) call('blender_latest').then(setSession).catch(() => notify(t('blenderLoadFailed'))); }, []);
-  const pending = session?.jobs?.some(job => ['unknown', 'running'].includes(job.status));
+  const pending = session?.jobs?.some(job => ['unknown', 'running', 'candidate'].includes(job.status));
   const refresh = async () => {
     if (!session) return;
     const current = await call('blender_status', { sessionId: session.session_id });
@@ -26,7 +27,7 @@ export default function BlenderSettings({ disabled, run, notify, t }) {
   const operate = operation => run(t('blenderProcessing'), async () => {
     try {
       const result = await call('blender_execute', { request: { session_id: session.session_id, request_id: crypto.randomUUID(), expected_revision: session.revision, operation } });
-      setSession(result); notify(t('blenderVerified'));
+      setSession(result); if (result.state?.library_assets) setAssets(result.state.library_assets); notify(t('blenderVerified'));
     } catch (error) {
       await refresh().catch(() => notify(t('blenderStatusFailed')));
       throw error;
@@ -54,6 +55,11 @@ export default function BlenderSettings({ disabled, run, notify, t }) {
       <p>{t('blenderRevision', { revision: session.revision, lens: session.state?.state?.lens ?? t('unchecked') })}</p>
       <label>{t('focalLength')}<input type="number" min="10" max="250" value={lens} onChange={e => setLens(Number(e.target.value))}/></label>
       <button disabled={pending} onClick={() => operate({ kind: 'camera', lens })}>{t('changeCamera')}</button>
+      <button disabled={pending} onClick={() => operate({ kind: 'catalog' })}>素材フォルダを再検索</button>
+      <label>素材を絞り込む<input value={filter} onChange={e => setFilter(e.target.value)}/></label>
+      <label>Blenderの既存アセット<select value={asset} onChange={e => setAsset(e.target.value)}><option value="">選択</option>{assets.map((a, i) => ({ a, i })).filter(({ a }) => `${a.name} ${a.file}`.toLowerCase().includes(filter.toLowerCase())).map(({ a, i }) => <option key={i} value={i}>{a.name} — {a.file} ({a.kind})</option>)}</select></label>
+      <button disabled={pending || asset === '' || !assets[Number(asset)]} onClick={() => { const a = assets[Number(asset)]; operate({ kind: 'import', file: a.file, hash: a.hash, asset_type: a.kind, name: a.name }); }}>選択素材を舞台へ取り込む</button>
+      <small>Blenderでアセットに指定されたObject・Collectionを表示します。素材を更新したら再検索してください。</small>
       <button disabled={pending} onClick={() => operate({ kind: 'capture', width: 768, height: 768 })}>{t('capture')}</button>
       <button onClick={() => run(t('blenderStatusChecking'), async () => {
         const current = await refresh();
