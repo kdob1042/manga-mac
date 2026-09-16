@@ -133,6 +133,7 @@ assert run(inspect_pose).returncode == 0
 operation('reject-animated-pose', pose_source, {'kind': 'pose', 'rig': 'PoseActorB', 'action': 'LeanPose', 'frame': 1}, False)
 operation('reject-missing-pose', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'Missing', 'frame': 1}, False)
 operation('reject-nonrig-pose', pose_source, {'kind': 'pose', 'rig': 'Cube', 'action': 'LeanPose', 'frame': 1}, False)
+operation('reject-rotation-mode', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'IncompatibleRotation', 'frame': 1}, False)
 operation('reject-pose-frame', pose_source, {'kind': 'pose', 'rig': 'PoseActorA', 'action': 'LeanPose', 'frame': True}, False)
 (root / 'acceptance-pose.json').write_text(json.dumps({'D-POSE-static-local': 'pass', 'four_panels_and_video_isolated': 'pass', 'shared_armature_other_actor_preserved': 'pass', 'action_asset_preserved': 'pass', 'saved_pose_reopened': 'pass', 'animated_target_rejected': 'pass', 'Mac': 'not_run'}))
 print('Actual Blender pose application, isolation, reopen and rejection checks passed')

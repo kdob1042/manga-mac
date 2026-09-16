@@ -160,7 +160,8 @@ def apply_pose(operation, scene):
     bag = action.layers[0].strips[0].channelbag(action.slots[0])
     allowed = {}
     for bone in rig.pose.bones:
-        for prop, size in [('location', 3), ('rotation_euler', 3), ('rotation_quaternion', 4), ('rotation_axis_angle', 4), ('scale', 3)]:
+        rotation = ('rotation_quaternion', 4) if bone.rotation_mode == 'QUATERNION' else ('rotation_axis_angle', 4) if bone.rotation_mode == 'AXIS_ANGLE' else ('rotation_euler', 3)
+        for prop, size in [('location', 3), rotation, ('scale', 3)]:
             allowed[bone.path_from_id(prop)] = size
     if (bag is None or not bag.fcurves or any(
             curve.data_path not in allowed or not 0 <= curve.array_index < allowed[curve.data_path]
