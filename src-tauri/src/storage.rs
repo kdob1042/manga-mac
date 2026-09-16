@@ -321,7 +321,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
-    if !matches!(project["version"].as_u64(), Some(1 | 2 | 3 | 4)) {
+    if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
     }
     if let Some(jobs) = project.get("jobs") {
