@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::{fs, io::Write, path::Path};
+use std::{fs, io::{Read, Seek, SeekFrom, Write}, path::{Path, PathBuf}};
 
 type Result<T> = std::result::Result<T, String>;
 fn err(e: impl std::fmt::Display) -> String {
@@ -159,6 +159,158 @@ fn hydrate(value: &mut Value, dir: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub const MAX_VIDEO_BYTES: u64 = 128 * 1024 * 1024;
+
+fn media_dir(root: &Path) -> Result<PathBuf> {
+    let dir = root.join("media");
+    fs::create_dir_all(&dir).map_err(err)?;
+    if fs::symlink_metadata(&dir).map_err(err)?.file_type().is_symlink() {
+        return Err("Media directory symlink rejected".into());
+    }
+    Ok(dir)
+}
+
+// Container bounds only. The platform video decoder remains responsible for
+// playback/codec validation; this is not a second media decoding engine.
+fn check_mp4(file: &mut fs::File, size: u64) -> Result<()> {
+    if !(32..=MAX_VIDEO_BYTES).contains(&size) { return Err("Invalid video size".into()); }
+    file.seek(SeekFrom::Start(0)).map_err(err)?;
+    let mut offset = 0_u64;
+    let mut boxes = 0;
+    let (mut ftyp, mut moov, mut mdat) = (false, false, false);
+    while offset < size {
+        boxes += 1;
+        if boxes > 4096 || size - offset < 8 { return Err("Invalid MP4 structure".into()); }
+        let mut header = [0_u8; 8];
+        file.read_exact(&mut header).map_err(err)?;
+        let mut length = u32::from_be_bytes(header[..4].try_into().map_err(err)?) as u64;
+        let mut header_size = 8;
+        if length == 1 {
+            let mut extended = [0_u8; 8];
+            file.read_exact(&mut extended).map_err(err)?;
+            length = u64::from_be_bytes(extended); header_size = 16;
+        } else if length == 0 { length = size - offset; }
+        if length < header_size || length > size - offset { return Err("Truncated MP4 box".into()); }
+        match &header[4..] {
+            b"ftyp" => { if offset != 0 || length < 16 { return Err("Invalid MP4 type".into()); } ftyp = true; }
+            b"moov" => moov = length > header_size,
+            b"mdat" => mdat = length > header_size,
+            _ => (),
+        }
+        offset += length;
+        file.seek(SeekFrom::Start(offset)).map_err(err)?;
+    }
+    if !(ftyp && moov && mdat) { return Err("MP4 is missing required boxes".into()); }
+    Ok(())
+}
+
+fn file_hash(file: &mut fs::File) -> Result<String> {
+    file.seek(SeekFrom::Start(0)).map_err(err)?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 65536];
+    let mut size = 0_u64;
+    loop {
+        let count = file.read(&mut buffer).map_err(err)?;
+        if count == 0 { break; }
+        size += count as u64;
+        if size > MAX_VIDEO_BYTES { return Err("Video exceeds size limit".into()); }
+        hash.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
+}
+
+pub fn verify_video(root: &Path, artifact: &Value) -> Result<PathBuf> {
+    let id = artifact["hash"].as_str().ok_or("Missing video hash")?;
+    let size = artifact["size"].as_u64().ok_or("Missing video size")?;
+    if !valid_hash(id) || artifact["artifact_id"].as_str() != Some(id)
+        || artifact["mime"].as_str() != Some("video/mp4") || !(32..=MAX_VIDEO_BYTES).contains(&size) {
+        return Err("Invalid video reference".into());
+    }
+    let path = media_dir(root)?.join(format!("{id}.mp4"));
+    if !fs::symlink_metadata(&path).map_err(err)?.file_type().is_file() { return Err("Video is not a regular file".into()); }
+    let mut file = fs::File::open(&path).map_err(err)?;
+    if file.metadata().map_err(err)?.len() != size { return Err("Video size mismatch".into()); }
+    check_mp4(&mut file, size)?;
+    if file_hash(&mut file)? != id { return Err("Video hash mismatch".into()); }
+    Ok(path)
+}
+
+// Used by provider collection and native fixtures, never an arbitrary-path IPC.
+pub fn put_video(root: &Path, mut input: impl Read, expected_hash: Option<&str>) -> Result<Value> {
+    let dir = media_dir(root)?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(err)?.as_nanos();
+    let temp = dir.join(format!(".pending-{}-{stamp}", std::process::id()));
+    let mut file = fs::OpenOptions::new().write(true).read(true).create_new(true).open(&temp).map_err(err)?;
+    let result = (|| {
+        let mut hash = Sha256::new();
+        let mut buffer = [0_u8; 65536];
+        let mut size = 0_u64;
+        loop {
+            let count = input.read(&mut buffer).map_err(err)?;
+            if count == 0 { break; }
+            size += count as u64;
+            if size > MAX_VIDEO_BYTES { return Err("Video exceeds size limit".into()); }
+            file.write_all(&buffer[..count]).map_err(err)?;
+            hash.update(&buffer[..count]);
+        }
+        file.sync_all().map_err(err)?;
+        let id = format!("{:x}", hash.finalize());
+        if expected_hash.is_some_and(|h| h != id) { return Err("Downloaded video hash mismatch".into()); }
+        check_mp4(&mut file, size)?;
+        if file_hash(&mut file)? != id { return Err("Video read-back mismatch".into()); }
+        let artifact = json!({"artifact_id":id,"hash":id,"mime":"video/mp4","size":size});
+        let path = dir.join(format!("{id}.mp4"));
+        match fs::hard_link(&temp, path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(e) => return Err(err(e)),
+        }
+        sync_dir(&dir)?;
+        verify_video(root, &artifact)?;
+        Ok(artifact)
+    })();
+    drop(file);
+    let _ = fs::remove_file(temp);
+    result
+}
+
+pub fn video_reference(db: &Connection, revision_id: &str) -> Result<Value> {
+    let data: String = db.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    let project: Value = serde_json::from_str(&data).map_err(err)?;
+    let revision = project["videoRevisions"].as_array().ok_or("No video revisions")?.iter()
+        .find(|v| v["id"].as_str() == Some(revision_id)).ok_or("Unknown video revision")?;
+    Ok(revision["artifact"].clone())
+}
+
+pub fn export_video(root: &Path, downloads: &Path, artifact: &Value) -> Result<PathBuf> {
+    let source = verify_video(root, artifact)?;
+    fs::create_dir_all(downloads).map_err(err)?;
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(err)?.as_nanos();
+    let target = downloads.join(format!("{stamp}-video.mp4"));
+    let mut output = fs::OpenOptions::new().create_new(true).write(true).read(true).open(&target).map_err(err)?;
+    let result = (|| {
+        let mut input = fs::File::open(source).map_err(err)?.take(MAX_VIDEO_BYTES + 1);
+        let count = std::io::copy(&mut input, &mut output).map_err(err)?;
+        if Some(count) != artifact["size"].as_u64() { return Err("Video changed during export".into()); }
+        output.sync_all().map_err(err)?;
+        if Some(file_hash(&mut output)?.as_str()) != artifact["hash"].as_str() { return Err("Export hash mismatch".into()); }
+        sync_dir(downloads)?;
+        Ok(target.clone())
+    })();
+    drop(output);
+    if result.is_err() { let _ = fs::remove_file(target); }
+    result
+}
+
+fn check_video_references(project: &Value, root: &Path) -> Result<()> {
+    if let Some(revisions) = project.get("videoRevisions") {
+        for revision in revisions.as_array().ok_or("Invalid video revisions")? {
+            verify_video(root, &revision["artifact"])?;
+        }
+    }
+    Ok(())
+}
 pub fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
@@ -185,6 +337,7 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     .map_err(err)?;
     let dir = root.join("artifacts");
     externalize(&mut project, &dir)?;
+    check_video_references(&project, root)?;
     // Read-back validation is also required for already existing references.
     let mut checked = project.clone();
     hydrate(&mut checked, &dir)?;
@@ -201,6 +354,8 @@ pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
     data.map(|data| {
         let mut value: Value = serde_json::from_str(&data).map_err(err)?;
         hydrate(&mut value, &root.join("artifacts"))?;
+        // A missing video must not make the user's entire manga unreadable.
+        // Playback/adoption/export verify the individual artifact on demand.
         Ok(value.to_string())
     })
     .transpose()
@@ -225,6 +380,55 @@ mod tests {
     }
     fn fixture() -> Value {
         serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap()
+    }
+    fn video_fixture() -> Vec<u8> {
+        STANDARD.decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim()).unwrap()
+    }
+    #[test]
+    fn video_stream_roundtrip_export_and_restart() {
+        let (mut db, dir) = setup();
+        let bytes = video_fixture();
+        let artifact = put_video(&dir, bytes.as_slice(), Some(&hash(&bytes))).unwrap();
+        assert_eq!(put_video(&dir, bytes.as_slice(), None).unwrap(), artifact);
+        let mut project = fixture();
+        project["version"] = json!(4);
+        project["videoRevisions"] = json!([{"id":"v1","artifact":artifact}]);
+        save(&mut db, &dir, &project.to_string()).unwrap();
+        drop(db);
+        let db = Connection::open(dir.join("test.sqlite3")).unwrap();
+        let stored = video_reference(&db, "v1").unwrap();
+        assert_eq!(stored, artifact);
+        assert!(video_reference(&db, "../outside").is_err());
+        let export = export_video(&dir, &dir.join("exports"), &stored).unwrap();
+        assert_eq!(fs::read(export).unwrap(), bytes);
+        assert_eq!(serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(), project);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn interrupted_corrupt_and_oversize_video_never_change_project() {
+        let (mut db, dir) = setup();
+        let original = fixture();
+        save(&mut db, &dir, &original.to_string()).unwrap();
+        let bytes = video_fixture();
+        assert!(put_video(&dir, bytes.as_slice(), Some(&"0".repeat(64))).is_err());
+        assert!(put_video(&dir, &bytes[..bytes.len()-1], None).is_err());
+        assert!(put_video(&dir, std::io::repeat(0).take(MAX_VIDEO_BYTES + 1), None).is_err());
+        struct Broken;
+        impl Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> { Err(std::io::Error::other("interrupted")) }
+        }
+        assert!(put_video(&dir, Broken, None).is_err());
+        assert_eq!(fs::read_dir(dir.join("media")).unwrap().count(), 0);
+        let artifact = put_video(&dir, bytes.as_slice(), None).unwrap();
+        let path = verify_video(&dir, &artifact).unwrap();
+        fs::write(&path, vec![0; bytes.len()]).unwrap();
+        assert!(verify_video(&dir, &artifact).is_err());
+        assert!(export_video(&dir, &dir.join("exports"), &artifact).is_err());
+        let mut changed = original.clone();
+        changed["videoRevisions"] = json!([{"id":"bad","artifact":artifact}]);
+        assert!(save(&mut db, &dir, &changed.to_string()).is_err());
+        assert_eq!(serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(), original);
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn legacy_restart_and_history_roundtrip() {

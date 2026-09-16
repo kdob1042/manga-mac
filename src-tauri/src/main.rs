@@ -1,5 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-mod storage;
+pub mod storage;
 mod llm;
 mod policy_transport;
 
@@ -97,6 +97,22 @@ fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
 fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(err)?;
     storage::load(&db, &state.root)
+}
+#[tauri::command]
+fn video_playback(app: tauri::AppHandle, revision_id: String, state: State<AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    let artifact = storage::video_reference(&db, &revision_id)?;
+    let path = storage::verify_video(&state.root, &artifact)?;
+    // The initial scope is empty. Only this verified, DB-referenced file is allowed.
+    app.asset_protocol_scope().allow_file(&path).map_err(err)?;
+    Ok(serde_json::json!({"path":path,"artifact":artifact}))
+}
+#[tauri::command]
+fn video_export(app: tauri::AppHandle, revision_id: String, state: State<AppState>) -> Result<String, String> {
+    let db = state.db.lock().map_err(err)?;
+    let artifact = storage::video_reference(&db, &revision_id)?;
+    let path = storage::export_video(&state.root, &app.path().download_dir().map_err(err)?.join("Manga Mac"), &artifact)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
 async fn register_llm(input: llm::Registration, state: State<'_, AppState>) -> Result<String, String> {
@@ -313,6 +329,8 @@ fn main() {
             github_file,
             save_project,
             load_project,
+            video_playback,
+            video_export,
             export_file,
             register_llm,
             remove_llm,
