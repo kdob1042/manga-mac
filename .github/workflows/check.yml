@@ -10,6 +10,44 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  llm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+      - name: Prepare candidate dependency and formatting review
+        run: |
+          mkdir -p review
+          cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 > review/metadata.json
+          cargo generate-lockfile --manifest-path tests/llm/Cargo.toml
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          cargo fetch --locked --manifest-path tests/llm/Cargo.toml
+          cargo tree --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin -e features > review/features.txt
+      - name: SDK and real HTTP policy fixtures
+        run: |
+          env HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 NO_PROXY= cargo test --offline --locked --manifest-path tests/llm/Cargo.toml
+          cargo clippy --locked --manifest-path tests/llm/Cargo.toml --all-targets -- -D warnings
+      - name: Audit exact candidate dependency closure
+        if: always()
+        run: |
+          cargo install cargo-audit --version 0.22.2 --locked
+          python scripts/audit_osv.py src-tauri/Cargo.lock review/osv.json
+          cargo audit --file src-tauri/Cargo.lock --json > review/rustsec.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: SDK-candidate-review
+          path: |
+            review/
+            src-tauri/Cargo.lock
+            src-tauri/src/main.rs
+            src-tauri/src/llm.rs
+            src-tauri/src/llm_tests.rs
+            src-tauri/src/policy_transport.rs
+            tests/llm/Cargo.lock
   blender:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -81,7 +119,7 @@ jobs:
           path: test-results/
   mac:
     runs-on: macos-26
-    needs: [web, storage, blender]
+    needs: [web, storage, llm, blender]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
