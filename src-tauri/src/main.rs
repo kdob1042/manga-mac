@@ -235,6 +235,17 @@ fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<Stri
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
+async fn blender_fork(session_id: String, expected_revision: u64, ids: Vec<String>, state: State<'_, AppState>) -> Result<Vec<Value>, String> {
+    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    let mut db = state.db.lock().map_err(err)?;
+    blender::fork_shots(&mut db, &session_id, expected_revision, ids)
+}
+#[tauri::command]
+fn blender_capture(session_id: String, request_id: String, state: State<AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    blender::capture(&db, &state.root, &session_id, &request_id)
+}
+#[tauri::command]
 fn blender_register(input: blender::Registration, state: State<AppState>) -> Result<Value, String> {
     let db = state.db.lock().map_err(err)?;
     blender::register(&db, input)
@@ -281,6 +292,8 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            blender_fork,
+            blender_capture,
             blender_register,
             blender_execute,
             blender_status,

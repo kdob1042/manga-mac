@@ -31,15 +31,22 @@ def within(path, roots):
 def dependencies(roots):
     paths = set()
     for library in bpy.data.libraries:
+        if library.packed_file:
+            continue
         paths.add(within(bpy.path.abspath(library.filepath), roots))
     for image in bpy.data.images:
         if image.source == 'FILE' and not image.packed_file and image.filepath:
             paths.add(within(bpy.path.abspath(image.filepath, library=image.library), roots))
+    for font in bpy.data.fonts:
+        if font.filepath and font.filepath != '<builtin>' and not font.packed_file:
+            paths.add(within(bpy.path.abspath(font.filepath, library=font.library), roots))
     # Fail closed for dependency forms that this initial bridge cannot pin.
     if any(image.source in {'MOVIE', 'SEQUENCE', 'TILED'} for image in bpy.data.images):
         raise ValueError('Animated or tiled textures need a supported capture adapter')
     if bpy.data.movieclips or bpy.data.sounds or bpy.data.cache_files or bpy.data.volumes:
         raise ValueError('External media dependencies are not supported by this bridge')
+    if any(mod.type in {'FLUID', 'CLOTH', 'SOFT_BODY', 'PARTICLE_SYSTEM', 'MESH_CACHE', 'MESH_SEQUENCE_CACHE', 'NODES'} for obj in bpy.data.objects for mod in obj.modifiers):
+        raise ValueError('Simulation, geometry-node and external caches are not supported by this capture adapter')
     return [{'path': str(path), 'hash': checksum(path)} for path in sorted(paths)]
 
 
@@ -57,7 +64,41 @@ def camera_state(scene):
         'view_transform': scene.view_settings.view_transform,
         'look': scene.view_settings.look, 'exposure': scene.view_settings.exposure,
         'gamma': scene.view_settings.gamma,
+        'pixel_aspect': [scene.render.pixel_aspect_x, scene.render.pixel_aspect_y],
+        'transparent': scene.render.film_transparent,
+        'seed': scene.cycles.seed if scene.render.engine == 'CYCLES' else None,
+        'samples': scene.cycles.samples if scene.render.engine == 'CYCLES' else None,
+        'matrix_world': [list(row) for row in camera.matrix_world],
+        'clip': [camera.data.clip_start, camera.data.clip_end],
+        'shift': [camera.data.shift_x, camera.data.shift_y],
+        'ortho_scale': camera.data.ortho_scale,
     }
+
+
+def asset_state():
+    # Read Blender-owned names/catalog IDs. This is a replaceable view, not an asset database.
+    result = []
+    for kind, blocks in [('OBJECT', bpy.data.objects), ('COLLECTION', bpy.data.collections), ('ACTION', bpy.data.actions)]:
+        for block in blocks:
+            if block.asset_data:
+                result.append({'kind': kind, 'name': block.name,
+                    'library': block.library.filepath if block.library else None,
+                    'catalog_id': block.asset_data.catalog_id,
+                    'description': block.asset_data.description,
+                    'tags': [tag.name for tag in block.asset_data.tags]})
+    return result
+
+
+def pin_dependencies(roots):
+    before = dependencies(roots)
+    # Blender owns packing and reference resolution; no second asset store is introduced.
+    if bpy.ops.file.pack_all() != {'FINISHED'}:
+        raise ValueError('Blender could not pack dependencies')
+    if bpy.data.libraries and bpy.ops.file.pack_libraries() != {'FINISHED'}:
+        raise ValueError('Blender could not pack linked libraries')
+    if dependencies(roots):
+        raise ValueError('Unpinned dependencies remain')
+    return before
 
 
 def execute(request):
@@ -74,7 +115,7 @@ def execute(request):
         raise ValueError('Input checkpoint changed')
     operation = request['operation']
     kind = operation.get('kind')
-    allowed = {'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}}
+    allowed = {'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}}
     if kind not in allowed or set(operation) != allowed[kind]:
         raise ValueError('Unsupported operation or unexpected arguments')
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
@@ -82,6 +123,17 @@ def execute(request):
     roots = [library, source.parent]
     deps = dependencies(roots)
     scene = bpy.context.scene
+    if kind == 'shot':
+        scene = bpy.data.scenes.get(operation['scene'])
+        if scene is None or scene.library:
+            raise ValueError('Select a local Blender scene')
+        camera = scene.objects.get(operation['camera'])
+        frame = operation['frame']
+        if camera is None or camera.type != 'CAMERA' or isinstance(frame, bool) or not isinstance(frame, int) or not -1048574 <= frame <= 1048574:
+            raise ValueError('Invalid camera or frame')
+        bpy.context.window.scene = scene
+        scene.camera = camera
+        scene.frame_set(frame)
     if kind == 'camera':
         lens = operation['lens']
         if isinstance(lens, bool) or not isinstance(lens, (int, float)) or not math.isfinite(lens) or not 10 <= lens <= 250:
@@ -94,6 +146,8 @@ def execute(request):
         scene.camera = camera
         scene.camera.data.lens = lens
         bpy.context.view_layer.update()
+    # Pack before rendering or persisting any new version. Unsupported dependencies fail closed.
+    pinned_from = pin_dependencies(roots)
     image = None
     if kind == 'capture':
         for field in ['width', 'height']:
@@ -114,13 +168,22 @@ def execute(request):
         image = {'file': 'capture.png', 'hash': checksum(output / 'capture.png')}
     checkpoint = output / 'checkpoint.blend'
     bpy.ops.wm.save_as_mainfile(filepath=str(checkpoint), check_existing=False, copy=True)
+    # Reopen the actual saved pack and verify that no mutable external inputs remain.
+    bpy.ops.wm.open_mainfile(filepath=str(checkpoint), load_ui=False, use_scripts=False)
+    remaining = dependencies([output])
+    if remaining:
+        raise ValueError('Saved checkpoint still depends on external files')
+    scene = bpy.context.scene
     result = {
         'protocol': 1, 'blender_version': list(bpy.app.version),
         'blender_build': bpy.app.build_hash.decode(), 'gui_required': False,
-        'operations': ['inspect', 'camera', 'capture'], 'passes': ['color'],
+        'operations': ['inspect', 'camera', 'capture', 'shot'], 'passes': ['color'],
         'checkpoint': {'file': checkpoint.name, 'hash': checksum(checkpoint)},
-        'image': image, 'state': camera_state(scene), 'dependencies': deps,
-        'dependencies_pinned': not deps,
+        'image': image, 'state': camera_state(scene), 'dependencies': remaining, 'packed_sources': pinned_from,
+        'dependencies_pinned': True,
+        'assets': asset_state(),
+        'scenes': [{'name': item.name, 'cameras': [obj.name for obj in item.objects if obj.type == 'CAMERA'],
+                    'objects': [obj.name for obj in item.objects], 'frame': item.frame_current} for item in bpy.data.scenes],
     }
     target = output / 'result.json'
     with target.open('x') as stream:
