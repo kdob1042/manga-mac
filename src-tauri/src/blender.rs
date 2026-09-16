@@ -554,6 +554,8 @@ async fn run(session: &Session, folder: &Path, operation: &Operation) -> Result<
 mod recovery_tests {
     use super::*;
 
+    static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
     struct Fixture {
         root: PathBuf,
         db: rusqlite::Connection,
@@ -570,8 +572,11 @@ mod recovery_tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root =
-            std::env::temp_dir().join(format!("manga-recovery-{}-{suffix}", std::process::id()));
+        let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let root = std::env::temp_dir().join(format!(
+            "manga-recovery-{}-{suffix}-{sequence}",
+            std::process::id()
+        ));
         std::fs::create_dir(&root).unwrap();
         let db = rusqlite::Connection::open_in_memory().unwrap();
         initialize(&db).unwrap();
