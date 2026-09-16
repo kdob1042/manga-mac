@@ -1,24 +1,33 @@
 name: Check and build Mac app
-# PR checks protect both dev integration and main release pull requests.
-# Markdown/docs-only changes are intentionally skipped unless this workflow itself changes.
+# PRs run the Linux checks. A merge to dev runs the full macOS validation.
+# A merge to main only packages the already validated source for distribution.
+# Markdown/docs-only changes are intentionally skipped unless this workflow changes.
 on:
   push:
-    branches: [main]
+    branches: [dev, main]
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
   pull_request:
+    branches: [dev, main]
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
   workflow_dispatch:
+
 concurrency:
   group: manga-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
+
 permissions:
   contents: read
+
 jobs:
   llm:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -55,7 +64,12 @@ jobs:
             src-tauri/src/llm_tests.rs
             src-tauri/src/policy_transport.rs
             tests/llm/Cargo.lock
+
   blender:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -94,7 +108,12 @@ jobs:
             src-tauri/src/main.rs
             src-tauri/src/blender.rs
             tests/blender/Cargo.lock
+
   storage:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -112,7 +131,12 @@ jobs:
         run: cargo test --locked --manifest-path tests/storage/Cargo.toml real_restic -- --ignored
       - run: cargo clippy --locked --manifest-path tests/storage/Cargo.toml --all-targets -- -D warnings
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+
   web:
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -130,10 +154,14 @@ jobs:
         with:
           name: UI-test-results
           path: test-results/
+
   mac:
-    # The 10x-priced macOS runner runs once after merge, or on explicit dispatch.
-    # Pull requests use the Linux jobs above so each commit is not billed twice.
-    if: github.event_name != 'pull_request'
+    name: macOS validation
+    # The macOS runner validates every non-doc change after it is merged to dev.
+    # PRs use the Linux jobs above; main uses the release-only job below.
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
     runs-on: macos-26
     needs: [web, storage, llm, blender]
     timeout-minutes: 90
@@ -176,7 +204,58 @@ jobs:
           npm run build
           cargo test --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --all-targets -- -D warnings
-      - name: Build unsigned Apple Silicon app and DMG
+      - name: Build unsigned Apple Silicon validation app and DMG
+        run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Manga-Mac-Apple-Silicon-validation
+          path: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: macOS release package
+    # main is packaged only after the corresponding dev commit was validated.
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+          targets: aarch64-apple-darwin
+      - run: npm ci
+      - name: Identify native compiler cache
+        id: native-cache
+        run: |
+          echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        id: native-restore
+        with:
+          path: helper/.build
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Build native image engine
+        run: |
+          swift build -c release --package-path helper
+          mkdir -p src-tauri/binaries
+          cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-apple-darwin
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.native-restore.outputs.cache-hit != 'true'
+        with:
+          path: helper/.build
+          key: ${{ steps.native-restore.outputs.cache-primary-key }}
+      - name: Prepare release bundle
+        run: |
+          npm run icons
+          npm run build
+      - name: Build unsigned Apple Silicon release app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
