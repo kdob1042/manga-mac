@@ -338,3 +338,13 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 - 新UI試験は4コマの自動演出→撮影→作画→顔推定なし局所修正を人工IPCで検証する。実モデルの作画品質とは別。
 - 実Blenderの配置・カメラ方向・照明・撮影・保存版不変・異常値拒否を既存CI試験へ追加。実行結果はPRとIssueへ追記する。
 - 実演出LLM・実画像AI・Mac GUI・複雑なリグ・24GB性能は未実施。視覚的な演技・人物一致を自動保証しない。素材の初回準備と不足時の対応は必要。
+
+## Live Manga / Issue #39
+
+開始dev `feefe253e0a013562af13779ae1005b82e315cf3`。既存作画、動画Job、採用版、不変media、PNG組版を再利用。コマ限定の開始画像と原文範囲の照合、固定動画版、独立Undo、レイヤー出力、native stream copy/ffprobe/stagingを追加。
+
+Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web buildを確認。`scripts/live-e2e.mjs`は実ブラウザのエクスポータを通し、通常PNGとart+overlayのRGBA完全一致を確認後、実nativeエクスポータから人工4コマ・5秒無音MP4パッケージを作る。手書きmanifestの成功で接続済みと扱わない。
+
+再現: `CHROMIUM_EXECUTABLE_PATH=... node scripts/live-e2e.mjs`（通常CIはPlaywright同梱Chromium）、FFmpeg/ffprobeとRustが必要。native受入は `cargo test --locked --manifest-path tests/storage/Cargo.toml live_export`。ブラウザ入力を使う試験は専用scriptから明示的に実行し、入力未指定を成功扱いしない。
+
+未実施: Mac GUI操作、実有料生成、実iPhone/Android、R2公開。新規割当は既存schema v4の任意配列として移行し、旧作品は空配列になる。rollbackは更新前のアプリと作品フォルダを保持する。刊行物は独立した不変出力なので旧版へ戻しても変更されない。

@@ -179,3 +179,9 @@ Blenderは依存素材を既存packing機能で固定した保存版が対象で
 アプリが動いていない間は自動実行されません。起動・復帰後に期限を確認し、オフライン等の失敗は1時間間隔、2回失敗後は日次で再試行します。手動再試行もできます。新規保存に失敗した回は旧正常版を削除しません。旧版整理の失敗・容量回収未完了は別表示されます。クラウド側のゴミ箱やバージョン保持により、請求容量への反映が遅れる場合があります。クラウド全体のゴミ箱をアプリから空にすることはありません。
 
 導入元：[restic 0.19.1](https://github.com/restic/restic/releases/tag/v0.19.1)（BSD-2-Clause）、[rclone 1.75.1](https://github.com/rclone/rclone/releases/tag/v1.75.1)（MIT）。初期版ではDMGへの同梱・暗黙の最新版取得は行わず、上記固定版を別途導入します。archiveは公式SHA256SUMS（2026-09-16取得）と照合しています。Keychainはsecurity-framework 3.7.0（MIT/Apache-2.0）を経由します。ツール更新時は公式配布物を再検証してアプリで再設定してください。
+
+## Live Mangaの配信用書き出し
+
+FFmpeg/ffprobeが必要。Homebrew利用環境では `brew install ffmpeg`。アプリは標準のHomebrew配置またはPATHからffprobeを探す。未導入時は書き出しだけを停止して理由を表示し、既存の漫画制作・PNG/CBZ出力を妨げない。
+
+生成動画のコンテナ名だけでは互換性を判断せず、実H.264・無音・寸法・尺・hashを検査する。出力先はDownloadsの`live-manga-<releaseId>`。この出力は配信用であり、編集用バックアップではない。既刊版の上書きやクラウド自動公開はしない。
