@@ -28,3 +28,21 @@ test('LLM provider selection is independent for planning and vision; keys are ep
   await page.getByRole('button', { name: '接続・人物設定' }).click();
   await expect(page.getByLabel('演出・コマ計画の接続先')).toHaveValue('ollama');
 });
+
+
+test('switches UI language, persists it, and never translates stored source text', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '画面のサンプルを見る' }).click();
+  const source = '「ここ、空いてる？」';
+  await expect(page.locator('.caption').nth(1)).toHaveText(source);
+
+  await page.getByLabel('表示言語').selectOption('en');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByRole('button', { name: 'Connections & characters' })).toBeVisible();
+  await expect(page.locator('.caption').nth(1)).toHaveText(source);
+
+  await page.reload();
+  await expect(page.getByLabel('Display language')).toHaveValue('en');
+  await expect(page.getByRole('button', { name: 'Connections & characters' })).toBeVisible();
+  await expect(page.locator('.caption').nth(1)).toHaveText(source);
+});
