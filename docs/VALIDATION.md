@@ -277,3 +277,5 @@ main `8f7d7b66ce773dce20eecb78250c73901aa4d3cc`の[CI 35054388978](https://githu
 Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter＋排他的directory作成へ変更。衝突時は別名へ進み、既存directoryを再使用/削除しない。製品の保存/復旧コードや試験の合格条件は緩めていない。修正後はmain Macジョブで再実行する。
 
 この失敗で、成功したSwiftビルドもジョブ終端のcache保存前に失われていた。固定済みactions/cacheのrestore/saveを分離し、Swift成功直後に同じcompiler/source/lockの完全一致キーで保存する。以後のRust test/clippy・app/DMGビルド・成果物確認は全て維持する。Macの署名/公証、実モデル品質/24GB、Mac内操作は引き続き別受入。
+
+追加の寸法検証式についてRust 1.98.1のclippy-driverで`manual_is_multiple_of` 2件を再現し、同じ64倍数判定を`is_multiple_of`へ修正した。修正した式のlintは成功。Mac本体全体のclippy成功はmain CIで別確認する。
