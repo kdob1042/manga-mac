@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      DIRECTION_MODEL: qwen2.5:7b-instruct-q4_K_M
+      DIRECTION_MODEL: qwen2.5:3b-instruct-q4_K_M
       OLLAMA_HOST: 127.0.0.1:11435
       OLLAMA_NUM_PARALLEL: 1
       OLLAMA_MAX_LOADED_MODELS: 1

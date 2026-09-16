@@ -89,3 +89,16 @@ test('bounded directing loop stops instead of infinite AI retries',async()=>{
   assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,MAX_DIRECTION_STEPS);
   assert.equal(f.current().captures?.length??0,0);
 });
+
+test('one semantic correction never repeats a native operation and a second repeat stops', async()=>{
+  const f=await fixture(); let calls=0;
+  await directPanel({...f,panelId:'p0',ask:async()=>++calls<=2?action({kind:'camera',lens:70}):ready});
+  assert.equal(calls,3);
+  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
+  assert.equal(f.current().captures.length,1);
+  const g=await fixture(); let repeats=0;
+  await assert.rejects(directPanel({...g,panelId:'p0',ask:async()=>{repeats++;return action({kind:'camera',lens:70});}}),/繰り返し/);
+  assert.equal(repeats,3);
+  assert.equal(g.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
+  assert.equal(g.current().captures?.length??0,0);
+});

@@ -235,6 +235,7 @@ fn public_fields(m: &Value) -> Result<()> {
 }
 pub fn export(db: &Connection, root: &Path, downloads: &Path, request: &Value) -> Result<Value> {
     let project = raw_project(db)?;
+    super::layout::require_legacy_live_layout(&project)?;
     if project["revision"] != request["projectRevision"] {
         return Err("作品が更新されました。もう一度書き出してください".into());
     }

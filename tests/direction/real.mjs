@@ -45,6 +45,7 @@ const ask = async (prompt,schema) => {
   try {
     const value = await call('llm_request',{connection_id:connection,purpose:'direction',request_id:crypto.randomUUID(),prompt,schema,images:[]});
     record.response = value; record.elapsed_ms = Date.now()-started;
+    console.log(`LLM ${calls}: ${value.status} ${JSON.stringify(value.operation)} (${record.elapsed_ms}ms)`);
     return value;
   } catch(e) {record.error = e.message; throw e;}
   finally {await writeFile(root+'/transcript.json',JSON.stringify(transcript,null,2));}
@@ -58,6 +59,7 @@ try {
   for (let i=0;i<4;i++) {
     const response = await direct(`p${i}`);
     assert.equal(response.state.state.lens,[45,55,65,75][i]);
+    console.log(`Panel ${i}: actual capture verified`);
     await writeFile(`${root}/panel-${i}.png`,Buffer.from(response.preview.split(',')[1],'base64'));
   }
   assert.equal(new Set(project.panels.map(p=>p.shot_binding.session_id)).size,4);

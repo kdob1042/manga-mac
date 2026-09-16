@@ -341,7 +341,7 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 
 ## #46 — 仮想環境での実演出LLM受入
 
-`Real LLM and Blender acceptance` はLinux Actionsで実Ollama（固定バイナリSHA-256）とQwen2.5 7Bを動かし、製品の `directPanel` → Rust接続管理／rig-core → 実LLM → Rust Blender保存層 → 実Blenderまで接続する。テスト専用stdio bridgeは既存の公開関数を呼ぶだけで、推論結果やBlender応答をモックしない。APIキー・作品原稿・課金APIを使わず、公開可能な立方体シーンを使う。モデルタグ・取得digest・応答全文・操作履歴・実PNG・SQLiteをartifactに保存する。
+`Real LLM and Blender acceptance` はLinux Actionsで実Ollama（固定バイナリSHA-256）とQwen2.5 3Bを動かし、製品の `directPanel` → Rust接続管理／rig-core → 実LLM → Rust Blender保存層 → 実Blenderまで接続する。テスト専用stdio bridgeは既存の公開関数を呼ぶだけで、推論結果やBlender応答をモックしない。APIキー・作品原稿・課金APIを使わず、公開可能な立方体シーンを使う。モデルタグ・取得digest・応答全文・操作履歴・実PNG・SQLiteをartifactに保存する。
 
 検証対象は4コマの焦点距離と異なる撮影画像、nativeプロセス再起動後の1コマ修正、他コマのcheckpoint不変、不足素材によるblockedと撮影抑止、原本hash不変。応答を正解に置き換えたり、失敗を成功まで再試行しない。最大30推論要求・35分で停止する。これは既に計画したコマの演出から撮影までの受入であり、実画像モデルによる漫画化、実人物素材の演技品質、Mac GUI、24GB実機性能は未実施として別管理する。
 
@@ -352,6 +352,15 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 標準macos-26の実測ではMetalのApple Paravirtual deviceが存在し、物理メモリ7GiB、推奨GPU working set約4.67GiBだった（run 35098338201）。これを根拠に、撮影PNGを製品のSwift画像helperへ渡し、実FLUX.2 klein 4Bで256×256を1回生成する追加試験を設けた。準備600秒・生成600秒で打ち切り、PNG寸法と永続receiptのhashを照合する。結果はReal-image-reviewへ保存。前段が途中で失敗しても既に生成済みのpanel-0.pngがあれば画像側を独立に検証できるが、前段失敗をE2E成功にはしない。画像が未作成なら画像側も失敗になる。作品品質や24GB機の性能受入を代替しない。
 
 実モデルの重い試験はdev向けPRと手動実行で行う。同じ変更を昇格するmain向けPRでは既存必須CIを実施し、実モデル試験を重複実行しない。
+## #50 / #51 自由コマ割り
+
+- Node: 旧配置・端数・移行冪等性、4/6混在と1/3/5/8/16枠、凸形状、不正数値・自己交差・読書順・未割当、枠Undo/Redo、AI対象外保持・旧版拒否・全ページ再分割を追加。
+- Rust: 保存境界とLLM応答で同じ四角形制約を検証。保存再読込、不正形状の保存拒否、旧UIによるレイアウト欠落保存拒否を追加。
+- UI: 四隅それぞれのドラッグ、Esc、Undo/Redo、6枠へ割当、再読込、画像不変、PNG出力のPlaywright試験を追加。ローカルChromium取得がtimeoutのため、画面結果はPR CIで確認する。
+- 実演出モデルでの会話／リアクション／強調の品質、Macトラックパッドの操作、実クラウドバックアップ往復はnot_run。キーやMac実機が必要。Issueはこの受入を記録するまで閉じない。
+- 配信契約が矩形限定のLive Manga機能と併合する際は自由四角形の書出しを拒否する差分または契約更新が必要。統合devに追加されたLive Manga v1の固定矩形配信は、旧4コマ配置以外をJS／nativeの両境界で明示拒否する。
+
+追補: ローカルNode59件、Rust storage19件/LLM43件（既存外部ツール2件ignore）、両clippyとWeb build成功。最初のPR CIでは画面15件成功、新試験は全ドラッグ・再読込・PNGまで成功した後、旧fixtureのJob1件を0件と期待した誤りで失敗。人工6コマの初期jobsを明示して修正し、PNG/CBZ一致とAIルーター→候補→明示採用の画面試験を追加。
 
 ## Live Manga / Issue #39
 
@@ -362,3 +371,5 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 再現: `CHROMIUM_EXECUTABLE_PATH=... node scripts/live-e2e.mjs`（通常CIはPlaywright同梱Chromium）、FFmpeg/ffprobeとRustが必要。native受入は `cargo test --locked --manifest-path tests/storage/Cargo.toml live_export`。ブラウザ入力を使う試験は専用scriptから明示的に実行し、入力未指定を成功扱いしない。
 
 未実施: Mac GUI操作、実有料生成、実iPhone/Android、R2公開。新規割当は既存schema v4の任意配列として移行し、旧作品は空配列になる。rollbackは更新前のアプリと作品フォルダを保持する。刊行物は独立した不変出力なので旧版へ戻しても変更されない。
+
+7Bでも実行済み操作の再提案が生じた（run 35101117067）。モデルサイズだけでは解決しないため、現在値currentShotを明示し、実行済み操作の提案にはBlenderを再実行せず1回だけ具体的feedbackを返して再判断させる。2回目の重複は停止。通信失敗の再送は追加しない。回帰試験で実操作1回・訂正上限・停止時の未撮影を確認する。失敗済み3Bを同じ試験へ戻して改善を検証する。各応答とコマ撮影完了をActionsログへ出す。
