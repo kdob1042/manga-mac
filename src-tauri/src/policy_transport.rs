@@ -115,11 +115,13 @@ impl HttpClientExt for PolicyTransport {
         }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn send_multipart<U>(&self, _: Request<MultipartForm>) -> impl std::future::Future<Output = http_client::Result<Response<LazyBody<U>>>> + Send + 'static
     where U: From<Bytes> + Send + 'static {
         async { Err(rejected()) }
     }
 
+    #[allow(clippy::manual_async_fn)]
     fn send_streaming<T>(&self, _: Request<T>) -> impl std::future::Future<Output = http_client::Result<StreamingResponse>> + Send
     where T: Into<Bytes> + Send {
         async { Err(rejected()) }
