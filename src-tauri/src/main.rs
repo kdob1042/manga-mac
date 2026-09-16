@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod storage;
+mod llm;
+mod policy_transport;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -8,6 +10,7 @@ use tauri::{Manager, State};
 use tokio::io::AsyncWriteExt;
 struct AppState {
     root: PathBuf,
+    connections: llm::Connections,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
 }
@@ -17,6 +20,7 @@ fn err(e: impl std::fmt::Display) -> String {
 fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .user_agent("manga-mac/0.1")
+        .no_proxy()
         .timeout(Duration::from_secs(600))
         .redirect(reqwest::redirect::Policy::none())
         .build()
@@ -93,75 +97,20 @@ fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     storage::load(&db, &state.root)
 }
 #[tauri::command]
-async fn llm_request(
-    provider: String,
-    base_url: String,
-    api_key: String,
-    body: Value,
-) -> Result<String, String> {
-    let base = match provider.as_str() {
-        "ollama" => "http://127.0.0.1:11434",
-        "openai" => "https://api.openai.com/v1",
-        "gemini" => "https://generativelanguage.googleapis.com/v1beta/openai",
-        "anthropic" => "https://api.anthropic.com/v1",
-        "deepseek" => "https://api.deepseek.com/v1",
-        "custom" => base_url.trim_end_matches('/'),
-        _ => return Err("未対応の接続先です".into()),
-    };
-    let url = reqwest::Url::parse(base).map_err(|_| "APIのベースURLが不正です")?;
-    if provider != "ollama"
-        && (url.scheme() != "https"
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-            || url.query().is_some()
-            || url.fragment().is_some())
-    {
-        return Err("認証情報・クエリを含まないHTTPSのベースURLを指定してください".into());
-    }
-    let model = body["model"].as_str().ok_or("モデルIDを指定してください")?;
-    if model.trim().is_empty() {
-        return Err("モデルIDを指定してください".into());
-    }
-    if provider == "ollama" && (model.contains("cloud") || model.contains('/')) {
-        return Err("Ollamaにはローカルモデルを指定してください".into());
-    }
-    if provider != "ollama" && api_key.trim().is_empty() {
-        return Err("APIキーを入力してください".into());
-    }
-    let path = match provider.as_str() {
-        "ollama" => "/api/chat",
-        "anthropic" => "/messages",
-        _ => "/chat/completions",
-    };
-    let mut request = client()?.post(format!("{base}{path}")).json(&body);
-    if provider == "anthropic" {
-        request = request
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", "2023-06-01");
-    } else if provider != "ollama" {
-        request = request.bearer_auth(&api_key);
-    }
-    // Redirects are disabled in client(). Never forward keys to another host or retry another provider.
-    let response = request
-        .send()
-        .await
-        .map_err(|_| "LLMに接続できません。接続先とネットワークを確認してください")?;
-    let status = response.status();
-    if !status.is_success() {
-        let reason = match status.as_u16() {
-            401 | 403 => "APIキー・利用権限を確認してください",
-            404 => "モデルID・ベースURLを確認してください",
-            429 => "利用上限・残高・レート制限を確認してください",
-            400 | 422 => "モデルの画像入力・JSON出力への対応を確認してください",
-            _ => "接続先サービスの状態を確認してください",
-        };
-        return Err(format!("LLM HTTP {status}: {reason}"));
-    }
-    response
-        .text()
-        .await
-        .map_err(|_| "LLMの応答を受信できませんでした".into())
+async fn register_llm(input: llm::Registration, state: State<'_, AppState>) -> Result<String, String> {
+    state.connections.register(input).await
+}
+#[tauri::command]
+fn remove_llm(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    state.connections.remove(&connection_id)
+}
+#[tauri::command]
+fn cancel_llm(request_id: String, state: State<AppState>) -> Result<(), String> {
+    state.connections.cancel(&request_id)
+}
+#[tauri::command]
+async fn llm_request(request: llm::Request, state: State<'_, AppState>) -> Result<llm::Response, String> {
+    state.connections.request(request).await
 }
 fn engine_path() -> Result<PathBuf, String> {
     let dir = std::env::current_exe()
@@ -182,6 +131,10 @@ fn engine_path() -> Result<PathBuf, String> {
 }
 async fn run_engine(input: Option<String>) -> Result<String, String> {
     let mut command = tokio::process::Command::new(engine_path()?);
+    command.env_clear();
+    for name in ["HOME", "TMPDIR", "PATH", "LANG"] {
+        if let Some(value) = std::env::var_os(name) { command.env(name, value); }
+    }
     command
         .kill_on_drop(true)
         .stdin(std::process::Stdio::piped())
@@ -287,6 +240,7 @@ fn main() {
             storage::initialize(&db).map_err(std::io::Error::other)?;
             app.manage(AppState {
                 root: dir,
+                connections: llm::Connections::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
             });
@@ -298,6 +252,9 @@ fn main() {
             save_project,
             load_project,
             export_file,
+            register_llm,
+            remove_llm,
+            cancel_llm,
             llm_request,
             generate_image,
             prepare_engine
