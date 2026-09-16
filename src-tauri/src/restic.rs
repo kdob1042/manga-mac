@@ -311,6 +311,16 @@ impl Client {
         if !valid_hash(id) {
             return Err("不正なsnapshot IDです".into());
         }
+        let size: Value = serde_json::from_slice(
+            &self
+                .run(&["stats", id, "--mode", "restore-size", "--json"], None)
+                .await?,
+        )
+        .map_err(|_| "復元サイズを確認できません")?;
+        require_space(
+            &self.work,
+            size["total_size"].as_u64().ok_or("復元サイズが不明です")?,
+        )?;
         let temp = Temp::new(&self.work)?;
         self.run(
             &[
@@ -607,6 +617,66 @@ mod tests {
         assert_eq!(client.snapshots().await.unwrap().len(), 1);
         let fetched = client.fetch(&latest).await.unwrap();
         assert_eq!(verify_bundle(&fetched.path).unwrap().series, id);
+        drop(fetched);
+        drop(client);
+        drop(work);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    #[ignore = "requires checksum-verified RESTIC_TEST_BIN and RCLONE_TEST_BIN"]
+    async fn real_restic_rclone_pipe_and_unknown_snapshot_protection() {
+        let binary = std::env::var("RESTIC_TEST_BIN").expect("RESTIC_TEST_BIN is required");
+        let rclone = std::env::var("RCLONE_TEST_BIN").expect("RCLONE_TEST_BIN is required");
+        let (mut db, root) = super::super::super::tests::setup();
+        super::super::super::save(
+            &mut db,
+            &root,
+            &super::super::super::tests::fixture().to_string(),
+        )
+        .unwrap();
+        let work = Temp::new(&root).unwrap();
+        let bundle = work.path.join("payload");
+        let series = series(&root).unwrap();
+        prepare(&db, &root, &bundle, &series, 100).unwrap();
+        let conf = work.path.join("rclone.conf");
+        fs::write(&conf, "[fixture]\ntype = local\n").unwrap();
+        let c = Config {
+            repository: format!("rclone:fixture:{}", work.path.join("repository").display()),
+            restic: binary.into(),
+            restic_hash: String::new(),
+            rclone: rclone.into(),
+            rclone_hash: String::new(),
+            rclone_config: conf,
+            destination: String::new(),
+            enabled: false,
+        };
+        let mut client = Client::new(c, b"fixture-only-secret".to_vec(), work.path.clone());
+        client.run(&["init"], None).await.unwrap();
+        client.config.destination = client.destination().await.unwrap();
+        let valid = client.upload(&bundle, None).await.unwrap();
+        // A foreign/unfinished snapshot remains even when all completed snapshots are older than 21 days.
+        client
+            .run(
+                &["backup", ".", "--tag", "foreign-unverified"],
+                Some(&bundle),
+            )
+            .await
+            .unwrap();
+        assert!(client
+            .cleanup(now().unwrap() + RETENTION + 1, None)
+            .await
+            .unwrap()
+            .is_empty());
+        let all: Vec<Value> =
+            serde_json::from_slice(&client.run(&["snapshots", "--json"], None).await.unwrap())
+                .unwrap();
+        assert_eq!(all.len(), 2);
+        assert_eq!(client.snapshots().await.unwrap().len(), 1);
+        let fetched = client.fetch(&valid.id).await.unwrap();
+        assert_eq!(verify_bundle(&fetched.path).unwrap().series, series);
+        fs::write(bundle.join("manga.sqlite3"), b"damaged").unwrap();
+        assert!(client.upload(&bundle, None).await.is_err());
+        assert_eq!(client.snapshots().await.unwrap()[0].id, valid.id);
         drop(fetched);
         drop(client);
         drop(work);

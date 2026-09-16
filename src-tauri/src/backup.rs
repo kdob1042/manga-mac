@@ -244,11 +244,54 @@ fn reject_secrets(value: &Value) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(unix)]
+pub fn require_space(path: &Path, bytes: u64) -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let cpath = std::ffi::CString::new(path.as_os_str().as_bytes()).map_err(err)?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // statvfs writes the complete structure on success; path is a NUL-terminated owned string.
+    if unsafe { libc::statvfs(cpath.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return Err("ディスク空き容量を確認できません".into());
+    }
+    let stat = unsafe { stat.assume_init() };
+    let available = u128::from(stat.f_bavail) * u128::from(stat.f_frsize);
+    if available < u128::from(bytes) + 16 * 1024 * 1024 {
+        return Err("バックアップ・復元用の空き容量が不足しています".into());
+    }
+    Ok(())
+}
+#[cfg(not(unix))]
+pub fn require_space(_: &Path, _: u64) -> Result<()> {
+    Err("未対応の実行環境です".into())
+}
+fn manifest_size(m: &Manifest) -> Result<u64> {
+    m.files.values().try_fold(0u64, |sum, e| {
+        sum.checked_add(e.size)
+            .ok_or("バックアップサイズが不正です".into())
+    })
+}
 fn validate_project(project: &Value, root: &Path) -> Result<()> {
     if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("新しい作品形式です。対応版アプリが必要です".into());
     }
     reject_secrets(project)?;
+    if let Some(captures) = project["captures"].as_array() {
+        for capture in captures {
+            let request = capture["request_id"]
+                .as_str()
+                .ok_or("撮影要求IDがありません")?;
+            if !relative(request) || request.contains('/') {
+                return Err("撮影要求IDが不正です".into());
+            }
+            let folder = root.join("blender").join(request);
+            if digest(&folder.join("checkpoint.blend"))?.hash != capture["checkpoint"]["hash"]
+                || digest(&folder.join("capture.png"))?.hash != capture["image"]["hash"]
+            {
+                return Err("過去の撮影版が欠損・変更されています".into());
+            }
+        }
+    }
     let mut hydrated = project.clone();
     hydrate(&mut hydrated, &root.join("artifacts"))?;
     // Includes native job artifacts as well as adopted/candidate revisions.
@@ -486,10 +529,14 @@ pub fn verify_bundle(root: &Path) -> Result<Manifest> {
     )
     .map_err(err)?;
     validate_db(&db, root)?;
+    if super::raw_project(&db)?["version"].as_u64() != Some(m.project_schema) {
+        return Err("目録と作品形式が一致しません".into());
+    }
     Ok(m)
 }
 pub fn restore(bundle: &Path, base: &Path) -> Result<String> {
     let manifest = verify_bundle(bundle)?;
+    require_space(base, manifest_size(&manifest)?)?;
     let parent = base.join("restored");
     directory(&parent)?;
     let id = uuid::Uuid::new_v4().to_string();
@@ -591,6 +638,63 @@ mod tests {
             project["version"]
         );
         fs::remove_dir_all(outside).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn video_blender_history_and_source_contract_survive_another_root() {
+        let (mut db, root) = super::super::tests::setup();
+        let mut project = super::super::tests::fixture();
+        project["version"] = json!(4);
+        project["source_contract"] = json!({"verified_structure_commit":"structure-commit","manuscript_commit":"different-content-commit"});
+        let video = STANDARD
+            .decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim())
+            .unwrap();
+        let artifact = super::super::put_video(&root, video.as_slice(), None).unwrap();
+        project["videoRevisions"] = json!([{"id":"video","artifact":artifact}]);
+        let folder = root.join("blender/fixture");
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(
+            folder.join("checkpoint.blend"),
+            b"synthetic packed blend fixture, not a render",
+        )
+        .unwrap();
+        let blend = digest(&folder.join("checkpoint.blend")).unwrap().hash;
+        let result = json!({"protocol":1,"blender_version":[4,5,13],"dependencies_pinned":true,"dependencies":[],"checkpoint":{"file":"checkpoint.blend","hash":blend},"image":null});
+        atomic_json(&folder.join("result.json"), &result).unwrap();
+        db.execute_batch("CREATE TABLE blender_sessions(id TEXT PRIMARY KEY,data TEXT NOT NULL)")
+            .unwrap();
+        db.execute("INSERT INTO blender_sessions VALUES('session',?1)",[json!({"checkpoint":folder.join("checkpoint.blend"),"hash":blend,"binary":"/old/Blender","library":"/old/library","state":result}).to_string()]).unwrap();
+        super::super::save(&mut db, &root, &project.to_string()).unwrap();
+        let bundle = root.with_extension("bundle");
+        prepare(&db, &root, &bundle, &series(&root).unwrap(), 100).unwrap();
+        let id = restore(&bundle, &root).unwrap();
+        let target = root.join("restored").join(id);
+        let restored_db = Connection::open(target.join("manga.sqlite3")).unwrap();
+        let restored: Value =
+            serde_json::from_str(&super::super::load(&restored_db, &target).unwrap().unwrap())
+                .unwrap();
+        assert_eq!(project, restored);
+        let data: String = restored_db
+            .query_row("SELECT data FROM blender_sessions", [], |r| r.get(0))
+            .unwrap();
+        let session: Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(
+            session["checkpoint"],
+            json!(target.join("blender/fixture/checkpoint.blend"))
+        );
+        assert_eq!(session["binary"], "");
+        super::super::verify_video(&target, &artifact).unwrap();
+        fs::write(
+            root.join("media")
+                .join(format!("{}.mp4", artifact["hash"].as_str().unwrap())),
+            b"corrupt",
+        )
+        .unwrap();
+        let bad = root.with_extension("bad-bundle");
+        assert!(prepare(&db, &root, &bad, &series(&root).unwrap(), 101).is_err());
+        assert!(!bad.exists());
+        fs::remove_dir_all(bundle).unwrap();
         fs::remove_dir_all(root).unwrap();
     }
     #[cfg(unix)]
