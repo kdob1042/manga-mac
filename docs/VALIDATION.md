@@ -244,3 +244,13 @@ V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue
 - PR #20の整形ゲートを復元したhead `bc0458d11e1025eff65461f2aa1b91c402845cbe` に対するCI run `35053023339` のBlender成功artifactから `tests/blender/Cargo.lock` を固定。ZIP SHA-256 `3f49e5c168cb675b4ff32c1822514a5a7e427131533280d52d2842f5a9a1e0fe` を検証して取得した。
 - tests/llm・tests/blenderともCI中のlock再生成をやめ、metadata/fetch/test/clippyを`--locked`で実行する。整形は自動修正ではなく`--check`とする。依存更新が必要な変更はlock差分と監査結果を別途提示する。
 - PR #20のpolicy_transport/storage/llm_tests修正とV-C2を合わせた作業用checkoutでも、Rust23件・clippy `-D warnings`・fmt check成功。これは統合後の必須CIの代わりにはしない。
+
+## D-POSE1: 既存Blender Pose APIによる静止リグへの適用
+
+固定Blender 4.5.13の[Pose API実装](https://github.com/blender/blender/blob/daeeeca98fb0b6f0994b374d0069893186197a44/source/blender/makesrna/intern/rna_pose_api.cc)にある`Pose.apply_pose_from_action`を呼ぶ薄い型付き操作。対象は現在Scene内のローカル静止Armatureと、同じ固定checkpoint内のローカルAction asset。単一slot/layer/stripで、存在するボーンのtransformチャンネルだけを許可する。アニメーション/NLA/driver/constraint、リンク/override、複数Scene共有Object、複数slot、異なる骨格のチャンネルは拒否し、既存設定を削除して適用しない。初期範囲の制約であり、汎用リグ対応ではない。
+
+Armature dataを対象だけ分離して選択状態の共有を避け、Blenderの既存評価器で適用。既存job→新checkpoint→再読込/検証の流れを使い、採用中の撮影・作画・動画は再撮影まで保持する。独自リグ、Action台帳、ポーズ計算、3D描画は追加しない。UIは既存の漫画/動画共通ShotControlsの詳細欄。
+
+追加した実Blender fixtureは、Armature dataを共有する2人と、4つの漫画用＋1つの動画用checkpointを使用する。対象の保存後bone値、他人物のanimation/Action値、旧checkpoint hash、再読込、非対応対象拒否を検証し`acceptance-pose.json`へ記録する。UI fixtureは正しいsession/expected revisionへの型付き要求と、撮影前に作品/旧画像を変えないことを確認する。実行結果は対象PRの必須CIを参照し、未実行時点でpassとしない。
+
+残件: 外部Pose LibraryからのAction asset取込、アニメーション/制約付きリグへのPose Library workflow、実Macでの操作と演技品質。既存Asset LibraryのObject/Collection取込は維持。

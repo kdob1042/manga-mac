@@ -63,6 +63,11 @@ struct Session {
 pub enum Operation {
     Inspect,
     Catalog,
+    Pose {
+        rig: String,
+        action: String,
+        frame: i32,
+    },
     Import {
         file: String,
         hash: String,
@@ -421,6 +426,15 @@ pub async fn execute(
             || name.len() > 256 =>
         {
             return Err("素材参照が不正です".into())
+        }
+        Operation::Pose { rig, action, frame }
+            if rig.is_empty()
+                || rig.len() > 256
+                || action.is_empty()
+                || action.len() > 256
+                || !(-1048574..=1048574).contains(frame) =>
+        {
+            return Err("リグ・ポーズ・frameが不正です".into())
         }
         Operation::Shot {
             scene,
