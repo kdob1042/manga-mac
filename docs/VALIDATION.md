@@ -9,7 +9,7 @@
 - PR #20はmain `7de822b49efae0805e23d644e6ba4f67faafb98b`へ統合済み。必須4ジョブ（web/storage/llm/blender）は[CI 35053023339](https://github.com/kdob1042/manga-mac/actions/runs/35053023339)で成功。Blender 4.5.13の実行・保存/再読込・Rust IPCを含む。Macのアプリ内操作・品質検証とは別。
 - V-D1（PR #21）とV-C2（PR #22）は下記追補を参照。Node43件、native HTTP/保存23件、統合候補のfmt/clippy、固定LLMテスト依存190件の監査はローカル実行済み。UIはGitHub ActionsのChromiumで検証する。ローカルbrowser downloadの失敗をUI全体の未実行理由にしない。
 - 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
-- CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
+- CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[`main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
 
 ### 次の担当の着手順
 
