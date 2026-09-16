@@ -12,7 +12,7 @@
 
 ### 次の担当の着手順
 
-1. `git fetch origin`後、mainと未マージPRを確認し、最新mainからブランチを作る。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
+1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
 2. `npm ci && npm test && npm run build`。UIは`npx playwright install --with-deps chromium`後`npm run test:ui`。取得できない環境ではPRのwebジョブとUI-test-resultsを使う。
 3. `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`。tests/storage、tests/llm、tests/blenderの各Cargo.tomlで`cargo test --locked`と`cargo clippy --locked --all-targets -- -D warnings`。lockをCIで再生成せず、変更が必要なら差分と監査をPRへ含める。実Blender試験はworkflowと同じ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
 4. macOSビルドはmainのmacジョブを確認する。PR側でskipされるのは重複実行防止であり、macOS合格ではない。アプリ実機受入はINSTALL_MACと正本§11/12で別に記録する。
@@ -22,7 +22,7 @@
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
 | D-POSE | 静止リグへの適用・外部Action asset検索/取込は下記D-POSE1で実装済み。次は既存Pose Libraryでanimation/constraint付きリグを扱える範囲を検証 | 固定版の実Blenderで対象だけ変化、他人物/漫画4コマ/動画shotのAction・旧hash保持、再読込一致。未対応を黙って適用しない |
-| E-RECOVERY | `helper/Sources/MangaEngine/main.swift`と`src-tauri/src/main.rs`の画像完了応答、既存jobs/storage。UIへ返す前の不変保存と再取得を検討 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。Macの実helperが必要な試験を分離 |
+| E-RECOVERY | 下記追補で既存jobs/storage・helper永続出力・手動候補回収を実装。次はMac実helperの終了タイミング別受入 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。人工receipt/HTTP fixtureと実helperを区別 |
 | V-C-TEMP | 新方式の所有権lock/孤立temp回収を下記追補で実装・子プロセス強制終了試験済み。Mac native試験を実行 | 新方式の使用中取得・リンク・採用成果物を保持。lockのない旧方式tempは稼働中判定不能のため自動削除しない |
 | V-D-REAL | `tests/ui/video-capture.spec.js`の操作と実Blenderを組合せ、正本MV-11を実行 | 漫画なし動画撮影、同じ素材の漫画4コマ/別動画shot、素材新版後の旧出力保持と影響先。モックUIと実nativeの結果を分ける |
 | F-TRIPO | 正本§2/5、Issue #5 F。公式拡張の固定版・認証窓口・ライセンス・依存を検証して既存Blenderへ接続 | 既存外部taskの再照会、二重課金防止、採用素材の再利用。実APIはテストキー/予算待ち。未認証の汎用MCPを有効化しない |
@@ -284,3 +284,16 @@ Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter�
 ## LEGACY-01の保存完了待機
 
 統合main `59a0a16c629d2cfc7fcec78f43064971733e807a`のrun `35056832831`で、UI11件中10成功、Undo直後のreloadで旧表示が残る1件が失敗。commitはsaveProject完了後に画面状態を更新するが、テストのclick完了は非同期saveProject完了を意味しない。Undo後の画像表示を確認してからreloadし、reload後の画像厳密一致の検証も維持する。任意sleep・retries・テスト削除・期待値緩和は行わない。強制終了中の回復をこの正常保存/再読込試験で代用しない。
+
+
+## E-RECOVERY: 画像エンジン完了後の候補回収
+
+開始dev `9e105505e822cb1a42e4f456f206fb37551d0819`。既存jobsへnative管理の`local_image`を追加し、生成前に復元用コマ・寸法/seed・元画像/矩形・要求hashを永続化する。元画像は既存artifactsへ不変保存し、古いUI保存で復旧情報/入力hash/対象/基準版を消さない。同じjobへの再送は拒否する。別のジョブDB・画像エンジン・合成器は追加していない。
+
+Swift helperはnativeで予約した`image-results/<job-IDのSHA256>/`へPNGを保存・syncした後、hash receiptをatomic保存・syncして完了通知する。stdoutだけに結果を載せない。nativeはDBにあるjobからだけ結果パスを解決し、通常ファイル/サイズ/要求hash/PNG寸法/画像hashを検証して既存artifactsへ格納する。完全なPNG decodeは既存ブラウザ画像処理で検証する。
+
+応答未確定のコマで「保存済み作画を回収する」を選ぶと、旧採用版・Undo履歴を変えず候補へ戻す。局所編集は保存済み元画像のhashと矩形を確認し、通常生成と同じ既存mergeRegionでマスク外RGBAを復元する。再起動前の結果が届かない旧jobには復元文脈を捏造せず明示エラーとする。入力が変更された候補は既存採用条件で拒否する。再回収で候補を増殖させない。
+
+検証: ローカルNode43件、Web build、Rust保存12件（回収4件追加）、storage clippy `-D warnings`、fmt/diff check成功。native fixtureはhelperが書く人工PNG/receiptによる、完了後DB再接続・繰返し回収・保存前停止・欠損/改変/要求違い/寸法違い・不正編集範囲・symlink/上限・旧UI保存の試験。実画像モデルの成功とは区別する。Chromiumの局所編集RGBA/候補回収UI試験を追加し、実行結果は対象PRへ記録。
+
+残件 `E-RECOVERY-MAC`: 新版helper同梱DMGで、(1)helperがreceipt保存した直後、(2)Rust受領後かつUI保存前、(3)候補回収中に終了→再起動し、同じjobの候補1件・元画像hash/マスク外RGBA・新規推論0回を確認する。実モデル品質/24GB・Mac実機は未実施。旧版helperとの混在は非対応。旧版のstdoutのみの結果は回収不能。`image-results`はバックアップ対象で、自動GCしない。rollbackは更新前の作品フォルダ全体を復元する。
