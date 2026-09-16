@@ -32,7 +32,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     const job={id:crypto.randomUUID(),kind:'layout',scope:{type:'pageLayout',ids:scope},input_hash:base,status:'running',source_revision:frozen.active,base_revision:frozen.revision,attempts:1,at:new Date().toISOString()};
     await commit({...current.current,jobs:[...current.current.jobs,job]});
     try {
-      const proposal=await proposeLayout(frozen,scope,`${instruction}\n選択コマ: ${selected??slot?.panelId??'なし'}`, (prompt,schema)=>askLLM(model,{prompt,schema,purpose:'layout'}));
+      const proposal=await proposeLayout(frozen,scope,`${instruction}\n選択コマ: ${slot?.panelId??selected??'なし'}`, (prompt,schema)=>askLLM(model,{prompt,schema,purpose:'layout'}));
       if(cancelled?.())throw Error('コマ割りの提案を停止しました');
       const previews=[];
       for(const target of proposal.layout.pages.filter(p=>whole||scope.includes(p.id)))previews.push(await pagePNG(pagePanels(frozen,target),frozen.snapshots,frozen.localizations,frozen.output_locale,target,true));
