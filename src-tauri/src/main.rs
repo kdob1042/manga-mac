@@ -90,6 +90,79 @@ async fn github_file(
     }
     github(&repo, &format!("contents/{path}?ref={sha}"), &token, true).await
 }
+fn source_asset_path_valid(path: &str) -> bool {
+    !path
+        .split('/')
+        .any(|s| s.is_empty() || s == "." || s == "..")
+        && !path.contains(['\\', '?', '#', '%'])
+        && matches!(
+            path.rsplit('.')
+                .next()
+                .map(|s| s.to_ascii_lowercase())
+                .as_deref(),
+            Some("png" | "jpg" | "jpeg" | "webp")
+        )
+}
+fn source_asset_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(b"\xff\xd8\xff") {
+        Some("image/jpeg")
+    } else if bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else {
+        None
+    }
+}
+#[tauri::command]
+async fn github_asset(
+    repo: String,
+    path: String,
+    sha: String,
+    token: String,
+) -> Result<Value, String> {
+    if !repo_valid(&repo)
+        || sha.len() != 40
+        || !sha.bytes().all(|b| b.is_ascii_hexdigit())
+        || !source_asset_path_valid(&path)
+    {
+        return Err("Invalid immutable source asset path".into());
+    }
+    let mut req = client()?
+        .get(format!(
+            "https://api.github.com/repos/{repo}/contents/{path}?ref={sha}"
+        ))
+        .header("Accept", "application/vnd.github.raw+json");
+    if !token.is_empty() {
+        req = req.bearer_auth(token);
+    }
+    let response = req.send().await.map_err(err)?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub {} — 参照画像の接続権限・レート制限を確認してください",
+            response.status()
+        ));
+    }
+    if response
+        .content_length()
+        .is_some_and(|size| size > 20 * 1024 * 1024)
+    {
+        return Err("参照画像は20MB以下にしてください".into());
+    }
+    let bytes = response.bytes().await.map_err(err)?;
+    if bytes.len() > 20 * 1024 * 1024 {
+        return Err("参照画像は20MB以下にしてください".into());
+    }
+    let mime = source_asset_mime(&bytes)
+        .ok_or_else(|| "参照画像の実形式がPNG/JPEG/WebPではありません".to_string())?;
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    Ok(serde_json::json!({
+        "image": format!("data:{mime};base64,{}", STANDARD.encode(&bytes)),
+        "hash": hash,
+        "mime": mime,
+        "size": bytes.len()
+    }))
+}
 #[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
     let mut db = state.db.lock().map_err(err)?;
@@ -492,6 +565,7 @@ fn main() {
             blender_recover,
             github_get,
             github_file,
+            github_asset,
             save_project,
             load_project,
             video_playback,
@@ -511,4 +585,39 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("Manga Mac failed");
+}
+
+#[cfg(test)]
+mod source_asset_tests {
+    use super::{source_asset_mime, source_asset_path_valid};
+
+    #[test]
+    fn source_asset_paths_are_repository_relative_images_only() {
+        assert!(source_asset_path_valid(
+            "assets/illustrations/character-reference-yumi.jpg"
+        ));
+        for path in [
+            "../secret.png",
+            "/absolute.png",
+            "assets//a.png",
+            "assets/a.svg",
+            "assets/a.png?ref=main",
+        ] {
+            assert!(!source_asset_path_valid(path), "{path}");
+        }
+    }
+
+    #[test]
+    fn source_asset_type_uses_magic_bytes_not_extension() {
+        assert_eq!(
+            source_asset_mime(b"\x89PNG\r\n\x1a\nrest"),
+            Some("image/png")
+        );
+        assert_eq!(source_asset_mime(b"\xff\xd8\xffrest"), Some("image/jpeg"));
+        assert_eq!(
+            source_asset_mime(b"RIFF\0\0\0\0WEBPrest"),
+            Some("image/webp")
+        );
+        assert_eq!(source_asset_mime(b"<svg></svg>"), None);
+    }
 }

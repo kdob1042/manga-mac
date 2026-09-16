@@ -4,19 +4,39 @@ import { generationSize, imageRequest } from './image-input';
 import { call } from './bridge';
 import { askLLM } from './llm';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core';
+import { referenceDeclarations, sourceContract, validateSourceContract } from './source-contract';
 export async function syncSource(repo, token, episodeId, previous) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
   const commit = await call('github_get', { repo, path: 'commits/main', token });
   const sha = JSON.parse(commit).sha;
-  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo) return previous;
+  const registered = sourceContract(repo);
+  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo && Array.isArray(previous.references)
+    && previous.contract?.aligned_source_commit === registered?.aligned_source_commit) return previous;
   const read = path => call('github_file', { repo, path: safePath(path), sha, token });
   const manifest = JSON.parse(await read('manifest.json'));
+  const contract = validateSourceContract(repo, manifest);
   const selected = orderedScenes(manifest, episodeId);
   const scenes = [];
   for (const s of selected) scenes.push({ ...s, text: await read(s.path), design: s.design_path ? await read(s.design_path) : '' });
   const settings = [];
   for (const s of manifest.settings ?? []) settings.push({ ...s, text: await read(s.path) });
-  return { id: `${repo}@${sha}:${episodeId}`, repo, sha, episodeId, manifest, scenes, settings, at: new Date().toISOString() };
+  const references = [];
+  for (const setting of settings) {
+    for (const declaration of referenceDeclarations(setting, contract)) {
+      const asset = await call('github_asset', { repo, path: declaration.path, sha, token });
+      references.push({ ...declaration, ...asset });
+    }
+  }
+  return {
+    id: `${repo}@${sha}:${episodeId}`, repo, sha, episodeId, manifest, scenes, settings, references,
+    contract: {
+      version: contract.contract_version,
+      manifest_schema_version: manifest.schema_version,
+      aligned_source_commit: contract.aligned_source_commit,
+      aligned_manifest_blob: contract.aligned_manifest_blob,
+    },
+    at: new Date().toISOString(),
+  };
 }
 export async function planScene(scene, snapshot, characters, model) {
   const units = sourceUnits(scene.id, scene.text);

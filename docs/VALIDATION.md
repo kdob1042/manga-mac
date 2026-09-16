@@ -285,7 +285,6 @@ Blenderと同じ構造のstorage試験fixtureをプロセスID＋Atomic counter�
 
 統合main `59a0a16c629d2cfc7fcec78f43064971733e807a`のrun `35056832831`で、UI11件中10成功、Undo直後のreloadで旧表示が残る1件が失敗。commitはsaveProject完了後に画面状態を更新するが、テストのclick完了は非同期saveProject完了を意味しない。Undo後の画像表示を確認してからreloadし、reload後の画像厳密一致の検証も維持する。任意sleep・retries・テスト削除・期待値緩和は行わない。強制終了中の回復をこの正常保存/再読込試験で代用しない。
 
-
 ## E-RECOVERY: 画像エンジン完了後の候補回収
 
 開始dev `9e105505e822cb1a42e4f456f206fb37551d0819`。既存jobsへnative管理の`local_image`を追加し、生成前に復元用コマ・寸法/seed・元画像/矩形・要求hashを永続化する。元画像は既存artifactsへ不変保存し、古いUI保存で復旧情報/入力hash/対象/基準版を消さない。同じjobへの再送は拒否する。別のジョブDB・画像エンジン・合成器は追加していない。
@@ -297,3 +296,9 @@ Swift helperはnativeで予約した`image-results/<job-IDのSHA256>/`へPNGを�
 検証: ローカルNode43件、Web build、Rust保存12件（回収4件追加）、storage clippy `-D warnings`、fmt/diff check成功。native fixtureはhelperが書く人工PNG/receiptによる、完了後DB再接続・繰返し回収・保存前停止・欠損/改変/要求違い/寸法違い・不正編集範囲・symlink/上限・旧UI保存の試験。実画像モデルの成功とは区別する。Chromiumの局所編集RGBA/候補回収UI試験を追加し、実行結果は対象PRへ記録。
 
 残件 `E-RECOVERY-MAC`: 新版helper同梱DMGで、(1)helperがreceipt保存した直後、(2)Rust受領後かつUI保存前、(3)候補回収中に終了→再起動し、同じjobの候補1件・元画像hash/マスク外RGBA・新規推論0回を確認する。実モデル品質/24GB・Mac実機は未実施。旧版helperとの混在は非対応。旧版のstdoutのみの結果は回収不能。`image-results`はバックアップ対象で、自動GCしない。rollbackは更新前の作品フォルダ全体を復元する。
+
+## SOURCE-CONTRACT-01: 原作schema 4・基準画連携（2026-09-16）
+
+Kamiya-Kawai `main`の構造をcommit `7eed2120eb93e2964cd188b5890f0247c83de540`、manifest blob `6fa270921f2f3fe59b4d912e1da68898897103b8`で確認した。これは脚本内容の採用版ではなく、アプリが原作リポジトリ構造へ整合した確認基準。対応はmanifest schema 4、`episodes[].scene_ids -> scenes[].path`、五つの`settings[].path`、VISUAL設定内のキャラクター基準画。旧`design_path`／`design/scenes/`は要求しない。
+
+Node契約試験は、未対応schema・未登録repo・VISUAL欠落・リポジトリ外パスを拒否し、基準画2件のパスと人物名、同名手動参照から原作連携参照への移行、画像hash変更時だけの版上げを確認する。Rustは取得画像を20MB以下のPNG/JPEG/WebP実形式に限定しSHA-256を返す。実private repoからのMac同期・画面表示・SQLite再起動はMac CI／実機で別確認し、Node/Web buildだけで完了扱いしない。
