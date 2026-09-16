@@ -94,7 +94,7 @@ Blenderと画像AIが独立に作品を更新せず、成果物の採用はア�
 
 | データ | 保存・権限 |
 |---|---|
-| SourceSnapshot | GitHub repo／commit／原bytes／取得順。不変。原作へ書き戻さない |
+| SourceSnapshot | GitHub repo／原稿commit／原bytes／取得順。不変。原作へ書き戻さない。原稿内容の版と、アプリが構造仕様を確認した基準commitは別に記録する |
 | CharacterBinding | 作品内人物ID→2D参照版＋Blender素材への参照。3D素材の内容や分類を複製しない |
 | BlenderAssetRef | 許可済みライブラリ内のファイル・datablock・版／依存ハッシュ。Blenderから解決する |
 | ShotBinding | コマ→blendチェックポイント・Scene・Camera・frame・View Layer。座標や骨格の独立正本は持たない |
@@ -103,6 +103,10 @@ Blenderと画像AIが独立に作品を更新せず、成果物の採用はア�
 | PageLayout / EditIntent / Job | 台詞ID、コマ枠、修正意図、対象範囲、工程依存、費用、復旧情報 |
 
 CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用しない。[B1] 参照解決にはファイル・datablockと版を使う。名称変更等のID補助が必要ならBlender側の小さなcustom propertyで保持し、アプリ独自素材モデルへ拡張しない。解決不能なら要再対応付けとし、似た名前の別素材へ自動差し替えしない。
+
+原作リポジトリとの構造契約は`source-contracts/`の機械可読ファイルで管理する。対応するmanifest schema、読書順・設定・参照画像の解決規則、アプリ側で最後に整合確認した原作commit／manifest blobを記録する。この確認基準commitは脚本内容の版ではなく、アプリ実装がどの時点のリポジトリ構造を前提に検証されたかを示す。作品のSourceSnapshotには実際に取り込んだ原稿commitと契約情報を別々に保存・表示する。
+
+キャラクター基準画は、同一原稿commitの`VISUAL`設定内Markdown画像から、契約で許可した`assets/illustrations/`配下だけを解決する。画像の実形式・20MB上限・SHA-256をRust境界で確認し、原稿版を利用者が取り込んだ時点で2D参照へ反映する。新版確認だけで採用中の参照を変更しない。
 
 「二人を近づける」という編集意図や撮影記録として数値を保存してよいが、それを編集可能な第二の3D正本として使わない。座標の表示キャッシュはBlenderから再取得可能とし、Blenderで変更した結果を古いキャッシュで上書きしない。
 
