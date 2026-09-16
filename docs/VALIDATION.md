@@ -23,7 +23,7 @@
 |---|---|---|
 | D-POSE | `blender/worker.py`の型付き操作、`src-tauri/src/blender.rs`の検証、`src/ShotControls.jsx`。固定版Blenderの既存Pose Library APIを確認し、選択したリグ/Actionだけを適用。独自骨格/ポーズエンジンを作らない | `blender/test_real.py`で2人/4ショットのうち対象だけ変化、他のAction/撮影hashと旧checkpoint保持、再読込一致。headless非対応なら非対応を明示 |
 | E-RECOVERY | `helper/Sources/MangaEngine/main.swift`と`src-tauri/src/main.rs`の画像完了応答、既存jobs/storage。UIへ返す前の不変保存と再取得を検討 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。Macの実helperが必要な試験を分離 |
-| V-C-TEMP | `src-tauri/src/runway.rs`の`.video-download-*`とstorage。参照・所有権・別プロセス実行中を識別してから回収する | 強制終了の孤立ファイルだけ回収。別インスタンスの進行中取得・採用成果物を削除しない。起動時の無条件削除は禁止 |
+| V-C-TEMP | 新方式の所有権lock/孤立temp回収を下記追補で実装・子プロセス強制終了試験済み。Mac native試験を実行 | 新方式の使用中取得・リンク・採用成果物を保持。lockのない旧方式tempは稼働中判定不能のため自動削除しない |
 | V-D-REAL | `tests/ui/video-capture.spec.js`の操作と実Blenderを組合せ、正本MV-11を実行 | 漫画なし動画撮影、同じ素材の漫画4コマ/別動画shot、素材新版後の旧出力保持と影響先。モックUIと実nativeの結果を分ける |
 | F-TRIPO | 正本§2/5、Issue #5 F。公式拡張の固定版・認証窓口・ライセンス・依存を検証して既存Blenderへ接続 | 既存外部taskの再照会、二重課金防止、採用素材の再利用。実APIはテストキー/予算待ち。未認証の汎用MCPを有効化しない |
 | G-IMAGE | 正本§6/9とIssue #5 G。既存画像入力/候補/マスク外保護へ一つの検証済みAPIを接続 | 能力不足の送信前拒否、実bytes/送信先/費用、旧版保持。採用先の契約確認とテストキー/予算が必要 |
@@ -254,3 +254,11 @@ Armature dataを対象だけ分離して選択状態の共有を避け、Blender
 追加した実Blender fixtureは、Armature dataを共有する2人と、4つの漫画用＋1つの動画用checkpointを使用する。対象の保存後bone値、他人物のanimation/Action値、旧checkpoint hash、再読込、非対応対象拒否を検証し`acceptance-pose.json`へ記録する。UI fixtureは正しいsession/expected revisionへの型付き要求と、撮影前に作品/旧画像を変えないことを確認する。実行結果は対象PRの必須CIを参照し、未実行時点でpassとしない。
 
 残件: 外部Pose LibraryからのAction asset取込、アニメーション/制約付きリグへのPose Library workflow、実Macでの操作と演技品質。既存Asset LibraryのObject/Collection取込は維持。
+
+## V-C-TEMP: 強制終了した動画取得の一時ファイル回収
+
+新しい取得は`.video-download-v2-<UUID>`を使用し、Rust標準File lockで取得中の所有権を保持する。作成/回収の短い区間を共通gateで排他し、作成直後に別プロセスから削除される競合を防ぐ。gateファイル自体は削除しない。取得中は個別lockを保持し、通常完了/失敗/future破棄時はRAIIで一時ファイルを除去する。起動時はlockを取得できた孤立ファイルだけを回収し、busyや失敗で作品を開けなくしない。追加依存はない。
+
+回収対象はこのprotocolのUUID名の通常ファイルだけ。シンボリックリンク、hard link、directory、旧`.video-download-<UUID>`、保存済みmediaは対象外。旧バージョンにはlockがなく稼働中か判定できないため、旧tempの自動整理は行わない。強制終了が起きても新規生成POST・費用予約・採用版には触れない。
+
+ローカルnative **25 passed**（23既存+子プロセス用1+回収試験1）。実子プロセスがlockを持つ間は回収0、強制終了後はその1ファイルだけ回収し、別の進行中取得/旧方式/リンク/保存済みファイルを保持することを確認。既存のHTTP切断/期限切れ/oversize/保存/再起動も再実行。MacのFile lock動作はmainのnative regressionで別確認する。

@@ -454,6 +454,7 @@ fn main() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            let _ = runway::cleanup_downloads(&dir);
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
             blender::initialize(&db).map_err(std::io::Error::other)?;

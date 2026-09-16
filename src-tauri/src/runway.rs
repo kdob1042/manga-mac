@@ -419,6 +419,100 @@ fn output_url(value: &Value) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
+// All cooperating instances serialize temp creation and collection with this gate.
+// The gate is never deleted: unlinking a locked gate would create a second lock domain.
+fn download_gate(root: &Path) -> Result<std::fs::File, String> {
+    let path = root.join(".video-transfer.lock");
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if !meta.file_type().is_file() => return Err(failure()),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err(failure()),
+    }
+    let gate = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|_| failure())?;
+    gate.try_lock().map_err(|_| {
+        "別の動画取得処理が準備中です。新規生成せず取得を再試行してください".to_string()
+    })?;
+    Ok(gate)
+}
+const TEMP_PREFIX: &str = ".video-download-v2-";
+struct DownloadTemp {
+    file: std::fs::File,
+    path: std::path::PathBuf,
+}
+impl DownloadTemp {
+    fn new(root: &Path) -> Result<Self, String> {
+        let _gate = download_gate(root)?;
+        let path = root.join(format!("{TEMP_PREFIX}{}", uuid::Uuid::new_v4()));
+        let file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|_| failure())?;
+        if file.try_lock().is_err() {
+            let _ = std::fs::remove_file(&path);
+            return Err(failure());
+        }
+        Ok(Self { file, path })
+    }
+}
+impl Drop for DownloadTemp {
+    fn drop(&mut self) {
+        // Keep the per-transfer lock held until the directory entry is gone.
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+/// Reclaim only this protocol's unlocked scratch files, never legacy or adopted media.
+/// Best effort at startup: a busy gate or filesystem error must not prevent opening a work.
+pub fn cleanup_downloads(root: &Path) -> Result<usize, String> {
+    let _gate = download_gate(root)?;
+    let mut removed = 0;
+    for entry in std::fs::read_dir(root).map_err(|_| failure())? {
+        let entry = entry.map_err(|_| failure())?;
+        let name = entry.file_name();
+        let Some(suffix) = name.to_str().and_then(|s| s.strip_prefix(TEMP_PREFIX)) else {
+            continue;
+        };
+        if !uuid::Uuid::parse_str(suffix).is_ok_and(|id| id.to_string() == suffix) {
+            continue;
+        }
+        let Ok(meta) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
+        if !meta.file_type().is_file() {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if meta.nlink() != 1 {
+                continue;
+            }
+        }
+        let Ok(file) = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(entry.path())
+        else {
+            continue;
+        };
+        if file.try_lock().is_err() {
+            continue;
+        }
+        if std::fs::remove_file(entry.path()).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
+}
+
 pub async fn collect(
     db: &Mutex<Connection>,
     root: &Path,
@@ -468,12 +562,7 @@ async fn collect_response(
     {
         return Err("動画取得が拒否されました。新規生成せず再取得してください".into());
     }
-    let path = root.join(format!(".video-download-{}", uuid::Uuid::new_v4()));
-    let mut file = std::fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&path)
-        .map_err(|_| failure())?;
+    let mut temporary = DownloadTemp::new(root)?;
     let result = async {
         let mut size = 0_u64;
         while let Some(chunk) = response.chunk().await.map_err(|_| failure())? {
@@ -481,12 +570,12 @@ async fn collect_response(
             if size > storage::MAX_VIDEO_BYTES {
                 return Err("動画サイズ上限です".into());
             }
-            file.write_all(&chunk).map_err(|_| failure())?;
+            temporary.file.write_all(&chunk).map_err(|_| failure())?;
         }
-        file.sync_all().map_err(|_| failure())?;
+        temporary.file.sync_all().map_err(|_| failure())?;
         let artifact = storage::put_video(
             root,
-            std::fs::File::open(&path).map_err(|_| failure())?,
+            std::fs::File::open(&temporary.path).map_err(|_| failure())?,
             None,
         )?;
         update(db, id, |_, j| {
@@ -497,8 +586,7 @@ async fn collect_response(
         Ok(artifact)
     }
     .await;
-    drop(file);
-    let _ = std::fs::remove_file(path);
+    drop(temporary);
     result
 }
 
@@ -665,6 +753,74 @@ mod tests {
         .unwrap();
         assert!(json_response(response).await.unwrap()["id"].is_string());
         worker.join().unwrap();
+    }
+    #[test]
+    fn temp_lock_child() {
+        let Ok(root) = std::env::var("MANGA_TEST_DOWNLOAD_CHILD") else {
+            return;
+        };
+        let root = Path::new(&root);
+        let mut temporary = DownloadTemp::new(root).unwrap();
+        temporary.file.write_all(b"partial download").unwrap();
+        std::fs::write(
+            root.join("child-ready"),
+            temporary.path.file_name().unwrap().as_encoded_bytes(),
+        )
+        .unwrap();
+        std::thread::sleep(Duration::from_secs(30));
+        drop(temporary);
+    }
+    #[test]
+    fn killed_transfer_is_reclaimed_but_live_legacy_and_linked_files_are_kept() {
+        let root = std::env::temp_dir().join(format!("runway-gc-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let active = DownloadTemp::new(&root).unwrap();
+        let legacy = root.join(format!(".video-download-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&legacy, b"legacy may still be live").unwrap();
+        let adopted = root.join("saved-video.mp4");
+        std::fs::write(&adopted, b"adopted fixture").unwrap();
+        let linked = root.join(format!("{TEMP_PREFIX}{}", uuid::Uuid::new_v4()));
+        std::fs::hard_link(&adopted, &linked).unwrap();
+        let directory = root.join(format!("{TEMP_PREFIX}{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        #[cfg(unix)]
+        {
+            let symlink = root.join(format!("{TEMP_PREFIX}{}", uuid::Uuid::new_v4()));
+            std::os::unix::fs::symlink(&adopted, symlink).unwrap();
+        }
+        let gate = download_gate(&root).unwrap();
+        assert!(DownloadTemp::new(&root).is_err());
+        assert!(cleanup_downloads(&root).is_err());
+        drop(gate);
+        assert_eq!(cleanup_downloads(&root).unwrap(), 0);
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "runway::tests::temp_lock_child", "--nocapture"])
+            .env("MANGA_TEST_DOWNLOAD_CHILD", &root)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !root.join("child-ready").exists() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let ready = root.join("child-ready").exists();
+        let live_removed = cleanup_downloads(&root);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(ready, "child did not acquire its transfer lock");
+        assert_eq!(live_removed.unwrap(), 0);
+        let orphan = root.join(std::fs::read_to_string(root.join("child-ready")).unwrap());
+        assert!(orphan.exists());
+        assert_eq!(cleanup_downloads(&root).unwrap(), 1);
+        assert!(!orphan.exists());
+        assert!(active.path.exists() && legacy.exists() && linked.exists() && directory.exists());
+        assert_eq!(std::fs::read(&adopted).unwrap(), b"adopted fixture");
+        let active_path = active.path.clone();
+        drop(active);
+        assert!(!active_path.exists());
+        assert_eq!(cleanup_downloads(&root).unwrap(), 0);
+        std::fs::remove_dir_all(root).unwrap();
     }
     fn local_response(
         status: &str,
