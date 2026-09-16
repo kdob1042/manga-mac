@@ -139,10 +139,12 @@ def import_asset(operation, library, scene):
 def pin_dependencies(roots):
     before = dependencies(roots)
     # Blender owns packing and reference resolution; no second asset store is introduced.
-    if bpy.ops.file.pack_all() != {'FINISHED'}:
-        raise ValueError('Blender could not pack dependencies')
+    # Linked blend libraries must be packed before generic external files;
+    # pack_all rejects absolute library paths that pack_libraries resolves.
     if bpy.data.libraries and bpy.ops.file.pack_libraries() != {'FINISHED'}:
         raise ValueError('Blender could not pack linked libraries')
+    if bpy.ops.file.pack_all() != {'FINISHED'}:
+        raise ValueError('Blender could not pack dependencies')
     if dependencies(roots):
         raise ValueError('Unpinned dependencies remain')
     return before
