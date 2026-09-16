@@ -568,6 +568,8 @@ async fn run(session: &Session, folder: &Path, operation: &Operation) -> Result<
 mod recovery_tests {
     use super::*;
 
+    static NEXT_FIXTURE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
     struct Fixture {
         root: PathBuf,
         db: rusqlite::Connection,
@@ -580,13 +582,18 @@ mod recovery_tests {
     }
     fn fixture() -> Fixture {
         let id = "00000000-0000-4000-8000-000000000099".to_string();
-        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         // Clock resolution can be coarser than simultaneous test starts on macOS.
         // Reserve exclusively; a stale directory is never reused or removed.
         let root = loop {
-            let suffix = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let path = std::env::temp_dir()
-                .join(format!("manga-recovery-{}-{suffix}", std::process::id()));
+            let sequence = NEXT_FIXTURE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "manga-recovery-{}-{stamp}-{sequence}",
+                std::process::id()
+            ));
             match std::fs::create_dir(&path) {
                 Ok(()) => break path,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
