@@ -42,7 +42,7 @@ export async function planScene(scene, snapshot, characters, model) {
   const units = sourceUnits(scene.id, scene.text);
   if (!units.length) return [];
   const schema = { type: 'object', properties: { panels: { type: 'array', items: { type: 'object', properties: { unitIds: { type: 'array', items: { type: 'string' } }, prompt: { type: 'string' }, characterIds: { type: 'array', items: { type: 'string' } } }, required: ['unitIds', 'prompt', 'characterIds'], additionalProperties: false } } }, required: ['panels'], additionalProperties: false };
-  const result = await askLLM(model, { schema, prompt: JSON.stringify({ task: '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。最大4コマ/ページを想定。各コマに出演する人物IDを漏らさず含める。', units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
+  const result = await askLLM(model, { schema, prompt: JSON.stringify({ task: '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。ページ配置は別工程で決めるため、ページ当たりのコマ数を制限しない。各コマに出演する人物IDを漏らさず含める。', units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
   return validatePlan(JSON.parse(result), units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
 export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null) {

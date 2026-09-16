@@ -451,6 +451,25 @@ fn recover_image(job_id: String, state: State<'_, AppState>) -> Result<Value, St
 }
 
 #[tauri::command]
+fn live_video_probe(revision_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    storage::live_export::video_probe(&db, &state.root, &revision_id)
+}
+#[tauri::command]
+fn live_export(
+    app: tauri::AppHandle,
+    request: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    storage::live_export::export(
+        &db,
+        &state.root,
+        &app.path().download_dir().map_err(err)?,
+        &request,
+    )
+}
+#[tauri::command]
 fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<String, String> {
     if name.is_empty()
         || !name
@@ -593,6 +612,8 @@ fn main() {
             video_submit,
             video_task,
             export_file,
+            live_export,
+            live_video_probe,
             register_llm,
             remove_llm,
             cancel_llm,

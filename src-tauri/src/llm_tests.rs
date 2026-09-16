@@ -274,3 +274,13 @@ fn direction_uses_typed_blender_operations_and_rejects_code_and_invalid_bounds()
         .is_err());
     }
 }
+
+#[test]
+fn layout_output_uses_validated_geometry_on_plan_connection() {
+    let good = json!({"reason":"大ゴマ","pages":[{"id":"page","slots":[{"id":"slot","panelId":"p","points":[[0.1,0.1],[0.9,0.1],[0.8,0.9],[0.2,0.9]]}]}]});
+    assert!(validate_output(Purpose::Layout, &good).is_ok());
+    let mut bad = good.clone();
+    bad["pages"][0]["slots"][0]["points"][2] = json!([0.0, 0.0]);
+    assert!(validate_output(Purpose::Layout, &bad).is_err());
+    assert!(validate_output(Purpose::Plan, &good).is_err());
+}
