@@ -137,3 +137,18 @@ E統合追補: PR #13のUI翻訳撤回・成果物英訳を保持して統合。
 Node29件/Web build pass。COST-01の文字配置でjob/原作/作画が不変、Undo可能を機械試験。Rust/Swift/実UI/実機品質はnot_run。重いBlender/Swift画像処理は共通ロックへ変更（同時起動しない）；24GB性能保証ではない。Mac導入ガイドへ候補実装の試用・バックアップ・復旧手順を追記。
 
 H-REAL: 対象mainのmacOS CI/DMGを確認後、12コマ比較（正本§11）、画面/出力の日本語禁則・英訳・文字枠・キャラ一致、ピークメモリ、操作/待ち時間、更新/復元を記録する。コード署名と公証は所有者の鍵・アカウントが必要でnot_run。UI screenshot・実画像・ログを添付してからHを完了にする。
+
+## Issue #9 V-A — 動画の共通参照とschema 4
+
+`src/video.js`は原作範囲/順序・既存人物ID・開始画像不変版を検証し、既存作画画像と既存blender_captureの画像を同じmanifestへ解決する。出所とAPI実入力を分離。開始画像・参照版・基準採用版を複製登録せず参照し、未知の入力・能力・モデルを拒否する。jobsは既存配列へscope=videoShotで追加。外部通信/UIはこの段階では追加していない。
+
+実行済み: `npm test` 33件pass、`npm run build` pass。MV-01のv1/v2/v3→v4のJSON実ファイル往復・冪等移行・再起動unknown、MV-02の作画/撮影共通解決、MV-03のmanifest/実bytes hash（HTTP送信はまだ未実装）、MV-04の非対応入力拒否、MV-05の基準変更検出、試行上限の維持を人工fixtureで確認。Mac SQLite往復試験をstorage.rsに追加したがRustが未配置のためnot_run。動画AI・再生・書出しの成功を示す試験ではない。
+
+他エージェント向けの次の作業:
+
+- V-A-NATIVE: `cargo test --manifest-path src-tauri/Cargo.toml storage::tests`、fmt/clippy/lockをMac等の適合環境で実行。schema 4の保存→終了→再開と旧作品PNG/CBZを確認。バックアップはSQLite/artifacts/blenderを含むフォルダ全体。旧appへ戻す場合は移行前フォルダへ戻し、番号だけ戻さない。
+- V-B: storage.rs既存不変保存へサイズ制限付きMP4ストリーム保存・hash/MIME検証を追加。JSへ全量base64を渡さず、限定された再生経路とMP4書出しを作る。人工短編動画でMV-07/08/09を実行。採用/UndoはvideoHistoryのみ。旧結果/停止後結果は候補のまま保持。
+- V-C: 正本§12の固定公式契約からRunway REST接続を実装。既存Rust資格情報/HTTP許可境界を再利用。POST前の永続job、応答task IDの即時保存、unknown非再POST、照会/取消/取得、予算を検証。HTTP fixtureと有料実APIを分ける。テストキー・予算は未提供なので有料実APIはnot_run。
+- V-D: resolveStartImageのloadCaptureへ既存blender_captureを接続。動画専用カメラ/frameからの撮影も同じBlenderセッション処理を利用する。二人/一場所の実Blender fixtureでMV-11、Mac再生と24GB計測は実環境待ち。
+
+Issue #5の残件: Dポーズ適用、E-RECOVERY、F既存Tripo拡張の安全な接続、G任意外部画像API、H実機受入。Tripo公式拡張の未認証汎用MCPをそのまま有効化しない。既存Blenderに取り込んだ素材はDのAsset Library経由で再利用できるが、生成サービス連携の完了とはしない。Issue #5/#9はopenを維持する。

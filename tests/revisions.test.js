@@ -6,7 +6,7 @@ import { sourceForPanel } from '../src/core.js';
 const legacy = JSON.parse(readFileSync(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 test('LEGACY-01 migration is lossless and idempotent; Undo keeps source and exact pixels', async () => {
   const p = await migrateProject(legacy);
-  assert.equal(p.version, 3);
+  assert.equal(p.version, 4);
   assert.equal(p.output_locale, 'ja');
   assert.deepEqual(p.localizations, []);
   assert.equal(p.panels[0].capture_revision, null);

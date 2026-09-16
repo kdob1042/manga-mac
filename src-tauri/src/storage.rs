@@ -169,7 +169,7 @@ pub fn initialize(db: &Connection) -> Result<()> {
 }
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
-    if !matches!(project["version"].as_u64(), Some(1 | 2 | 3)) {
+    if !matches!(project["version"].as_u64(), Some(1 | 2 | 3 | 4)) {
         return Err("Unsupported project schema".into());
     }
     // Commit the previous exact JSON before starting file migration.
@@ -303,6 +303,23 @@ mod tests {
         save(&mut db, &dir, &project.to_string()).unwrap();
         let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
         assert_eq!(restored, project);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn video_schema_roundtrip_preserves_manifest_without_hydrating_video() {
+        let (mut db, dir) = setup();
+        let mut project = fixture();
+        project["version"] = json!(4);
+        project["videoShots"] = json!([{"id":"v1","snapshotId":"source","startImage":{"kind":"artwork","id":"a1","hash":"fixed"}}]);
+        project["videoRevisions"] = json!([]);
+        project["videoHistory"] = json!([]);
+        project["jobs"].as_array_mut().unwrap().push(json!({"id":"video-job","scope":{"type":"videoShot","id":"v1"},"status":"unknown","manifest":{"providerInputs":[{"role":"start_frame","media_type":"image","hash":"fixed"}]}}));
+        save(&mut db, &dir, &project.to_string()).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        assert_eq!(restored, project);
+        project["version"] = json!(5);
+        assert!(save(&mut db, &dir, &project.to_string()).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
 
