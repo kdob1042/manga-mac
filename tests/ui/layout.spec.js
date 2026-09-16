@@ -1,11 +1,12 @@
 import {test,expect} from '@playwright/test';
-import {readFileSync} from 'node:fs';
+import {readFileSync,writeFileSync} from 'node:fs';
+import JSZip from 'jszip';
 const legacy=JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json',import.meta.url)));
 test('four corners, cancel, undo/redo and six-panel persistence keep artwork and export geometry',async({page})=>{
  await page.goto('/');
  await page.evaluate(async fixture=>{
    const {saveProject}=await import('/src/bridge.js');
-   fixture.panels=Array.from({length:6},(_,i)=>({...fixture.panels[0],id:`panel${i}`}));fixture.history=[];
+   fixture.panels=Array.from({length:6},(_,i)=>({...fixture.panels[0],id:`panel${i}`}));fixture.history=[];fixture.jobs=[];
    await saveProject(fixture);
  },legacy);
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
@@ -31,7 +32,9 @@ test('four corners, cancel, undo/redo and six-panel persistence keep artwork and
  await page.getByRole('button',{name:'枠をUndo'}).click();await expect(page.getByTestId('layout-slot-0')).not.toHaveAttribute('points',after);
  await page.getByRole('button',{name:'枠をRedo'}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',after);
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',after);
- const result=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');const {pagePNG}=await import('/src/render.js');const {pagePanels}=await import('/src/layout.js');const p=await loadProject(),pg=p.layout.pages[0];return {png:await pagePNG(pagePanels(p,pg),p.snapshots,[], 'ja',pg),image:p.panels[0].image,jobs:p.jobs.length,slots:pg.slots.length};});
+ await page.locator('.thumbnail').nth(1).click();await page.getByRole('button',{name:'このページを外す'}).click();await expect(page.locator('.thumbnail')).toHaveCount(1);
+ const result=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');const {pagePNG,exportCBZ}=await import('/src/render.js');const {pagePanels}=await import('/src/layout.js');const p=await loadProject(),pg=p.layout.pages[0];return {cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer())),png:await pagePNG(pagePanels(p,pg),p.snapshots,[], 'ja',pg),image:p.panels[0].image,jobs:p.jobs.length,slots:pg.slots.length};});
  expect(result.image).toBe(legacy.panels[0].image);expect(result.jobs).toBe(0);expect(result.slots).toBe(6);expect(result.png).toMatch(/^data:image\/png;base64,/);
+ const zip=await JSZip.loadAsync(result.cbz);expect(await zip.file('001.png').async('base64')).toBe(result.png.split(',')[1]);writeFileSync('test-results/free-layout-six-output.png',Buffer.from(result.png.split(',')[1],'base64'));
  await page.screenshot({path:'test-results/free-layout-six.png',fullPage:true});
 });
