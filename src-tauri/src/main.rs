@@ -15,7 +15,6 @@ struct AppState {
     connections: llm::Connections,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
-    blender: tokio::sync::Mutex<()>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -248,7 +247,7 @@ fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<Stri
 }
 #[tauri::command]
 async fn blender_fork(session_id: String, expected_revision: u64, ids: Vec<String>, state: State<'_, AppState>) -> Result<Vec<Value>, String> {
-    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     let mut db = state.db.lock().map_err(err)?;
     blender::fork_shots(&mut db, &session_id, expected_revision, ids)
 }
@@ -274,7 +273,7 @@ fn blender_latest(state: State<AppState>) -> Result<Option<Value>, String> {
 }
 #[tauri::command]
 async fn blender_execute(request: blender::Request, state: State<'_, AppState>) -> Result<Value, String> {
-    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     blender::execute(&state.db, &state.root, request).await
 }
 #[tauri::command]
@@ -282,7 +281,7 @@ async fn blender_recover(
     session_id: String, request_id: String, expected_revision: u64,
     action: blender::RecoveryAction, state: State<'_, AppState>,
 ) -> Result<Value, String> {
-    let _guard = state.blender.try_lock().map_err(|_| "Blenderは処理中です")?;
+    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
     let mut db = state.db.lock().map_err(err)?;
     blender::recover(&mut db, &state.root, &session_id, &request_id, expected_revision, action)
 }
@@ -299,7 +298,6 @@ fn main() {
                 connections: llm::Connections::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
-                blender: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })

@@ -1,3 +1,4 @@
+import { wrapText, validateLettering } from './lettering';
 import { containRect } from './image-input';
 import JSZip from 'jszip';
 import { call, desktop } from './bridge';
@@ -23,14 +24,19 @@ export async function mergeRegion(before, after, rect) {
   original.data.set(compositePixels(original.data, candidate.data, mask)); ctx.putImageData(original, 0, 0);
   return canvas.toDataURL('image/png');
 }
-export function lines(ctx, text, width) {
-  const result = [];
-  for (const paragraph of text.split('\n')) {
-    let line = '';
-    for (const c of paragraph) { if (ctx.measureText(line + c).width > width && line) { result.push(line); line = ''; } line += c; }
-    result.push(line);
+export function lines(ctx, text, width) { return wrapText(text, value => ctx.measureText(value).width, width); }
+function drawLettering(ctx, text, box, balloon) {
+  const padding = 12;
+  let size = 24, wrapped;
+  for (; size >= 14; size--) {
+    ctx.font = `${size}px sans-serif`;
+    wrapped = lines(ctx, text, box.width - padding * 2);
+    if (wrapped.length * size * 1.25 <= box.height - padding * 2 && wrapped.every(line => ctx.measureText(line).width <= box.width - padding)) break;
   }
-  return result;
+  if (size < 14) throw Error('文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください');
+  if (balloon) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(box.x, box.y, box.width, box.height, 18); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = '#111'; ctx.textBaseline = 'top';
+  wrapped.forEach((line, i) => ctx.fillText(line, box.x + padding, box.y + padding + i * size * 1.25));
 }
 export async function pagePNG(panels, snapshots, localizations = [], locale = 'ja') {
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 2260;
@@ -45,10 +51,13 @@ export async function pagePNG(panels, snapshots, localizations = [], locale = 'j
     const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
     if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
     const text = textForPanel(p, snapshot, localization);
-    ctx.font = '24px sans-serif'; ctx.fillStyle = '#111';
-    const wrapped = lines(ctx, text, 676);
-    if (wrapped.length > 10) throw Error('文字がコマに収まりません。コマ計画を細分化してから書き出してください');
-    wrapped.forEach((l, j) => ctx.fillText(l, x + 22, y + 758 + j * 27));
+    if (p.lettering?.mode === 'balloons') {
+      const layout = validateLettering(p, p.lettering);
+      for (const box of layout.boxes) {
+        const unitText = textForPanel({ ...p, unitIds: [box.unit_id] }, snapshot, localization);
+        drawLettering(ctx, unitText, { x: x + 2 + box.x * 716, y: y + 2 + box.y * 716, width: box.width * 716, height: box.height * 716 }, true);
+      }
+    } else drawLettering(ctx, text, { x: x + 10, y: y + 736, width: 700, height: 280 }, false);
   }
   return canvas.toDataURL('image/png');
 }
