@@ -6,7 +6,9 @@ import { sourceForPanel } from '../src/core.js';
 const legacy = JSON.parse(readFileSync(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 test('LEGACY-01 migration is lossless and idempotent; Undo keeps source and exact pixels', async () => {
   const p = await migrateProject(legacy);
-  assert.equal(p.version, 2);
+  assert.equal(p.version, 3);
+  assert.equal(p.output_locale, 'ja');
+  assert.deepEqual(p.localizations, []);
   assert.equal(p.panels[0].capture_revision, null);
   assert.equal(p.panels[0].image, legacy.panels[0].image);
   assert.deepEqual(p.characters, legacy.characters);
@@ -47,4 +49,32 @@ test('successful job adopts once, retains prior version, and cannot replay after
   assert.equal(resumed.jobs.at(-1).status, 'unknown');
   await assert.rejects(beginJob(resumed, resumed.panels[0], 'edit'));
   await assert.rejects(finishJob(resumed, job, p.panels[0]));
+});
+
+
+test('English localization survives migration without changing the source', async () => {
+  const p = await migrateProject(legacy);
+  const localized = {
+    ...p,
+    output_locale: 'en',
+    localizations: [{
+      id: `${p.active}:en`,
+      snapshot_id: p.active,
+      locale: 'en',
+      units: [{ id: 'S01:u0', text: 'Original dialogue' }],
+      model: { provider: 'ollama', model: 'fixture' },
+      created_at: '2026-09-16T00:00:00.000Z',
+    }],
+  };
+  const migrated = await migrateProject(localized);
+  assert.equal(migrated.output_locale, 'en');
+  assert.deepEqual(migrated.localizations, localized.localizations);
+  assert.deepEqual(migrated.snapshots, p.snapshots);
+  await assert.rejects(migrateProject({ ...localized, localizations: [{ ...localized.localizations[0], units: [{ id: 'S01:u0', text: '' }] }] }));
+});
+
+test('duplicate translated unit IDs are rejected during project reload', async () => {
+  const p = await migrateProject(legacy);
+  p.localizations = [{ locale: 'en', snapshot_id: 'source', units: [{id:'u',text:'One'},{id:'u',text:'Two'}] }];
+  await assert.rejects(migrateProject(p));
 });

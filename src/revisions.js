@@ -8,9 +8,16 @@ export async function imageHash(image) {
   return digest(Uint8Array.from(atob(match[1]), c => c.charCodeAt(0)));
 }
 export async function migrateProject(input, recover = false) {
-  if (!input || ![1, 2].includes(input.version)) throw Error('未対応の作品スキーマです');
+  if (!input || ![1, 2, 3].includes(input.version)) throw Error('未対応の作品スキーマです');
   const p = structuredClone(input);
-  p.version = 2; p.revision ??= 0; p.artworks ??= []; p.jobs ??= []; p.history ??= [];
+  p.version = 3; p.revision ??= 0; p.artworks ??= []; p.jobs ??= []; p.history ??= [];
+  p.localizations ??= []; p.output_locale ??= 'ja';
+  if (!['ja', 'en'].includes(p.output_locale) || !Array.isArray(p.localizations)) throw Error('作品の言語版が不正です');
+  for (const localization of p.localizations) {
+    if (localization.locale !== 'en' || typeof localization.snapshot_id !== 'string' || !Array.isArray(localization.units)) throw Error('作品の英訳版が不正です');
+    const ids = new Set();
+    if (localization.units.some(unit => !unit || typeof unit.id !== 'string' || !unit.id || typeof unit.text !== 'string' || !unit.text.trim() || (ids.has(unit.id) || !ids.add(unit.id)))) throw Error('作品の英訳版が不正です');
+  }
   const known = new Map(p.artworks.map(a => [a.id, a]));
   const hashes = new Map();
   const hashOf = image => { if (!hashes.has(image)) hashes.set(image, imageHash(image)); return hashes.get(image); };
