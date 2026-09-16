@@ -364,3 +364,13 @@ SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約
 AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す。対象ページ限定では他ページを固定。全ページ指定では既存コマを順に保ったページ分割・4/6コマ混在を提案できる。内容の新規分割は従来planSceneと別工程。要求時の原作・コマ・layoutを固定し、既存jobsへ生成前に記録、同じ入力は最大3回・自動再試行なし。候補は保存／再読込可能、採用時に基準一致を再確認し、作画・撮影・動画を起動しない。候補の破棄と手動編集はAI未接続でも可能。実モデルの漫画としての読みやすさは別受入。
 
 Live Mangaの配信契約は矩形のみの実装と併合するときに必ず確認する。自由四角形の外接矩形をそのまま配信して対応済みとしない。未対応の配信経路は拒否し、polygonと同じ画像変換を扱える契約へ拡張するまでPNG/CBZを利用する。
+
+## Live Manga配信用出力（Issue #39）
+
+制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
+
+コマ動画は作品内の軽量`panelMotions`参照。採用作画ID/hash、公開動画版ID/hash、原文範囲・人物を固定し、実送信Jobのidentity開始画像と照合する。静止画・原文変更で不整合なら書き出し停止。ショットで新しい版を採用しても公開版は置換しない。`motionHistory`は漫画/動画のUndoと独立。
+
+既存`pagePNG`と共有する`panelLayout/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
+
+初期公開は矩形コマ・無音H.264。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。

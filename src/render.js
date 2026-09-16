@@ -39,16 +39,16 @@ function drawLettering(ctx, text, box, balloon) {
   ctx.fillStyle = '#111'; ctx.textBaseline = 'top';
   wrapped.forEach((line, i) => ctx.fillText(line, box.x + padding, box.y + padding + i * size * 1.25));
 }
-export async function pagePNG(panels, snapshots, localizations = [], locale = 'ja', page = null, draft = false) {
+export async function pageLayers(panels, snapshots, localizations = [], locale = 'ja', layer = 'complete', page = null, draft = false) {
   page ??= initialLayout(panels).pages[0] ?? { id: 'empty', slots: [] };
   validateLayout({version:1,pages:[page]}, panels);
   if(!draft){const warnings=layoutWarnings({version:1,pages:[page]},panels);if(warnings.length)throw Error(warnings.join(' / '));}
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 2260;
-  const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1600, 2260);
+  const ctx = canvas.getContext('2d'); if(layer!=='overlay'){ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1600, 2260);}
   for (const slot of page.slots) {
     const p = panels.find(p=>p.id===slot.panelId);
     ctx.save(); ctx.beginPath(); slot.points.forEach(([x,y],i)=>i ? ctx.lineTo(x*PAGE.width,y*PAGE.height) : ctx.moveTo(x*PAGE.width,y*PAGE.height)); ctx.closePath();
-    ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.stroke(); ctx.clip();
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 4; if(layer!=='art')ctx.stroke(); ctx.clip();
     if (!p && !draft) throw Error('未割当の枠があります');
     const box=contentBox(slot.points);
     // Uniformly scale the original composition; characters and lettering never shear.
@@ -58,9 +58,10 @@ export async function pagePNG(panels, snapshots, localizations = [], locale = 'j
     if (!p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
     if(p.image) {
       const image = await imageOf(p.image), fit = containRect(image.width, image.height, 716, 716);
-      ctx.drawImage(image, x + 2 + fit.x, y + 2 + fit.y, fit.width, fit.height);
+      if(layer!=='overlay')ctx.drawImage(image, x + 2 + fit.x, y + 2 + fit.y, fit.width, fit.height);
     } else {ctx.fillStyle='#f2f0eb';ctx.fillRect(2,2,716,716);ctx.fillStyle='#777';ctx.font='30px sans-serif';ctx.fillText('未作画',30,50);}
     if(scale*14<6) throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げてください`);
+    if(layer==='art'){ctx.restore();continue;}
     const snapshot = snapshots.find(s => s.id === p.snapshotId);
     const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
     if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
@@ -75,6 +76,13 @@ export async function pagePNG(panels, snapshots, localizations = [], locale = 'j
     ctx.restore();
   }
   return canvas.toDataURL('image/png');
+}
+export const pagePNG = (panels, snapshots, localizations = [], locale = 'ja', page = null, draft = false) => pageLayers(panels, snapshots, localizations, locale, 'complete', page, draft);
+// Legacy Live Manga v1 geometry; non-legacy layouts are rejected before this path.
+export function panelLayout(i, width, height) {
+  const x = i % 2 === 0 ? 820 : 60, y = 60 + Math.floor(i / 2) * 1080;
+  const fit = containRect(width, height, 716, 716);
+  return { frame: { x, y, width: 720, height: 1030 }, artRect: { x: x + 2 + fit.x, y: y + 2 + fit.y, width: fit.width, height: fit.height } };
 }
 export async function exportCBZ(project) {
   if (!project.panels.length) throw Error('書き出すページがありません');

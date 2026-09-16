@@ -14,6 +14,8 @@ export async function migrateProject(input, recover = false) {
   p.version = 4; p.revision ??= 0; p.artworks ??= []; p.jobs ??= []; p.history ??= [];
   p.videoShots ??= []; p.videoRevisions ??= []; p.videoHistory ??= [];
   if (![p.videoShots, p.videoRevisions, p.videoHistory].every(Array.isArray)) throw Error('動画の保存データが不正です');
+  p.panelMotions ??= []; p.motionHistory ??= [];
+  if (![p.panelMotions, p.motionHistory].every(Array.isArray)) throw Error('コマ動画の保存データが不正です');
   p.localizations ??= []; p.output_locale ??= 'ja';
   if (!['ja', 'en'].includes(p.output_locale) || !Array.isArray(p.localizations)) throw Error('作品の言語版が不正です');
   for (const localization of p.localizations) {

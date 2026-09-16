@@ -65,10 +65,67 @@ pub fn validate(layout: &Value, panel_ids: Option<&HashSet<&str>>) -> Result<(),
     }
     Ok(())
 }
+pub fn require_legacy_live_layout(project: &Value) -> Result<(), String> {
+    let Some(layout) = project.get("layout") else {
+        return Ok(());
+    };
+    let error = || {
+        "Live Manga v1は従来の4コマ配置だけに対応しています。自由コマ割りはPNG/CBZで書き出してください".to_string()
+    };
+    let panels = project["panels"].as_array().ok_or_else(error)?;
+    let ids = panels.iter().filter_map(|p| p["id"].as_str()).collect();
+    validate(layout, Some(&ids))?;
+    let pages = layout["pages"].as_array().ok_or_else(error)?;
+    if pages.len() != panels.len().div_ceil(4) {
+        return Err(error());
+    }
+    for (page_index, page) in pages.iter().enumerate() {
+        let slots = page["slots"].as_array().ok_or_else(error)?;
+        if slots.len() != (panels.len() - page_index * 4).min(4) {
+            return Err(error());
+        }
+        for (i, slot) in slots.iter().enumerate() {
+            if slot["panelId"] != panels[page_index * 4 + i]["id"] {
+                return Err(error());
+            }
+            let x = if i % 2 == 0 { 820.0 } else { 60.0 };
+            let y = 60.0 + (i / 2) as f64 * 1080.0;
+            let expected = [
+                [x / 1600.0, y / 2260.0],
+                [(x + 720.0) / 1600.0, y / 2260.0],
+                [(x + 720.0) / 1600.0, (y + 1030.0) / 2260.0],
+                [x / 1600.0, (y + 1030.0) / 2260.0],
+            ];
+            for (j, point) in expected.iter().enumerate() {
+                for (k, n) in point.iter().enumerate() {
+                    if slot["points"][j][k]
+                        .as_f64()
+                        .is_none_or(|v| (v - n).abs() > 1e-10)
+                    {
+                        return Err(error());
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn legacy_live_export_rejects_shape_and_assignment_changes() {
+        let x = 820.0;
+        let y = 60.0;
+        let mut p = json!({"panels":[{"id":"p"}],"layout":{"version":1,"pages":[{"id":"page","slots":[{"id":"slot","panelId":"p","points":[[x/1600.0,y/2260.0],[(x+720.0)/1600.0,y/2260.0],[(x+720.0)/1600.0,(y+1030.0)/2260.0],[x/1600.0,(y+1030.0)/2260.0]]}]}]}});
+        assert!(require_legacy_live_layout(&p).is_ok());
+        p["layout"]["pages"][0]["slots"][0]["points"][0][0] = json!(0.6);
+        assert!(require_legacy_live_layout(&p).is_err());
+        p["layout"]["pages"][0]["slots"][0]["panelId"] = Value::Null;
+        assert!(require_legacy_live_layout(&p).is_err());
+    }
     #[test]
     fn rejects_crossings_missing_references_and_invalid_coordinates() {
         let mut l = json!({"version":1,"pages":[{"id":"a","slots":[{"id":"s","panelId":"p","points":[[0.1,0.1],[0.9,0.1],[0.8,0.9],[0.2,0.9]]}]}]});

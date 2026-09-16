@@ -41,3 +41,8 @@ test('whole-work AI can paginate four plus six without losing any source IDs',()
  const c=validateProposal(p,{reason:'会話は6コマ、導入は4コマ',pages},p.layout.pages.map(p=>p.id));assert.deepEqual(c.layout.pages.map(p=>p.slots.length),[4,6]);
  pages[1].slots.pop();assert.throws(()=>validateProposal(p,{reason:'欠落',pages},p.layout.pages.map(p=>p.id)),/読書順/);
 });
+test('Live Manga v1 refuses reshaped and six-panel layouts before media export',async()=>{
+ const {assertLegacyLiveLayout}=await import('../src/layout.js');const p=project();assert.doesNotThrow(()=>assertLegacyLiveLayout(p));
+ p.layout.pages[0].slots[0].points[0][0]+=.01;assert.throws(()=>assertLegacyLiveLayout(p),/Live Manga v1/);
+ const six=ensureLayout({panels:panels.slice(0,6)});six.layout.pages=[{id:'six',slots:template(6,panels.slice(0,6).map(p=>p.id))}];assert.throws(()=>assertLegacyLiveLayout(six),/Live Manga v1/);
+});

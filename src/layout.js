@@ -87,3 +87,9 @@ export function contentBox(points) {
   }
   throw Error('コマ内の文字領域が不足しています');
 }
+export function assertLegacyLiveLayout(project) {
+  if(!project.layout)return;
+  validateLayout(project.layout,project.panels);
+  const geometry=l=>l.pages.map(p=>p.slots.map(({panelId,points})=>({panelId,points})));
+  if(JSON.stringify(geometry(project.layout))!==JSON.stringify(geometry(initialLayout(project.panels))))throw Error('Live Manga v1は従来の4コマ配置だけに対応しています。自由コマ割りはPNG／CBZで書き出してください');
+}

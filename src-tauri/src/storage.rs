@@ -4,6 +4,9 @@ pub mod backup;
 pub mod image_recovery;
 #[path = "layout.rs"]
 pub mod layout;
+
+#[path = "live_export.rs"]
+pub mod live_export;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
