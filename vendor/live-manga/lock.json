@@ -1,0 +1,13 @@
+{
+  "repository": "kdob1042/live-manga",
+  "version": "1.0.0",
+  "commit": "231d501be369d04271b17508226121c290c234fd",
+  "files": {
+    "contracts/validate.mjs": "a54ac38afecb945ea6e60810819ce8a17dadecca7426f28b691971fe43ed7e80",
+    "contracts/schema.json": "9ddc343bceb094bc3036ca9d38e6229bd8aa7ba868cca2a4dbc990ac453cf50e",
+    "contracts/types.ts": "7edcbcf14feab8e48afd5c5e654ef12984d612383d298cc6d8e1643fdb2a1614",
+    "contracts/package.mjs": "4ce3c9ee8eaa7c0a27eedec688acb8db0a568e7095838d3a6aeb2b03fc698e32",
+    "scripts/fixture.mjs": "b4f5d7dce707d1af88f1a49b8e6b59af4af972976708566212e31380008ebdf4",
+    "scripts/fixture_overlay.py": "c6740d80607fefd11f01d4bed1511aa9a2c3f2b350591acabba7b61e46434789"
+  }
+}
