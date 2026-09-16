@@ -158,6 +158,52 @@ pub fn status(db: &rusqlite::Connection, id: &str) -> Result<Value, String> {
     }
     Ok(response)
 }
+/// Rebind only the executable on a restored workspace; checkpoints and IDs stay fixed.
+pub fn rebind_restored(
+    db: &mut rusqlite::Connection,
+    root: &Path,
+    binary: &str,
+) -> Result<(), String> {
+    if !root.join("restored-from.json").is_file() {
+        return Err("復元作品だけの操作です".into());
+    }
+    let binary = canonical(binary)?;
+    if !binary.is_file() {
+        return Err("Blender実行ファイルを指定してください".into());
+    }
+    let tx = db.transaction().map_err(|_| error())?;
+    let pending: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE status='running')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| error())?;
+    if pending {
+        return Err("Blender処理終了後に再接続してください".into());
+    }
+    let rows: Vec<(String, String)> = tx
+        .prepare("SELECT id,data FROM blender_sessions")
+        .map_err(|_| error())?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|_| error())?
+        .collect::<Result<_, _>>()
+        .map_err(|_| error())?;
+    for (id, data) in rows {
+        let mut s: Session = serde_json::from_str(&data).map_err(|_| error())?;
+        if !s.checkpoint.starts_with(root) || hash(&s.checkpoint)? != s.hash {
+            return Err("復元した保存版が変わっています".into());
+        }
+        s.binary = binary.clone();
+        s.library = root.to_path_buf();
+        tx.execute(
+            "UPDATE blender_sessions SET data=?1 WHERE id=?2",
+            rusqlite::params![serde_json::to_string(&s).map_err(|_| error())?, id],
+        )
+        .map_err(|_| error())?;
+    }
+    tx.commit().map_err(|_| error())
+}
 pub fn latest(db: &rusqlite::Connection) -> Result<Option<Value>, String> {
     use rusqlite::OptionalExtension;
     let id: Option<String> = db.query_row("SELECT id FROM blender_sessions WHERE json_extract(data,'$.parent_session_id') IS NULL ORDER BY rowid DESC LIMIT 1", [], |r| r.get(0)).optional().map_err(|_|error())?;
