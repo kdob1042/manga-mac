@@ -2,6 +2,36 @@
 
 仕様は[設計書](IMPLEMENTATION_PLAN.md)。作業と残件は[Issue #5](https://github.com/kdob1042/manga-mac/issues/5)。
 
+## 現在の確認位置と再開方法（2026-09-16）
+
+以下の段階別記録は**実施当時の履歴**。古い「Rustがない」「CIが開始しない」「未実行」の記述は、後の実行結果を取り消さない。最新の統合状態とCIへのリンクはIssue #5/#9の最新進捗コメントも確認する。完了前のIssue全体のチェックは付けない。
+
+- PR #20はmain `7de822b49efae0805e23d644e6ba4f67faafb98b`へ統合済み。必須4ジョブ（web/storage/llm/blender）は[CI 35053023339](https://github.com/kdob1042/manga-mac/actions/runs/35053023339)で成功。Blender 4.5.13の実行・保存/再読込・Rust IPCを含む。Macのアプリ内操作・品質検証とは別。
+- V-D1（PR #21）とV-C2（PR #22）は下記追補を参照。Node43件、native HTTP/保存23件、統合候補のfmt/clippy、固定LLMテスト依存190件の監査はローカル実行済み。UIはGitHub ActionsのChromiumで検証する。ローカルbrowser downloadの失敗をUI全体の未実行理由にしない。
+- 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
+
+### 次の担当の着手順
+
+1. `git fetch origin`後、mainと未マージPRを確認し、最新mainからブランチを作る。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
+2. `npm ci && npm test && npm run build`。UIは`npx playwright install --with-deps chromium`後`npm run test:ui`。取得できない環境ではPRのwebジョブとUI-test-resultsを使う。
+3. `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`。tests/storage、tests/llm、tests/blenderの各Cargo.tomlで`cargo test --locked`と`cargo clippy --locked --all-targets -- -D warnings`。lockをCIで再生成せず、変更が必要なら差分と監査をPRへ含める。実Blender試験はworkflowと同じ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
+4. macOSビルドはmainのmacジョブを確認する。PR側でskipされるのは重複実行防止であり、macOS合格ではない。アプリ実機受入はINSTALL_MACと正本§11/12で別に記録する。
+
+### 未完タスクの実装入口と合格条件
+
+| ID | 着手先・手順 | 合格条件／必要環境 |
+|---|---|---|
+| D-POSE | `blender/worker.py`の型付き操作、`src-tauri/src/blender.rs`の検証、`src/ShotControls.jsx`。固定版Blenderの既存Pose Library APIを確認し、選択したリグ/Actionだけを適用。独自骨格/ポーズエンジンを作らない | `blender/test_real.py`で2人/4ショットのうち対象だけ変化、他のAction/撮影hashと旧checkpoint保持、再読込一致。headless非対応なら非対応を明示 |
+| E-RECOVERY | `helper/Sources/MangaEngine/main.swift`と`src-tauri/src/main.rs`の画像完了応答、既存jobs/storage。UIへ返す前の不変保存と再取得を検討 | helper完了→UI保存前の強制終了後、旧採用版を保ち、再生成なしに候補を回収。Macの実helperが必要な試験を分離 |
+| V-C-TEMP | `src-tauri/src/runway.rs`の`.video-download-*`とstorage。参照・所有権・別プロセス実行中を識別してから回収する | 強制終了の孤立ファイルだけ回収。別インスタンスの進行中取得・採用成果物を削除しない。起動時の無条件削除は禁止 |
+| V-D-REAL | `tests/ui/video-capture.spec.js`の操作と実Blenderを組合せ、正本MV-11を実行 | 漫画なし動画撮影、同じ素材の漫画4コマ/別動画shot、素材新版後の旧出力保持と影響先。モックUIと実nativeの結果を分ける |
+| F-TRIPO | 正本§2/5、Issue #5 F。公式拡張の固定版・認証窓口・ライセンス・依存を検証して既存Blenderへ接続 | 既存外部taskの再照会、二重課金防止、採用素材の再利用。実APIはテストキー/予算待ち。未認証の汎用MCPを有効化しない |
+| G-IMAGE | 正本§6/9とIssue #5 G。既存画像入力/候補/マスク外保護へ一つの検証済みAPIを接続 | 能力不足の送信前拒否、実bytes/送信先/費用、旧版保持。採用先の契約確認とテストキー/予算が必要 |
+| MAC/H-REAL | mainのDMG取得→INSTALL_MAC、正本§11の12コマ比較、MV-09/11 | Apple Silicon実機、24GB計測、画像モデル、Mac内再生/seek/MP4 hash、バックアップ復元。署名/公証は所有者の資格情報待ち |
+| V-C-REAL | Runwayの専用キーと明示予算を設定、正本MV-03/06/07/09/10 | 5秒生成→手動照会→取得→Mac再生→採用→再起動→Undo→MP4 hash。キーなしで実施済みにしない |
+
+変更PRには対象ID、開始SHA、実行したコマンド、証跡、未実施条件を残す。実装可能な項目と実機/資格情報待ちを混同して、残件全体を「Mac待ち」にしない。
+
 ## 段階A — PR #6
 
 開始main: `9391c7f50a021c774f808a725c44c4f8eea76cfa`。PR #4は文書のみで、再適用していない。
@@ -205,7 +235,7 @@ V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue
 - 既存Runway adapterの出力要求生成とresponse→一時ファイル→不変保存→SQLite記録をprivate helperへ分離して同じ本番処理をHTTP fixtureで通す。テスト用localhost clientはcfg(test)内部だけ。本番のHTTPSホスト/DNS/redirect規則は変更しない。
 - `CARGO_BUILD_JOBS=1 CARGO_PROFILE_DEV_DEBUG=0 cargo test --locked --manifest-path tests/llm/Cargo.toml`: **23 passed**。POST/GET/DELETEヘッダー、CDNへのキー非送信、404/不正JSON/MIME/サイズ超過/切断/期限切れ/不正MP4、成功の保存と再起動を確認。実Runway/実CDN/TLS経路の成功や動画品質の証明ではない。
 - ローカルRust 1.98.1が利用可能になったため試験を実行。最初の並列debugビルドはarchive mmap errorで失敗し、jobs=1/debug=0で成功。tests/llm/Cargo.lockを固定。cargo auditはこのテスト依存閉包に対し脆弱性0・警告0。OSVも同じ190依存を確認し指摘0（2026-09-16）。アプリ全体の監査/ビルドはPR #20とmain CIの結果を別途確認する。
-- clippyは基点mainの3警告（policy_transportのmanual_async_fn 2件、storageのmanual_range_patterns 1件）で失敗。PR #20の修正後に再実行する。Runway追加コードの警告とは分ける。
+- 基点mainで発生したclippyの3警告はPR #20で修正済み。修正とV-C2を合わせたcheckoutでclippy `-D warnings`を再実行し成功。統合先のCI結果も確認する。
 - Node **43 passed**、build/diff check成功。追加UI `tests/ui/video-recovery.spec.js` の結果はPR CIを参照。ローカルChromium downloadはtimeout/502で失敗。
 - なお、プロセス強制終了で残った孤立一時ファイルの自動整理、実APIの予算/料金照合、Mac内再生・実機品質は残件。起動時の無条件削除で別プロセスの取得を壊す処理は追加していない。
 
