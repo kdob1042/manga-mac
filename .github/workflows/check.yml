@@ -102,7 +102,14 @@ jobs:
         with:
           toolchain: 1.98.1
           components: rustfmt, clippy
+      - name: Install checksum-pinned backup tools
+        run: sh scripts/install-backup-tools.sh "$RUNNER_TEMP/manga-backup-tools"
       - run: cargo test --locked --manifest-path tests/storage/Cargo.toml
+      - name: Actual restic encrypted roundtrip and retention
+        env:
+          RESTIC_TEST_BIN: ${{ runner.temp }}/manga-backup-tools/restic
+          RCLONE_TEST_BIN: ${{ runner.temp }}/manga-backup-tools/rclone
+        run: cargo test --locked --manifest-path tests/storage/Cargo.toml real_restic -- --ignored
       - run: cargo clippy --locked --manifest-path tests/storage/Cargo.toml --all-targets -- -D warnings
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
   web:

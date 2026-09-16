@@ -1,3 +1,5 @@
+#[path = "backup.rs"]
+pub mod backup;
 #[path = "image_recovery.rs"]
 pub mod image_recovery;
 use base64::{engine::general_purpose::STANDARD, Engine};
