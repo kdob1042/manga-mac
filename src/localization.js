@@ -1,5 +1,5 @@
-import { sourceUnits } from './core';
-import { askLLM } from './llm';
+import { sourceUnits } from './core.js';
+import { askLLM } from './llm.js';
 
 export const SOURCE_LANGUAGE = 'ja';
 export const ENGLISH_LANGUAGE = 'en';
