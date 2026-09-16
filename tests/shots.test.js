@@ -49,3 +49,37 @@ test('legacy migration retains new bindings and capture history across reload', 
  assert.deepEqual(loaded.panels[0].shot_binding, p.panels[0].shot_binding);
  assert.deepEqual(loaded.shot_batches, p.shot_batches);
 });
+
+test('MV-11: video-only capture forks shared material without creating or changing manga panels', async () => {
+ const { planVideoSource, videoSources } = await import('../src/shots.js');
+ const { createVideoShot, resolveStartImage } = await import('../src/video.js');
+ let p = fixture(); p.panels = []; p.videoShots = []; p.snapshots = [{ id: 'source', sha: 'b'.repeat(40), scenes: [{ id: 'S1', text: 'A speaks.' }] }];
+ const batch = planVideoSource(p, { snapshotId: 'source', sceneId: 'S1', characterIds: ['A'] }, base);
+ p.shot_batches = [batch];
+ assert.throws(() => planVideoSource(p, { snapshotId: 'source', sceneId: 'S1', characterIds: ['A'] }, base));
+ p = attachShots(p, batch, batch.bindings.map(b => ({ session_id: b.id, state: base.state })));
+ const source = videoSources(p)[0];
+ assert.equal(source.shot_binding.origin_hash, hash);
+ const session = { session_id: source.id, state: { checkpoint: { hash }, state: { scene: 'Stage' }, scenes: [{ name: 'Stage', objects: ['Actor'] }] } };
+ p = bindCharacter(p, source.id, 'A', 'Actor', session, 'videoSource');
+ const preview = 'data:image/png;base64,iVBORw0KGgo=';
+ const response = { session_id: source.id, request_id: 'video-capture-1', preview, state: { dependencies_pinned: true, checkpoint: { file: 'checkpoint.blend', hash }, image: { file: 'capture.png', hash: await imageHash(preview) }, state: { frame: 1, resolution: [960,960] }, blender_version: [4,5,13] } };
+ p = await recordCapture(p, source.id, response, 'videoSource');
+ const capture = p.captures[0];
+ assert.equal(capture.panel_id, undefined); assert.deepEqual(capture.scope, { type: 'videoSource', id: source.id });
+ assert.deepEqual(p.panels, []); assert.deepEqual(p.history, []);
+ assert.deepEqual(capture.character_ids, ['A']);
+ const resolved = await resolveStartImage(p, { kind: 'capture', id: capture.id, hash: capture.image.hash }, async () => response);
+ assert.equal(resolved.image, preview); assert.equal(resolved.sourceDependencies.character_bindings[0].character_id, 'A');
+ assert.equal((await recordCapture(p, source.id, response, 'videoSource')).captures.length, 1);
+ p = createVideoShot(p, { snapshotId: 'source', sceneId: 'S1', unitIds: ['S1:u0'], characterIds: ['A'], startImage: { kind: 'capture', id: capture.id, hash: capture.image.hash }, prompt: 'Static camera.', ratio: '960:960', duration: 5 });
+ const before = structuredClone(p.videoShots);
+ p = await recordCapture(p, source.id, { ...response, request_id: 'video-capture-2' }, 'videoSource');
+ assert.deepEqual(p.videoShots, before); assert.equal(p.captures.length, 2);
+ assert.equal(p.captures[1].parent_revision, capture.id);
+ const restored = await migrateProject(p, true);
+ assert.deepEqual(videoSources(restored), videoSources(p));
+ await assert.rejects(recordCapture(p, source.id, { ...response, preview: 'data:image/png;base64,AAAA' }, 'videoSource'));
+ assert.throws(() => bindCharacter(p, source.id, 'A', 'missing', session, 'videoSource'));
+ assert.throws(() => planVideoSource(p, { snapshotId: 'source', sceneId: 'missing', characterIds: [] }, base));
+});

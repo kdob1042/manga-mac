@@ -6,6 +6,8 @@ import { createVideoShot, adoptVideoCandidate, undoVideo, beginVideoJob, validat
 import { abandonJob } from './revisions';
 import { videoStatusLabel } from './video-remote';
 import { draftVideoMotion } from './video-plan';
+import ShotControls from './ShotControls';
+import { planVideoSource, attachShots, videoSources } from './shots';
 
 const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
 export default function VideoWorkspace({ project, current, commit, run, busy, notify, model }) {
@@ -14,12 +16,23 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const [playback, setPlayback] = useState(null), [playError, setPlayError] = useState('');
   const [ratio, setRatio] = useState('960:960'), [editRatio, setEditRatio] = useState('960:960');
   const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [connectionId, setConnectionId] = useState(''), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
+  const [captureSourceId, setCaptureSourceId] = useState(''), [captureCharacters, setCaptureCharacters] = useState([]);
+  const sources = videoSources(project), captureSource = sources.find(s => s.id === captureSourceId);
   const connectionRef = useRef('');
   useEffect(() => () => { if (connectionRef.current) call('remove_video', { connectionId: connectionRef.current }).catch(() => {}); }, []);
   const images = [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
     ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))];
   const shot = project.videoShots.find(s => s.id === selected);
   useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setAcceptDeletion(false); }, [selected, shot?.prompt, shot?.ratio]);
+  async function prepareCapture() {
+    const p = current.current;
+    const base = await call('blender_latest');
+    const batch = planVideoSource(p, { snapshotId: p.active, sceneId, characterIds: captureCharacters }, base);
+    await commit({ ...p, shot_batches: [...(p.shot_batches ?? []), batch] });
+    const sessions = await call('blender_fork', { sessionId: batch.base_session, expectedRevision: batch.base_revision, ids: batch.bindings.map(b => b.id) });
+    await commit(attachShots(current.current, batch, sessions));
+    setCaptureSourceId(batch.bindings[0].id);
+  }
   async function refresh() {
     const latest = await loadProject();
     if (!latest) throw Error('作品を再読込できません');
@@ -66,7 +79,19 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     </fieldset></details>
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
       <legend>ショットを追加</legend>
-      <label>原作の場面<select value={sceneId} onChange={e => setSceneId(e.target.value)}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
+      <label>原作の場面<select value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
+      <details><summary>共有Blender素材から動画用に撮影</summary>
+        <p>接続・人物設定で開いた素材から専用ショットを作ります。漫画のコマは不要です。別のコマ・動画のカメラやフレームは変更しません。</p>
+        <label>撮影する人物<select multiple value={captureCharacters} onChange={e => setCaptureCharacters([...e.target.selectedOptions].map(o => o.value))}>{project.characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <button disabled={!desktop() || !sceneId} onClick={() => run('動画用の撮影を準備', prepareCapture)}>動画用の撮影ショットを作る</button>
+        <label>動画用の撮影ショット<select value={captureSourceId} onChange={e => setCaptureSourceId(e.target.value)}><option value="">撮影対象を選択</option>{sources.map(s => <option key={s.id} value={s.id}>{s.sceneId} · {s.id.slice(0, 8)}</option>)}</select></label>
+        <ShotControls project={project} current={current} commit={commit} panels={[]} chosen={captureSource} busy={busy} run={run} scopeType="videoSource" captureSize={ratio.split(':').map(Number)}/>
+        {captureSource?.capture_revision && <button onClick={() => {
+          if (captureSource.snapshotId !== project.active) { notify('旧原作の撮影です。現在の場面で新しい撮影ショットを作ってください。'); return; }
+          setSceneId(captureSource.sceneId); setImageId(`capture|${captureSource.capture_revision}`);
+          notify('撮影を開始画像に選びました。動きの指示を入力してショットを保存してください。');
+        }}>この撮影を開始画像に使う</button>}
+      </details>
       <label>開始画像<select value={imageId} onChange={e => setImageId(e.target.value)}><option value="">保存済みの画像を選択</option>{images.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
       <label>動きの指示<textarea value={prompt} maxLength={1000} onChange={e => setPrompt(e.target.value)} placeholder="カメラがゆっくり寄る。人物は小さくうなずく。"/></label>
       <label>動画の寸法<select value={ratio} onChange={e => setRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label><small>PNGの開始画像と同じ縦横比を選んでください。比率が違う画像の自動切り抜きは拒否します。</small>
@@ -75,7 +100,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         if (!scene || !image) throw Error('場面・画像を選び直してください');
         const artwork = p.artworks.find(a => a.id === image.id);
         const captured = p.captures?.find(c => c.id === image.id);
-        const characterIds = [...new Set(artwork?.panel.characterIds ?? captured?.character_bindings?.map(b => b.character_id) ?? [])];
+        const characterIds = [...new Set(artwork?.panel.characterIds ?? captured?.character_ids ?? captured?.character_bindings?.map(b => b.character_id) ?? [])];
         const next = createVideoShot(p, { snapshotId: snapshot.id, sceneId, unitIds: sourceUnits(sceneId, scene.text).map(u => u.id), characterIds,
           startImage: { kind: image.kind, id: image.id, hash: image.hash }, prompt, duration: 5, ratio });
         await commit(next); setSelected(next.videoShots.at(-1).id); setPlayback(null);
