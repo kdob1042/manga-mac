@@ -300,6 +300,8 @@ task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求
 
 出力取得は[公式出力資料](https://docs.dev.runwayml.com/assets/outputs/)の`dnznrvs05pmza.cloudfront.net`だけを初期許可し、別ホストは拒否する。APIキーを付けずDNS/redirect/MIME/128MiB上限を検証し、署名URLはメモリ内だけで扱う。期限切れや取得失敗は同じtaskから再取得し、新規生成へ退避しない。実APIが別CDNを返す場合は公式根拠・明示許可・安全境界テストを揃えて許可範囲を更新する。
 
+取消応答の消失・task削除・出力期限切れで続行不能の場合は、サービス側確認の明示後にローカル要求だけ採用せず解決できる。費用・task ID・旧採用版を保持し、遠隔取消成功や返金を表す状態へ変えない。取得済み成果物がある要求は対象外とする。
+
 V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作らない撮影準備は既存shot_batchesへscope_type=videoSourceとして保存し、同じblender_forkとShotControlsで専用セッション・camera/frame・撮影・復旧を扱う。撮影版は共通capturesへ保存し、既存開始画像解決器へ渡す。再撮影しても保存済み動画ショットの開始画像参照・採用動画・漫画履歴は変更しない。旧撮影を使う漫画・動画と、同一base_sessionの保存版変更に影響する撮影を読取り専用で表示する。ファイル名から素材の同一性を推定せず、別接続で再登録した素材の対応は自動推定しない。MV-11の実Blender両媒体受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
 ## 13. 参照資料と未確定事項

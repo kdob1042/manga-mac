@@ -198,3 +198,13 @@ V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue
 - 実Blender/Mac受入: 素材を開く→漫画を作らず動画画面で専用撮影を準備→構図変更/960角撮影→開始画像へ選択→保存→再起動。同じ素材の漫画4コマと別動画ショットのカメラ・frame・旧撮影hashが変わらないことを確認する。新撮影の採用前に旧開始画像/動画が維持されること。実API呼出しは専用キー/予算がある場合のみ。
 - 追加: 旧撮影の直接利用・作画経由・採用動画のJob経由の使用箇所を表示。同一base_sessionの保存版差を可視化し、形状変更の検出と混同しない。別接続での素材再登録の同一性は推定しない。
 - 残件: 実BlenderによるMV-11証跡、24GB品質/性能。既存PR #20のCI修正と重複しない変更。
+
+## V-C2: 手動解決・取得HTTP回帰（2026-09-16）
+
+- 取消応答消失/404/期限切れ等は、サービス側の確認を明示してローカルで採用せず解決できる。これはリモート取消確定ではない。task ID・予約/実績費用・旧採用版は保持し、生成の自動再POSTはない。保存済み成果物がある要求には適用しない。
+- 既存Runway adapterの出力要求生成とresponse→一時ファイル→不変保存→SQLite記録をprivate helperへ分離して同じ本番処理をHTTP fixtureで通す。テスト用localhost clientはcfg(test)内部だけ。本番のHTTPSホスト/DNS/redirect規則は変更しない。
+- `CARGO_BUILD_JOBS=1 CARGO_PROFILE_DEV_DEBUG=0 cargo test --locked --manifest-path tests/llm/Cargo.toml`: **23 passed**。POST/GET/DELETEヘッダー、CDNへのキー非送信、404/不正JSON/MIME/サイズ超過/切断/期限切れ/不正MP4、成功の保存と再起動を確認。実Runway/実CDN/TLS経路の成功や動画品質の証明ではない。
+- ローカルRust 1.98.1が利用可能になったため試験を実行。最初の並列debugビルドはarchive mmap errorで失敗し、jobs=1/debug=0で成功。tests/llm/Cargo.lockを固定。cargo auditはこのテスト依存閉包に対し成功。アプリ全体の監査/ビルドはPR #20とmain CIの結果を別途確認する。
+- clippyは基点mainの3警告（policy_transportのmanual_async_fn 2件、storageのmanual_range_patterns 1件）で失敗。PR #20の修正後に再実行する。Runway追加コードの警告とは分ける。
+- Node **43 passed**、build/diff check成功。追加UI `tests/ui/video-recovery.spec.js` の結果はPR CIを参照。ローカルChromium downloadはtimeout/502で失敗。
+- なお、プロセス強制終了で残った孤立一時ファイルの自動整理、実APIの予算/料金照合、Mac内再生・実機品質は残件。起動時の無条件削除で別プロセスの取得を壊す処理は追加していない。
