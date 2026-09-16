@@ -84,12 +84,3 @@ export async function editRegion(panel, characters, instruction, rect, job = nul
   if (!Array.isArray(rect) || rect.length !== 4 || rect.some(n => !Number.isFinite(n) || n < 0 || n > 1) || rect[2] <= 0 || rect[3] <= 0 || rect[0] + rect[2] > 1 || rect[1] + rect[3] > 1) throw Error('修正範囲を選択してください');
   return generatePanel(panel, characters, panel.image, instruction, job, null, styles, { rect });
 }
-
-export async function locateFace(panel, character, model) {
-  if (!character?.image || !panel.image) throw Error('対象人物と正本画像が必要です');
-  const schema = { type: 'object', properties: { found: { type: 'boolean' }, rect: { type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4 } }, required: ['found', 'rect'] };
-  const response = JSON.parse(await askLLM(model, { schema, images: [panel.image, character.image], prompt: `画像1の中から画像2の正本キャラ「${character.name}」を特定し、顔の表情を編集する矩形を返す。髪、他の人物、服は可能な限り範囲に含めない。rectは画像1の左上基準の正規化[x,y,width,height]（0〜1）。見つからない、複数候補があり特定できない、他人の顔と重なる場合はfound:false。推測で人物を置き換えない。` }));
-  const r = response.rect;
-  if (!response.found || !Array.isArray(r) || r.length !== 4 || r.some(n => !Number.isFinite(n) || n < 0 || n > 1) || r[2] <= 0 || r[3] <= 0 || r[0] + r[2] > 1 || r[1] + r[3] > 1 || r[2] * r[3] > .4) throw Error('顔の範囲を特定できませんでした。画像をドラッグして修正範囲を指定してください');
-  return r;
-}

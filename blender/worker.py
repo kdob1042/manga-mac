@@ -179,6 +179,68 @@ def apply_pose(operation, scene):
     return {'rig': rig.name, 'action': action.name, 'frame': frame}
 
 
+def vector(value, limit):
+    if (not isinstance(value, list) or len(value) != 3 or any(
+            isinstance(n, bool) or not isinstance(n, (int, float)) or not math.isfinite(n)
+            or abs(n) > limit for n in value)):
+        raise ValueError('Invalid bounded vector')
+    return value
+
+
+def editable_object(scene, name):
+    obj = scene.objects.get(name)
+    if (obj is None or obj.library or obj.override_library or len(obj.users_scene) != 1
+            or obj.parent or obj.constraints or obj.animation_data):
+        raise ValueError('Select a local static root object without constraints')
+    return obj
+
+
+def direct_operation(operation, scene):
+    from mathutils import Vector
+    kind = operation['kind']
+    if kind == 'transform':
+        obj = editable_object(scene, operation['object'])
+        obj.location = vector(operation['location'], 10000)
+        obj.rotation_mode = 'XYZ'
+        obj.rotation_euler = vector(operation['rotation'], math.tau)
+    elif kind == 'aim':
+        location = Vector(vector(operation['location'], 10000))
+        target = Vector(vector(operation['target'], 10000))
+        lens = operation['lens']
+        if (isinstance(lens, bool) or not isinstance(lens, (int, float))
+                or not math.isfinite(lens) or not 10 <= lens <= 250 or (target - location).length < 0.001):
+            raise ValueError('Invalid camera target or lens')
+        camera_state(scene)
+        camera = editable_object(scene, scene.camera.name)
+        camera.data = camera.data.copy()
+        camera.location = location
+        camera.rotation_mode = 'XYZ'
+        camera.rotation_euler = (target - location).to_track_quat('-Z', 'Y').to_euler()
+        camera.data.lens = lens
+    elif kind == 'light':
+        obj = editable_object(scene, operation['object'])
+        color = vector(operation['color'], 1)
+        energy = operation['energy']
+        if (obj.type != 'LIGHT' or any(n < 0 for n in color) or isinstance(energy, bool)
+                or not isinstance(energy, (int, float)) or not math.isfinite(energy) or not 0 <= energy <= 100000):
+            raise ValueError('Invalid light')
+        obj.data = obj.data.copy()
+        obj.data.energy = energy
+        obj.data.color = color
+    bpy.context.view_layer.update()
+
+
+def object_state(scene):
+    return [{'name': o.name, 'type': o.type, 'location': list(o.location),
+             'rotation': list(o.rotation_euler), 'dimensions': list(o.dimensions),
+             'parent': o.parent.name if o.parent else None,
+             'editable': not (o.library or o.override_library or len(o.users_scene) != 1
+                              or o.parent or o.constraints or o.animation_data),
+             'energy': o.data.energy if o.type == 'LIGHT' else None,
+             'color': list(o.data.color) if o.type == 'LIGHT' else None}
+            for o in scene.objects]
+
+
 def pin_dependencies(roots):
     before = dependencies(roots)
     # Blender owns packing and reference resolution; no second asset store is introduced.
@@ -212,7 +274,7 @@ def execute(request):
         raise ValueError('Input checkpoint changed')
     operation = request['operation']
     kind = operation.get('kind')
-    allowed = {'pose': {'kind', 'rig', 'action', 'frame'}, 'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
+    allowed = {'transform': {'kind', 'object', 'location', 'rotation'}, 'aim': {'kind', 'location', 'target', 'lens'}, 'light': {'kind', 'object', 'energy', 'color'}, 'pose': {'kind', 'rig', 'action', 'frame'}, 'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
     if kind not in allowed or set(operation) != allowed[kind]:
         raise ValueError('Unsupported operation or unexpected arguments')
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
@@ -248,6 +310,8 @@ def execute(request):
         scene.camera = camera
         scene.camera.data.lens = lens
         bpy.context.view_layer.update()
+    if kind in {'transform', 'aim', 'light'}:
+        direct_operation(operation, scene)
     if kind == 'pose':
         applied_pose = apply_pose(operation, scene)
     # Pack before rendering or persisting any new version. Unsupported dependencies fail closed.
@@ -281,13 +345,13 @@ def execute(request):
     result = {
         'protocol': 1, 'blender_version': list(bpy.app.version),
         'blender_build': bpy.app.build_hash.decode(), 'gui_required': False,
-        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import', 'pose'], 'passes': ['color'],
+        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import', 'pose', 'transform', 'aim', 'light'], 'passes': ['color'],
         'checkpoint': {'file': checkpoint.name, 'hash': checksum(checkpoint)},
         'image': image, 'state': camera_state(scene), 'dependencies': remaining, 'packed_sources': pinned_from,
         'dependencies_pinned': True,
         'applied_pose': applied_pose,
         'rigs': [obj.name for obj in scene.objects if obj.type == 'ARMATURE'],
-        'assets': asset_state(), 'library_assets': catalog, 'imported_asset': imported,
+        'objects': object_state(scene), 'assets': asset_state(), 'library_assets': catalog, 'imported_asset': imported,
         'scenes': [{'name': item.name, 'cameras': [obj.name for obj in item.objects if obj.type == 'CAMERA'],
                     'objects': [obj.name for obj in item.objects], 'frame': item.frame_current} for item in bpy.data.scenes],
     }
