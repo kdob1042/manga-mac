@@ -188,3 +188,13 @@ Rustに公式POST/header/実画像bytesを受けるローカルHTTP fixture、�
 - V-D: 既存固定撮影→API実入力の橋渡しは追加済み。漫画コマ不要の動画専用Scene/Camera/frame撮影UI、共有素材新版の影響先表示、MV-11実Blender受入は残件。Issue #5のDポーズ/F/G/H/E-RECOVERYも継続。
 
 V-Cは実装候補であり、有料生成・安全境界の受入完了やIssue #9完了とは扱わない。
+
+
+## V-D1: 漫画コマなしの動画撮影導線（2026-09-16）
+
+- 実装: 既存shot_batches/ShotControls/blender_fork/recordCaptureを媒体別scopeへ拡張。動画用の撮影準備→Scene/Camera/frame→撮影→開始画像選択が可能。漫画panels/historyを生成・変更せず、再撮影は旧開始画像と動画を保持する。
+- ローカル: `npm ci`、`npm test`（42件）、`npm run build`、`git diff --check` 成功。
+- `tests/ui/video-capture.spec.js` はテスト内だけでIPCを模擬し、空のpanelsから保存・撮影寸法・原作/人物対応・再読込を確認する。実Blender動作の証明ではない。ローカルChromium取得はtimeout/502、UI実行結果はPRのCIを参照。
+- 実Blender/Mac受入: 素材を開く→漫画を作らず動画画面で専用撮影を準備→構図変更/960角撮影→開始画像へ選択→保存→再起動。同じ素材の漫画4コマと別動画ショットのカメラ・frame・旧撮影hashが変わらないことを確認する。新撮影の採用前に旧開始画像/動画が維持されること。実API呼出しは専用キー/予算がある場合のみ。
+- 追加: 旧撮影の直接利用・作画経由・採用動画のJob経由の使用箇所を表示。同一base_sessionの保存版差を可視化し、形状変更の検出と混同しない。別接続での素材再登録の同一性は推定しない。
+- 残件: 実BlenderによるMV-11証跡、24GB品質/性能。既存PR #20のCI修正と重複しない変更。

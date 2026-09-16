@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { call, desktop } from './bridge';
+import { changedBaseUsers, usageLabel } from './asset-usage';
 
-export default function BlenderSettings({ disabled, run, notify }) {
+export default function BlenderSettings({ disabled, run, notify, project }) {
   const [binary, setBinary] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [library, setLibrary] = useState(''), [source, setSource] = useState('');
   const [assets, setAssets] = useState([]), [asset, setAsset] = useState(''), [filter, setFilter] = useState('');
   const [session, setSession] = useState(null), [lens, setLens] = useState(50);
   useEffect(() => { if (desktop()) call('blender_latest').then(setSession).catch(() => notify('Blenderの保存状態を読めませんでした')); }, []);
+  const affected = project ? changedBaseUsers(project, session) : [];
   const pending = session?.jobs?.some(job => ['unknown', 'running', 'candidate'].includes(job.status));
   const refresh = async () => {
     if (!session) return;
@@ -38,7 +40,7 @@ export default function BlenderSettings({ disabled, run, notify }) {
     <label>Blender実行ファイル<input value={binary} onChange={e => setBinary(e.target.value)}/></label>
     <label>読み込みを許可する素材フォルダ<input value={library} onChange={e => setLibrary(e.target.value)} placeholder="/Users/名前/BlenderAssets"/></label>
     <label>開くblendファイル<input value={source} onChange={e => setSource(e.target.value)} placeholder="素材フォルダ内のファイル.blend"/></label>
-    <small>専用のバックグラウンド処理で開きます。元のblendと、開いているBlenderの画面は変更しません。撮影画像はまだ漫画化へ接続されていません。</small>
+    <small>専用のバックグラウンド処理で開きます。元のblendと、開いているBlenderの画面は変更しません。撮影画像は漫画・動画で共通利用できます。</small>
     <button onClick={() => run('Blenderの接続を確認中', async () => {
       const created = await call('blender_register', { input: { binary, library_root: library, source } });
       setSession(created);
@@ -70,6 +72,7 @@ export default function BlenderSettings({ disabled, run, notify }) {
         <button disabled={job.status === 'running' || job.expected_revision !== session.revision} onClick={() => recover(job, 'adopt')}>保存結果を検証して採用</button>
         <button disabled={job.status === 'running'} onClick={() => recover(job, 'abandon')}>採用せずに解消</button>
       </div>)}
+      {!!affected.length && <details><summary>素材元の保存版が変わった撮影・使用先（{affected.length}件）</summary><p>同じ接続から分けた旧ショットです。カメラ等の変更も含む保存版の差であり、形状変更を判定した結果ではありません。旧版は固定して保持し、自動更新・再生成しません。</p><ul>{affected.map(row => <li key={`${row.type}:${row.id}`}>{usageLabel(row)}</li>)}</ul></details>}
       {session.preview && <img src={session.preview} alt="Blenderで実際に撮影した画像" style={{ maxWidth: '100%' }}/>}
     </>}
   </fieldset>;
