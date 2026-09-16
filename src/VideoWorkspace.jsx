@@ -67,8 +67,8 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
       <p>Runway / gen4.5 · 開始画像1枚と動きの指示を api.dev.runwayml.com へ送ります。</p>
       <small>5秒あたり60 creditsの見積り（2026-09-16確認）。作品の累計予約枠を上限にします。失敗・成否不明も予約枠を消費し、再登録でリセットしません。実際の請求額はサービス側でも確認してください。</small>
-      <label>Runway APIキー<input type="password" autoComplete="off" disabled={!!connectionId} value={apiKey} onChange={e => setApiKey(e.target.value)}/></label>
-      <label>作品の上限（credits）<input type="number" min="60" max="6000" step="60" disabled={!!connectionId} value={budget} onChange={e => setBudget(Number(e.target.value))}/></label>
+      <label>Runway APIキー<input aria-label="Runway APIキー" type="password" autoComplete="off" disabled={!!connectionId} value={apiKey} onChange={e => setApiKey(e.target.value)}/></label>
+      <label>作品の上限（credits）<input aria-label="作品の上限（credits）" type="number" min="60" max="6000" step="60" disabled={!!connectionId} value={budget} onChange={e => setBudget(Number(e.target.value))}/></label>
       <label><input type="checkbox" disabled={!!connectionId} checked={approved} onChange={e => setApproved(e.target.checked)}/>この送信先・モデル・送信内容・予算内での生成を許可する</label>
       {!connectionId ? <button disabled={!apiKey.trim() || !approved} onClick={() => run('動画接続を登録', async () => {
         const id = await call('register_video', { input: { credential: apiKey, max_credits: budget, approved } });
@@ -79,12 +79,12 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     </fieldset></details>
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
       <legend>ショットを追加</legend>
-      <label>原作の場面<select value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
+      <label>原作の場面<select aria-label="原作の場面" value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
       <details><summary>共有Blender素材から動画用に撮影</summary>
         <p>接続・人物設定で開いた素材から専用ショットを作ります。漫画のコマは不要です。別のコマ・動画のカメラやフレームは変更しません。</p>
-        <label>撮影する人物<select multiple value={captureCharacters} onChange={e => setCaptureCharacters([...e.target.selectedOptions].map(o => o.value))}>{project.characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+        <label>撮影する人物<select aria-label="撮影する人物" multiple value={captureCharacters} onChange={e => setCaptureCharacters([...e.target.selectedOptions].map(o => o.value))}>{project.characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <button disabled={!desktop() || !sceneId} onClick={() => run('動画用の撮影を準備', prepareCapture)}>動画用の撮影ショットを作る</button>
-        <label>動画用の撮影ショット<select value={captureSourceId} onChange={e => setCaptureSourceId(e.target.value)}><option value="">撮影対象を選択</option>{sources.map(s => <option key={s.id} value={s.id}>{s.sceneId} · {s.id.slice(0, 8)}</option>)}</select></label>
+        <label>動画用の撮影ショット<select aria-label="動画用の撮影ショット" value={captureSourceId} onChange={e => setCaptureSourceId(e.target.value)}><option value="">撮影対象を選択</option>{sources.map(s => <option key={s.id} value={s.id}>{s.sceneId} · {s.id.slice(0, 8)}</option>)}</select></label>
         <ShotControls project={project} current={current} commit={commit} panels={[]} chosen={captureSource} busy={busy} run={run} scopeType="videoSource" captureSize={ratio.split(':').map(Number)}/>
         {captureSource?.capture_revision && <button onClick={() => {
           if (captureSource.snapshotId !== project.active) { notify('旧原作の撮影です。現在の場面で新しい撮影ショットを作ってください。'); return; }
@@ -92,9 +92,9 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
           notify('撮影を開始画像に選びました。動きの指示を入力してショットを保存してください。');
         }}>この撮影を開始画像に使う</button>}
       </details>
-      <label>開始画像<select value={imageId} onChange={e => setImageId(e.target.value)}><option value="">保存済みの画像を選択</option>{images.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
-      <label>動きの指示<textarea value={prompt} maxLength={1000} onChange={e => setPrompt(e.target.value)} placeholder="カメラがゆっくり寄る。人物は小さくうなずく。"/></label>
-      <label>動画の寸法<select value={ratio} onChange={e => setRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label><small>PNGの開始画像と同じ縦横比を選んでください。比率が違う画像の自動切り抜きは拒否します。</small>
+      <label>開始画像<select aria-label="開始画像" value={imageId} onChange={e => setImageId(e.target.value)}><option value="">保存済みの画像を選択</option>{images.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
+      <label>動きの指示<textarea aria-label="動きの指示" value={prompt} maxLength={1000} onChange={e => setPrompt(e.target.value)} placeholder="カメラがゆっくり寄る。人物は小さくうなずく。"/></label>
+      <label>動画の寸法<select aria-label="動画の寸法" value={ratio} onChange={e => setRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label><small>PNGの開始画像と同じ縦横比を選んでください。比率が違う画像の自動切り抜きは拒否します。</small>
       <button disabled={!sceneId || !imageId || !prompt.trim()} onClick={() => run('動画ショットを保存', async () => {
         const p = current.current, scene = snapshot.scenes.find(s => s.id === sceneId), image = images.find(a => a.key === imageId);
         if (!scene || !image) throw Error('場面・画像を選び直してください');
@@ -112,8 +112,8 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
       <h3>{shot.sceneId} · 5秒 · 無音</h3>
       <p className="video-source">{sourceForPanel(shot, project.snapshots.find(s => s.id === shot.snapshotId))}</p>
       <p>{shot.prompt}</p><small>開始画像 {shot.startImage.hash.slice(0, 12)} · {shot.ratio}</small>
-      <label>このショットの動き<textarea value={editPrompt} maxLength={1000} disabled={busy} onChange={e => setEditPrompt(e.target.value)}/></label>
-      <label>このショットの寸法<select disabled={busy} value={editRatio} onChange={e => setEditRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label>
+      <label>このショットの動き<textarea aria-label="このショットの動き" value={editPrompt} maxLength={1000} disabled={busy} onChange={e => setEditPrompt(e.target.value)}/></label>
+      <label>このショットの寸法<select aria-label="このショットの寸法" disabled={busy} value={editRatio} onChange={e => setEditRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label>
       <button disabled={busy || !model?.connectionId} onClick={() => run('動きの案を作成中', async () => { setEditPrompt(await draftVideoMotion(current.current, shot, model)); notify('動きの案を作りました。内容を確認して「指示を保存する」で反映できます。'); })}>演出LLMで動きの案を作る</button>
       <button disabled={busy || !editPrompt.trim() || (editPrompt === shot.prompt && editRatio === shot.ratio)} onClick={() => run('動きの指示を保存', async () => {
         const next = validateVideoShot(current.current, { ...shot, prompt: editPrompt, ratio: editRatio });
