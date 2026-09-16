@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { call, desktop } from './bridge';
-import { compositePixels, sourceForPanel } from './core';
+import { compositePixels } from './core';
+import { textForPanel } from './localization';
 export function imageOf(src) { return new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = () => reject(Error('画像を読み込めません')); im.src = src; }); }
 export async function mergeRegion(before, after, rect) {
   if (!rect || rect.length !== 4 || rect.some(n => !Number.isFinite(n) || n < 0 || n > 1) || rect[2] <= 0 || rect[3] <= 0 || rect[0] + rect[2] > 1.00001 || rect[1] + rect[3] > 1.00001) throw Error('修正範囲を選択してください');
@@ -22,7 +23,7 @@ export function lines(ctx, text, width) {
   }
   return result;
 }
-export async function pagePNG(panels, snapshots) {
+export async function pagePNG(panels, snapshots, localizations = [], locale = 'ja') {
   const canvas = document.createElement('canvas'); canvas.width = 1600; canvas.height = 2260;
   const ctx = canvas.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 1600, 2260);
   for (const [i, p] of panels.entries()) {
@@ -30,7 +31,10 @@ export async function pagePNG(panels, snapshots) {
     ctx.strokeStyle = '#111'; ctx.lineWidth = 4; ctx.strokeRect(x, y, 720, 1030);
     if (!p.image) throw Error('未作画のコマがあります');
     ctx.drawImage(await imageOf(p.image), x + 2, y + 2, 716, 716);
-    const text = sourceForPanel(p, snapshots.find(s => s.id === p.snapshotId));
+    const snapshot = snapshots.find(s => s.id === p.snapshotId);
+    const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
+    if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
+    const text = textForPanel(p, snapshot, localization);
     ctx.font = '24px sans-serif'; ctx.fillStyle = '#111';
     const wrapped = lines(ctx, text, 676);
     if (wrapped.length > 10) throw Error('文字がコマに収まりません。コマ計画を細分化してから書き出してください');
@@ -41,8 +45,8 @@ export async function pagePNG(panels, snapshots) {
 export async function exportCBZ(project) {
   if (!project.panels.length) throw Error('書き出すページがありません');
   const zip = new JSZip();
-  for (let i = 0; i < project.panels.length; i += 4) zip.file(`${String(i / 4 + 1).padStart(3, '0')}.png`, (await pagePNG(project.panels.slice(i, i + 4), project.snapshots)).split(',')[1], { base64: true });
-  zip.file('provenance.json', JSON.stringify({ sources: project.snapshots.map(({ repo, sha, id }) => ({ repo, sha, id })), panels: project.panels.map(({ image, ...p }) => p) }, null, 2));
+  for (let i = 0; i < project.panels.length; i += 4) zip.file(`${String(i / 4 + 1).padStart(3, '0')}.png`, (await pagePNG(project.panels.slice(i, i + 4), project.snapshots, project.localizations, project.output_locale)).split(',')[1], { base64: true });
+  zip.file('provenance.json', JSON.stringify({ locale: project.output_locale, sources: project.snapshots.map(({ repo, sha, id }) => ({ repo, sha, id })), localizations: project.output_locale === 'en' ? project.localizations.map(({ units, ...item }) => ({ ...item, unit_ids: units.map(unit => unit.id) })) : [], panels: project.panels.map(({ image, ...p }) => p) }, null, 2));
   return zip.generateAsync({ type: 'blob' });
 }
 export async function download(blob, name) { if (desktop()) { const data = new Uint8Array(await blob.arrayBuffer()); let binary = ''; for (let i = 0; i < data.length; i += 32768) binary += String.fromCharCode(...data.subarray(i, i + 32768)); return call('export_file', { name, data: btoa(binary) }); } const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 10000); }
