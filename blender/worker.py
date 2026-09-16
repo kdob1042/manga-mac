@@ -139,8 +139,13 @@ def import_asset(operation, library, scene):
 def pin_dependencies(roots):
     before = dependencies(roots)
     # Blender owns packing and reference resolution; no second asset store is introduced.
-    # Linked blend libraries must be packed before generic external files;
-    # pack_all rejects absolute library paths that pack_libraries resolves.
+    # Blender only packs linked libraries referenced relatively to the current
+    # checkpoint. Validate the absolute source first, then rewrite that reference.
+    current_dir = Path(bpy.data.filepath).resolve(strict=True).parent
+    for linked in bpy.data.libraries:
+        absolute = within(bpy.path.abspath(linked.filepath), roots)
+        linked.filepath = bpy.path.relpath(str(absolute), start=str(current_dir))
+    # Linked blend libraries must be packed before generic external files.
     if bpy.data.libraries and bpy.ops.file.pack_libraries() != {'FINISHED'}:
         raise ValueError('Blender could not pack linked libraries')
     if bpy.ops.file.pack_all() != {'FINISHED'}:
