@@ -18,10 +18,10 @@ fn valid_id(id:&str)->bool {id.len()==36 && id.bytes().enumerate().all(|(i,b)| i
 #[serde(deny_unknown_fields)]
 pub struct Registration {pub binary:String,pub library_root:String,pub source:String}
 #[derive(Deserialize,Serialize,Clone)]
-struct Session {id:String,binary:PathBuf,library:PathBuf,checkpoint:PathBuf,hash:String,revision:u64,state:Value}
-#[derive(Deserialize,Serialize,Clone,Copy)]
+struct Session {id:String,binary:PathBuf,library:PathBuf,checkpoint:PathBuf,hash:String,revision:u64,state:Value,#[serde(default)] parent_session_id:Option<String>}
+#[derive(Deserialize,Serialize,Clone)]
 #[serde(tag="kind",rename_all="lowercase",deny_unknown_fields)]
-pub enum Operation { Inspect, Camera{lens:f64}, Capture{width:u32,height:u32} }
+pub enum Operation { Inspect, Camera{lens:f64}, Capture{width:u32,height:u32}, Shot{scene:String,camera:String,frame:i32} }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {pub session_id:String,pub request_id:String,pub expected_revision:u64,pub operation:Operation}
@@ -32,7 +32,7 @@ pub fn register(db:&rusqlite::Connection,input:Registration)->Result<Value,Strin
     let binary=canonical(&input.binary)?;let library=canonical(&input.library_root)?;let source=canonical(&input.source)?;
     if !binary.is_file() || !library.is_dir() || !source.is_file() || !source.starts_with(&library) || source.extension().and_then(|s|s.to_str())!=Some("blend") {return Err("Blender実行ファイル・認可素材フォルダ・その中のblendを指定してください".into());}
     let id=format!("session-{:x}",Sha256::digest(format!("{}:{:?}",source.display(),std::time::SystemTime::now()).as_bytes()));
-    let session=Session{id:id.clone(),binary,library,hash:hash(&source)?,checkpoint:source,revision:0,state:Value::Null};
+    let session=Session{id:id.clone(),binary,library,hash:hash(&source)?,checkpoint:source,revision:0,state:Value::Null,parent_session_id:None};
     db.execute("INSERT INTO blender_sessions(id,data) VALUES(?1,?2)",rusqlite::params![id,serde_json::to_string(&session).map_err(|_|error())?]).map_err(|_|error())?;
     Ok(json!({"session_id":id,"revision":0,"state":null,"verified":false}))
 }
@@ -57,9 +57,48 @@ pub fn status(db:&rusqlite::Connection,id:&str)->Result<Value,String> {
 }
 pub fn latest(db: &rusqlite::Connection) -> Result<Option<Value>, String> {
     use rusqlite::OptionalExtension;
-    let id: Option<String> = db.query_row("SELECT id FROM blender_sessions ORDER BY rowid DESC LIMIT 1", [], |r| r.get(0)).optional().map_err(|_|error())?;
+    let id: Option<String> = db.query_row("SELECT id FROM blender_sessions WHERE json_extract(data,'$.parent_session_id') IS NULL ORDER BY rowid DESC LIMIT 1", [], |r| r.get(0)).optional().map_err(|_|error())?;
     id.map(|id|status(db,&id)).transpose()
 }
+/// Fork immutable checkpoints by reference. Each child is later opened in a separate
+/// Blender process and written to a fresh job folder; no shared Object/Action is mutated.
+pub fn fork_shots(db: &mut rusqlite::Connection, id: &str, expected_revision: u64, ids: Vec<String>) -> Result<Vec<Value>, String> {
+    if ids.is_empty() || ids.len() > 4 || ids.iter().any(|id| !valid_id(id)) || ids.iter().collect::<std::collections::HashSet<_>>().len() != ids.len() {
+        return Err("1〜4件の重複しないショットIDが必要です".into());
+    }
+    let tx = db.transaction().map_err(|_| error())?;
+    let base = session(&tx, id)?;
+    if base.revision != expected_revision || base.state["dependencies_pinned"] != true {
+        return Err("版固定済みのBlender接続を再確認してください".into());
+    }
+    let pending: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE session_id=?1 AND status IN ('running','unknown','candidate'))", [id], |r| r.get(0)).map_err(|_| error())?;
+    if pending { return Err("先に未確定の要求を解決してください".into()); }
+    let folder = base.checkpoint.parent().ok_or_else(error)?;
+    let verified = verify_output(folder)?;
+    if verified != base.state || verified["checkpoint"]["hash"] != base.hash { return Err(error()); }
+    let mut output = Vec::new();
+    for id in ids {
+        let mut shot = base.clone();
+        shot.parent_session_id = Some(base.id.clone());
+        shot.id = id.clone(); shot.revision = 0;
+        tx.execute("INSERT INTO blender_sessions(id,data) VALUES(?1,?2)", rusqlite::params![id,serde_json::to_string(&shot).map_err(|_| error())?]).map_err(|_| "このショットIDは使用済みです")?;
+        output.push(json!({"session_id":id,"revision":0,"state":shot.state}));
+    }
+    tx.commit().map_err(|_| error())?;
+    Ok(output)
+}
+
+/// Read an immutable, completed capture even after its working session advances.
+pub fn capture(db: &rusqlite::Connection, root: &Path, session_id: &str, request_id: &str) -> Result<Value, String> {
+    if !valid_id(request_id) { return Err(error()); }
+    let recorded: String = db.query_row("SELECT result FROM blender_jobs WHERE id=?1 AND session_id=?2 AND status='complete'", rusqlite::params![request_id,session_id], |r| r.get(0)).map_err(|_| error())?;
+    let folder = root.join("blender").join(request_id);
+    let verified = verify_output(&folder)?;
+    let expected: Value = serde_json::from_str(&recorded).map_err(|_| error())?;
+    if verified != expected || verified["image"].is_null() || verified["dependencies_pinned"] != true { return Err("版固定済みの撮影成果物ではありません".into()); }
+    Ok(json!({"session_id":session_id,"request_id":request_id,"state":verified,"preview":preview(&folder)?}))
+}
+
 fn preview(folder: &Path) -> Result<String, String> {
     use base64::Engine;
     use std::io::Read;
@@ -161,11 +200,11 @@ fn sync_output(folder: &Path) -> Result<(), String> {
 
 pub async fn execute(db:&Mutex<rusqlite::Connection>,root:&Path,request:Request)->Result<Value,String> {
     if !valid_id(&request.request_id) {return Err("要求IDが不正です".into());}
-    match request.operation {Operation::Camera{lens} if !lens.is_finite() || !(10.0..=250.0).contains(&lens)=>return Err("焦点距離は10〜250mmです".into()),Operation::Capture{width,height} if !(64..=4096).contains(&width) || !(64..=4096).contains(&height)=>return Err("撮影寸法は64〜4096です".into()),_=>{}}
+    match &request.operation {Operation::Camera{lens} if !lens.is_finite() || !(10.0..=250.0).contains(lens)=>return Err("焦点距離は10〜250mmです".into()),Operation::Capture{width,height} if !(64..=4096).contains(width) || !(64..=4096).contains(height)=>return Err("撮影寸法は64〜4096です".into()),Operation::Shot{scene,camera,frame} if scene.is_empty() || camera.is_empty() || scene.len()>256 || camera.len()>256 || !(-1048574..=1048574).contains(frame)=>return Err("Scene・Camera・frameが不正です".into()),_=>{}}
     let mut current={
         let db=db.lock().map_err(|_|error())?;let current=session(&db,&request.session_id)?;
         if current.revision!=request.expected_revision {return Err("Blenderの版が更新されています。状態を再確認してください".into());}
-        let pending:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE session_id=?1 AND status IN ('running','unknown'))",[&request.session_id],|r|r.get(0)).map_err(|_|error())?;
+        let pending:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE session_id=?1 AND status IN ('running','unknown','candidate'))",[&request.session_id],|r|r.get(0)).map_err(|_|error())?;
         if pending {return Err("応答未確定のBlender要求があります。状態確認が必要です".into());}
         db.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision) VALUES(?1,?2,'running',?3)",rusqlite::params![request.request_id,request.session_id,request.expected_revision]).map_err(|_|"送信済みの要求です。自動再実行しません")?;current
     };
@@ -222,7 +261,7 @@ mod recovery_tests {
         std::fs::write(&source, b"synthetic checkpoint for file integrity tests only").unwrap();
         let session = Session { id: "test-session".into(), binary: PathBuf::new(),
             library: root.clone(), checkpoint: source.clone(), hash: hash(&source).unwrap(),
-            revision: 0, state: Value::Null };
+            revision: 0, state: Value::Null, parent_session_id: None };
         db.execute("INSERT INTO blender_sessions(id,data) VALUES(?1,?2)",
             rusqlite::params![session.id, serde_json::to_string(&session).unwrap()]).unwrap();
         db.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision) VALUES(?1,'test-session','running',0)", [&id]).unwrap();
@@ -293,6 +332,31 @@ mod recovery_tests {
         std::fs::write(folder.join("capture.png"), b"changed").unwrap();
         assert!(status(&f.db, "test-session").is_err());
         assert_eq!(session(&f.db, "test-session").unwrap().revision, 1);
+    }
+
+    #[test]
+    fn four_shots_share_only_an_immutable_checkpoint_and_duplicate_ids_are_atomic() {
+        let mut f = fixture(); initialize(&f.db).unwrap();
+        let folder = f.root.join("blender").join(&f.id);
+        let mut result = verify_output(&folder).unwrap();
+        result["dependencies_pinned"] = json!(true);
+        std::fs::write(folder.join("result.json"), result.to_string()).unwrap();
+        recover(&mut f.db, &f.root, "test-session", &f.id, 0, RecoveryAction::Adopt).unwrap();
+        let ids: Vec<String> = (1..=4).map(|n| format!("00000000-0000-4000-8000-{n:012}")).collect();
+        let shots = fork_shots(&mut f.db, "test-session", 1, ids.clone()).unwrap();
+        assert_eq!(shots.len(), 4);
+        for id in &ids {
+            let shot = session(&f.db, id).unwrap();
+            assert_eq!(shot.checkpoint, folder.join("checkpoint.blend"));
+            assert_eq!(shot.revision, 0);
+            assert_eq!(shot.parent_session_id.as_deref(), Some("test-session"));
+        }
+        assert_eq!(latest(&f.db).unwrap().unwrap()["session_id"], "test-session");
+        let fresh = "00000000-0000-4000-8000-000000000005".to_string();
+        assert!(fork_shots(&mut f.db, "test-session", 1, vec![fresh.clone(),ids[0].clone()]).is_err());
+        assert!(session(&f.db, &fresh).is_err()); // transaction rolled back the first insertion
+        std::fs::write(folder.join("checkpoint.blend"), b"tampered").unwrap();
+        assert!(fork_shots(&mut f.db, "test-session", 1, vec![fresh]).is_err());
     }
 
 }

@@ -59,3 +59,28 @@ operation('reject-size', source, {'kind': 'capture', 'width': 0, 'height': 128},
 operation('reject-nan', source, {'kind': 'camera', 'lens': float('nan')}, False)
 (root / 'acceptance.json').write_text(json.dumps({'STATE-01': 'pass', 'save_reopen': 'pass', 'source_unchanged': True, 'fixed_operations': 'pass', 'version': initial['blender_version'], 'build': initial['blender_build'], 'before': first['image']['hash'], 'after': final['image']['hash'], 'Mac': 'not_run'}))
 print('Actual Blender inspection, camera readback, rendering, save/reopen and rejected operations passed')
+
+# Stage D: independent checkpoints, Blender-owned asset metadata, and external texture pinning.
+fixture_d = root / 'fixture-d.py'
+fixture_d.write_text("import bpy\nscene=bpy.context.scene\nscene.render.engine='CYCLES'\nscene.cycles.samples=1\nbpy.data.objects['Cube'].asset_mark()\nbpy.data.objects['Cube'].asset_data.description='Reusable test actor'\nimage=bpy.data.images.new('External', width=8, height=8)\nimage.filepath_raw=" + repr(str(root / 'texture.png')) + "\nimage.file_format='PNG'\nimage.save()\nimage.source='FILE'\nimage.use_fake_user=True\nbpy.ops.wm.save_as_mainfile(filepath=" + repr(str(root / 'stage-d.blend')) + ")\n")
+assert run(fixture_d).returncode == 0
+source_d = root / 'stage-d.blend'
+fixed = operation('pinned', source_d, {'kind': 'inspect'})
+assert fixed['dependencies_pinned'] and fixed['dependencies'] == []
+assert any(asset['name'] == 'Cube' for asset in fixed['assets'])
+pinned = root / 'pinned/checkpoint.blend'
+(root / 'texture.png').unlink()
+# Old version must still open when its original texture has disappeared.
+old = operation('old-reopen', pinned, {'kind': 'inspect'})
+assert old['dependencies_pinned']
+shots = []
+for i in range(4):
+    result = operation('shot-' + str(i), pinned, {'kind': 'shot', 'scene': fixed['state']['scene'], 'camera': fixed['state']['camera'], 'frame': i + 1})
+    shots.append((root / ('shot-' + str(i)) / 'checkpoint.blend', result))
+hashes_before = [sha(path) for path, _ in shots]
+operation('shot-1-change', shots[1][0], {'kind': 'camera', 'lens': 90})
+assert hashes_before == [sha(path) for path, _ in shots]
+for i in [0, 2, 3]:
+    result = operation('verify-shot-' + str(i), shots[i][0], {'kind': 'inspect'})
+    assert result['state'] == shots[i][1]['state']
+(root / 'acceptance-d.json').write_text(json.dumps({'SCOPE-01': 'pass', 'VERSION-01-local-texture': 'pass', 'asset_metadata': 'pass', 'linked_nested_libraries': 'not_run', 'Mac': 'not_run'}))

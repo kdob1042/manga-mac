@@ -84,3 +84,21 @@ UIは未確定要求がある間の新規撮影を無効化し、失敗後に状
 ## 2026-09-16 main統合
 
 ユーザーのmain統合指示に従い、PR #7のLLMとPR #8のBlenderの変更を統合。設定UI、IPC登録、依存、CIのllm/blender両ジョブとMacの依存ゲートを保持した。Node共通テスト12件をLinux上で再実行し全件pass。Rust toolchainはこの実行環境に無く、Rust compile/fmt/clippy、SDK監査とlockfile、Playwright、実Blender、Mac実機はnot_runのまま。マージはB/Cの受入完了を意味しない。残件は上記の引継ぎToDo（Issue #5 comment 5676739718）を継続し、D–HとIssue #9も未完了。
+
+## 段階D-1 — コマ別ショットと固定撮影パック（2026-09-16）
+
+Issue #5 Dの差分実装。Blenderが開いたblend内のasset_data（Object/Collection/Action・catalog ID・tags）とScene/Camera/Object一覧を読み出す。アプリに素材登録DBや3D描画を追加しない。Asset Browserで素材を組み合わせて保存したblendを既存接続画面から開く。全ライブラリ横断検索・未配置素材のアプリ内追加は未実装。
+
+1〜4コマへ、同じ検証済み不変checkpointを参照する独立セッションを割り当てる。操作時は別Blenderプロセスから新jobフォルダへ保存するため他コマのObject/Actionや元素材を書き換えない。操作は既存Scene/Camera/frame選択・焦点距離・撮影。任意のボーン編集やポーズライブラリの適用UIは未実装（既存Blenderで準備したframeを選択）。CharacterBindingは人物ID→ショット内Object参照だけを保持。
+
+Blender標準pack_all/pack_librariesで依存を格納し、保存したblendを再読込して未固定依存を検出する。未対応の動画/UDIM/volume/シミュレーション/Geometry Nodes等は拒否。採用した画像とcheckpointのhash・Scene/Camera/frame・解像度/色管理・カメラ行列・Cycles seed/sample数を撮影版へ記録。GPU差での画素一致や全Blender機能対応は保証しない。撮影履歴を読み直すIPCはDB記録とファイルhashを照合する。
+
+確認済み: npm ci、Node 19件、npm run build、Python構文。lint/typecheckの独立スクリプトはない。ブラウザ接続自体は成功したが開発画面127.0.0.1はERR_BLOCKED_BY_CLIENT。Rust/Blender未配置、公式配布先の取得はタイムアウト。UI・Rust・実Blenderはnot_run。判定はD全体完了ではなくD-1候補。
+
+次のエージェント向け残件（実行環境が揃い次第）:
+
+- D-RUST: `cargo generate-lockfile --manifest-path tests/blender/Cargo.toml` → lockをレビュー・保存 → `cargo test --locked --manifest-path tests/blender/Cargo.toml --lib`。4ショット/重複ID rollback/tamper拒否の追加試験を含む。続けてclippyとappのcargo fmt/check。既存Bのlock/監査ToDoも残る。
+- D-REAL: 公式Blender 4.5.13のSHA確認後 `python3 blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"`。追加試験は4ショット分離・素材metadata・外部texture削除後の旧版再読込。`acceptance-d.json`を保存。リンクライブラリの入れ子/リンク元texture/pose Action共有の実fixtureを追加してVERSION/SCOPEを確認する。失敗時は対応不可として拒否し、pinned判定を緩めない。
+- D-UI: `npm run test:ui`に加え、4コマ割当→構図変更→撮影→旧原稿保持→再起動→保存済み撮影接続を実機で確認。割当結果の保存に失敗したら「保存済みショットを復元」、撮影結果の作品保存に失敗したら「保存済み撮影をこのコマへ接続」。再実行で同じjobを送らない。
+- D-ASSET: 正本§4/8、Issue #5 Dに従い既存Asset Library横断取得・選択とpose適用を追加。分類の正本はBlender。現在の窓口は開いたblendだけなのでREUSE-01全体はnot_run/未完。
+- BACKUP-3D: 3D履歴は`blender/`＋SQLiteを含む作品フォルダ全体で保管する。JSON書出しは画像とbinding情報のみでblendを含まない。作品フォルダ復元を実機で検証する。
