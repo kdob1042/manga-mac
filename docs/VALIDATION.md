@@ -9,13 +9,15 @@
 - PR #20はmain `7de822b49efae0805e23d644e6ba4f67faafb98b`へ統合済み。必須4ジョブ（web/storage/llm/blender）は[CI 35053023339](https://github.com/kdob1042/manga-mac/actions/runs/35053023339)で成功。Blender 4.5.13の実行・保存/再読込・Rust IPCを含む。Macのアプリ内操作・品質検証とは別。
 - V-D1（PR #21）とV-C2（PR #22）は下記追補を参照。Node43件、native HTTP/保存23件、統合候補のfmt/clippy、固定LLMテスト依存190件の監査はローカル実行済み。UIはGitHub ActionsのChromiumで検証する。ローカルbrowser downloadの失敗をUI全体の未実行理由にしない。
 - 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
+- CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
 
 ### 次の担当の着手順
 
 1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
 2. `npm ci && npm test && npm run build`。UIは`npx playwright install --with-deps chromium`後`npm run test:ui`。取得できない環境ではPRのwebジョブとUI-test-resultsを使う。
 3. `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`。tests/storage、tests/llm、tests/blenderの各Cargo.tomlで`cargo test --locked`と`cargo clippy --locked --all-targets -- -D warnings`。lockをCIで再生成せず、変更が必要なら差分と監査をPRへ含める。実Blender試験はworkflowと同じ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
-4. macOSビルドはmainのmacジョブを確認する。PR側でskipされるのは重複実行防止であり、macOS合格ではない。アプリ実機受入はINSTALL_MACと正本§11/12で別に記録する。
+4. `dev`へのマージ後は、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは重複実行防止であり、devマージ後のrunがMac検証である。
+5. `main`へのマージ後は、pushの`macOS release package`と`Manga-Mac-Apple-Silicon-unsigned` artifactを確認する。これは配布物生成であり、実Mac受入はINSTALL_MACと正本§11/12で別に記録する。
 
 ### 未完タスクの実装入口と合格条件
 
