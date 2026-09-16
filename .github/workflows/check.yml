@@ -14,7 +14,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: manga-${{ github.event.pull_request.head.ref || github.ref_name }}
+  # Keep dev push validation separate from a dev-to-main PR; the latter must not cancel the former.
+  group: manga-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
