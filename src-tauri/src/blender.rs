@@ -21,7 +21,7 @@ pub struct Registration {pub binary:String,pub library_root:String,pub source:St
 struct Session {id:String,binary:PathBuf,library:PathBuf,checkpoint:PathBuf,hash:String,revision:u64,state:Value,#[serde(default)] parent_session_id:Option<String>}
 #[derive(Deserialize,Serialize,Clone)]
 #[serde(tag="kind",rename_all="lowercase",deny_unknown_fields)]
-pub enum Operation { Inspect, Camera{lens:f64}, Capture{width:u32,height:u32}, Shot{scene:String,camera:String,frame:i32} }
+pub enum Operation { Inspect, Catalog, Import{file:String,hash:String,asset_type:String,name:String}, Camera{lens:f64}, Capture{width:u32,height:u32}, Shot{scene:String,camera:String,frame:i32} }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Request {pub session_id:String,pub request_id:String,pub expected_revision:u64,pub operation:Operation}
@@ -200,7 +200,7 @@ fn sync_output(folder: &Path) -> Result<(), String> {
 
 pub async fn execute(db:&Mutex<rusqlite::Connection>,root:&Path,request:Request)->Result<Value,String> {
     if !valid_id(&request.request_id) {return Err("要求IDが不正です".into());}
-    match &request.operation {Operation::Camera{lens} if !lens.is_finite() || !(10.0..=250.0).contains(lens)=>return Err("焦点距離は10〜250mmです".into()),Operation::Capture{width,height} if !(64..=4096).contains(width) || !(64..=4096).contains(height)=>return Err("撮影寸法は64〜4096です".into()),Operation::Shot{scene,camera,frame} if scene.is_empty() || camera.is_empty() || scene.len()>256 || camera.len()>256 || !(-1048574..=1048574).contains(frame)=>return Err("Scene・Camera・frameが不正です".into()),_=>{}}
+    match &request.operation {Operation::Camera{lens} if !lens.is_finite() || !(10.0..=250.0).contains(lens)=>return Err("焦点距離は10〜250mmです".into()),Operation::Capture{width,height} if !(64..=4096).contains(width) || !(64..=4096).contains(height)=>return Err("撮影寸法は64〜4096です".into()),Operation::Import{file,hash,asset_type,name} if file.len()>4096 || file.is_empty() || hash.len()!=64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) || !matches!(asset_type.as_str(), "OBJECT" | "COLLECTION") || name.is_empty() || name.len()>256=>return Err("素材参照が不正です".into()),Operation::Shot{scene,camera,frame} if scene.is_empty() || camera.is_empty() || scene.len()>256 || camera.len()>256 || !(-1048574..=1048574).contains(frame)=>return Err("Scene・Camera・frameが不正です".into()),_=>{}}
     let mut current={
         let db=db.lock().map_err(|_|error())?;let current=session(&db,&request.session_id)?;
         if current.revision!=request.expected_revision {return Err("Blenderの版が更新されています。状態を再確認してください".into());}

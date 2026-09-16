@@ -84,3 +84,16 @@ for i in [0, 2, 3]:
     result = operation('verify-shot-' + str(i), shots[i][0], {'kind': 'inspect'})
     assert result['state'] == shots[i][1]['state']
 (root / 'acceptance-d.json').write_text(json.dumps({'SCOPE-01': 'pass', 'VERSION-01-local-texture': 'pass', 'asset_metadata': 'pass', 'linked_nested_libraries': 'not_run', 'Mac': 'not_run'}))
+
+# REUSE-01: query native Asset Library again, import exact source hash, reject stale ref.
+catalog = operation('catalog', source, {'kind': 'catalog'})
+asset = next(a for a in catalog['library_assets'] if a['file'] == 'stage-d.blend' and a['name'] == 'Cube' and a['kind'] == 'OBJECT')
+# Restore texture only for the mutable source library import; the earlier fixed pack required none.
+assert run(fixture_d).returncode == 0
+catalog = operation('catalog-refresh', source, {'kind': 'catalog'})
+asset = next(a for a in catalog['library_assets'] if a['file'] == 'stage-d.blend' and a['name'] == 'Cube' and a['kind'] == 'OBJECT')
+imported = operation('asset-import', source, {'kind': 'import', 'file': asset['file'], 'hash': asset['hash'], 'asset_type': asset['kind'], 'name': asset['name']})
+assert imported['imported_asset']['hash'] == asset['hash']
+assert imported['dependencies_pinned']
+operation('reject-stale-asset', source, {'kind': 'import', 'file': asset['file'], 'hash': '0' * 64, 'asset_type': asset['kind'], 'name': asset['name']}, False)
+operation('reject-asset-escape', source, {'kind': 'import', 'file': '../escape.blend', 'hash': asset['hash'], 'asset_type': asset['kind'], 'name': asset['name']}, False)
