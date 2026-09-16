@@ -19,7 +19,7 @@
 ## 使い方
 
 1. GitHub Actionsの `Check and build Mac app` が成功した実行から `Manga-Mac-Apple-Silicon-unsigned` を取得します。macOS 14以降のApple Silicon向けです。ビルド失敗中はDMGは存在しません。
-2. DMG内のManga Mac.appをApplicationsへコピーします。初期ビルドは署名・公証されていません。
+2. DMG内のManga Mac.appをApplicationsへコピーします。初期ビルドは署名・公証されていません。ヘッダーの「表示言語」で日本語／Englishを切り替えられ、選択は端末内に保存されます。UIだけが切り替わり、原作本文・人物名・制作データは翻訳しません。
 3. LLMの接続先を設定します。外部APIならモデルIDとAPIキーを入力。ローカルならOllamaを別途インストールし、使うモデルを取得します。
 4. 「接続・人物設定」で原作リポジトリ（初期値 `kdob1042/Kamiya-Kawai`）、話ID、必要ならContents: readのみのfine-grained tokenを指定します。トークンはメモリのみ保持しSQLiteやログへ保存しません。
 5. 更新を確認し「この版を取り込む」。人物名・固定特徴・正本画像を登録します。
