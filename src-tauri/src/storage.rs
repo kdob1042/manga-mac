@@ -1,3 +1,5 @@
+#[path = "image_recovery.rs"]
+pub mod image_recovery;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -441,7 +443,10 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
 // An old UI snapshot must not erase task IDs, submitted markers or reserved cost.
 fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
     if let Some(jobs) = old["jobs"].as_array() {
-        for job in jobs.iter().filter(|j| j.get("remote").is_some()) {
+        for job in jobs
+            .iter()
+            .filter(|j| j.get("remote").is_some() || j.get("local_image").is_some())
+        {
             let target = next["jobs"]
                 .as_array_mut()
                 .ok_or("Missing jobs")?
@@ -450,6 +455,8 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
                 .ok_or("Submitted jobs cannot be removed")?;
             for field in [
                 "manifest",
+                "panelId",
+                "kind",
                 "input_hash",
                 "scope",
                 "base_revision",
@@ -460,7 +467,11 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
                     return Err("Submitted job inputs are immutable".into());
                 }
             }
-            target["remote"] = job["remote"].clone();
+            for key in ["remote", "local_image"] {
+                if let Some(value) = job.get(key) {
+                    target[key] = value.clone();
+                }
+            }
         }
     }
     Ok(())
@@ -515,7 +526,7 @@ pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn setup() -> (Connection, std::path::PathBuf) {
+    pub(super) fn setup() -> (Connection, std::path::PathBuf) {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let dir = loop {
             let suffix = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -531,7 +542,7 @@ mod tests {
         initialize(&db).unwrap();
         (db, dir)
     }
-    fn fixture() -> Value {
+    pub(super) fn fixture() -> Value {
         serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap()
     }
     fn video_fixture() -> Vec<u8> {

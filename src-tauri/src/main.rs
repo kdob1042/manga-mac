@@ -314,7 +314,7 @@ async fn prepare_engine(state: State<'_, AppState>) -> Result<String, String> {
     run_engine(None).await
 }
 #[tauri::command]
-async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<String, String> {
+async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
     let _guard = state
         .engine
         .try_lock()
@@ -351,14 +351,29 @@ async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<St
             return Err("参照画像のハッシュが一致しません".into());
         }
     }
-    let output = run_engine(Some(request.to_string())).await?;
-    let encoded = output
-        .lines()
-        .find_map(|l| l.strip_prefix("MANGA_RESULT:"))
-        .ok_or("画像エンジンの応答が不正です")?;
-    STANDARD.decode(encoded).map_err(err)?;
-    Ok(format!("data:image/png;base64,{encoded}"))
+    let destination = {
+        let mut db = state.db.lock().map_err(err)?;
+        storage::image_recovery::reserve(&mut db, &state.root, &request)?
+    };
+    request["output"] = destination;
+    run_engine(Some(request.to_string())).await?;
+    let db = state.db.lock().map_err(err)?;
+    let result = storage::image_recovery::recover(
+        &db,
+        &state.root,
+        request["job"]["id"].as_str().ok_or("Missing job ID")?,
+    )?;
+    Ok(result["image"]
+        .as_str()
+        .ok_or("Missing image result")?
+        .to_string())
 }
+#[tauri::command]
+fn recover_image(job_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    storage::image_recovery::recover(&db, &state.root, &job_id)
+}
+
 #[tauri::command]
 fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<String, String> {
     if name.is_empty()
@@ -491,6 +506,7 @@ fn main() {
             cancel_llm,
             llm_request,
             generate_image,
+            recover_image,
             prepare_engine
         ])
         .run(tauri::generate_context!())
