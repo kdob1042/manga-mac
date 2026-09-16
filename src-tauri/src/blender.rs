@@ -421,7 +421,7 @@ pub async fn execute(
             || file.is_empty()
             || hash.len() != 64
             || !hash.bytes().all(|b| b.is_ascii_hexdigit())
-            || !matches!(asset_type.as_str(), "OBJECT" | "COLLECTION")
+            || !matches!(asset_type.as_str(), "OBJECT" | "COLLECTION" | "ACTION")
             || name.is_empty()
             || name.len() > 256 =>
         {

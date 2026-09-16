@@ -253,7 +253,7 @@ Armature dataを対象だけ分離して選択状態の共有を避け、Blender
 
 追加した実Blender fixtureは、Armature dataを共有する2人と、4つの漫画用＋1つの動画用checkpointを使用する。対象の保存後bone値、他人物のanimation/Action値、旧checkpoint hash、再読込、非対応対象拒否を検証し`acceptance-pose.json`へ記録する。UI fixtureは正しいsession/expected revisionへの型付き要求と、撮影前に作品/旧画像を変えないことを確認する。実行結果は対象PRの必須CIを参照し、未実行時点でpassとしない。
 
-残件: 外部Pose LibraryからのAction asset取込、アニメーション/制約付きリグへのPose Library workflow、実Macでの操作と演技品質。既存Asset LibraryのObject/Collection取込は維持。
+追補: 既存Asset Library検索/標準appendへAction assetを追加。選択したソースhashを照合し、未割当のActionもfake userでcheckpointへ保存する。実fixtureで外部の人物ObjectとポーズActionを別々に取込→保存/再読込→適用し、元ファイルの不変性を検証する。骨の回転方式に合わないActionチャンネルも拒否する。残件はアニメーション/制約付きリグのworkflow、実Mac操作と演技品質。
 
 ## V-C-TEMP: 強制終了した動画取得の一時ファイル回収
 
@@ -262,3 +262,9 @@ Armature dataを対象だけ分離して選択状態の共有を避け、Blender
 回収対象はこのprotocolのUUID名の通常ファイルだけ。シンボリックリンク、hard link、directory、旧`.video-download-<UUID>`、保存済みmediaは対象外。旧バージョンにはlockがなく稼働中か判定できないため、旧tempの自動整理は行わない。強制終了が起きても新規生成POST・費用予約・採用版には触れない。
 
 ローカルnative **25 passed**（23既存+子プロセス用1+回収試験1）。実子プロセスがlockを持つ間は回収0、強制終了後はその1ファイルだけ回収し、別の進行中取得/旧方式/リンク/保存済みファイルを保持することを確認。既存のHTTP切断/期限切れ/oversize/保存/再起動も再実行。MacのFile lock動作はmainのnative regressionで別確認する。
+
+### F-TRIPOの接続前調査（2026-09-16）
+
+公式拡張[固定commit d65412f](https://github.com/VAST-AI-Research/tripo-3d-for-blender/tree/d65412f4877f620aa2bb5027dc8cba087b79dabd)（自己申告版0.7.7、READMEのライセンス表示MIT）を確認した。`server.py`のlocalhost:9876には認証のない`execute_code`と、生のキーを返す`get_tripo_apikey`がある。`__init__.py`はキーをBlender Sceneプロパティに保持する。この窓口の有効化は本アプリの任意コード禁止・秘密を作品へ保存しない境界に合わないため、未変更の拡張MCPは接続しない。
+
+次の実装は、公式拡張が使うSDK/APIの必要部分だけを固定・監査して、既存の認可/予算/不変保存/job対応へ接続する。キーのメモリ限定、送信/取得先、retry、出力GLBの許可パス、再起動後の外部task照会をfixtureで先に確認する。キー未提供でも調査・fixture実装は可能だが、実生成/料金/リグ品質の受入とは分ける。今回Tripo拡張のインストール・MCP有効化・API送信は行っていない。

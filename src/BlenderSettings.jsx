@@ -61,7 +61,7 @@ export default function BlenderSettings({ disabled, run, notify, project }) {
       <label>素材を絞り込む<input value={filter} onChange={e => setFilter(e.target.value)}/></label>
       <label>Blenderの既存アセット<select value={asset} onChange={e => setAsset(e.target.value)}><option value="">選択</option>{assets.map((a, i) => ({ a, i })).filter(({ a }) => `${a.name} ${a.file}`.toLowerCase().includes(filter.toLowerCase())).map(({ a, i }) => <option key={i} value={i}>{a.name} — {a.file} ({a.kind})</option>)}</select></label>
       <button disabled={pending || asset === '' || !assets[Number(asset)]} onClick={() => { const a = assets[Number(asset)]; operate({ kind: 'import', file: a.file, hash: a.hash, asset_type: a.kind, name: a.name }); }}>選択素材を舞台へ取り込む</button>
-      <small>Blenderでアセットに指定されたObject・Collectionを表示します。素材を更新したら再検索してください。</small>
+      <small>Blenderでアセットに指定されたObject・Collection・Action（ポーズ素材）を表示します。素材を更新したら再検索してください。</small>
       <button disabled={pending} onClick={() => operate({ kind: 'capture', width: 768, height: 768 })}>撮影する</button>
       <button onClick={() => run('Blenderの状態を確認中', async () => {
         const current = await refresh();
