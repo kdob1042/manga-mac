@@ -270,7 +270,21 @@ BlenderはまずMacに別途インストールされた対応版を検出し、�
 
 Linuxの契約／既存UI試験、macOSビルド、実Blender接続、実画像AI、対象Mac実機、署名・公証・クリーン導入を別判定にする。文書更新、モック成功、ビルド成功を実機品質の証拠にしない。
 
-## 12. 参照資料と未確定事項
+## 12. 動画1ショットへの共通参照（Issue #9）
+
+漫画の原作・人物・作画・撮影版を再利用する。`videoShots`は既存snapshotId/sceneId/unitIds、人物ID、開始画像の不変版/hash、動きの指示、尺/寸法、採用動画版を持つ。原文や3D素材を第二の編集可能モデルへ複製しない。漫画コマを動画ショットの必須親にはしない。
+
+schema 4へv1/v2/v3を互換移行し、既存panels/history/jobsと作品言語データを保持する。`videoRevisions`と`videoHistory`は動画用の版・Undoだけを担い、制作要求は既存jobsのscope=`videoShot`へ追加する。動画操作で漫画historyを変更しない。旧schemaのアプリへ戻す際は移行前の作品フォルダを復元し、version番号だけを書き換えない。
+
+開始画像は既存ArtworkRevisionまたは固定CaptureRevisionから実bytesを解決・hash照合する。jobのmanifestへ原作commit、対象範囲、作成元版、接続ID/モデル、実入力hash、変換、指示、出力条件、基準採用版を固定する。`sourceDependencies`は開始画像の出所、`providerInputs`は実送信する開始画像1枚のみ。旧画像に存在しない人物参照版は捏造しない。現段階は画像変換を行わずidentityを記録する。変換を追加する場合は派生画像の実hashと変換矩形を別途固定する。
+
+初期APIはRunway `gen4.5` image_to_video、5秒・無音。2026-09-16に公式[APIガイド](https://docs.dev.runwayml.com/guides/using-the-api/)と[公式SDKの固定型定義](https://github.com/runwayml/sdk-python/blob/8c49671dfb729bfd405b6bb93a9f70dc9706cb3f/src/runwayml/types/image_to_video_create_params.py)を確認した。初期許可ratioは1280:720/720:1280/1104:832/960:960/832:1104/1584:672、promptTextは1000 UTF-16 code units以内、画像は5MB以内。終了画像/depth/pose等を指定した要求は拒否する。API全体が対応する2〜10秒のうち、初期評価では5秒だけを扱う。
+
+V-Aの実装は共通参照解決・manifest・保存移行まで。実API送信/動画ファイル保存/再生UIは後続V-B/Cであり、未接続の生成ボタンは表示しない。有料POST前にjobを永続化し、再起動でrunningはunknownへ変更する。未確定要求を再POSTせず、確定済taskを照会する。原作/入力/採用版の変更後に届く結果は候補に留める。試行上限は同じ採用版で3回、取下げでリセットしない。実行許可・予算・資格情報・task永続化はRust接続境界で追加検証するまで外部送信しない。
+
+V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、作品JSONにはartifact/hash/MIME/sizeのみを持つ。署名URL/秘密/巨大base64は保存しない。V-Cは既存接続境界を利用した薄いRESTアダプタ一つ、V-Dは既存Blender撮影の共通解決だけを追加する。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
+
+## 13. 参照資料と未確定事項
 
 一次資料（2026-09-14参照。`latest`は説明用リンクであり依存固定値ではない）：
 
