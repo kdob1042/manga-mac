@@ -18,7 +18,7 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 
 ## 使い方
 
-1. GitHub Actionsの `Check and build Mac app` が成功した実行から `Manga-Mac-Apple-Silicon-unsigned` を取得します。macOS 14以降のApple Silicon向けです。ビルド失敗中はDMGは存在しません。
+1. `main`へのマージ後にGitHub Actionsの `Check and build Mac app` が実行されます。`macOS release package` が成功した実行から `Manga-Mac-Apple-Silicon-unsigned` を取得します。これはmacOS 14以降のApple Silicon向けです。`dev`の `macOS validation` が作る成果物は統合後の検証用で、配布には`main`の成果物を使います。ビルド失敗中はDMGは存在しません。
 2. DMG内のManga Mac.appをApplicationsへコピーします。初期ビルドは署名・公証されていません。
 3. LLMの接続先を設定します。外部APIならモデルIDとAPIキーを入力。ローカルならOllamaを別途インストールし、使うモデルを取得します。
 4. 「接続・人物設定」で原作リポジトリ（初期値 `kdob1042/Kamiya-Kawai`）、話ID、必要ならContents: readのみのfine-grained tokenを指定します。トークンはメモリのみ保持しSQLiteやログへ保存しません。
@@ -62,13 +62,13 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 
 ## ブランチ運用
 
-- `main`: 配布・本番相当の正本。ActionsのMacビルドや配布判断はこのブランチを基準にする。
-- `dev`: 通常開発の統合先。小さな機能追加・修正・文書更新を作業ブランチからPRで集約する。
+- `main`: 配布・本番相当の正本。マージ後は`macOS release package`で配布用DMGだけを生成する。
+- `dev`: 通常開発の統合先。非文書変更をマージした後は、共通Linuxチェックと`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を完了させる。
 - `feature/*`・`fix/*`・`docs/*`: `dev`から作り、原則として`dev`宛てのPRにする。
-- `dev → main`: 受け入れ可能なまとまりごとにPRを作り、共通テスト、Macビルド、未検証事項を区別して確認してからマージする。
+- `dev → main`: `dev`でのMac検証が成功したまとまりだけをPRで昇格させる。PRでは共通Linuxチェックを確認し、mainマージ後の配布用DMG生成とは分けて扱う。
 - `hotfix/* → main`: 重大不具合だけの例外。反映後は`main → dev`で必ず同期する。
 
-`main`と`dev`へ直接pushせず、PRを経由する。原作同期機能が読む`Kamiya-Kawai/main`と、本アプリの開発用`dev`を混同しない。
+`macOS validation`が失敗したコミットは`main`へ昇格させず、原因を修正して`dev`へ反映する。`main`と`dev`へ直接pushせず、PRを経由する。原作同期機能が読む`Kamiya-Kawai/main`と、本アプリの開発用`dev`を混同しない。
 
 ## 開発
 
@@ -90,7 +90,7 @@ cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-ap
 npm run tauri dev
 ```
 
-GitHub ActionsでWebテスト後、macOSのSwiftエンジンとTauri DMGをビルドします。実機の生成受入試験の代替にはなりません。
+GitHub Actionsでは、PRで共通Linuxチェック、`dev`へのマージ後にMac固有のビルド・回帰試験・検証用DMG生成、`main`へのマージ後に配布用DMG生成を行います。Actionsの成功は、実機での生成品質・視覚・性能受入試験の代替にはなりません。
 
 ## 実機受入試験
 
