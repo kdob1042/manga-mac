@@ -341,8 +341,14 @@ PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/350
 
 ## #46 — 仮想環境での実演出LLM受入
 
-`Real LLM and Blender acceptance` はLinux Actionsで実Ollama（固定バイナリSHA-256）とQwen2.5 3Bを動かし、製品の `directPanel` → Rust接続管理／rig-core → 実LLM → Rust Blender保存層 → 実Blenderまで接続する。テスト専用stdio bridgeは既存の公開関数を呼ぶだけで、推論結果やBlender応答をモックしない。APIキー・作品原稿・課金APIを使わず、公開可能な立方体シーンを使う。モデルタグ・取得digest・応答全文・操作履歴・実PNG・SQLiteをartifactに保存する。
+`Real LLM and Blender acceptance` はLinux Actionsで実Ollama（固定バイナリSHA-256）とQwen2.5 7Bを動かし、製品の `directPanel` → Rust接続管理／rig-core → 実LLM → Rust Blender保存層 → 実Blenderまで接続する。テスト専用stdio bridgeは既存の公開関数を呼ぶだけで、推論結果やBlender応答をモックしない。APIキー・作品原稿・課金APIを使わず、公開可能な立方体シーンを使う。モデルタグ・取得digest・応答全文・操作履歴・実PNG・SQLiteをartifactに保存する。
 
 検証対象は4コマの焦点距離と異なる撮影画像、nativeプロセス再起動後の1コマ修正、他コマのcheckpoint不変、不足素材によるblockedと撮影抑止、原本hash不変。応答を正解に置き換えたり、失敗を成功まで再試行しない。最大30推論要求・35分で停止する。これは既に計画したコマの演出から撮影までの受入であり、実画像モデルによる漫画化、実人物素材の演技品質、Mac GUI、24GB実機性能は未実施として別管理する。
 
 関連PRとActionsの実行結果をIssue #46へ記録する。`acceptance.json`のpass、実PNG、transcriptを確認して判定し、ジョブを追加しただけでは受入成功にしない。
+
+実行で判明した点（2026-09-16）: 3Bの初回はaction＋operation:nullを返し停止。応答スキーマをactionとready/blockedの分岐にして、状態と操作内容を連動させた。修正後の3Bは1コマ撮影に成功したが2コマ目で同じ操作を再提案し、安全停止した（run 35099379478）。モデル能力による失敗として保存し、7Bで追加検証する。失敗を無視して完了にはしない。
+
+標準macos-26の実測ではMetalのApple Paravirtual deviceが存在し、物理メモリ7GiB、推奨GPU working set約4.67GiBだった（run 35098338201）。これを根拠に、撮影PNGを製品のSwift画像helperへ渡し、実FLUX.2 klein 4Bで256×256を1回生成する追加試験を設けた。準備600秒・生成600秒で打ち切り、PNG寸法と永続receiptのhashを照合する。結果はReal-image-reviewへ保存。前段が途中で失敗しても既に生成済みのpanel-0.pngがあれば画像側を独立に検証できるが、前段失敗をE2E成功にはしない。画像が未作成なら画像側も失敗になる。作品品質や24GB機の性能受入を代替しない。
+
+実モデルの重い試験はdev向けPRと手動実行で行う。同じ変更を昇格するmain向けPRでは既存必須CIを実施し、実モデル試験を重複実行しない。
