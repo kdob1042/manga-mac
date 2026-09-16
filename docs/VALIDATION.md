@@ -37,3 +37,50 @@ provider別HTTP本文と応答解析をJSとmain.rsから削除してSDKへ移�
 要求は用途・登録済み接続ID・request ID・prompt/schema/画像だけ。登録後のキーはRustメモリだけで保持。HTTP clientは承認済みURL一つへPOSTのみ、HTTPS/443・DNS全アドレス検証と固定・proxy/redirect拒否・要求24MiB/応答8MiB・timeoutを適用。ストリーム/任意multipartは拒否。SDK呼出中のtracing購読を止め、エラーに応答本文を返さない。中止は通信futureをdropし、同一request IDの再送を拒否する。送信済みの中止は課金取消を保証しない。
 
 元のLLM JS契約7件はSDKを実行するRust fixtureへ移植し、Nodeには接続選択/登録要求の2件を残す。原文ID・人物ID・非選択RGBAの既存試験は維持。追加CIでCargo.lock・features・RustSec/OSVを収集し、正式採用前に固定lockfileとfmt結果をコミットして再実行する。実API・Ollama WAN遮断・実Macの操作はnot_run。
+
+## 段階C — 実Blender接続候補、未検証
+
+開始main: `22eab32d5dd4b7aadd8e26e670ec8408d87354f2`。BのSDK変更から独立してAのmainを起点にする。別PRのBを先にマージした場合、main.rs・Cargo・CI・検証文書の両方の差分を保持して更新する。
+
+Blenderの既存CLIと内部Python API `bpy`を固定テンプレートから利用する。bpyは外部HTTP APIではない。外部MCPサーバー/追加常駐プロセスは使わず、アプリ専用子プロセスのstdinだけで型付き操作を渡す。任意Python/shellは受け付けない。既存MCPに追加する必要がある認可・job対応と同じ最小接続部分をRustで持ち、3D描画・camera・scene graphはBlenderを再利用する。
+
+候補対応版はBlender 4.5.13（[公式tag](https://github.com/blender/blender/tree/daeeeca98fb0b6f0994b374d0069893186197a44)、GNU GPL）。配布binaryは公式download.blender.orgの同版とpublisher SHA-256をCIで照合する。まだダウンロード/実行・binary hash固定は完了していない。アプリへBlender本体を同梱せず、Macの既存インストールを指定する。
+
+接続窓口、カメラ焦点距離変更、実値読戻し、PNG撮影、checkpoint保存、期待版/request ID、専用出力フォルダ、旧source非上書き、再起動時unknown化を実装候補に追加。プロセスの環境は必要項目だけ。Blenderの任意script自動実行・compositor/sequenceによる別出力を無効化する。カラー以外の補助パスは未対応。外部依存がある撮影はdependencies_pinned=falseであり、Dの原本パック完成とは扱わない。
+
+ローカルnpm ci・Node 17件・Vite・Python構文確認は成功。実Blenderのcamera/render/save/reopenとRust IPC試験を追加したが、GitHub Actionsがrunner割当・最初のstepより前に終了するため未実行。Cの完了条件は未達。Rustコンパイル/fmt/clippy、UI画面、実Blender、Macは未検証。unknown要求の復旧導線は下記追補で追加したが、実行検証は残件。新しい3Dデータが既存2Dコマへ入り、漫画になる経路はD/Eの残件である。
+
+## 段階C追補 — 未確定要求の復旧（2026-09-15）
+
+既存のBlender要求台帳・成果物検証・SQLiteトランザクションを再利用し、未確定要求を「保存結果を検証して採用」「採用せずに解消」できるようにした。どちらもBlenderを起動しない。採用は要求のsession ID・要求ID・現在版・要求開始版を照合し、成果物hashを検証・同期してから採用版と要求状態を同じトランザクションで更新する。旧版・破損・処理中・解消済みの要求は採用を拒否する。解消時も現在の採用版と成果物ファイルを保持し、プロセス取消済みとは表示しない。
+
+UIは未確定要求がある間の新規撮影を無効化し、失敗後に状態を再取得する。状態一覧では未解決要求を優先して表示する。新しい依存関係・作品スキーマ・Blenderエンジンは追加していない。
+
+追加試験：
+- Rust人工ファイル試験3件：中断後の一度だけの採用、破損・対象違い・ID/版不一致の拒否と非採用解消、旧開始版からの採用拒否。人工blendはファイル整合性検査専用で、実Blenderが開ける証拠ではない。
+- Playwright 2経路：採用／非採用解消後に撮影が可能になり、復旧操作からblender_executeを呼ばないこと。
+- UIテストファイルのJavaScript構文解析のみ、利用可能なV8環境で成功。Playwright・React描画・Rustの実行を意味しない。
+
+### 未検証ToDo
+
+**別エージェントの着手手順・対象PR・コマンド・合格条件は[Issue #5の再開手順](https://github.com/kdob1042/manga-mac/issues/5#issuecomment-5676739718)を参照。** Mac不要の共通/Rust/実Blenderと、実機/資格情報待ちを分けている。下記は概要であり、進捗更新先はIssueのタスクIDとする。
+
+ユーザー指示により、実行できない試験は未完として残し、独立して実装できる作業は継続する。
+
+- [ ] 共通：npm ci / npm test / npm run build / npm run test:ui。GitHub Actionsの開始前失敗を解消後、最新headで実行
+- [ ] Rust：Cargo.lock生成・差分確認・固定、fmt / clippy / test。追加recovery_testsを含む
+- [ ] Blender：既存の実Blender撮影・保存・再読込試験と、実成果物を用いる復旧試験
+- [ ] UI：復旧ボタン2経路のPlaywright実行・スクリーンショット確認
+- [ ] Mac到着後：Tauri実IPC・撮影・終了/再起動・復旧・導入/更新/バックアップ
+- [ ] Mac到着後：画像AIの実入力・品質、24GBピークメモリと処理時間
+- [ ] 配布：macOSビルドとDMG。署名・公証は資格情報が利用可能になってから別判定
+
+実装済み候補と合格確認済みは区別する。チェックを削除せず、実行していない試験にpassを付けない。Cの実Blender受入・D/Eの漫画制作経路は未完。
+
+## 段階C追補 — 再起動後の撮影プレビュー
+
+再起動/状態照会/復旧採用後に撮影previewが返らない不具合を修正。保存manifest・checkpoint/画像hashを検証してpreviewを復元する。サイズ上限・通常ファイル・PNG署名を採用前に確認し、破損を黙って表示しない。PNGの完全なデコード試験とは区別する。復旧後と再読込後のpreview一致、改変拒否のRust試験を追加（recovery_testsは計4件）。Rust/実画像/UIの実行はnot_run。変更コミットはPR #8を参照。
+
+## 2026-09-16 main統合
+
+ユーザーのmain統合指示に従い、PR #7のLLMとPR #8のBlenderの変更を統合。設定UI、IPC登録、依存、CIのllm/blender両ジョブとMacの依存ゲートを保持した。Node共通テスト12件をLinux上で再実行し全件pass。Rust toolchainはこの実行環境に無く、Rust compile/fmt/clippy、SDK監査とlockfile、Playwright、実Blender、Mac実機はnot_runのまま。マージはB/Cの受入完了を意味しない。残件は上記の引継ぎToDo（Issue #5 comment 5676739718）を継続し、D–HとIssue #9も未完了。
