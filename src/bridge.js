@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { migrateProject } from './revisions';
+import { restoreVideoResults } from './video-remote';
 export const desktop = () => !!window.__TAURI_INTERNALS__;
 export async function call(command, args = {}) {
   if (!desktop()) throw Error('この操作はMacアプリで利用できます。ブラウザではサンプルの組版を確認できます。');
@@ -13,7 +14,12 @@ export async function saveProject(project) {
 }
 export async function loadProject() {
   const data = desktop() ? await call('load_project') : await idb('readonly', store => store.get('project'));
-  return data ? migrateProject(typeof data === 'string' ? JSON.parse(data) : data, true) : null;
+  if (!data) return null;
+  const normalized = await migrateProject(typeof data === 'string' ? JSON.parse(data) : data, true);
+  const restored = restoreVideoResults(normalized);
+  // Persist recovered artifact references before playback asks native storage for them.
+  if (JSON.stringify(restored) !== JSON.stringify(normalized)) return saveProject(restored);
+  return restored;
 }
 function idb(mode, action) {
   return new Promise((resolve, reject) => {

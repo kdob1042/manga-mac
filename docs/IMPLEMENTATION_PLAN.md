@@ -286,7 +286,21 @@ V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、�
 
 再生は[Tauri asset protocol](https://v2.tauri.app/reference/config/#assetprotocolconfig)を利用し、初期scopeは空。DBに記録されたrevision IDから正規ファイル/hashを照合して、その一ファイルのみallow_fileする。任意パス・フォルダの公開は行わない。MP4書出しはRust側でファイルcopyと再hashを行い、画像用base64 exportを経由しない。JSONバックアップには動画本体がないため、mediaディレクトリを含む作品フォルダ全体を保管する。
 
-V-Cは既存接続境界を利用した薄いRESTアダプタ一つ、V-Dは既存Blender撮影の共通解決だけを追加する。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
+### V-Cの接続候補
+
+Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
+
+APIは`https://api.dev.runwayml.com/v1/image_to_video`、`X-Runway-Version: 2024-11-06`、gen4.5/5秒/MP4固定。開始画像はRustで既存作画/固定撮影から再解決し、実bytes・hashを照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)で5MBはbase64化後のData URI全体の上限であることを確認し、v1のdecode後サイズ判定を修正。初期実装はPNG/8192px以下/縦横比0.5〜2かつ出力ratioと厳密一致だけを送信する。サービス側の自動中央cropを避けるため、異なる比率を送信前に拒否する。余白付き派生画像を追加する場合は変換/hashを保存する別差分とし、現在は変換なし。
+
+POST前に既存job.remoteへunknown・予約費用・送信日時をSQLite commitする。受信task IDを即保存。古いUI保存でremoteの削除/巻戻しを許さず、送信後のmanifest等を固定する。新規POSTは同じjobで一回だけ。再起動は既存taskのGETに戻し、取得完了artifactがUI保存前に残った場合も候補として一度だけ再接続する。API成功とローカル保存・採用を分ける。
+
+[公式料金](https://docs.dev.runwayml.com/guides/pricing/)を2026-09-16に確認し、12 credits/秒×5秒=60 creditsを事前予約する。利用者は作品累計予約上限60〜6000を指定。失敗・成否不明・取消でも枠を勝手に戻さず、接続再登録でリセットしない。実績が予約額を上回った場合は料金再確認まで新規生成を拒否する。APIに請求上限を強制するパラメータがあるとは仮定せず、サービス側の請求確認と区別する。
+
+task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求中/成否不明を区別する。手動照会は5秒以上間隔をあけ、自動pollや自動再POSTは行わない。公式DELETEは実行中の取消と完了結果の削除を兼ねるため、画面でその影響を明示してから呼ぶ。ローカルの照会停止を取消完了と表示しない。
+
+出力取得は[公式出力資料](https://docs.dev.runwayml.com/assets/outputs/)の`dnznrvs05pmza.cloudfront.net`だけを初期許可し、別ホストは拒否する。APIキーを付けずDNS/redirect/MIME/128MiB上限を検証し、署名URLはメモリ内だけで扱う。期限切れや取得失敗は同じtaskから再取得し、新規生成へ退避しない。実APIが別CDNを返す場合は公式根拠・明示許可・安全境界テストを揃えて許可範囲を更新する。
+
+V-Dは既存Blender撮影の共通解決を利用する。現状の撮影画像は共通入口で解決できるが、漫画コマを作らずに動画専用camera/frameを割り当てるUIとMV-11の実Blender受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
 ## 13. 参照資料と未確定事項
 

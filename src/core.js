@@ -46,4 +46,4 @@ export function sourceForPanel(panel, snapshot) {
 export function revise(project, panels, label) {
   return { ...project, panels, history: [...project.history, { panels: project.panels, label, at: new Date().toISOString() }] };
 }
-export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });
+export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });

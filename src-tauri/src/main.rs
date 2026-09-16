@@ -2,6 +2,7 @@
 pub mod storage;
 mod llm;
 mod policy_transport;
+mod runway;
 
 mod blender;
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -15,6 +16,7 @@ struct AppState {
     connections: llm::Connections,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
+    video: tokio::sync::Mutex<()>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -113,6 +115,52 @@ fn video_export(app: tauri::AppHandle, revision_id: String, state: State<AppStat
     let artifact = storage::video_reference(&db, &revision_id)?;
     let path = storage::export_video(&state.root, &app.path().download_dir().map_err(err)?.join("Manga Mac"), &artifact)?;
     Ok(path.to_string_lossy().into_owned())
+}
+#[tauri::command]
+async fn register_video(input: llm::VideoRegistration, state: State<'_, AppState>) -> Result<String, String> {
+    state.connections.register_video(input).await
+}
+#[tauri::command]
+fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    state.connections.remove_video(&connection_id)
+}
+fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
+    let db=state.db.lock().map_err(err)?;
+    let project: Value=serde_json::from_str(&storage::load(&db,&state.root)?.ok_or("作品がありません")?).map_err(err)?;
+    let job=project["jobs"].as_array().ok_or("Missing jobs")?.iter().find(|j|j["id"].as_str()==Some(job_id)).ok_or("Missing job")?;
+    let shot=project["videoShots"].as_array().ok_or("Missing shots")?.iter().find(|s|s["id"]==job["scope"]["id"]).ok_or("Missing shot")?;
+    let reference=&shot["startImage"];
+    match reference["kind"].as_str() {
+        Some("artwork") => {
+            let artwork=project["artworks"].as_array().ok_or("Missing artwork")?.iter().find(|a|a["id"]==reference["id"] && a["hash"]==reference["hash"]).ok_or("作画版がありません")?;
+            artwork["panel"]["image"].as_str().map(str::to_owned).ok_or("作画画像がありません".into())
+        },
+        Some("capture") => {
+            let c=project["captures"].as_array().ok_or("Missing captures")?.iter().find(|c|c["id"]==reference["id"] && c["image"]["hash"]==reference["hash"] && c["dependencies_pinned"]==true).ok_or("固定撮影版がありません")?;
+            let response=blender::capture(&db,&state.root,c["session_id"].as_str().ok_or("Missing session")?,c["request_id"].as_str().ok_or("Missing request")?)?;
+            if response["state"]["checkpoint"]["hash"]!=c["checkpoint"]["hash"] {return Err("撮影版が一致しません".into());}
+            response["preview"].as_str().map(str::to_owned).ok_or("撮影画像がありません".into())
+        },
+        _=>Err("開始画像の形式が未対応です".into()),
+    }
+}
+#[tauri::command]
+async fn video_submit(job_id: String, connection_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+    let _guard=state.video.try_lock().map_err(|_|"動画APIの操作中です")?;
+    let connection=state.connections.video_connection(&connection_id)?;
+    let image=video_start_image(&state,&job_id)?;
+    runway::submit(&state.db,&job_id,&connection_id,&connection,&image).await
+}
+#[tauri::command]
+async fn video_task(job_id: String, connection_id: String, action: String, accept_remote_deletion: bool, state: State<'_, AppState>) -> Result<Value, String> {
+    let _guard=state.video.try_lock().map_err(|_|"動画APIの操作中です")?;
+    let connection=state.connections.video_connection(&connection_id)?;
+    match action.as_str() {
+        "status"=>runway::status(&state.db,&job_id,&connection).await,
+        "collect"=>runway::collect(&state.db,&state.root,&job_id,&connection).await,
+        "cancel"=>runway::cancel(&state.db,&job_id,&connection,accept_remote_deletion).await,
+        _=>Err("未対応の動画操作です".into()),
+    }
 }
 #[tauri::command]
 async fn register_llm(input: llm::Registration, state: State<'_, AppState>) -> Result<String, String> {
@@ -314,6 +362,7 @@ fn main() {
                 connections: llm::Connections::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
+                video: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })
@@ -331,6 +380,10 @@ fn main() {
             load_project,
             video_playback,
             video_export,
+            register_video,
+            remove_video,
+            video_submit,
+            video_task,
             export_file,
             register_llm,
             remove_llm,

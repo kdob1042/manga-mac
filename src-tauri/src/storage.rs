@@ -324,12 +324,22 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     if !matches!(project["version"].as_u64(), Some(1 | 2 | 3 | 4)) {
         return Err("Unsupported project schema".into());
     }
+    if let Some(jobs) = project.get("jobs") {
+        let mut ids = std::collections::HashSet::new();
+        for job in jobs.as_array().ok_or("Invalid jobs")? {
+            let id = job["id"].as_str().ok_or("Missing job ID")?;
+            if id.is_empty() || !ids.insert(id) { return Err("Duplicate job ID".into()); }
+        }
+    }
     // Commit the previous exact JSON before starting file migration.
     let previous: Option<String> = db
         .query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0))
         .optional()
         .map_err(err)?;
     let backup = previous.as_deref().unwrap_or(data);
+    if let Some(old) = previous.as_deref() {
+        preserve_remote_jobs(&serde_json::from_str(old).map_err(err)?, &mut project)?;
+    }
     db.execute(
         "INSERT OR IGNORE INTO project_backups(hash,data) VALUES(?1,?2)",
         [&hash(backup.as_bytes()), backup],
@@ -345,6 +355,38 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let tx = db.transaction().map_err(err)?;
     tx.execute("INSERT INTO project(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data", [project.to_string()]).map_err(err)?;
     tx.commit().map_err(err)
+}
+
+// An old UI snapshot must not erase task IDs, submitted markers or reserved cost.
+fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
+    if let Some(jobs) = old["jobs"].as_array() {
+        for job in jobs.iter().filter(|j| j.get("remote").is_some()) {
+            let target = next["jobs"].as_array_mut().ok_or("Missing jobs")?.iter_mut()
+                .find(|j| j["id"] == job["id"]).ok_or("Submitted jobs cannot be removed")?;
+            for field in ["manifest", "input_hash", "scope", "base_revision", "source_revision", "active_snapshot"] {
+                if target[field] != job[field] { return Err("Submitted job inputs are immutable".into()); }
+            }
+            target["remote"] = job["remote"].clone();
+        }
+    }
+    Ok(())
+}
+
+pub fn raw_project(db: &Connection) -> Result<Value> {
+    let data: String = db.query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0)).map_err(err)?;
+    serde_json::from_str(&data).map_err(err)
+}
+
+// Native transport metadata lives on the existing job, not in a parallel queue.
+pub fn update_remote_job(db: &mut Connection, id: &str, update: impl FnOnce(&Value, &Value) -> Result<Value>) -> Result<Value> {
+    let tx = db.transaction().map_err(err)?;
+    let mut project = raw_project(&tx)?;
+    let index = project["jobs"].as_array().ok_or("Missing jobs")?.iter().position(|j| j["id"].as_str() == Some(id)).ok_or("Job must be saved before submission")?;
+    let remote = update(&project, &project["jobs"][index])?;
+    project["jobs"][index]["remote"] = remote.clone();
+    tx.execute("UPDATE project SET data=?1 WHERE id=1", [project.to_string()]).map_err(err)?;
+    tx.commit().map_err(err)?;
+    Ok(remote)
 }
 pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
     let data: Option<String> = db
@@ -383,6 +425,26 @@ mod tests {
     }
     fn video_fixture() -> Vec<u8> {
         STANDARD.decode(include_str!("../../tests/fixtures/video-blue.mp4.base64").trim()).unwrap()
+    }
+    #[test]
+    fn stale_ui_cannot_erase_task_id_cost_or_mutate_submitted_input() {
+        let (mut db, dir) = setup();
+        let mut original = fixture();
+        original["jobs"] = json!([{"id":"v","scope":{"type":"videoShot","id":"shot"},"manifest":{"prompt":"original"},"input_hash":"h","status":"running"}]);
+        save(&mut db,&dir,&original.to_string()).unwrap();
+        let remote = json!({"status":"PENDING","task_id":"task","reserved_credits":60});
+        update_remote_job(&mut db,"v",|_,_|Ok(remote.clone())).unwrap();
+        // A stale snapshot has no remote field at all, but saving it preserves native metadata.
+        save(&mut db,&dir,&original.to_string()).unwrap();
+        assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"], remote);
+        original["jobs"][0]["manifest"]["prompt"] = json!("changed");
+        assert!(save(&mut db,&dir,&original.to_string()).is_err());
+        original["jobs"] = json!([]);
+        assert!(save(&mut db,&dir,&original.to_string()).is_err());
+        drop(db);
+        let db=Connection::open(dir.join("test.sqlite3")).unwrap();
+        assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"],remote);
+        fs::remove_dir_all(dir).unwrap();
     }
     #[test]
     fn video_stream_roundtrip_export_and_restart() {

@@ -4,7 +4,7 @@ import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { migrateProject, imageHash } from '../src/revisions.js';
-import { createVideoShot, videoManifest, beginVideoJob, videoJobIsCurrent, resolveStartImage, collectVideoResult, adoptVideoCandidate, undoVideo } from '../src/video.js';
+import { createVideoShot, videoManifest, beginVideoJob, videoJobIsCurrent, resolveStartImage, collectVideoResult, adoptVideoCandidate, undoVideo, validateVideoFrame } from '../src/video.js';
 
 const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 const connection = { id: 'test-only', provider: 'runway', model: 'gen4.5' };
@@ -12,7 +12,7 @@ async function fixture() {
   const p = await migrateProject(legacy), panel = p.panels[0], artwork = p.artworks.find(a => a.id === panel.artwork_revision);
   return createVideoShot(p, { snapshotId: panel.snapshotId, sceneId: panel.sceneId, unitIds: panel.unitIds,
     characterIds: panel.characterIds, startImage: { kind: 'artwork', id: artwork.id, hash: artwork.hash },
-    prompt: 'A slow camera push. No sound.', duration: 5, ratio: '1280:720' });
+    prompt: 'A slow camera push. No sound.', duration: 5, ratio: '960:960' });
 }
 
 test('MV-01 v1/v2/v3 file roundtrip preserves manga and video; restart never resubmits', async () => {
@@ -78,7 +78,7 @@ test('MV-04 unsupported controls, reordered/foreign units, missing assets and in
 test('MV-05 input/source/adopted version changes invalidate result; attempts survive abandonment', async () => {
   const p = await fixture(), shot = p.videoShots[0], { project, job } = await beginVideoJob(p, shot.id, connection);
   assert.equal(await videoJobIsCurrent(project, job), true);
-  for (const change of [{ prompt: 'changed' }, { adopted_revision: 'new-video' }, { ratio: '960:960' }]) {
+  for (const change of [{ prompt: 'changed' }, { adopted_revision: 'new-video' }, { ratio: '1280:720' }]) {
     assert.equal(await videoJobIsCurrent({ ...project, videoShots: [{ ...shot, ...change }] }, job), false);
   }
   assert.equal(await videoJobIsCurrent({ ...project, active: 'new' }, job), false);
@@ -118,4 +118,16 @@ test('MV-07/08 candidates, native verification and per-shot Undo preserve manga 
   await assert.rejects(undoVideo(empty, shotId, verify));
   await assert.rejects(adoptVideoCandidate({ ...collected, active: 'changed' }, job.id, verify));
   assert.throws(() => collectVideoResult(project, job.id, { ...artifact, hash: '../escape' }));
+});
+
+test('encoded image limit and mismatched aspect are rejected before submission without implicit crop', async () => {
+  const p = await fixture(), shot = p.videoShots[0];
+  assert.deepEqual(validateVideoFrame(p.panels[0].image, '960:960'), { width: 1, height: 1 });
+  assert.throws(() => validateVideoFrame(p.panels[0].image, '1280:720'));
+  assert.throws(() => validateVideoFrame('data:image/jpeg;base64,AAAA', '960:960'));
+  const image = `data:image/png;base64,${Buffer.alloc(3_800_000).toString('base64')}`;
+  const hash = await imageHash(image), id = 'large';
+  const large = { ...p, artworks: [...p.artworks, { id, hash, panel: { image } }] };
+  await assert.rejects(resolveStartImage(large, { kind: 'artwork', id, hash }), /base64/);
+  await assert.rejects(videoManifest(p, { ...shot, ratio: '1280:720' }, connection), /縦横比/);
 });

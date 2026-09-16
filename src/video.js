@@ -6,6 +6,16 @@ import { digest, imageHash } from './revisions.js';
 const ratios = ['1280:720', '720:1280', '1104:832', '960:960', '832:1104', '1584:672'];
 const hashPattern = /^[0-9a-f]{64}$/;
 const hashValue = value => digest(new TextEncoder().encode(JSON.stringify(value)));
+export function validateVideoFrame(image, ratio) {
+  // Initial path reuses PNG artwork/captures without implicit provider cropping.
+  if (!image.startsWith('data:image/png;base64,')) throw Error('初期動画入力はPNGの作画・撮影画像に対応しています');
+  const bytes = Uint8Array.from(atob(image.split(',')[1].slice(0, 44)), c => c.charCodeAt(0));
+  if (bytes.length < 24 || bytes.slice(0, 8).join(',') !== '137,80,78,71,13,10,26,10' || String.fromCharCode(...bytes.slice(12, 16)) !== 'IHDR') throw Error('PNGの画像寸法を確認できません');
+  const view = new DataView(bytes.buffer), width = view.getUint32(16), height = view.getUint32(20);
+  const [w, h] = ratio.split(':').map(Number);
+  if (!width || !height || width > 8192 || height > 8192 || width / height < .5 || width / height > 2 || width * h !== height * w) throw Error('開始画像と出力の縦横比を合わせてください。自動切り抜きは行いません');
+  return { width, height };
+}
 function exactKeys(value, allowed) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !allowed.includes(k))) throw Error('未対応の動画入力です');
 }
@@ -44,9 +54,9 @@ export async function resolveStartImage(project, reference, loadCapture) {
       character_bindings: structuredClone(capture.character_bindings ?? []) };
   } else throw Error('未対応の開始画像です');
   if (await imageHash(image) !== reference.hash) throw Error('開始画像のハッシュが一致しません');
-  // This limit applies to the decoded input, before building a provider Data URI.
+  // Runway limits the entire encoded Data URI, including base64 overhead.
   const size = atob(image.split(',')[1]).length;
-  if (size > 5_000_000) throw Error('開始画像は5MB以下にしてください');
+  if (image.length > 5_000_000) throw Error('開始画像は送信用のbase64変換後に5MB以下にしてください');
   return { image, artifact: { id: reference.id, hash: reference.hash, media_type: 'image', mime: image.slice(5, image.indexOf(';')), size }, sourceDependencies: dependencies };
 }
 
@@ -60,6 +70,7 @@ export async function videoManifest(project, shot, connection, loadCapture) {
   exactKeys(connection, ['id', 'provider', 'model']);
   if (typeof connection.id !== 'string' || !connection.id || connection.provider !== 'runway' || connection.model !== 'gen4.5') throw Error('対応する動画接続が未設定です');
   const resolved = await resolveStartImage(project, shot.startImage, loadCapture);
+  validateVideoFrame(resolved.image, shot.ratio);
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
   const manifest = { version: 1, scope: { type: 'videoShot', id: shot.id },
     source: { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds] },
