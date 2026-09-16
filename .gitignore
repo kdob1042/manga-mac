@@ -11,3 +11,6 @@ playwright-report/
 src-tauri/icons/
 
 tests/*/target/
+
+__pycache__/
+*.pyc

@@ -62,6 +62,21 @@ struct Session {
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Operation {
     Inspect,
+    Transform {
+        object: String,
+        location: [f64; 3],
+        rotation: [f64; 3],
+    },
+    Aim {
+        location: [f64; 3],
+        target: [f64; 3],
+        lens: f64,
+    },
+    Light {
+        object: String,
+        energy: f64,
+        color: [f64; 3],
+    },
     Catalog,
     Pose {
         rig: String,
@@ -441,15 +456,11 @@ fn sync_output(folder: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub async fn execute(
-    db: &Mutex<rusqlite::Connection>,
-    root: &Path,
-    request: Request,
-) -> Result<Value, String> {
-    if !valid_id(&request.request_id) {
-        return Err("要求IDが不正です".into());
-    }
-    match &request.operation {
+fn bounded(v: &[f64; 3], limit: f64) -> bool {
+    v.iter().all(|n| n.is_finite() && n.abs() <= limit)
+}
+pub fn validate_operation(operation: &Operation) -> Result<(), String> {
+    match operation {
         Operation::Camera { lens } if !lens.is_finite() || !(10.0..=250.0).contains(lens) => {
             return Err("焦点距離は10〜250mmです".into())
         }
@@ -494,8 +505,61 @@ pub async fn execute(
         {
             return Err("Scene・Camera・frameが不正です".into())
         }
+        Operation::Transform {
+            object,
+            location,
+            rotation,
+        } if object.is_empty()
+            || object.len() > 256
+            || !bounded(location, 10000.0)
+            || !bounded(rotation, std::f64::consts::TAU) =>
+        {
+            return Err(error())
+        }
+        Operation::Aim {
+            location,
+            target,
+            lens,
+        } if !bounded(location, 10000.0)
+            || !bounded(target, 10000.0)
+            || !lens.is_finite()
+            || !(10.0..=250.0).contains(lens)
+            || location
+                .iter()
+                .zip(target)
+                .map(|(a, b)| (a - b).powi(2))
+                .sum::<f64>()
+                < 0.000001 =>
+        {
+            return Err(error())
+        }
+        Operation::Light {
+            object,
+            energy,
+            color,
+        } if object.is_empty()
+            || object.len() > 256
+            || !energy.is_finite()
+            || !(0.0..=100000.0).contains(energy)
+            || !bounded(color, 1.0)
+            || color.iter().any(|n| *n < 0.0) =>
+        {
+            return Err(error())
+        }
         _ => {}
     }
+    Ok(())
+}
+
+pub async fn execute(
+    db: &Mutex<rusqlite::Connection>,
+    root: &Path,
+    request: Request,
+) -> Result<Value, String> {
+    if !valid_id(&request.request_id) {
+        return Err("要求IDが不正です".into());
+    }
+    validate_operation(&request.operation)?;
     let mut current = {
         let db = db.lock().map_err(|_| error())?;
         let current = session(&db, &request.session_id)?;

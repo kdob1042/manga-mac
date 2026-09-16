@@ -7,8 +7,8 @@ export const providers = {
   deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
   custom: { label: 'OpenAI互換API', baseUrl: '' },
 };
-export function defaultConnection(provider = 'ollama', vision = false) {
-  return { provider, purpose: vision ? 'face' : 'plan', baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? (vision ? 'qwen3-vl:4b' : 'qwen3:8b') : '', apiKey: '', connectionId: '', jsonMode: true };
+export function defaultConnection(provider = 'ollama') {
+  return { provider, purpose: 'plan', baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? 'qwen3:8b' : '', apiKey: '', connectionId: '', jsonMode: true };
 }
 export async function registerConnection(config) {
   const { call } = await import('./bridge.js');

@@ -153,3 +153,20 @@ inspect_pose.write_text("import bpy\nbpy.ops.wm.open_mainfile(filepath=" + repr(
 assert run(inspect_pose).returncode == 0
 assert sha(pose_source) == pose_original
 (root / 'acceptance-pose-library.json').write_text(json.dumps({'native_asset_search_append_reopen_apply': 'pass', 'source_unchanged': True, 'Mac': 'not_run'}))
+
+# AI-directed operations reuse bpy transforms, camera mathutils and Light datablocks.
+positioned = operation('direct-place', source, {'kind':'transform','object':'Cube','location':[1,0,0],'rotation':[0,0,0.4]})
+assert next(o for o in positioned['objects'] if o['name']=='Cube')['location'] == [1,0,0]
+aimed = operation('direct-aim', root/'direct-place/checkpoint.blend', {'kind':'aim','location':[5,-5,3],'target':[1,0,0],'lens':50})
+assert aimed['state']['location'] == [5,-5,3]
+assert aimed['state']['lens'] == 50
+lit = operation('direct-light', root/'direct-aim/checkpoint.blend', {'kind':'light','object':'Light','energy':500,'color':[1,0.8,0.6]})
+assert next(o for o in lit['objects'] if o['name']=='Light')['energy'] == 500
+operation('direct-capture', root/'direct-light/checkpoint.blend', {'kind':'capture','width':128,'height':128})
+assert sha(source) == original
+operation('reject-direct-object', source, {'kind':'transform','object':'Missing','location':[0,0,0],'rotation':[0,0,0]}, False)
+operation('reject-direct-vector', source, {'kind':'transform','object':'Cube','location':[float('nan'),0,0],'rotation':[0,0,0]}, False)
+operation('reject-direct-aim', source, {'kind':'aim','location':[0,0,0],'target':[0,0,0],'lens':50}, False)
+operation('reject-direct-light', source, {'kind':'light','object':'Light','energy':-1,'color':[1,1,1]}, False)
+(root/'acceptance-direction.json').write_text(json.dumps({'placement':'pass','camera_aim':'pass','lighting':'pass','capture':'pass','source_unchanged':'pass','invalid_operations':'pass','real_AI':'not_run','Mac':'not_run'}))
+print('Actual Blender AI-operation primitives: placement, aim, lighting, capture and rejection passed')

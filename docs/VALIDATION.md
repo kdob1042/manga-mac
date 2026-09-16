@@ -327,3 +327,14 @@ rollback: 更新前のアプリと元作品フォルダを保持。復元は新�
 PR #36のCI [35070417529](https://github.com/kdob1042/manga-mac/actions/runs/35070417529)ではLinux storage、実Blender、Web（画面14件）、LLM/HTTP/依存監査が成功。UI artifactのバックアップ設定・別作品復元のスクリーンショットを取得し確認した。PRのMacジョブは既存方針によりskip（失敗ではなく未実施）。別途workflow_dispatchまたはmainのビルド結果を確認する。
 
 追加: 復元前のディスク空き容量、旧撮影版のhash、画像/動画/固定Blender・原稿構造契約を含む別ルートへの往復試験を追加。公式rclone 1.75.1のarchive hashを照合し、restic→rclone stdio→一時local remoteで実通信、全量復元、管理外未検証snapshotの保持、破損した新規bundle拒否と旧正常版保護を確認した。このlocal remote試験を実Drive/OneDrive認証の成功とは扱わない。
+
+## #46 / #47 — AI演出と顔推定廃止
+
+開始dev: `75d3a937046f3ca272bbb4d8d5ae0064e7378722`。既存Blender CLI/Python API、shot_batches、固定撮影、画像生成Jobを再利用。顔推定専用用途をRust/JS/UIから除去し、演出LLMのdirection用途で型付きの操作だけを受け付ける。初期設定後の通常経路は「漫画にする」1操作で各コマの演出→撮影→作画へ進む。部分修正は範囲指定→指示→1回の適用。
+
+- Node 52件成功（4コマ独立自動撮影、応答消失の再送防止、停止、原作更新、素材不足、不正操作、12操作上限を追加）。
+- Rust tests/llm：40 passed、2 ignored（従来の実バックアップツール用試験）。顔用途拒否、型付き演出応答、数値・任意コード拒否を含む。
+- Web build成功。既存の静的/動的import混在警告あり。
+- 新UI試験は4コマの自動演出→撮影→作画→顔推定なし局所修正を人工IPCで検証する。実モデルの作画品質とは別。
+- 実Blenderの配置・カメラ方向・照明・撮影・保存版不変・異常値拒否を既存CI試験へ追加。実行結果はPRとIssueへ追記する。
+- 実演出LLM・実画像AI・Mac GUI・複雑なリグ・24GB性能は未実施。視覚的な演技・人物一致を自動保証しない。素材の初回準備と不足時の対応は必要。
