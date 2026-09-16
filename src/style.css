@@ -10,3 +10,5 @@
 .shot-controls fieldset { display: flex; flex-wrap: wrap; gap: 10px; }
 .shot-controls label { display: flex; flex-direction: column; max-width: 180px; }
 .shot-preview { display: block; max-width: 100%; max-height: 420px; object-fit: contain; margin-top: 12px; }
+
+.art img { object-fit: contain; }

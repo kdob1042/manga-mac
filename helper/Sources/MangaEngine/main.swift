@@ -2,7 +2,7 @@ import Foundation
 import MediaGenerationKit
 
 struct Reference: Decodable { let id: String; let name: String; let hash: String; let image: String }
-struct Request: Decodable { let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32 }
+struct Request: Decodable { let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int? }
 
 @main struct MangaEngine {
   static func main() async {
@@ -30,8 +30,10 @@ struct Request: Decodable { let prompt: String; let references: [Reference]; let
       }
       // Model downloads are exclusively triggered by --prepare, never a cloud backend.
       var pipeline = try await MediaGenerationPipeline.fromPretrained(model, backend: .local)
-      pipeline.configuration.width = 768
-      pipeline.configuration.height = 768
+      let width = request.width ?? 768, height = request.height ?? 768
+      guard (256...1024).contains(width), (256...1024).contains(height), width % 64 == 0, height % 64 == 0 else { throw NSError(domain: "Unsupported image dimensions", code: 3) }
+      pipeline.configuration.width = width
+      pipeline.configuration.height = height
       pipeline.configuration.steps = 4
       pipeline.configuration.seed = request.seed
       let results = try await pipeline.generate(prompt: request.prompt, negativePrompt: "text, lettering, watermark", inputs: inputs)
