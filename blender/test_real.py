@@ -1,6 +1,7 @@
 """Actual Blender subprocess acceptance; pass the verified Blender binary as argv[1]."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import subprocess
@@ -16,7 +17,8 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 def run(script, payload=None):
-    result = subprocess.run([binary, '--background', '--factory-startup', '--disable-autoexec', '--python-exit-code', '1', '--python', str(script)], input=json.dumps(payload) if payload else '', text=True, capture_output=True, timeout=180)
+    env = {**os.environ, 'MANGA_BLENDER_TEST_DIAGNOSTICS': '1'}
+    result = subprocess.run([binary, '--background', '--factory-startup', '--disable-autoexec', '--python-exit-code', '1', '--python', str(script)], input=json.dumps(payload) if payload else '', text=True, capture_output=True, timeout=180, env=env)
     with (root / 'blender-test.log').open('a') as log:
         log.write(result.stdout + result.stderr)
     return result
