@@ -1,8 +1,9 @@
 name: Check and build Mac app
-# PRs always run the Linux checks, including docs-only PRs, because protected branches require these checks.
-# A merge to dev runs the full macOS validation.
-# A merge to main only packages the already validated source for distribution.
-# Docs-only pushes skip the expensive post-merge jobs.
+# Pull requests always run a cheap classifier so skipped heavy jobs report a successful conclusion.
+# Normal code-change PRs run the Linux checks.
+# Docs-only PRs, dev-to-main promotions, and main-to-dev synchronizations reuse existing validation.
+# A merge to dev runs macOS validation only when the pushed tree contains code changes.
+# A merge to main packages code changes for distribution.
 on:
   push:
     branches: [dev, main]
@@ -22,11 +23,79 @@ permissions:
   contents: read
 
 jobs:
+  classify:
+    name: classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      run_heavy: ${{ steps.classify.outputs.run_heavy }}
+      reason: ${{ steps.classify.outputs.reason }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - id: classify
+        name: Decide validation scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          PR_BASE: ${{ github.event.pull_request.base.ref || '' }}
+          PR_HEAD: ${{ github.event.pull_request.head.ref || '' }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          BEFORE_SHA: ${{ github.event.before || '' }}
+          CURRENT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          set_output() {
+            echo "run_heavy=$1" >> "$GITHUB_OUTPUT"
+            echo "reason=$2" >> "$GITHUB_OUTPUT"
+          }
+
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            if [[ "$PR_HEAD" == "dev" && "$PR_BASE" == "main" ]]; then
+              set_output false "dev-to-main-promotion"
+              exit 0
+            fi
+            if [[ "$PR_HEAD" == "main" && "$PR_BASE" == "dev" ]]; then
+              set_output false "main-to-dev-sync"
+              exit 0
+            fi
+            files="$(git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          elif [[ "$EVENT_NAME" == "push" ]]; then
+            if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
+              files="$(git diff-tree --no-commit-id --name-only -r "$CURRENT_SHA")"
+            else
+              files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
+            fi
+          else
+            set_output true "manual-run"
+            exit 0
+          fi
+
+          if [[ -z "$files" ]]; then
+            set_output false "no-file-change"
+            exit 0
+          fi
+
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            if [[ "$file" != docs/* && "$file" != *.md ]]; then
+              set_output true "code-change"
+              exit 0
+            fi
+          done <<< "$files"
+
+          set_output false "docs-only"
+
   llm:
+    needs: classify
     if: >
-      github.event_name == 'pull_request' ||
+      needs.classify.outputs.run_heavy == 'true' &&
+      (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -67,10 +136,12 @@ jobs:
             tests/llm/Cargo.lock
 
   blender:
+    needs: classify
     if: >
-      github.event_name == 'pull_request' ||
+      needs.classify.outputs.run_heavy == 'true' &&
+      (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -111,10 +182,12 @@ jobs:
             tests/blender/Cargo.lock
 
   storage:
+    needs: classify
     if: >
-      github.event_name == 'pull_request' ||
+      needs.classify.outputs.run_heavy == 'true' &&
+      (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -136,10 +209,12 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
 
   web:
+    needs: classify
     if: >
-      github.event_name == 'pull_request' ||
+      needs.classify.outputs.run_heavy == 'true' &&
+      (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -167,10 +242,11 @@ jobs:
     # The macOS runner validates every non-doc change after it is merged to dev.
     # PRs use the Linux jobs above; main uses the release-only job below.
     if: >
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')
+      needs.classify.outputs.run_heavy == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
     runs-on: macos-26
-    needs: [web, storage, llm, blender]
+    needs: [classify, web, storage, llm, blender]
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -225,9 +301,11 @@ jobs:
   release:
     name: macOS release package
     # main is packaged only after the corresponding dev commit was validated.
+    needs: classify
     if: >
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      needs.classify.outputs.run_heavy == 'true' &&
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: macos-26
     timeout-minutes: 90
     steps:
