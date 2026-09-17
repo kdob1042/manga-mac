@@ -17,7 +17,7 @@ export function migrateSourceApplication(project){
    if(panel.sourceRefs){panel.sourceRefs.forEach(resolve);continue;}
    const original=structuredClone(panel);
    try {const refs=legacyPanelRefs(panel,project.snapshots);if(!Array.isArray(panel.unitIds)&&!panel.manual)throw Error('旧コマの原文を特定できません');
-    panel.lettering??=defaultLettering(panel);panel.sourceRefs=refs;panel.contextRefs=[];
+    if(panel.image)panel.lettering??=defaultLettering(panel);panel.sourceRefs=refs;panel.contextRefs=[];
     if(panel.lettering)for(const [i,box] of panel.lettering.boxes.entries()){
      const refs=legacyPanelRefs({...panel,sourceRefs:undefined,unitIds:[box.unit_id]},project.snapshots);
      box.sourceRefs=refs;box.id=`box:${panel.id}:${box.id??i}`;

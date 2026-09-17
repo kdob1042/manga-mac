@@ -21,14 +21,15 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
   }};
  });
  await page.goto('/');await expect(page.getByRole('button',{name:'接続・人物設定'})).toBeEnabled();
+ const baseline=await page.evaluate(()=>localStorage.getItem('saved'));expect(JSON.parse(baseline).version).toBe(5);
  await page.clock.fastForward(6*60*1000);expect(await page.evaluate(()=>window.checks)).toBe(0);
  await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('変更: S1');
- expect(await page.evaluate(()=>window.checks)).toBe(1);expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBeNull();
+ expect(await page.evaluate(()=>window.checks)).toBe(1);expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(baseline);
  await page.reload();await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
  await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await page.evaluate(()=>window.failSave=true);await page.getByRole('button',{name:'取り込む',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('保存失敗');expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBeNull();
+ await expect(page.getByRole('alert')).toContainText('保存失敗');expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(baseline);
  await page.evaluate(()=>window.failSave=false);await page.getByRole('button',{name:'取り込む',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
  const saved=await page.evaluate(()=>localStorage.getItem('saved'));expect(JSON.parse(saved).active).toContain('bbbbbbbb');

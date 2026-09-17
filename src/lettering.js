@@ -48,6 +48,10 @@ export function setLettering(project, panelId, layout) {
   const panel = project.panels.find(p => p.id === panelId);
   if (!panel) throw Error('コマが見つかりません');
   validateLettering(panel, layout);
+  if(panel.sourceRefs){
+    const identity=boxes=>boxes.map(b=>({id:b.id,sourceRefs:b.sourceRefs}));
+    if(JSON.stringify(identity(layout.boxes))!==JSON.stringify(identity((panel.lettering??defaultLettering(panel)).boxes)))throw Error('文字配置だけの編集で原文対応は変更できません');
+  }
   const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout) } : p);
-  return { ...project, history: [...project.history, { panels: project.panels, layout: project.layout, edit: true, after: {panels,layout:project.layout}, label: '文字配置', at: new Date().toISOString() }], panels, editRedo: [] };
+  return { ...project, history: [...project.history, { panels: project.panels, layout: project.layout, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), edit: true, after: {panels,layout:project.layout}, label: '文字配置', at: new Date().toISOString() }], panels, editRedo: [] };
 }

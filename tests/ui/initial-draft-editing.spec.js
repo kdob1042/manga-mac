@@ -19,7 +19,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
          value={reason:'6コマ',pages:[{id:input.pages[0].id,slots:ids.map((id,i)=>{const x=i%2===0?.52:.04,y=.03+Math.floor(i/2)*.32,w=.44,h=.30;return {id:`slot${i}`,panelId:id,points:[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]};})}]};
        }else if(r.purpose==='lettering'){
          lettering++;if(lettering===2&&!failed){failed=true;throw Error('文字配置の接続失敗');}
-         value={reason:'本文の配置',layout:{...JSON.parse(r.prompt).current,mode:'balloons'}};
+         const input=JSON.parse(r.prompt);value={reason:'本文の配置',layout:input.current?{...input.current,mode:'balloons'}:{mode:'balloons',boxes:input.boxes.map(({text,...box})=>box)}};
        }else if(r.purpose==='edit'){
          const input=JSON.parse(r.prompt),target=input.context.panels[2],layout=structuredClone(target.lettering);layout.boxes[0].x=.1;
          if(input.instruction.includes('解像度'))value={reason:'3コマ目を診断',operations:[{kind:'resolution',panelId:target.id,args:{}}]};

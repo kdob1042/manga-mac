@@ -28,3 +28,8 @@ test('character highlights use exact scalar ranges without changing block select
  assert.deepEqual(out.old.filter(r=>r.changed).map(r=>resolve(r.ref)),['😀']);assert.deepEqual(out.new.filter(r=>r.changed).map(r=>resolve(r.ref)),['😺']);assert.deepEqual(c,before);
  assert.equal(highlightSourceChange(p.snapshots,[p.sourceApplication.units[0].source],c.blocks[0].newRefs,{maxCodePoints:1}).coarse,true);
 });
+test('budget fallback isolates changed scenes and preserves unchanged scenes and IDs',()=>{
+ const p=fixture([],[]);p.snapshots=[{id:'old',scenes:[{id:'A',text:'keep first'},{id:'B',text:'large old'},{id:'C',text:'keep last'}]},{id:'new',scenes:[{id:'A',text:'keep first'},{id:'B',text:'large new'},{id:'C',text:'keep last'}]}];p.sourceApplication.units=tokenizeSnapshot(p.snapshots[0]).map((u,i)=>({id:`u${i}`,source:u.source,requiredText:[u.source]}));
+ const c=buildChangeSet(p,p.active,{maxUnits:0});assert.equal(c.blocks.length,1);assert.equal(c.blocks[0].diagnostic,'coarse_diff');assert.deepEqual(c.blocks[0].oldUnitIds,['u1']);assert.deepEqual(c.blocks[0].newRefs.map(r=>r.sceneId),['B']);
+ const next=buildExpectedApplication(p,c,c.blocks.map(b=>b.id));assert.equal(next.afterUnits[0].id,'u0');assert.equal(next.afterUnits.at(-1).id,'u2');assert.deepEqual(text(p,next.afterUnits),['keep first','large new','keep last']);
+});

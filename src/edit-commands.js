@@ -73,7 +73,7 @@ export function validateEditPlan(project, plan, context) {
       validateLettering(p, op.args);
       const previous = p.lettering ?? defaultLettering(p);
       if (previous.boxes.some(b=>b.locked) && previous.mode!==op.args.mode) throw Error('固定した文字配置の表示方法は変更できません');
-      for (const b of previous.boxes) if (b.locked && JSON.stringify(b) !== JSON.stringify(op.args.boxes.find(x => x.unit_id === b.unit_id))) throw Error('固定した吹き出しは変更できません');
+      for (const b of previous.boxes) if (b.locked && JSON.stringify(b) !== JSON.stringify(op.args.boxes.find(x => p.sourceRefs ? x.id === b.id : x.unit_id === b.unit_id))) throw Error('固定した吹き出しは変更できません');
       preview = setLettering(preview,p.id,op.args);
     } else if (op.kind === 'crop') {
       if (!p.image || !exact(op.args,['x','y','zoom'])) throw Error('画像配置の対象・引数が不正です');
@@ -114,7 +114,7 @@ export function undoEdit(project, redo=false) {
   if(!entry) return project;
   if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(entry.sourcePatch) {
-    const fields=['panels','layout','sourceApplication'],expected=redo?entry:entry.after,target=redo?entry.after:entry;
+    const fields=['panels','layout','sourceApplication',...['layoutHistory','layoutRedo'].filter(k=>entry[k]!==undefined)],expected=redo?entry:entry.after,target=redo?entry.after:entry;
     if(fields.some(key=>JSON.stringify(project[key])!==JSON.stringify(expected[key])))throw Error('別の編集があるため先にその操作を戻してください');
     const restored=Object.fromEntries(fields.map(key=>[key,structuredClone(target[key])]));
     return {...project,...restored,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?project.editRedo.slice(0,-1):[...(project.editRedo??[]),entry]};
