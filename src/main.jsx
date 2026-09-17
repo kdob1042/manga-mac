@@ -1,4 +1,5 @@
-import SourceManuscript from './SourceManuscript.jsx';
+import {finalizeProducedSource} from './source-patch.js';
+import SourceUpdate from './SourceUpdate.jsx';
 import {sourceSummary} from './source-sync.js';
 import SourceLibrary from './SourceLibrary.jsx';
 import { produceDraft } from './production.js';
@@ -94,7 +95,7 @@ function App() {
     setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
-    return produceDraft({ current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode,
+    return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode,
       setBusy, setNotice, stagePanel, planScene, generatePanel, askLLM, imageOf, pagePNG,
       showProof: image => { setPage(0); setLayoutMode(false); setPagePreview(image); } });
   }
@@ -191,7 +192,7 @@ function App() {
     {pagePreview && <img className="page-proof" src={pagePreview} alt="書き出しページの確認"/>}
     {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}{busy && <div role="status" className="message progress">◌ {busy}<button onClick={() => { cancel.current = true; cancelLLMRequests().catch(() => setError('LLMの停止状態を確認できませんでした')); setNotice('LLMへ停止を要求しました。画像処理は現在のコマが終わったところで停止します'); }}>ここまでで停止</button></div>}
     {pending && <section className="message" aria-label="原稿の取込差分"><strong>差分あり · 原稿 {pending.sha.slice(0,8)}</strong><p>取り込むまで現在の正本と漫画は変わりません。</p>{['scenes','settings','references'].map((key,i)=><div key={key}><strong>{['場面','設定','参照画像'][i]}</strong><ul>{sourceSummary(snapshot,pending)[key].map(item=><li key={item}>{item}</li>)}</ul></div>)}{sourceSummary(snapshot,pending).structure&&<p>作品情報・原稿構成に変更があります。</p>}<button disabled={!!busy} onClick={() => run('原稿を取り込み中', applySync)}>取り込む</button><button disabled={!!busy} onClick={() => {setPending(null);setNotice('取込みを見送りました');}}>後で</button></section>}
-    <details className="source-reader"><summary>原稿と漫画への反映状態</summary><SourceManuscript project={project} busy={!!busy} current={()=>current.current}/></details>
+    <details className="source-reader"><summary>原稿と漫画への反映状態</summary><SourceUpdate project={project} busy={!!busy} current={current} commit={commit} acceptSaved={p=>{current.current=p;setProject(p);setPagePreview(null);}} run={run} model={model} cancelled={()=>cancel.current}/></details>
     <div hidden={layoutMode}>{!panels.length ? <div className="welcome"><div className="welcome-icon">▤</div><h1>物語の、その先を描こう。</h1><p>完成した脚本と、キャラクターの参照画像。<br/>ふたつをつないで、最初のページをつくります。</p><button className="primary" onClick={() => setSettings(true)}>原作を接続する →</button>{!desktop() && <button disabled={!!busy || !ready} onClick={() => run('サンプルを開く', sample)}>画面のサンプルを見る</button>}<small>脚本はGitHubのmainと読み取り専用で同期します。</small></div> : <div className="page"><div className="panel-grid">{panels.map((p, i) => <article key={p.id} className={`panel ${selected === p.id ? 'selected' : ''}`} onClick={() => { if (selected !== p.id) { setSelected(p.id); setRect(null); } }}><div className="art" onPointerDown={e => { if (busy || !p.image) return; setSelected(p.id); drag.current = point(e); e.currentTarget.setPointerCapture(e.pointerId); setRect(null); }} onPointerUp={e => { if (!drag.current) return; const end = point(e), start = drag.current; drag.current = null; const r = [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1])]; if (r[2] > .01 && r[3] > .01) setRect(r); }}>{p.image ? <img draggable="false" src={p.image} alt={`コマ ${i + 1}`}/> : <div className="placeholder"><span>0{i + 1}</span><p>作画を待っています</p></div>}{selected === p.id && rect && <div className="region" style={{ left: `${rect[0] * 100}%`, top: `${rect[1] * 100}%`, width: `${rect[2] * 100}%`, height: `${rect[3] * 100}%` }}/>}</div><div className={`caption ${project.output_locale === 'en' && !project.localizations.some(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) ? 'missing-translation' : ''}`}>{panelText(p)}</div><div className="panel-meta">{p.sceneId} · {p.status === 'review' ? '見た目の確認待ち' : '演出計画'}</div></article>)}</div><div className="folio">{page + 1}</div></div>}
     </div>
     {chosen && !layoutMode && <PanelMotionControls project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} onShot={id => { setRequestedShot(id); setMedium('video'); }}/>}

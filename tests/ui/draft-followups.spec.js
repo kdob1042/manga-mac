@@ -7,8 +7,10 @@ async function setup(page) {
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
    window.calls.push({command,args});
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
-   if(command==='load_project')return JSON.stringify(project);
+   if(command==='load_project')return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});
    if(command==='save_project'){project=JSON.parse(args.data);window.saved=project;localStorage.setItem('fixture-project',args.data);return;}
+   if(command==='prepare_source_patch'){const plan={expected:args.expected,baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,scope:{pageIds:project.layout.pages.map(p=>p.id)}};project.jobs.push({id:args.opId,kind:'sourcePatch',status:'planned',source_patch:plan});return plan;}
+   if(command==='commit_source_patch'){const before={panels:project.panels,layout:project.layout,sourceApplication:project.sourceApplication};project={...project,...args.patch,workId:'fixture-work',contentToken:'applied-token',history:[...project.history,{...before,sourcePatch:true,edit:true,after:args.patch}],sourcePatchReceipts:{[args.opId]:true}};project.jobs=project.jobs.map(j=>j.id===args.opId?{...j,status:'complete'}:j);window.saved=project;window.savedProject=project;return project;}
    if(command==='backup_status')return {config:null,status:{},restored:[]};
    if(command==='register_llm')return 'plan-fixture';
    if(command==='remove_llm')return;

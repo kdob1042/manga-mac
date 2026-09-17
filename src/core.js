@@ -46,6 +46,6 @@ export function sourceForPanel(panel, snapshot) {
   return panel.unitIds.map(id => { const unit = units.find(u => u.id === id); if (!unit) throw Error('原文の参照がありません'); return unit.text; }).join('\n\n');
 }
 export function revise(project, panels, label) {
-  return { ...project, panels, history: [...project.history, { panels: project.panels, label, at: new Date().toISOString() }] };
+  return { ...project, panels, history: [...project.history, { panels: project.panels, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), label, at: new Date().toISOString() }] };
 }
 export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });

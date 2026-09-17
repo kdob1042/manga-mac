@@ -409,8 +409,10 @@ pub fn commit(
     }
     expected_units(&p, &plan["expected"])?;
     let mut next = validate_patch(&p, plan, &patch)?;
-    let before = json!({"panels":p["panels"],"layout":p["layout"],"sourceApplication":p["sourceApplication"]});
-    let after = json!({"panels":next["panels"],"layout":next["layout"],"sourceApplication":next["sourceApplication"]});
+    let before = json!({"panels":p["panels"],"layout":p["layout"],"sourceApplication":p["sourceApplication"],"layoutHistory":p.get("layoutHistory").cloned().unwrap_or(json!([])),"layoutRedo":p.get("layoutRedo").cloned().unwrap_or(json!([]))});
+    next["layoutHistory"] = json!([]);
+    next["layoutRedo"] = json!([]);
+    let after = json!({"panels":next["panels"],"layout":next["layout"],"sourceApplication":next["sourceApplication"],"layoutHistory":[],"layoutRedo":[]});
     let mut entry = before;
     entry["sourcePatch"] = json!(true);
     entry["edit"] = json!(true);

@@ -1,3 +1,4 @@
+import {validateApplication} from './source-application.js';
 import { sourceUnits, validatePlan } from './core.js';
 import { layoutWarnings, reflowLayout, validateLayout } from './layout.js';
 import { digest } from './revisions.js';
@@ -336,12 +337,14 @@ export function resolveContentReplan(project, id, status) {
 export async function adoptContentReplan(project, candidate) {
   const materialized = await materializeContentCandidate(project, candidate);
   const before = {
+    ...(project.sourceApplication?{sourceApplication:structuredClone(project.sourceApplication)}:{}),
     panels: structuredClone(project.panels),
     layout: structuredClone(project.layout),
     layoutHistory: structuredClone(project.layoutHistory ?? []),
     layoutRedo: structuredClone(project.layoutRedo ?? []),
   };
   const after = {
+    ...(project.sourceApplication?{sourceApplication:{version:1,units:project.sourceApplication.units.filter(unit=>{try{validateApplication({...project,...materialized},[unit]);return true;}catch{return false;}})}}:{}),
     panels: structuredClone(materialized.panels),
     layout: structuredClone(materialized.layout),
     // Old layout history can refer to removed panel IDs. The content-replan
