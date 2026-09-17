@@ -91,6 +91,7 @@ function App() {
   async function produce() {
     if (!snapshot) throw Error('まず原作を接続してください');
     let p = current.current;
+    if(p.panels.some(panel=>!snapshot.scenes.some(scene=>scene.id===panel.sceneId)))throw Error('対象外の場面を含む既存原稿を保持しています。自動初稿では削除しません');
     // Plan all scene content before page geometry or generation; never discard accepted art.
     for (const scene of snapshot.scenes) {
       if(cancel.current)return;

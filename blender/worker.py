@@ -8,7 +8,10 @@ import json
 import math
 import os
 from pathlib import Path
+from pathlib import PurePosixPath
+import shutil
 import sys
+import zipfile
 
 import bpy
 
@@ -139,6 +142,163 @@ def import_asset(operation, library, scene):
     return {'file': operation['file'], 'hash': operation['hash'], 'kind': operation['asset_type'], 'name': block.name}
 
 
+def relative(value):
+    path = PurePosixPath(value)
+    if (not value or value.startswith('/') or '\\' in value or any(
+            part in {'', '.', '..'} for part in path.parts)):
+        raise ValueError('Invalid relative asset path')
+    return path
+
+
+def archive_members(archive):
+    members = archive.infolist()
+    if len(members) > 4096:
+        raise ValueError('Web asset archive has too many files')
+    total = 0
+    for member in members:
+        relative(member.filename)
+        mode = member.external_attr >> 16
+        if mode & 0o170000 == 0o120000:
+            raise ValueError('Web asset archive cannot contain links')
+        if member.file_size > 512 * 1024 * 1024:
+            raise ValueError('Web asset archive member is too large')
+        total += member.file_size
+        if total > 1024 * 1024 * 1024:
+            raise ValueError('Web asset archive expands beyond the limit')
+        if member.file_size and (not member.compress_size or member.file_size / member.compress_size > 1000):
+            raise ValueError('Web asset archive compression ratio is unsafe')
+    return members
+
+
+def extract_archive(source, destination):
+    destination.mkdir()
+    with zipfile.ZipFile(source) as archive:
+        members = archive_members(archive)
+        archive.extractall(destination, members)
+    for path in destination.rglob('*'):
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(destination) or path.is_symlink():
+            raise ValueError('Web asset archive escaped its private folder')
+
+
+def candidates_for_model(path, entry):
+    format = path.suffix.lower().lstrip('.')
+    if format not in {'blend', 'glb', 'gltf', 'fbx', 'obj'}:
+        return []
+    if format != 'blend':
+        return [{'entry': entry, 'format': format, 'asset_type': None, 'name': None,
+                 'label': entry}]
+    candidates = []
+    with bpy.data.libraries.load(str(path), assets_only=True) as (source, target):
+        for kind, field in [('OBJECT', 'objects'), ('COLLECTION', 'collections'), ('ACTION', 'actions')]:
+            for name in getattr(source, field):
+                candidates.append({'entry': entry, 'format': format, 'asset_type': kind,
+                                   'name': name, 'label': f'{name} — {entry} ({kind})'})
+    return candidates
+
+
+def web_source(operation, web_root):
+    file = relative(operation['file'])
+    source = within(web_root.joinpath(*file.parts), [web_root])
+    if checksum(source) != operation['hash']:
+        raise ValueError('Downloaded web asset changed')
+    return source
+
+
+def web_candidates(operation, web_root, output):
+    source = web_source(operation, web_root)
+    if source.suffix.lower() != '.zip':
+        candidates = candidates_for_model(source, source.name)
+    else:
+        extracted = output / 'web-catalog'
+        extract_archive(source, extracted)
+        try:
+            candidates = []
+            for model in sorted(path for path in extracted.rglob('*') if path.is_file()):
+                entry = model.relative_to(extracted).as_posix()
+                candidates.extend(candidates_for_model(model, entry))
+        finally:
+            shutil.rmtree(extracted, ignore_errors=True)
+    if not candidates or len(candidates) > 200:
+        raise ValueError('Web asset must contain 1 to 200 supported models/assets')
+    return candidates
+
+
+def provenance(operation):
+    values = {
+        'manga_mac_source_url': operation['source_url'],
+        'manga_mac_source_hash': operation['hash'],
+        'manga_mac_license': operation['license'],
+    }
+    if operation['source_page']:
+        values['manga_mac_source_page'] = operation['source_page']
+    return values
+
+
+def import_web_asset(operation, web_root, output, scene):
+    source = web_source(operation, web_root)
+    extracted = None
+    entry = relative(operation['entry'])
+    if source.suffix.lower() == '.zip':
+        extracted = output / 'web-import'
+        extract_archive(source, extracted)
+        model = within(extracted.joinpath(*entry.parts), [extracted])
+    else:
+        if entry.as_posix() != source.name:
+            raise ValueError('Direct web asset entry does not match the downloaded file')
+        model = source
+    format = model.suffix.lower().lstrip('.')
+    if format != operation['format'] or format not in {'blend', 'glb', 'gltf', 'fbx', 'obj'}:
+        raise ValueError('Web asset format changed')
+    before_objects = {block.as_pointer() for block in bpy.data.objects}
+    before_collections = {block.as_pointer() for block in bpy.data.collections}
+    before_actions = {block.as_pointer() for block in bpy.data.actions}
+    imported = []
+    if format == 'blend':
+        field = {'OBJECT': 'objects', 'COLLECTION': 'collections', 'ACTION': 'actions'}.get(operation['asset_type'])
+        if not field or not operation['name']:
+            raise ValueError('Select one Blender asset datablock')
+        with bpy.data.libraries.load(str(model), link=False, assets_only=True) as (source_data, target):
+            if operation['name'] not in getattr(source_data, field):
+                raise ValueError('Web Blender asset is no longer present')
+            setattr(target, field, [operation['name']])
+        block = getattr(target, field)[0]
+        if block is None:
+            raise ValueError('Web Blender asset import failed')
+        if field == 'collections':
+            scene.collection.children.link(block)
+        elif field == 'objects':
+            scene.collection.objects.link(block)
+        else:
+            block.use_fake_user = True
+        imported.append(block)
+    else:
+        if format in {'glb', 'gltf'}:
+            result = bpy.ops.import_scene.gltf(filepath=str(model))
+        elif format == 'fbx':
+            result = bpy.ops.wm.fbx_import(filepath=str(model))
+        else:
+            result = bpy.ops.wm.obj_import(filepath=str(model))
+        if result != {'FINISHED'}:
+            raise ValueError('Blender importer did not finish')
+        imported.extend(block for block in bpy.data.objects if block.as_pointer() not in before_objects)
+        imported.extend(block for block in bpy.data.collections if block.as_pointer() not in before_collections)
+        imported.extend(block for block in bpy.data.actions if block.as_pointer() not in before_actions)
+    if not imported:
+        raise ValueError('Web asset did not add any Blender data')
+    values = provenance(operation)
+    for block in imported:
+        for key, value in values.items():
+            block[key] = value
+    bpy.context.view_layer.update()
+    return ({'file': operation['file'], 'hash': operation['hash'], 'entry': operation['entry'],
+             'format': format, 'asset_type': operation['asset_type'], 'name': operation['name'],
+             'source_url': operation['source_url'], 'source_page': operation['source_page'],
+             'license': operation['license'],
+             'datablocks': [{'type': block.bl_rna.identifier, 'name': block.name} for block in imported]},
+            extracted)
+
+
 def apply_pose(operation, scene):
     # Reuse Blender's pose evaluator; accept one local, static rig and one pose asset.
     rig = scene.objects.get(operation['rig'])
@@ -261,11 +421,12 @@ def pin_dependencies(roots):
 
 
 def execute(request):
-    if set(request) != {'input', 'input_hash', 'library_root', 'output_root', 'operation'}:
+    if set(request) != {'input', 'input_hash', 'library_root', 'web_asset_root', 'output_root', 'operation'}:
         raise ValueError('Invalid request fields')
     if bpy.app.version != (4, 5, 13):
         raise ValueError('This bridge requires Blender 4.5.13')
     library = Path(request['library_root']).resolve(strict=True)
+    web_root = Path(request['web_asset_root']).resolve(strict=True)
     output = Path(request['output_root']).resolve(strict=True)
     if any(output.iterdir()):
         raise ValueError('Output folder must be a new private job folder')
@@ -274,19 +435,24 @@ def execute(request):
         raise ValueError('Input checkpoint changed')
     operation = request['operation']
     kind = operation.get('kind')
-    allowed = {'transform': {'kind', 'object', 'location', 'rotation'}, 'aim': {'kind', 'location', 'target', 'lens'}, 'light': {'kind', 'object', 'energy', 'color'}, 'pose': {'kind', 'rig', 'action', 'frame'}, 'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}}
+    allowed = {'transform': {'kind', 'object', 'location', 'rotation'}, 'aim': {'kind', 'location', 'target', 'lens'}, 'light': {'kind', 'object', 'energy', 'color'}, 'pose': {'kind', 'rig', 'action', 'frame'}, 'inspect': {'kind'}, 'camera': {'kind', 'lens'}, 'capture': {'kind', 'width', 'height'}, 'shot': {'kind', 'scene', 'camera', 'frame'}, 'catalog': {'kind'}, 'import': {'kind', 'file', 'hash', 'asset_type', 'name'}, 'webcatalog': {'kind', 'file', 'hash'}, 'webimport': {'kind', 'file', 'hash', 'entry', 'format', 'asset_type', 'name', 'source_url', 'source_page', 'license'}}
     if kind not in allowed or set(operation) != allowed[kind]:
         raise ValueError('Unsupported operation or unexpected arguments')
     bpy.context.preferences.filepaths.use_scripts_auto_execute = False
     bpy.ops.wm.open_mainfile(filepath=str(source), load_ui=False, use_scripts=False)
-    roots = [library, source.parent]
+    roots = [library, web_root, source.parent, output]
     dependencies(roots)
     catalog = library_assets(library) if kind == 'catalog' else None
+    web_catalog = web_candidates(operation, web_root, output) if kind == 'webcatalog' else None
     imported = None
+    imported_web = None
+    web_temporary = None
     applied_pose = None
     scene = bpy.context.scene
     if kind == 'import':
         imported = import_asset(operation, library, scene)
+    if kind == 'webimport':
+        imported_web, web_temporary = import_web_asset(operation, web_root, output, scene)
     if kind == 'shot':
         scene = bpy.data.scenes.get(operation['scene'])
         if scene is None or scene.library:
@@ -341,17 +507,20 @@ def execute(request):
     remaining = dependencies([output])
     if remaining:
         raise ValueError('Saved checkpoint still depends on external files')
+    if web_temporary:
+        shutil.rmtree(web_temporary, ignore_errors=True)
     scene = bpy.context.scene
     result = {
         'protocol': 1, 'blender_version': list(bpy.app.version),
         'blender_build': bpy.app.build_hash.decode(), 'gui_required': False,
-        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import', 'pose', 'transform', 'aim', 'light'], 'passes': ['color'],
+        'operations': ['inspect', 'camera', 'capture', 'shot', 'catalog', 'import', 'webcatalog', 'webimport', 'pose', 'transform', 'aim', 'light'], 'passes': ['color'],
         'checkpoint': {'file': checkpoint.name, 'hash': checksum(checkpoint)},
         'image': image, 'state': camera_state(scene), 'dependencies': remaining, 'packed_sources': pinned_from,
         'dependencies_pinned': True,
         'applied_pose': applied_pose,
         'rigs': [obj.name for obj in scene.objects if obj.type == 'ARMATURE'],
         'objects': object_state(scene), 'assets': asset_state(), 'library_assets': catalog, 'imported_asset': imported,
+        'web_asset_candidates': web_catalog, 'imported_web_asset': imported_web,
         'scenes': [{'name': item.name, 'cameras': [obj.name for obj in item.objects if obj.type == 'CAMERA'],
                     'objects': [obj.name for obj in item.objects], 'frame': item.frame_current} for item in bpy.data.scenes],
     }

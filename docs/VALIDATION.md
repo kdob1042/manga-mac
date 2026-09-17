@@ -370,3 +370,11 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - ローカルChromium導入は配布先timeoutで未実施。PR CIのChromium結果を用いる。Mac GUI、実API/実モデル日本語品質、Mac 24GB品質・性能、署名/公証はnot_run。
 
 未実装：画像理解による顔/服等の領域特定と重要領域回避、生成を含む複合編集、採用済み原作改訂場面の別初稿、対象場面を絞った初稿、自然言語候補の永続比較。Jev未設定時は利用者が選択済みの演出LLMだけを使う。閾値0.75は未校正。以上を完了したとみなしてIssue全体をcloseしない。
+## WEB-ASSET-01: Web配布3D素材のBlender取込（2026-09-17）
+
+開始dev `f9ce6fd`。既存Blender CLI、固定checkpoint、依存packing、Asset Library参照を再利用し、HTTPS取得と標準import／appendへの薄い接続を追加した。独立した素材分類DB、3Dパーサ、任意コード実行、アドオン自動導入は追加していない。
+
+- native取得境界: HTTPS、公開IPへの固定DNS解決、最大3回の検証済みHTTPS redirect、512MB上限。URL資格情報、private/link-local/loopback/documentation/multicast宛、未対応拡張子を拒否。query/fragmentは出典記録へ保存しない。
+- Blender境界: `.blend`、GLB/glTF、FBX、OBJ、ZIPを固定Blender 4.5.13の既存APIで検査・取込。ZIPは相対パス、link禁止、4096件、展開1GB、個別512MB、圧縮率1000倍、候補200件の上限を検証する。
+- provenance: 取得SHA-256、queryを除いた取得元、任意の配布ページ、利用者が確認したライセンス表記を取込datablockへ保存。依存を既存packingでcheckpointへ固定し、展開用一時フォルダを削除する。ライセンスの正しさや利用権を自動判定したという意味ではない。
+- ローカル確認: Python構文、Node 67件、Web build成功。新PlaywrightはChromium実行ファイル未導入のため起動前に停止し、UI合格扱いしない。Rust fmt/test/clippy、固定Blenderのdirect OBJ／ZIP／provenance／path escape fixture、Mac GUI、実公開URL取得は対象PR CIまたは実機で別判定する。
