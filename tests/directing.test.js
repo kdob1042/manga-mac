@@ -90,6 +90,30 @@ test('bounded directing loop stops instead of infinite AI retries',async()=>{
   assert.equal(f.current().captures?.length??0,0);
 });
 
+test('rejects premature ready until the explicit lens goal matches live state', async()=>{
+  const f=await fixture();
+  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
+  let calls=0;
+  await directPanel({...f,panelId:'p0',ask:async()=>{
+    calls++;
+    if(calls===1) return ready;
+    if(calls===2) return action({kind:'camera',lens:45});
+    return ready;
+  }});
+  assert.equal(calls,3);
+  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
+  assert.equal(f.current().captures.length,1);
+  assert.equal(f.current().directing_runs[0].completionCorrections,1);
+
+  const g=await fixture();
+  g.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
+  await assert.rejects(
+    directPanel({...g,panelId:'p0',ask:async()=>ready}),
+    /完了を報告しましたが、現在状態が目標と一致しません/
+  );
+  assert.equal(g.current().captures?.length??0,0);
+});
+
 test('one semantic correction never repeats a native operation and a second repeat stops', async()=>{
   const f=await fixture(); let calls=0;
   await directPanel({...f,panelId:'p0',ask:async()=>++calls<=2?action({kind:'camera',lens:70}):ready});
