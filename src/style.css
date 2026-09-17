@@ -61,3 +61,5 @@
 .recognized-region { position: relative; max-width: 320px; }
 .recognized-region img { width: 100%; display: block; }
 .recognized-region span { position: absolute; border: 2px solid #d65030; background: #d6503020; pointer-events: none; }
+
+input[type="checkbox"] { width: auto; }
