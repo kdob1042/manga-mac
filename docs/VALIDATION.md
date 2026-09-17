@@ -14,9 +14,9 @@
 ### 次の担当の着手順
 
 1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。通常のmain→dev履歴同期は行わず、main固有のhotfixだけ必要に応じてdev向けPRで反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
-2. `npm ci && npm test && npm run build`。UIは`npx playwright install --with-deps chromium`後`npm run test:ui`。取得できない環境ではPRのwebジョブとUI-test-resultsを使う。
-3. `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check`。tests/storage、tests/llm、tests/blenderの各Cargo.tomlで`cargo test --locked`と`cargo clippy --locked --all-targets -- -D warnings`。lockをCIで再生成せず、変更が必要なら差分と監査をPRへ含める。実Blender試験はworkflowと同じ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
-4. `dev`へのマージ後は、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは重複実行防止であり、devマージ後のrunがMac検証である。
+2. 変更分類に応じた最小チェックを実行する。フロントエンドは`npm ci && npm test && npm run build`、UI変更だけがある場合は追加で`npx playwright install --with-deps chromium`後`npm run test:ui`、Live変更は`live-e2e`を追加する。
+3. Rust系は変更領域のcrateだけを対象にする。storage変更はstorage試験、LLM変更はllm試験、Blender変更はBlender試験を実行する。共通Rust・依存関係・未知の変更では全系統と依存監査を実行し、実Blender変更時だけ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
+4. native/Tauri変更を`dev`へマージした後だけ、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは、変更領域または昇格条件により不要なためである。
 5. `main`へのマージ後は、pushの`macOS release package`と`Manga-Mac-Apple-Silicon-unsigned` artifactを確認する。これは配布物生成であり、実Mac受入はINSTALL_MACと正本§11/12で別に記録する。
 
 ### 未完タスクの実装入口と合格条件

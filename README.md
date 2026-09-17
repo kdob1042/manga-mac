@@ -63,7 +63,7 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 ## ブランチ運用
 
 - `main`: 配布・本番相当の正本。マージ後は`macOS release package`で配布用DMGだけを生成する。
-- `dev`: 通常開発の統合先。非文書変更をマージした後は、共通Linuxチェックと`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を完了させる。
+- `dev`: 通常開発の統合先。変更領域に対応するLinuxチェックだけを実行し、共通Rust・依存関係・未知の変更では全系統を実行する。native/Tauri変更をマージした後だけ`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を実行する。
 - `feature/*`・`fix/*`・`docs/*`: `dev`から作り、原則として`dev`宛てのPRにする。
 - `dev → main`: `dev`でのMac検証が成功したまとまりだけをPRで昇格させる。PRでは共通Linuxチェックを確認し、mainマージ後の配布用DMG生成とは分けて扱う。
 - `hotfix/* → main`: 重大不具合だけの例外。main固有の修正は必要に応じて別PRで`dev`にも反映し、履歴を合わせるだけの`main → dev`マージは行わない。
@@ -90,7 +90,7 @@ cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-ap
 npm run tauri dev
 ```
 
-GitHub Actionsでは、通常のコード変更PRで共通Linuxチェック、`dev`へのコード変更マージ後にMac固有のビルド・回帰試験・検証用DMG生成、`main`へのコード変更マージ後に配布用DMG生成を行います。ドキュメントのみ、検証済みの`dev → main`昇格、差分のない同期では変更分類だけを実行します。Actionsの成功は、実機での生成品質・視覚・性能受入試験の代替にはなりません。
+GitHub Actionsでは、変更領域に対応するLinuxチェックだけを実行します。UIブラウザ試験、実Live連携、実Blenderレンダリング、依存監査は該当変更だけで実行し、共通Rust・依存関係・未知の変更では全系統を実行します。native/Tauri変更を`dev`へマージした後はMac固有のビルド・回帰試験・検証用DMG、`main`へアプリ変更をマージした後は配布用DMGを生成します。ドキュメントのみと検証済み昇格は分類だけで通します。Actionsの成功は、実機での生成品質・視覚・性能受入試験の代替にはなりません。
 
 ## 実機受入試験
 
