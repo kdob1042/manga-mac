@@ -439,6 +439,29 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     save_in_transaction(&tx, root, data, false)?;
     tx.commit().map_err(err)
 }
+// UI writes compare the native content identity in the same transaction as save.
+// Internal native jobs already hold their own transaction and use save directly.
+pub fn save_checked(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(err)?;
+    let next: Value = serde_json::from_str(data).map_err(err)?;
+    let old: Option<String> = tx
+        .query_row("SELECT data FROM project WHERE id=1", [], |r| r.get(0))
+        .optional()
+        .map_err(err)?;
+    if let Some(old) = old {
+        let old: Value = serde_json::from_str(&old).map_err(err)?;
+        if old["version"] == 5
+            && (next["workId"] != old["workId"]
+                || next["contentToken"].as_str() != Some(source_refs::token(&old).as_str()))
+        {
+            return Err("作品が更新されています。保存済みの内容を再読込してください".into());
+        }
+    }
+    save_in_transaction(&tx, root, data, false)?;
+    tx.commit().map_err(err)
+}
 // Shared by ordinary saves and source-patch commits; never opens a nested BEGIN.
 fn save_in_transaction(
     db: &Connection,
@@ -570,7 +593,7 @@ fn save_in_transaction(
                 next.insert(id.clone(), receipt.clone());
             }
         }
-        preserve_remote_jobs(&old_project, &mut project)?;
+        preserve_remote_jobs(&old_project, &mut project, source_commit)?;
     }
     db.execute(
         "INSERT OR IGNORE INTO project_backups(hash,data) VALUES(?1,?2)",
@@ -592,12 +615,12 @@ fn save_in_transaction(
 }
 
 // An old UI snapshot must not erase task IDs, submitted markers or reserved cost.
-fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
+fn preserve_remote_jobs(old: &Value, next: &mut Value, native_source_write: bool) -> Result<()> {
     if let Some(jobs) = old["jobs"].as_array() {
         for job in jobs.iter().filter(|j| j.get("source_patch").is_some()) {
             let next_jobs = next["jobs"].as_array_mut().ok_or("Missing jobs")?;
             if let Some(existing) = next_jobs.iter_mut().find(|j| j["id"] == job["id"]) {
-                if existing["source_patch"] != job["source_patch"] {
+                if !native_source_write && existing["source_patch"] != job["source_patch"] {
                     return Err("Prepared source plan is immutable".into());
                 }
                 // Commit is the only path allowed to set complete; stale UI must not undo it.

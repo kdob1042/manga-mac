@@ -5,7 +5,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
    let lettering=0,failed=false;window.calls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.calls.push({command,args});
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});
      if(command==='save_project'){project=JSON.parse(args.data);window.saved=project;return;}
      if(command==='prepare_source_patch'){const plan={expected:args.expected,baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,scope:{pageIds:project.layout.pages.map(p=>p.id)}};project.jobs.push({id:args.opId,kind:'sourcePatch',status:'planned',source_patch:plan});return plan;}

@@ -6,7 +6,7 @@ test('backup setup is opt-in, secrets clear, and restore does not open or overwr
     window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
       // Record command shape only: tests do not persist password payloads/screenshots.
       window.calls.push(command);
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if (command === 'load_project') return null;
       if (command === 'backup_status') return { config, status: { phase: '', last_success: 0, last_verified: 0 }, changed: true, next_backup: 0, restored, active: 'primary' };
       if (command === 'backup_setup') { config = { repository: args.input.repository, enabled: true }; return; }
