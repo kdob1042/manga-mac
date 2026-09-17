@@ -196,7 +196,11 @@ fn geometry(m: &Value) -> Result<()> {
                 return Err("Duplicate ID".into());
             }
             let text = panel["text"].as_str().ok_or("Missing text")?;
-            if text.trim().is_empty() || text.chars().count() > 2000 || text.contains(['<', '>']) {
+            if (!text.is_empty() && text.trim().is_empty())
+                || text.chars().count() > 2000
+                || text.contains(['<', '>'])
+                || text.chars().any(|c| c <= '\u{0008}')
+            {
                 return Err("Invalid public text".into());
             }
             let mut boxes = Vec::new();
@@ -336,6 +340,9 @@ pub fn export_snapshot(
         }
         let mut order = Vec::new();
         for (source, page) in authored.iter().zip(published) {
+            if request.get("preview").is_some() && source["id"] != page["id"] {
+                return Err("Preview page ID mismatch".into());
+            }
             let slots = source["slots"].as_array().ok_or("Missing slots")?;
             let output = page["panels"].as_array().ok_or("Missing public panels")?;
             if slots.len() != output.len() || page["width"] != 1600 || page["height"] != 2260 {

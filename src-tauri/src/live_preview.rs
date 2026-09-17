@@ -1,5 +1,6 @@
 use crate::{policy_transport::PolicyTransport, storage};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{fs, io::Write, path::Path};
 use tokio_util::io::ReaderStream;
 type Result<T> = std::result::Result<T, String>;
@@ -118,7 +119,11 @@ pub async fn send(
     if (work, episode) != scope {
         return Err("再開する転送は現在の作品・話と異なります".into());
     }
-    let binding = json!({"origin":origin,"baseRevision":base});
+    let digest = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&preview).map_err(|_| "Invalid preview")?)
+    );
+    let binding = json!({"origin":origin,"baseRevision":base,"manifestHash":digest});
     let binding_path = dir.join("destination.json");
     match fs::OpenOptions::new()
         .write(true)
@@ -231,7 +236,28 @@ pub async fn send(
         .query_pairs_mut()
         .append_pair("preview", &format!("{work}/{episode}"))
         .append_pair("revision", revision);
-    Ok(json!({"revision":revision,"viewerUrl":viewer.as_str(),"current":state["current"]}))
+    let receipt =
+        json!({"revision":revision,"viewerUrl":viewer.as_str(),"current":state["current"]});
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir.join("received.json"))
+    {
+        Ok(mut file) => {
+            file.write_all(&serde_json::to_vec(&receipt).map_err(|_| "Invalid receipt")?)
+                .and_then(|_| file.sync_all())
+                .map_err(|_| {
+                    "受信済みですがローカル記録を保存できません。状態を再照会してください"
+                })?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => {
+            return Err(
+                "受信済みですがローカル記録を保存できません。状態を再照会してください".into(),
+            )
+        }
+    }
+    Ok(receipt)
 }
 
 #[cfg(test)]

@@ -217,6 +217,73 @@ pub fn video_probe(root: &Path, revision: &str, video: &str) -> Result<Value> {
     Ok(meta)
 }
 
+pub fn restore(root: &Path, revision: &str, work: &str, episode: &str) -> Result<Value> {
+    let dir = directory(root, revision)?;
+    let mut saved: Value =
+        serde_json::from_slice(&fs::read(dir.join("snapshot.json")).map_err(err)?).map_err(err)?;
+    let project = &saved["project"];
+    let active = project["snapshots"]
+        .as_array()
+        .and_then(|a| a.iter().find(|s| s["id"] == project["active"]));
+    let saved_episode = active
+        .and_then(|s| s["episodeId"].as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("publication");
+    if project["workId"] != work || saved_episode != episode {
+        return Err("現在の作品・話の転送版ではありません".into());
+    }
+    let prepared = dir
+        .join(format!("live-manga-{revision}/preview.json"))
+        .is_file();
+    super::hydrate(&mut saved["project"], &root.join("artifacts"))?;
+    Ok(
+        json!({"revision":revision,"savedAt":saved["savedAt"],"project":saved["project"],"prepared":prepared}),
+    )
+}
+pub fn list(root: &Path, work: &str, episode: &str) -> Result<Value> {
+    let parent = root.join("previews");
+    if !parent.exists() {
+        return Ok(json!([]));
+    }
+    let mut rows = Vec::new();
+    for entry in fs::read_dir(parent).map_err(err)? {
+        let entry = entry.map_err(err)?;
+        let id = entry.file_name().to_string_lossy().to_string();
+        if uuid::Uuid::parse_str(&id).is_err() {
+            continue;
+        }
+        let dir = directory(root, &id)?;
+        let saved: Value = match fs::read(dir.join("snapshot.json"))
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+        {
+            Some(v) => v,
+            None => continue,
+        };
+        let p = &saved["project"];
+        let active = p["snapshots"]
+            .as_array()
+            .and_then(|a| a.iter().find(|s| s["id"] == p["active"]));
+        let ep = active
+            .and_then(|s| s["episodeId"].as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("publication");
+        if p["workId"] != work || ep != episode {
+            continue;
+        }
+        let package = dir.join(format!("live-manga-{id}"));
+        let read = |name: &str| -> Value {
+            fs::read(package.join(name))
+                .ok()
+                .and_then(|b| serde_json::from_slice(&b).ok())
+                .unwrap_or(Value::Null)
+        };
+        rows.push(json!({"revision":id,"savedAt":saved["savedAt"],"destination":read("destination.json"),"received":read("received.json")}));
+    }
+    rows.sort_by(|a, b| a["savedAt"].as_str().cmp(&b["savedAt"].as_str()));
+    Ok(json!(rows))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -250,5 +317,72 @@ mod tests {
         p.as_object_mut().unwrap().remove("token");
         p["scenes"] = json!([{"id":"a","tags":[],"rawSource":"secret"}]);
         assert!(validate_metadata(&p).is_err());
+    }
+    #[test]
+    fn stage_real_images_after_later_save_and_restore_only_same_work() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+        let root =
+            std::env::temp_dir().join(format!("preview-stage-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let mut db = Connection::open_in_memory().unwrap();
+        super::super::initialize(&db).unwrap();
+        let legacy: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap();
+        let image = legacy["panels"][0]["image"].as_str().unwrap();
+        let png = STANDARD.decode(image.split(',').nth(1).unwrap()).unwrap();
+        let poster = hash(&png);
+        let status = std::process::Command::new("ffmpeg")
+            .args([
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=white:s=1600x2260",
+                "-frames:v",
+                "1",
+                "-threads",
+                "1",
+            ])
+            .arg(root.join("page.png"))
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let layer = fs::read(root.join("page.png")).unwrap();
+        let layer_id = hash(&layer);
+        let mut project = json!({"version":4,"revision":1,"workId":"work","snapshots":[],"panels":[{"id":"p","image":image,"unitIds":[]}],"history":[],"artworks":[],"jobs":[],"videoShots":[],"videoRevisions":[],"layout":{"version":1,"pages":[{"id":"page","slots":[{"id":"slot","panelId":"p","points":[[0,0],[1,0],[1,1],[0,1]]}]}]}});
+        super::super::save(&mut db, &root, &project.to_string()).unwrap();
+        let receipt = capture(&db, &root, 1, "2026-09-17T00:00:00.000Z").unwrap();
+        let id = receipt["revision"].as_str().unwrap();
+        assert!(restore(&root, id, "other", "publication").is_err());
+        assert_eq!(
+            restore(&root, id, "work", "publication").unwrap()["project"]["revision"],
+            1
+        );
+        project["revision"] = json!(2);
+        super::super::save(&mut db, &root, &project.to_string()).unwrap();
+        let asset = |id: &str, bytes: usize, w: u64, h: u64| json!({"id":id,"sha256":id,"path":format!("assets/{id}.png"),"mime":"image/png","bytes":bytes,"width":w,"height":h});
+        let preview = json!({"format":"live-manga-preview","schemaVersion":"1.0.0","savedAt":receipt["savedAt"],"scenes":[],"panels":[{"id":"p","sceneIds":[],"art":"ready","lettering":"none","motion":"none"}],"manifest":{"format":"live-manga","schemaVersion":"2.0.0","releaseId":id,"workId":"work","episodeId":"publication","title":"人工途中稿","language":"ja","assets":[asset(&poster,png.len(),1,1),asset(&layer_id,layer.len(),1600,2260)],"pages":[{"id":"page","width":1600,"height":2260,"art":layer_id,"overlay":layer_id,"fallback":layer_id,"panels":[{"id":"p","frame":{"x":0,"y":0,"width":1600,"height":2260},"clip":[[0,0],[1600,0],[1600,2260],[0,2260]],"artRect":{"x":0,"y":330,"width":1600,"height":1600},"poster":poster,"text":""}]}]}});
+        let request = json!({"preview":preview,"sources":{poster:{"image":image},layer_id:{"image":format!("data:image/png;base64,{}",STANDARD.encode(&layer))}}});
+        let first = stage(&root, &request).unwrap();
+        assert_eq!(stage(&root, &request).unwrap(), first);
+        assert_eq!(
+            restore(&root, id, "work", "publication").unwrap()["prepared"],
+            true
+        );
+        assert_eq!(
+            list(&root, "work", "publication")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(list(&root, "other", "publication").unwrap(), json!([]));
+        let mut bad = request.clone();
+        bad["preview"]["manifest"]["title"] = json!("changed");
+        assert!(stage(&root, &bad).is_err());
+        assert_eq!(raw_project(&db).unwrap()["revision"], 2);
+        fs::remove_dir_all(root).unwrap();
     }
 }

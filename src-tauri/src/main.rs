@@ -1,8 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod backup_commands;
+mod live_preview;
 mod llm;
 mod policy_transport;
-mod live_preview;
 mod runway;
 pub mod storage;
 mod web_asset;
@@ -601,25 +601,68 @@ fn live_video_probe(revision_id: String, state: State<'_, AppState>) -> Result<V
     storage::live_export::video_probe(&db, &state.root, &revision_id)
 }
 #[tauri::command]
-fn live_preview_capture(revision:u64,saved_at:String,state:State<'_,AppState>)->Result<Value,String>{
-    let db=state.db.lock().map_err(err)?;
-    storage::live_preview::capture(&db,&state.root,revision,&saved_at)
+fn live_preview_capture(
+    revision: u64,
+    saved_at: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let db = state.db.lock().map_err(err)?;
+    storage::live_preview::capture(&db, &state.root, revision, &saved_at)
 }
 #[tauri::command]
-fn live_preview_stage(request:Value,state:State<'_,AppState>)->Result<Value,String>{
-    storage::live_preview::stage(&state.root,&request)
+fn live_preview_stage(request: Value, state: State<'_, AppState>) -> Result<Value, String> {
+    storage::live_preview::stage(&state.root, &request)
 }
 #[tauri::command]
-fn live_preview_video_probe(revision:String,video_revision:String,state:State<'_,AppState>)->Result<Value,String>{
-    storage::live_preview::video_probe(&state.root,&revision,&video_revision)
+fn live_preview_video_probe(
+    revision: String,
+    video_revision: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    storage::live_preview::video_probe(&state.root, &revision, &video_revision)
 }
 #[tauri::command]
-fn live_preview_cancel(revision:String)->Result<(),String>{live_preview::cancel(&revision)}
+fn live_preview_cancel(revision: String) -> Result<(), String> {
+    live_preview::cancel(&revision)
+}
 #[tauri::command]
-async fn live_preview_send(revision:String,origin:String,token:String,base_revision:Option<String>,work_id:String,episode_id:String,state:State<'_,AppState>)->Result<Value,String>{
-    static GATE:tokio::sync::Mutex<()>=tokio::sync::Mutex::const_new(());
-    let _guard=GATE.lock().await;
-    live_preview::send(&state.root,&revision,&origin,&token,base_revision,(&work_id,&episode_id)).await
+fn live_preview_restore(
+    revision: String,
+    work_id: String,
+    episode_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    storage::live_preview::restore(&state.root, &revision, &work_id, &episode_id)
+}
+#[tauri::command]
+fn live_preview_list(
+    work_id: String,
+    episode_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    storage::live_preview::list(&state.root, &work_id, &episode_id)
+}
+#[tauri::command]
+async fn live_preview_send(
+    revision: String,
+    origin: String,
+    token: String,
+    base_revision: Option<String>,
+    work_id: String,
+    episode_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    static GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = GATE.lock().await;
+    live_preview::send(
+        &state.root,
+        &revision,
+        &origin,
+        &token,
+        base_revision,
+        (&work_id, &episode_id),
+    )
+    .await
 }
 #[tauri::command]
 fn live_export(
@@ -816,6 +859,8 @@ fn main() {
             live_preview_stage,
             live_preview_video_probe,
             live_preview_cancel,
+            live_preview_restore,
+            live_preview_list,
             live_preview_send,
             register_llm,
             remove_llm,

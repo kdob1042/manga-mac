@@ -1,4 +1,4 @@
-import React,{useRef,useState} from 'react';
+import React,{useEffect,useRef,useState} from 'react';
 import {call,desktop} from './bridge.js';
 import {capturePreview,preparePreview,previewContentKey} from './live-preview.js';
 import {imageHash} from './revisions.js';
@@ -24,6 +24,9 @@ export default function LivePreviewControls({writer,current,ready}){
   const [revision,setRevision]=useState(''),[status,setStatus]=useState('idle'),[error,setError]=useState(''),[url,setUrl]=useState('');
   const captured=useRef(null),gate=useRef(false);
   const lastContent=useRef(null),sendingContent=useRef(null),lastRevision=useRef(null);
+  const [records,setRecords]=useState([]);
+  const workId=current.current.workId,episodeId=current.current.snapshots.find(s=>s.id===current.current.active)?.episodeId||'publication';
+  useEffect(()=>{if(!ready||!desktop())return;let active=true;call('live_preview_list',{workId,episodeId}).then(async rows=>{if(!active)return;setRecords(rows);const last=rows.at(-1);if(last){setRevision(last.revision);setOrigin(last.destination?.origin??'');setBase(last.destination?.baseRevision??'');if(last.received){const saved=await call('live_preview_restore',{revision:last.revision,workId,episodeId});if(!active)return;lastContent.current=previewContentKey(saved.project);lastRevision.current=last.received.current;setStatus('sent');}}}).catch(()=>{});return()=>{active=false;};},[ready,workId,episodeId]);
   const working=['preparing','transferring','verifying'].includes(status);
   async function transfer(resume){
     if(gate.current)return;gate.current=true;setError('');setUrl('');
@@ -39,6 +42,11 @@ export default function LivePreviewControls({writer,current,ready}){
         captured.current=await capturePreview(writer,()=>current.current,revision=>call('live_preview_capture',{revision,savedAt:new Date().toISOString()}));
         id=captured.current.revision;setRevision(id);
         sendingContent.current=previewContentKey(captured.current.project);
+      }
+      if(resume&&!captured.current){
+        const recovered=await call('live_preview_restore',{revision:id,workId,episodeId});
+        sendingContent.current=previewContentKey(recovered.project);
+        if(!recovered.prepared)captured.current=recovered;
       }
       if(captured.current?.revision===id){
         setStatus('preparing');
@@ -66,6 +74,7 @@ export default function LivePreviewControls({writer,current,ready}){
     <label>転送先の現在版（初回は空欄） <input value={base} disabled={working} onChange={e=>setBase(e.target.value)}/></label>
     <button disabled={!ready||!desktop()||working||!current.current.panels.length} onClick={()=>transfer(false)}>この転送先へ保存済みの話を転送</button>
     <label>再開する転送版 <input value={revision} disabled={working} onChange={e=>{captured.current=null;setRevision(e.target.value);}}/></label>
+    {!!records.length&&<label>保存した転送記録<select disabled={working} value={revision} onChange={e=>{const row=records.find(r=>r.revision===e.target.value);if(!row)return;captured.current=null;setRevision(row.revision);setOrigin(row.destination?.origin??'');setBase(row.destination?.baseRevision??'');setStatus('idle');setUrl('');}}><option value="">転送版を選択</option>{records.map(r=><option key={r.revision} value={r.revision}>{r.savedAt} · {r.received?'受信確認済み':'未完了'} · {r.revision}</option>)}</select></label>}
     <button disabled={!ready||!desktop()||working||!revision} onClick={()=>transfer(true)}>不足分から再開</button>
     <button disabled={status!=='transferring'} onClick={()=>call('live_preview_cancel',{revision}).then(()=>setError('送信中のアセットを回収して停止します。確定済みの場合は結果を確認します。')).catch(e=>setError(String(e)))}>転送を停止</button>
     <output aria-live="polite">{labels[status]}</output>{error&&<p role="alert">{error}</p>}
