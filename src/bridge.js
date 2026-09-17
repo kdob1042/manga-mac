@@ -8,7 +8,10 @@ export async function call(command, args = {}) {
 }
 export async function saveProject(project) {
   const normalized = await migrateProject(project);
-  if (desktop()) await call('save_project', { data: JSON.stringify(normalized) });
+  if (desktop()) {
+    await call('save_project', { data: JSON.stringify(normalized) });
+    if(normalized.version>=5){const saved=await call('load_project');return migrateProject(JSON.parse(saved));}
+  }
   else await idb('readwrite', store => store.put(normalized, 'project'));
   return normalized;
 }
