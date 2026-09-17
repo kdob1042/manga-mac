@@ -79,6 +79,7 @@ export function executeLocalEdits(project, candidate) {
 export function undoEdit(project, redo=false) {
   const from=redo?'editRedo':'history',entry=project[from]?.at(-1);
   if(!entry) return project;
+  if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(!entry.edit) {
     if(redo) return project;
     return {...project,panels:entry.panels,history:project.history.slice(0,-1),editRedo:[]};
