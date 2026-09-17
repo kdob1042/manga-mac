@@ -1,7 +1,8 @@
 import { prepareFinishing } from './panel-actions';
 import React,{useEffect,useState} from 'react';
 import {call,desktop} from './bridge';
-import {imageOf,pagePNG} from './render';
+import { imageOf } from './canvas-image.js';
+import { pagePNG } from './render.js';
 import {pagePanels} from './layout.js';
 import {finishingPlan} from './finishing.js';
 import {placementKey} from './placement.js';

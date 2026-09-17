@@ -1,7 +1,8 @@
 import {recognizeRegions,letteringFrame} from './visual-regions';
 import React, { useState, useRef, useEffect } from 'react';
 import { defaultLettering, setLettering, validateLettering } from './lettering';
-import { drawLettering, imageOf, pagePNG, pageLayers } from './render';
+import { drawLettering, pagePNG, pageLayers } from './render.js';
+import { imageOf } from './canvas-image.js';
 import { pagePanels } from './layout';
 import { textForPanel } from './localization';
 import { proposeLettering } from './lettering-ai';

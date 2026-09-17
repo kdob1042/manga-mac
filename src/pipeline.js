@@ -68,7 +68,7 @@ export async function generatePanel(panel, characters, original = null, instruct
   const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution);
   if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
-    const { fitInput } = await import('./render');
+    const { fitInput } = await import('./canvas-image.js');
     const fitted = await fitInput(source, width, height); source = fitted.image; mapping = fitted.mapping;
   }
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];

@@ -1,6 +1,6 @@
 import { prepareInterpolation } from './panel-actions';
 import React,{useEffect,useState} from 'react';
-import {imageOf} from './render';
+import { imageOf } from './canvas-image.js';
 import {adoptUpscale,discardUpscale,requiredScale,placementKey} from './upscale.js';
 export default function UpscaleControls({project,panel,current,commit,run,busy}) {
   const [size,setSize]=useState(null),[factor,setFactor]=useState(2);

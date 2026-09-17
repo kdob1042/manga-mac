@@ -22,7 +22,7 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  await page.getByRole('button',{name:'枠をUndo'}).click();await expect.poll(async()=>(await load()).layout.imageCrops[id].x).toBe(.5);
  await page.getByRole('button',{name:'枠をRedo'}).click();await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual(after);
  await page.reload();expect((await load()).layout.imageCrops[id]).toEqual(after);expect((await load()).panels).toEqual(p.panels);
- const result=await page.evaluate(async()=>{const p=await (await import('/src/bridge.js')).loadProject();const {pageLayers,pagePNG,exportCBZ}=await import('/src/render.js');const {pagePanels}=await import('/src/layout.js');const pg=p.layout.pages[0],panels=pagePanels(p,pg);
+ const result=await page.evaluate(async()=>{const p=await (await import('/src/bridge.js')).loadProject();const {pageLayers,pagePNG}=await import('/src/render.js');const {exportCBZ}=await import('/src/export.js');const {pagePanels}=await import('/src/layout.js');const pg=p.layout.pages[0],panels=pagePanels(p,pg);
  const before=await pageLayers(panels,p.snapshots,[], 'ja','overlay',pg),after=await pageLayers(panels,p.snapshots,[],'ja','overlay',pg,false,p.layout.imageCrops);
  const png=await pagePNG(panels,p.snapshots,[],'ja',pg,false,p.layout.imageCrops);
  return {sameText:before===after,png:png.split(',')[1],cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer()))};});
