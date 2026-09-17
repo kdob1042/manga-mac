@@ -232,7 +232,7 @@ jobs:
 
   mac:
     name: macOS validation
-    # The macOS runner validates every non-doc change after it is merged to dev.
+    # The macOS runner validates native/app packaging changes after they are merged to dev.
     # PRs use the Linux jobs above; main uses the release-only job below.
     if: >
       always() &&
