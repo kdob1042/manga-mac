@@ -42,7 +42,7 @@ function followUpReferences(body = '', fullName) {
 
 function related(pull, number, fullName) {
   // Only trusted same-repository branches can drive a privileged issue transition.
-  return pull.head.repo?.full_name?.toLowerCase() === fullName.toLowerCase() &&
+  return Boolean(pull?.head?.repo?.full_name) && pull.head.repo.full_name.toLowerCase() === fullName.toLowerCase() &&
     (references(pull.body, fullName).has(number) || pull.head.ref.startsWith(`issue/${number}-`));
 }
 
@@ -65,8 +65,8 @@ function completionCandidate(issue, pulls, fullName, hasFollowUp = false) {
 
 function failingRuns(runs, sha, ciName) {
   const latest = new Map();
-  for (const run of runs) {
-    if (run.head_sha !== sha || run.name !== ciName) continue;
+  for (const run of runs || []) {
+    if (!run || run.head_sha !== sha || run.name !== ciName) continue;
     const previous = latest.get(run.workflow_id);
     if (!previous || run.id > previous.id || (run.id === previous.id && run.run_attempt > previous.run_attempt)) {
       latest.set(run.workflow_id, run);
@@ -77,7 +77,7 @@ function failingRuns(runs, sha, ciName) {
 
 function changesRequested(reviews) {
   const latest = new Map();
-  for (const review of reviews) {
+  for (const review of reviews || []) {
     if (!review.user || !['APPROVED', 'CHANGES_REQUESTED', 'DISMISSED'].includes(review.state)) continue;
     const previous = latest.get(review.user.login);
     if (!previous || review.id > previous.id) latest.set(review.user.login, review);
@@ -119,7 +119,7 @@ async function reconcile({ github, context, core, dryRun = false }) {
   const pulls = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'all', per_page: 100 });
   const health = new Map();
   const ciName = repo === 'manga-mac' ? 'Check and build Mac app' : 'Live Manga CI';
-  for (const pull of pulls.filter(p => p.state === 'open' && p.head.repo?.full_name === fullName)) {
+  for (const pull of pulls.filter(p => p?.state === 'open' && p?.head?.sha && p?.head?.repo?.full_name === fullName)) {
     const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo,
       { owner, repo, head_sha: pull.head.sha, per_page: 100 }, response => response.data.workflow_runs);
     const reviews = await github.paginate(github.rest.pulls.listReviews,
