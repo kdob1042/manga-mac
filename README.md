@@ -206,3 +206,7 @@ API仕様: [Gemini互換API](https://ai.google.dev/gemini-api/docs/openai)、[Cl
 書き出しにはFFmpegの`ffprobe`が必要（Macでは `/opt/homebrew/bin/ffprobe` / `/usr/local/bin/ffprobe` またはPATH）。`brew install ffmpeg`で導入後、再試行できる。自動再エンコードはせず、H.264・無音・対応比率だけを公開する。
 
 対応契約・固定commitは `vendor/live-manga/lock.json`。`node scripts/sync-live-contract.mjs`で整合チェック。元のPNG/CBZ/単独動画出力は継続する。
+
+### 複数作品の切替
+
+左側の「作品を追加」で表示名・GitHub repository・話IDを登録し、作品一覧から開きます。切替は保存後の再起動を伴います。原稿・画像・動画・Blender・履歴は作品ごとに独立し、既存作品は元の保存領域で開きます。トークンは起動中のみ保持するため再入力してください。対応する原稿構成はmanifest schema 4、VISUAL設定、assets/illustrations/配下の基準画です。

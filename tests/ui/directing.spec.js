@@ -12,6 +12,7 @@ test('one action directs four isolated shots, draws them, and edits without a fa
     const imageHash = async image => [...new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(atob(image.split(',')[1]), c=>c.charCodeAt(0))))].map(b=>b.toString(16).padStart(2,'0')).join('');
     window.__TAURI_INTERNALS__ = { invoke:async(command,args)=>{
       calls.push({command,args});
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
       if(command==='load_project') return JSON.stringify(project);
       if(command==='save_project') {project=JSON.parse(args.data);window.savedProject=project;return;}
       if(command==='backup_status') return {config:null,status:{},restored:[]};

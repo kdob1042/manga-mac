@@ -8,6 +8,8 @@ pub mod image_recovery;
 pub mod layout;
 #[path = "lettering.rs"]
 pub mod lettering;
+#[path = "source_library.rs"]
+pub mod source_library;
 
 #[path = "live_export.rs"]
 pub mod live_export;
