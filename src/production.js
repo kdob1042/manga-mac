@@ -1,3 +1,4 @@
+import {withResource} from './execution.js';
 import { activeDirection } from './directing.js';
 import { affectedScenes, revise } from './core.js';
 import {
@@ -166,14 +167,16 @@ export async function produceDraft({
 
 // Reuse the ordinary image jobs and recovery for a source candidate. Only the
 // candidate receives generated panels; the adopted manga remains unchanged.
-export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{}}){
+export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{}}){
  const check=()=>{const p=current(),owner=p.jobs.find(j=>j.id===opId&&j.kind==='sourcePatch');
   const c=owner?.source_candidate;if(owner?.status!=='candidate'||!c||c.prepared.identity.workId!==p.workId||c.prepared.identity.baseContentToken!==p.contentToken)throw Error('原稿反映の候補が古いか、取り下げられています');return {p,c};};
  const candidateProject=({p,c})=>({...p,...c.patch});
  const persist=async result=>{const {p,c}=check();const patch={...c.patch,panels:result.panels};const updated={...c,patch,redrawPanelIds:c.redrawPanelIds.filter(id=>!patch.panels.find(p=>p.id===id)?.image)};
-  return commit({...p,artworks:result.artworks,jobs:result.jobs.map(j=>j.id===opId?{...j,source_candidate:updated}:j)});};
- for(const id of check().c.redrawPanelIds){
+  const owned=result.jobs.filter(j=>j.sourcePatchOp===opId);
+  return commit(latest=>{if(latest.workId!==p.workId)throw Error('対象作品が変わりました');return {...latest,artworks:[...latest.artworks.filter(a=>!result.artworks.some(b=>b.id===a.id)),...result.artworks],jobs:latest.jobs.map(j=>j.id===opId?{...j,source_candidate:updated}:owned.find(n=>n.id===j.id)??j)};});};
+ for(const id of [...check().c.redrawPanelIds]){
   if(cancelled())return;
+  await refresh();
   let cp=candidateProject(check()),panel=cp.panels.find(p=>p.id===id);if(panel.image)continue;
   const pending=cp.jobs.find(j=>j.sourcePatchOp===opId&&j.panelId===id&&['unknown','candidate'].includes(j.status));
   if(pending){
@@ -182,12 +185,14 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
    await persist(await adoptCandidate(cp,pending.id));continue;
   }
   const job={...await beginJob(cp,panel),sourcePatchOp:opId};
-  await commit({...current(),jobs:[...current().jobs,job]});notify(`${id} の必要な作画を生成中`);
+  await commit(p=>{if(p.workId!==cp.workId)throw Error('対象作品が変わりました');return {...p,jobs:[...p.jobs,job]};});notify(`${id} の必要な作画を生成中`);
+  let submitted=false;
   try {
-   const generated=await generate(panel,cp.characters,null,'',job,null,cp.style_references??[]);
+   const generated=await withResource('local-inference',1,async permit=>{await refresh();submitted=true;return generate(panel,cp.characters,null,'',job,null,cp.style_references??[],null,permit);},{cancelled,waiting:()=>notify('ローカル推論は1件ずつ実行します。順番を待っています')});
+   await refresh();
    await persist(await finishJob(candidateProject(check()),job,generated));
   }catch(e){
-   const p=current();if(p.workId===cp.workId)await commit({...p,jobs:p.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)});throw e;
+   const p=current();if(p.workId===cp.workId)await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:submitted?'unknown':'cancelled',...(!submitted?{notSubmitted:true}:{})}:j)}));throw e;
   }
  }
 }

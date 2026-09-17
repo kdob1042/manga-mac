@@ -4,7 +4,7 @@ test('registration clears UI key; normal typed jobs use only the connection ID',
     window.nativeCalls = [];
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
       window.nativeCalls.push({ command, args });
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if (command === 'load_project') return null;
       if (command === 'register_llm') return 'registered-fixture';
       if (command === 'llm_request') return { request_id: args.request.request_id, value: { ok: true } };

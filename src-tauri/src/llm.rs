@@ -71,6 +71,7 @@ impl Connection {
 #[derive(Default)]
 pub struct Connections {
     entries: Mutex<HashMap<String, Arc<Connection>>>,
+    limits: Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>,
     submitted: Mutex<HashSet<String>>,
     active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
     cancelled: Mutex<HashSet<String>>,
@@ -110,6 +111,14 @@ fn id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 impl Connections {
+    pub fn is_local(&self, id: &str) -> Result<bool, String> {
+        self.entries
+            .lock()
+            .map_err(|_| failure())?
+            .get(id)
+            .map(|c| c.provider == Provider::Ollama)
+            .ok_or_else(failure)
+    }
     pub async fn register_video(&self, input: VideoRegistration) -> Result<String, String> {
         if !input.approved
             || !(60..=6000).contains(&input.max_credits)
@@ -273,8 +282,24 @@ impl Connections {
                 .remove(&request.request_id);
             return Err("中止済みの要求です".into());
         }
+        let limit = {
+            let mut limits = self.limits.lock().map_err(|_| failure())?;
+            limits
+                .entry(connection.endpoint.clone())
+                .or_insert_with(|| {
+                    Arc::new(tokio::sync::Semaphore::new(
+                        if connection.provider == Provider::Ollama {
+                            1
+                        } else {
+                            2
+                        },
+                    ))
+                })
+                .clone()
+        };
         let result = tokio::select! {
             result = async {
+                let _permit=limit.acquire().await.map_err(|_|failure())?;
                 let transport = PolicyTransport::new(&connection.endpoint, connection.provider == Provider::Ollama, connection.path()).await?;
                 complete(&connection, &request, transport).with_subscriber(tracing::subscriber::NoSubscriber::default()).await
             } => result,
