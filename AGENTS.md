@@ -8,7 +8,7 @@ Blenderの既存機能はAPI／既存MCP／アドオンで再利用する。新�
 
 変更はGitHubの最新`dev`を確認し、`dev`から作業ブランチを作ってPRで`dev`へ集約する。GitHubのdefault branchが`main`でも、通常作業の起点には使わない。Cloud Agent等でBase Branchを指定できる場合は`dev`を明示し、指定できない場合も作業開始前に最新`dev`へ切り替える。PRのbaseも通常は`dev`とし、ツール既定値の`main`へ誤ってPRを出さない。
 
-CIもこのブランチ運用に合わせる。通常のコード変更PR（`feature/*`・`fix/*`などから`dev`）では共通のLinuxチェックを実行する。ドキュメントのみのPR、`dev`から`main`への昇格PR、変更のないブランチ同期PRでは変更分類だけを実行し、重い検証を省略する。非文書変更が`dev`へマージされたpushでは、macOSのSwift/Tauri arm64ビルド、Rust回帰試験、DMG生成まで実行する`macOS validation`を完了させる。これが失敗したコミットは`main`へ昇格させず、原因を修正して`dev`へ反映する。`main`へのマージ後は検証を重ねず、配布用DMGだけを作る`macOS release package`を実行する。Actionsの成功と実機での視覚・性能受入は別判定とする。
+CIもこのブランチ運用に合わせる。PRと`dev` pushでは、変更分類に応じて`web`・`storage`・`llm`・`blender`の該当チェックだけを実行する。共通Rust・依存関係・未知の変更は全系統を実行する。UIのブラウザ試験、実Live連携、実Blenderレンダリング、依存監査はさらに該当変更だけで実行する。native/Tauri変更が`dev`へマージされたpushでは`macOS validation`を実行する。これが失敗したコミットは`main`へ昇格させず、原因を修正して`dev`へ反映する。`main`へのコード変更マージ後は配布用DMGを作る`macOS release package`を実行する。Actionsの成功と実機での視覚・性能受入は別判定とする。
 
 受け入れ可能なまとまりごとに`dev → main`のPRを作り、必要な検証後に反映する。`main`と`dev`へ直接pushしない。公開・配布上の重大不具合だけ`hotfix/* → main`を許し、main固有の修正は必要に応じて別PRで`dev`にも反映する。履歴を合わせるだけの`main → dev`同期は通常行わない。ローカルに置いただけで完了としない。コード用リポジトリの更新と、アプリが読み取り専用で扱う原作リポジトリを混同しない。
 
