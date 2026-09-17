@@ -59,9 +59,9 @@ function App() {
   const english = currentEnglishLocalization(project, snapshot);
   function panelText(panel) {
     const panelSnapshot = project.snapshots.find(s => s.id === panel.snapshotId);
-    if (project.output_locale !== 'en') return textForPanel(panel, panelSnapshot);
+    if (project.output_locale !== 'en') return textForPanel(panel, panel.sourceRefs?project.snapshots:panelSnapshot);
     const localization = project.localizations.find(item => item.locale === 'en' && item.snapshot_id === panel.snapshotId);
-    return localization ? textForPanel(panel, panelSnapshot, localization) : '英訳未作成';
+    return localization ? textForPanel(panel, panel.sourceRefs?project.snapshots:panelSnapshot, panel.sourceRefs?project.localizations:localization) : '英訳未作成';
   }
   async function translateEnglish() {
     if (!snapshot) throw Error('まず原作を接続してください');

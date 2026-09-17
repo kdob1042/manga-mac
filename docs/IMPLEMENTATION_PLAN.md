@@ -129,6 +129,20 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 GitHubへの更新確認は「GitHub側の更新を確認」の明示操作のみ。起動時・定期の自動確認は行わない。場面／設定／参照画像の追加・変更・削除とmanifest変更の概要を一時表示し、「取り込む」で同一commitの不変SourceSnapshotをactiveにする。未取込みの候補はメモリ内だけに保持し、再起動・対象作品／話変更で破棄する。確認失敗・保存失敗では既存正本と漫画を維持する。旧snapshotは既存漫画の出所・履歴として保持し、最新正本はactiveの1版とする。漫画への反映状態のdiffとは別処理である。
 
+### 原稿範囲と漫画への反映（#114 確定契約・段階実装）
+
+SourceRefは不変snapshot ID・scene ID・Unicode scalarの半開区間startCp/endCpを持つ。scene.textは改行・空白・Unicode正規化をせずSHA-256で固定する。JSのUTF-16位置とRustのUTF-8位置は解決時だけ変換し、永続座標にしない。panel.sourceRefsは描写の一次対応、contextRefsは文脈、lettering.boxes[].sourceRefsは掲載文字。文字枠は独立IDを持ち、ページには既存panelIdだけを配置する。
+
+project.sourceApplication.version=1のunitsは、実際に漫画へ反映した原稿の順序付き参照列。unitはid/source/requiredTextを持ち、本文を複製しない。異なるsnapshotを混在できる。一次参照の和集合で本文を被覆し、requiredTextは文字枠の読書順で欠落・重複なく被覆する。描写参照は重なってよい。必要画像と配置が未完成なら反映済みにしない。既存作品は対応する旧snapshotのunitIdsからのみ移行し、欠損時は元データを残して診断する。schema 5は旧アプリによる欠落保存を拒否する。
+
+比較は反映参照列Bとactive原稿Tの本文段落。jsdiffのdiffArraysを上限付きで使い、一意の一致をアンカーにし、変更区間の曖昧な反復は一組の置換へ広げる。移動は削除と追加を同時選択し既存IDと画像を再利用する。ChangeSetは作品・基準token・対象snapshotを含み、取込や編集後の選択を転用しない。AIを呼ぶ前に選択ブロックだけからB'を確定し、未選択の旧版参照を維持する。
+
+確定は既存SQLiteトランザクション内で最新作品・native発行contentToken・targetSnapshotId・opIdを照合し、漫画、反映参照列、Undoのbefore/after、確定記録を一括保存する。Job進捗はtokenから除き、remote metadataと費用を古いUIで巻き戻さない。同一opIdはUndo後も再実行しない。Undo/Redoは漫画と反映参照列だけを戻し、最新原稿activeは戻さない。対象外の内容と許可配置区間外は不変とする。
+
+描画・書出し・字幕は共通の範囲解決を使い、日本語offsetを英訳へ流用しない。完全一致の旧段落英訳だけ再利用し、部分範囲に対応がなければ未更新とする。初稿も空Bから同じ検査を経由する。
+
+段階実装の範囲: 範囲解決、旧履歴を含む移行関数、B/T差分、nativeのprepare_source_patch／commit_source_patch、被覆・読書順・配置の境界検証、Undo/Redoを追加。prepareは既存JobにB'と影響範囲を固定し、commitは既存保存の内部関数を単一トランザクションで共有する。確定receiptはUndo・再起動・古いUI保存でも消さない。共有コマの内容変更は新IDとreplacesPanelIdsで置換元を示し、未選択の一次原文を再構成先で保持する。Mac起動時は既存保存経路でschema 5へ変換し、保存成功後だけ画面へ返す。変換前は既存バックアップで保持する。作画待ちコマには文字配置を補完しない。文字配置AIは独立box IDと厳密な原文を受け、返却した形状へアプリ側が不変SourceRefを戻す。固定枠・原文参照・順序の変更を拒否する。大入力ではscene IDの対応を使って粗い差分を場面ごとに限定し、処理不能を更新なしにしない。制作UIから差分確定までの接続は未完了。#115/#116/#108がこの契約を利用する。未接続の関数を利用可能な原稿反映機能とは扱わない。
+
 ### 4.2 舞台・瞬間・カメラ
 
 同じ駅の素材は再利用する。同じ瞬間の別アングルは同じScene/frameを別カメラで撮る。次の瞬間の演技はBlenderのScene、Action、frame等で表現し、別のポーズエンジンを作らない。

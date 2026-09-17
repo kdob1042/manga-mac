@@ -28,7 +28,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
       if(panel.image){const p=current.current,pg=p.layout.pages[pageIndex],frame=letteringFrame(p,panel.id);const im=await imageOf(await pageLayers(pagePanels(p,pg),p.snapshots,p.localizations,p.output_locale,'art',pg,true,p.layout.imageCrops));if(stale)return;ctx.drawImage(im,frame.x,frame.y,frame.width,frame.height,2,2,716,716);}
       const p=current.current,snapshot=p.snapshots.find(s=>s.id===panel.snapshotId),localization=p.output_locale==='en'?p.localizations.find(l=>l.snapshot_id===panel.snapshotId&&l.locale==='en'):null;
       if(p.output_locale==='en'&&!localization)throw Error('英訳未作成');
-      for(const b of layout.boxes)drawLettering(ctx,textForPanel({...panel,unitIds:[b.unit_id]},snapshot,localization),{x:2+b.x*716,y:2+b.y*716,width:b.width*716,height:b.height*716},true,b);
+      for(const b of layout.boxes)drawLettering(ctx,textForPanel({...panel,unitIds:[b.unit_id],...(b.sourceRefs?{sourceRefs:b.sourceRefs}:{})},panel.sourceRefs?p.snapshots:snapshot,panel.sourceRefs&&localization?p.localizations:localization),{x:2+b.x*716,y:2+b.y*716,width:b.width*716,height:b.height*716},true,b);
       setProblem('');
     }
     if(layout.mode==='balloons')paint().catch(e=>{if(!stale)setProblem(e.message);});
@@ -43,13 +43,13 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
         <svg viewBox="0 0 1 1" tabIndex="0" aria-label="吹き出し直接編集" onKeyDown={e=>{if(e.key==='Escape')reset();}}
           onPointerMove={e=>{const d=drag.current;if(!d||busy)return;const [x,y]=point(e),b=d.before.boxes[d.index],next=structuredClone(d.before),n=next.boxes[d.index],clamp=(v,min,max)=>Math.max(min,Math.min(max,v));if(d.kind==='tail')n.tail=[x,y];else if(d.kind==='resize'){n.width=clamp(b.width+x-d.start[0],.08,1-b.x);n.height=clamp(b.height+y-d.start[1],.06,1-b.y);}else{n.x=clamp(b.x+x-d.start[0],0,1-b.width);n.y=clamp(b.y+y-d.start[1],0,1-b.height);}setLayout(next);}}
           onPointerCancel={reset} onLostPointerCapture={reset} onPointerUp={()=>{const d=drag.current;if(!d)return;drag.current=null;if(JSON.stringify(d.before)===JSON.stringify(layout))return;run('文字配置を保存中',async()=>{if(d.base!==editBase(current.current))throw Error('編集中に作品が変わりました');await save(layout);});}}>
-          {layout.boxes.map((b,i)=><g key={b.unit_id} onPointerDown={e=>{e.preventDefault();setIndex(i);if(busy||b.locked)return;const svg=e.currentTarget.ownerSVGElement;svg.focus();svg.setPointerCapture(e.pointerId);const r=svg.getBoundingClientRect();drag.current={before:structuredClone(layout),index:i,start:[(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height],kind:e.target.dataset.kind??'move',base:editBase(current.current)};}}>
+          {layout.boxes.map((b,i)=><g key={b.id??b.unit_id} onPointerDown={e=>{e.preventDefault();setIndex(i);if(busy||b.locked)return;const svg=e.currentTarget.ownerSVGElement;svg.focus();svg.setPointerCapture(e.pointerId);const r=svg.getBoundingClientRect();drag.current={before:structuredClone(layout),index:i,start:[(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height],kind:e.target.dataset.kind??'move',base:editBase(current.current)};}}>
             <rect data-testid={`letter-box-${i}`} x={b.x} y={b.y} width={b.width} height={b.height} fill="transparent" stroke={i===index?'#e36e42':'#888'} strokeWidth=".003"/>
             {i===index&&!b.locked&&<><rect data-kind="resize" x={b.x+b.width-.013} y={b.y+b.height-.013} width=".026" height=".026" fill="#e36e42"/>{b.tail&&<circle data-kind="tail" cx={b.tail[0]} cy={b.tail[1]} r=".018" fill="#176c79"/>}</>}
           </g>)}
         </svg></div>
       {problem&&<p role="alert">{problem}</p>}
-      <label>原文の段落<select value={index} onChange={e=>setIndex(Number(e.target.value))}>{layout.boxes.map((b,i)=><option key={b.unit_id} value={i}>{i+1} · {b.unit_id}</option>)}</select></label>
+      <label>原文の段落<select value={index} onChange={e=>setIndex(Number(e.target.value))}>{layout.boxes.map((b,i)=><option key={b.id??b.unit_id} value={i}>{i+1} · {b.unit_id}</option>)}</select></label>
       {[['x','横位置',0,1,.01],['y','縦位置',0,1,.01],['width','幅',.08,1,.01],['height','高さ',.06,1,.01],['fontSize','文字サイズ',14,72,1],['lineHeight','行間',1,2,.05],['padding','余白',0,40,1]].map(([key,label,min,max,step])=><label key={key}>{label}<input aria-label={label} disabled={box.locked} type="number" min={min} max={max} step={step} value={box[key]??({fontSize:24,lineHeight:1.25,padding:12}[key])} onChange={e=>change({[key]:Number(e.target.value)})}/></label>)}
       <label>形状<select disabled={box.locked} value={box.shape??'round'} onChange={e=>change({shape:e.target.value})}><option value="round">角丸</option><option value="rect">長方形</option><option value="ellipse">楕円</option></select></label>
       <label><input type="checkbox" checked={!!box.locked} onChange={e=>change({locked:e.target.checked})}/>この吹き出しを固定</label>
