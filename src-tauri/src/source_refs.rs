@@ -100,7 +100,137 @@ pub fn validate(project: &Value) -> Result<(), String> {
         }
         Ok(())
     }
-    panels(project, project)
+    panels(project, project)?;
+    validate_application(project)
+}
+fn intersects(a: &Value, b: &Value) -> bool {
+    a["snapshotId"] == b["snapshotId"]
+        && a["sceneId"] == b["sceneId"]
+        && a["startCp"].as_u64() < b["endCp"].as_u64()
+        && b["startCp"].as_u64() < a["endCp"].as_u64()
+}
+pub(super) fn covers(target: &Value, refs: &[&Value]) -> bool {
+    let mut intervals: Vec<_> = refs
+        .iter()
+        .filter(|r| intersects(target, r))
+        .map(|r| {
+            (
+                r["startCp"]
+                    .as_u64()
+                    .unwrap()
+                    .max(target["startCp"].as_u64().unwrap()),
+                r["endCp"]
+                    .as_u64()
+                    .unwrap()
+                    .min(target["endCp"].as_u64().unwrap()),
+            )
+        })
+        .collect();
+    intervals.sort();
+    let mut end = target["startCp"].as_u64().unwrap();
+    for (a, b) in intervals {
+        if a > end {
+            return false;
+        }
+        end = end.max(b);
+    }
+    end == target["endCp"].as_u64().unwrap()
+}
+fn ordered_coverage(expected: &[&Value], actual: &[&Value]) -> bool {
+    let (mut i, mut j) = (0, 0);
+    let mut a = expected.first().and_then(|r| r["startCp"].as_u64());
+    let mut b = actual.first().and_then(|r| r["startCp"].as_u64());
+    while i < expected.len() && j < actual.len() {
+        let e = expected[i];
+        let r = actual[j];
+        if e["snapshotId"] != r["snapshotId"] || e["sceneId"] != r["sceneId"] || a != b {
+            return false;
+        }
+        let end = e["endCp"]
+            .as_u64()
+            .unwrap()
+            .min(r["endCp"].as_u64().unwrap());
+        a = Some(end);
+        b = Some(end);
+        if Some(end) == e["endCp"].as_u64() {
+            i += 1;
+            a = expected.get(i).and_then(|r| r["startCp"].as_u64());
+        }
+        if Some(end) == r["endCp"].as_u64() {
+            j += 1;
+            b = actual.get(j).and_then(|r| r["startCp"].as_u64());
+        }
+    }
+    i == expected.len() && j == actual.len()
+}
+pub fn validate_application(p: &Value) -> Result<(), String> {
+    let units = p["sourceApplication"]["units"]
+        .as_array()
+        .ok_or("Missing applied units")?;
+    if units.is_empty() {
+        return Ok(());
+    }
+    let panels = p["panels"].as_array().ok_or("Missing panels")?;
+    let placements: Vec<_> = p["layout"]["pages"]
+        .as_array()
+        .ok_or("Missing source layout")?
+        .iter()
+        .flat_map(|page| page["slots"].as_array().into_iter().flatten())
+        .map(|s| &s["panelId"])
+        .collect();
+    let mut required = vec![];
+    for (index, unit) in units.iter().enumerate() {
+        if units[..index]
+            .iter()
+            .any(|u| intersects(&u["source"], &unit["source"]))
+        {
+            return Err("Overlapping applied units".into());
+        }
+        for r in unit["requiredText"]
+            .as_array()
+            .ok_or("Missing text policy")?
+        {
+            if !covers(r, &[&unit["source"]]) {
+                return Err("Required text is outside its unit".into());
+            }
+            required.push(r);
+        }
+        let linked: Vec<_> = panels
+            .iter()
+            .filter(|panel| {
+                panel["sourceRefs"]
+                    .as_array()
+                    .is_some_and(|rs| rs.iter().any(|r| intersects(r, &unit["source"])))
+            })
+            .collect();
+        if linked.is_empty()
+            || linked.iter().any(|panel| {
+                panel["image"].is_null()
+                    || panel["image"] == ""
+                    || placements.iter().filter(|id| ***id == panel["id"]).count() != 1
+            })
+        {
+            return Err("Applied artwork is incomplete or not uniquely placed".into());
+        }
+        let visual: Vec<_> = linked
+            .iter()
+            .flat_map(|panel| panel["sourceRefs"].as_array().into_iter().flatten())
+            .collect();
+        if !covers(&unit["source"], &visual) {
+            return Err("Missing primary source coverage".into());
+        }
+    }
+    let shown: Vec<_> = placements
+        .iter()
+        .filter_map(|id| panels.iter().find(|p| p["id"] == **id))
+        .flat_map(|panel| panel["lettering"]["boxes"].as_array().into_iter().flatten())
+        .flat_map(|b| b["sourceRefs"].as_array().into_iter().flatten())
+        .filter(|r| units.iter().any(|u| intersects(r, &u["source"])))
+        .collect();
+    if !ordered_coverage(&required, &shown) {
+        return Err("Required lettering is missing, duplicated or out of order".into());
+    }
+    Ok(())
 }
 pub fn token(project: &Value) -> String {
     let content = json!({"active":project["active"],"snapshots":project["snapshots"],"panels":project["panels"],"layout":project["layout"],"sourceApplication":project["sourceApplication"]});

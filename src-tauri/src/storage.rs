@@ -10,6 +10,8 @@ pub mod layout;
 pub mod lettering;
 #[path = "source_library.rs"]
 pub mod source_library;
+#[path = "source_patch.rs"]
+pub mod source_patch;
 #[path = "source_refs.rs"]
 pub mod source_refs;
 
@@ -431,7 +433,24 @@ fn remove_legacy_confirmation(value: &mut Value) {
     }
 }
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
+    let tx = db
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(err)?;
+    save_in_transaction(&tx, root, data, false)?;
+    tx.commit().map_err(err)
+}
+// Shared by ordinary saves and source-patch commits; never opens a nested BEGIN.
+fn save_in_transaction(
+    db: &Connection,
+    root: &Path,
+    data: &str,
+    source_commit: bool,
+) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
+    project
+        .as_object_mut()
+        .ok_or("Invalid project")?
+        .remove("contentToken");
     remove_legacy_confirmation(&mut project);
     if !matches!(project["version"].as_u64(), Some(1..=5)) {
         return Err("Unsupported project schema".into());
@@ -522,6 +541,35 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
                 }
             }
         }
+        if old_project.get("workId").is_some() {
+            if project.get("workId").is_some() && project["workId"] != old_project["workId"] {
+                return Err("Work identity cannot change".into());
+            }
+            project["workId"] = old_project["workId"].clone();
+        }
+        if !source_commit {
+            if let Some(receipts) = old_project.get("sourcePatchReceipts") {
+                project["sourcePatchReceipts"] = receipts.clone();
+            } else {
+                project
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("sourcePatchReceipts");
+            }
+        }
+        // Operation receipts survive stale UI saves, Undo and Redo.
+        if let Some(receipts) = old_project["sourcePatchReceipts"].as_object() {
+            let next = project
+                .as_object_mut()
+                .unwrap()
+                .entry("sourcePatchReceipts")
+                .or_insert(json!({}))
+                .as_object_mut()
+                .ok_or("Invalid patch receipts")?;
+            for (id, receipt) in receipts {
+                next.insert(id.clone(), receipt.clone());
+            }
+        }
         preserve_remote_jobs(&old_project, &mut project)?;
     }
     db.execute(
@@ -529,6 +577,9 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
         [&hash(backup.as_bytes()), backup],
     )
     .map_err(err)?;
+    if project["version"] == 5 && project.get("workId").is_none() {
+        project["workId"] = json!(uuid::Uuid::new_v4().to_string());
+    }
     let dir = root.join("artifacts");
     externalize(&mut project, &dir)?;
     check_video_references(&project, root)?;
@@ -536,13 +587,28 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut checked = project.clone();
     hydrate(&mut checked, &dir)?;
     sync_dir(root)?;
-    let tx = db.transaction().map_err(err)?;
-    tx.execute("INSERT INTO project(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data", [project.to_string()]).map_err(err)?;
-    tx.commit().map_err(err)
+    db.execute("INSERT INTO project(id,data) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET data=excluded.data", [project.to_string()]).map_err(err)?;
+    Ok(())
 }
 
 // An old UI snapshot must not erase task IDs, submitted markers or reserved cost.
 fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
+    if let Some(jobs) = old["jobs"].as_array() {
+        for job in jobs.iter().filter(|j| j.get("source_patch").is_some()) {
+            let next_jobs = next["jobs"].as_array_mut().ok_or("Missing jobs")?;
+            if let Some(existing) = next_jobs.iter_mut().find(|j| j["id"] == job["id"]) {
+                if existing["source_patch"] != job["source_patch"] {
+                    return Err("Prepared source plan is immutable".into());
+                }
+                // Commit is the only path allowed to set complete; stale UI must not undo it.
+                if job["status"] == "complete" || job["status"] == "cancelled" {
+                    existing["status"] = job["status"].clone();
+                }
+            } else {
+                next_jobs.push(job.clone());
+            }
+        }
+    }
     if let Some(jobs) = old["jobs"].as_array() {
         for job in jobs
             .iter()
@@ -619,6 +685,9 @@ pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
     data.map(|data| {
         let mut value: Value = serde_json::from_str(&data).map_err(err)?;
         remove_legacy_confirmation(&mut value);
+        if value["version"] == 5 {
+            value["contentToken"] = json!(source_refs::token(&value));
+        }
         hydrate(&mut value, &root.join("artifacts"))?;
         // A missing video must not make the user's entire manga unreadable.
         // Playback/adoption/export verify the individual artifact on demand.

@@ -263,6 +263,46 @@ fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     storage::load(&db, &state.root)
 }
 #[tauri::command]
+fn prepare_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    target_snapshot_id: String,
+    expected: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::prepare(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
+        &target_snapshot_id,
+        expected,
+    )
+}
+#[tauri::command]
+fn commit_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    target_snapshot_id: String,
+    patch: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::commit(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
+        &target_snapshot_id,
+        patch,
+    )
+}
+#[tauri::command]
 fn video_playback(
     app: tauri::AppHandle,
     revision_id: String,
@@ -719,6 +759,8 @@ fn main() {
             source_library,
             source_register,
             save_project,
+            prepare_source_patch,
+            commit_source_patch,
             load_project,
             video_playback,
             video_export,

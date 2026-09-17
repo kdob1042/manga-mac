@@ -65,6 +65,9 @@ pub fn root(base: &Path, id: &str) -> Result<PathBuf, String> {
     if !backup::uuid(id) || !list(base)?.iter().any(|e| e.id == id) {
         return Err("未登録の作品です".into());
     }
+    // macOS may expose the app-data/temp parent through an OS-managed link.
+    // Trust its canonical location, but never links below the workspace boundary.
+    let base = base.canonicalize().map_err(|e| e.to_string())?;
     let root = base.join("works").join(id);
     backup::regular(&root.join("manga.sqlite3"))?;
     if root.canonicalize().map_err(|e| e.to_string())? != root {
@@ -102,7 +105,7 @@ mod tests {
         let mut other = original.clone();
         other["title"] = serde_json::json!("作品B");
         super::super::save(&mut b, &second, &other.to_string()).unwrap();
-        assert_eq!(root(&base, &id).unwrap(), second);
+        assert_eq!(root(&base, &id).unwrap(), second.canonicalize().unwrap());
         drop(a);
         drop(b);
         let reopened = rusqlite::Connection::open(base.join("manga.sqlite3")).unwrap();
@@ -116,6 +119,41 @@ mod tests {
             .unwrap()
         );
         std::fs::remove_dir_all(base).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn parent_alias_is_allowed_but_workspace_links_are_rejected() {
+        use std::os::unix::fs::symlink;
+        let temp = std::env::temp_dir().join(format!("manga-links-{}", uuid::Uuid::new_v4()));
+        let base = temp.join("real");
+        let alias = temp.join("alias");
+        let id = uuid::Uuid::new_v4().to_string();
+        let work = base.join("works").join(&id);
+        std::fs::create_dir_all(&work).unwrap();
+        std::fs::write(work.join("manga.sqlite3"), []).unwrap();
+        register(
+            &base,
+            Entry {
+                id: id.clone(),
+                name: "work".into(),
+                repo: "owner/work".into(),
+                episode: "P01".into(),
+            },
+        )
+        .unwrap();
+        symlink(&base, &alias).unwrap();
+        assert_eq!(root(&alias, &id).unwrap(), work.canonicalize().unwrap());
+        let moved = temp.join("moved");
+        std::fs::rename(&work, &moved).unwrap();
+        symlink(&moved, &work).unwrap();
+        assert!(root(&base, &id).is_err());
+        std::fs::remove_file(&work).unwrap();
+        std::fs::rename(&moved, &work).unwrap();
+        let works = base.join("works");
+        std::fs::rename(&works, &moved).unwrap();
+        symlink(&moved, &works).unwrap();
+        assert!(root(&base, &id).is_err());
+        std::fs::remove_dir_all(temp).unwrap();
     }
     #[test]
     fn registrations_preserve_primary_and_reject_bad_updates() {

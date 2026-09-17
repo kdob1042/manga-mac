@@ -1,3 +1,4 @@
+import {initialLayout} from './layout.js';
 import {defaultLettering} from './lettering.js';
 import {sourceResolver,tokenizeSnapshot,legacyPanelRefs,refKey,covers,intersect} from './source-refs.js';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
@@ -15,7 +16,7 @@ export function migrateSourceApplication(project){
   for(const panel of value.panels??[]){
    if(panel.sourceRefs){panel.sourceRefs.forEach(resolve);continue;}
    const original=structuredClone(panel);
-   try {const refs=legacyPanelRefs(panel,project.snapshots);if(!refs.length&&!panel.manual)throw Error('旧コマの原文を特定できません');
+   try {const refs=legacyPanelRefs(panel,project.snapshots);if(!Array.isArray(panel.unitIds)&&!panel.manual)throw Error('旧コマの原文を特定できません');
     panel.lettering??=defaultLettering(panel);panel.sourceRefs=refs;panel.contextRefs=[];
     if(panel.lettering)for(const [i,box] of panel.lettering.boxes.entries()){
      const refs=legacyPanelRefs({...panel,sourceRefs:undefined,unitIds:[box.unit_id]},project.snapshots);
@@ -23,25 +24,26 @@ export function migrateSourceApplication(project){
     }
    }catch(e){for(const key of Object.keys(panel))delete panel[key];Object.assign(panel,original);diagnostics.push({panelId:panel.id,reason:e.message});}
   }
+  if(Array.isArray(value.panels)&&!value.sourceApplication){
+   const layout=value.layout??initialLayout(value.panels),placed=layout.pages.flatMap(page=>page.slots.map(slot=>slot.panelId)),ordered=placed.map(id=>value.panels.find(p=>p.id===id)).filter(Boolean);
+   const units=[],seen=new Set();
+   for(const panel of ordered)for(const ref of panel.sourceRefs??[]){
+    const snapshot=project.snapshots.find(s=>s.id===ref.snapshotId);if(!snapshot)continue;
+    for(const unit of tokenizeSnapshot(snapshot).filter(u=>intersect(ref,u.source))){
+     const k=refKey(unit.source);if(seen.has(k))continue;seen.add(k);
+     const linked=value.panels.filter(p=>(p.sourceRefs??[]).some(r=>intersect(r,unit.source)));
+     if(!linked.every(p=>p.image&&p.lettering&&placed.filter(id=>id===p.id).length===1))continue;
+     const text=ordered.filter(p=>linked.includes(p)).flatMap(p=>p.lettering.boxes.flatMap(b=>b.sourceRefs??[])).filter(r=>intersect(r,unit.source));
+     if(!covers([unit.source],linked.flatMap(p=>p.sourceRefs))||!covers([unit.source],text,{exact:true})||!sameRefOrder([unit.source],text))continue;
+     units.push({id:`legacy:${k}`,source:unit.source,requiredText:[unit.source]});
+    }
+   }
+   value.sourceApplication={version:1,units};
+   try{validateApplication({...project,...value,layout});}catch(e){value.sourceApplication.units=[];diagnostics.push({reason:e.message});}
+  }
   for(const entry of value.history??[])state(entry);for(const entry of value.editRedo??[])state(entry);if(value.after)state(value.after);
  }
  state(project);
- if(!project.sourceApplication){
-  const units=[],seen=new Set();
-  // Never mark plans or partial shared paragraphs as applied.
-  for(const panel of project.panels){if(!panel.sourceRefs)continue;
-   const snapshot=project.snapshots.find(s=>s.id===panel.snapshotId);if(!snapshot)continue;
-   for(const unit of tokenizeSnapshot(snapshot).filter(u=>panel.sourceRefs.some(r=>intersect(r,u.source)))){
-    const k=refKey(unit.source);if(seen.has(k))continue;seen.add(k);
-    const linked=project.panels.filter(p=>(p.sourceRefs??[]).some(r=>intersect(r,unit.source)));
-    if(!linked.every(p=>p.image&&p.lettering))continue;
-    const text=linked.flatMap(p=>p.lettering.boxes.flatMap(b=>b.sourceRefs??[])).filter(r=>intersect(r,unit.source));
-    if(!covers([unit.source],linked.flatMap(p=>p.sourceRefs))||!covers([unit.source],text,{exact:true}))continue;
-    units.push({id:`legacy:${k}`,source:unit.source,requiredText:[unit.source]});
-   }
-  }
-  project.sourceApplication={version:1,units};
- }
  project.sourceDiagnostics=diagnostics;return project;
 }
 export function validateApplication(project,units=project.sourceApplication?.units??[]){
@@ -83,7 +85,11 @@ export function validateSourcePatch(project,expected,patch){
  const affected=buildAffectedScope(project,expected.sourceEdits),allowed=new Set(affected.contentPanelIds),old=new Map(project.panels.map(p=>[p.id,p]));
  for(const panel of project.panels){const next=patch.panels.find(p=>p.id===panel.id);
   if(!allowed.has(panel.id)&&!same(panel,next))throw Error('対象外のコマは変更できません');
-  if(allowed.has(panel.id)&&!next&&(panel.manual||(panel.sourceRefs??[]).some(r=>expected.retainRefs.some(keep=>intersect(keep,r)))))throw Error('残す原文または手動要素のあるコマは削除できません');
+  if(allowed.has(panel.id)&&!next){
+   const retained=(panel.sourceRefs??[]).flatMap(r=>expected.retainRefs.filter(keep=>intersect(keep,r)).map(keep=>({...r,startCp:Math.max(r.startCp,keep.startCp),endCp:Math.min(r.endCp,keep.endCp)})));
+   const replacements=patch.panels.filter(p=>p.replacesPanelIds?.includes(panel.id)).flatMap(p=>p.sourceRefs??[]);
+   if(panel.manual||!covers(retained,replacements))throw Error('残す原文または手動要素のあるコマは削除できません');
+  }
   for(const box of panel.lettering?.boxes??[])if(box.locked&&!same(box,next?.lettering?.boxes.find(b=>b.id===box.id)))throw Error('固定した文字枠は変更できません');
  }
  for(const panel of patch.panels){if(old.has(panel.id)&&!same(old.get(panel.id).sourceRefs,panel.sourceRefs))throw Error('内容を変更したコマには新IDが必要です');}

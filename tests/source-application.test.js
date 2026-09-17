@@ -18,3 +18,7 @@ test('applied content requires unique placement and reference reading order, eve
  const next=await upgradeSourceProject(fixture());next.layout.pages[0].slots=[];assert.throws(()=>validateApplication(next),/配置/);
  const p=await upgradeSourceProject(fixture());p.sourceApplication.units.reverse();assert.throws(()=>validateApplication(p),/読書順/);
 });
+test('migration restores source applications in Undo/Redo history while preserving source text and art',async()=>{
+ const p=fixture();p.history=[{panels:structuredClone(p.panels),layout:structuredClone(p.layout),after:{panels:structuredClone(p.panels),layout:structuredClone(p.layout)}}];p.editRedo=structuredClone(p.history);
+ const migrated=await upgradeSourceProject(p);for(const state of [migrated.history[0],migrated.history[0].after,migrated.editRedo[0]]){assert.equal(state.sourceApplication.units.length,2);assert.deepEqual(state.layout,p.layout);assert.equal(state.panels[0].image,p.panels[0].image);assert.equal(state.panels[0].sourceRefs[0].snapshotId,'old');}
+});
