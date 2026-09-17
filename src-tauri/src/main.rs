@@ -553,7 +553,7 @@ async fn blender_download_web_asset(
         let db = state.db.lock().map_err(err)?;
         let current = blender::status(&db, &session_id)?;
         if current["revision"].as_u64() != Some(expected_revision)
-            || current["jobs"].as_array().map_or(false, |jobs| {
+            || current["jobs"].as_array().is_some_and(|jobs| {
                 jobs.iter().any(|job| {
                     matches!(
                         job["status"].as_str(),
