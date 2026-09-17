@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "phases": [
+    {
+      "id": "classify",
+      "required": true,
+      "output": [
+        "task_type",
+        "route",
+        "profile",
+        "risk"
+      ]
+    },
+    {
+      "id": "plan",
+      "required": true,
+      "output": [
+        "scope",
+        "source_of_truth",
+        "acceptance_conditions",
+        "next_action"
+      ]
+    },
+    {
+      "id": "implement",
+      "required": true,
+      "output": [
+        "changed_files",
+        "decisions",
+        "unresolved_questions"
+      ]
+    },
+    {
+      "id": "verify",
+      "required": true,
+      "output": [
+        "commands",
+        "results",
+        "remaining_risk"
+      ]
+    },
+    {
+      "id": "handoff",
+      "required": true,
+      "output": [
+        "handoff_packet",
+        "next_action",
+        "current_branch_or_pr"
+      ]
+    }
+  ],
+  "source_of_truth": {
+    "user_scope": "The current explicit user request",
+    "project_rules": "The target repository root and applicable nested AGENTS.md files",
+    "project_design": "The target repository's declared design document",
+    "task_state": "The GitHub Issue and PR, when the repository uses them",
+    "code": "The target repository branch selected by its project rules"
+  },
+  "agent_file_resolution": {
+    "shared_layer": "The MAC-ENABLER managed block in the target root AGENTS.md",
+    "project_layer": "The target repository root AGENTS.md",
+    "nested_layer": "The nearest applicable nested AGENTS.md",
+    "conflict_policy": "Project facts and validation rules stay project-local; shared workflow rules stay in mac-enabler. Do not guess when two rules conflict."
+  },
+  "compact_protocol": {
+    "automatic_compaction_may_happen": true,
+    "repository_cannot_force_host_compaction": true,
+    "before_compaction": [
+      "Save the handoff packet to the Issue or PR, or to the repository-approved durable location.",
+      "Record the selected route and model profile.",
+      "Record changed files, tests, failures, remaining work, and the exact next action.",
+      "Record unresolved choices instead of silently deciding them."
+    ],
+    "after_compaction": [
+      "Read the target repository AGENTS.md again.",
+      "Read the latest handoff packet.",
+      "Confirm branch, PR, and working tree state.",
+      "Continue from the recorded next action; do not repeat discovery without a reason."
+    ],
+    "required_packet_fields": [
+      "goal",
+      "scope_and_constraints",
+      "route_and_profile",
+      "source_of_truth",
+      "current_branch_or_pr",
+      "changed_files",
+      "tests_and_results",
+      "remaining_work",
+      "unresolved_decisions",
+      "next_action"
+    ]
+  },
+  "completion_gate": [
+    "The requested scope is implemented or explicitly marked partial.",
+    "The target repository's required checks have been run or the omission is recorded.",
+    "Issue and PR references are correct.",
+    "Remaining work has an owner and a next action.",
+    "The handoff packet is durable before the context is compacted or handed off."
+  ]
+}

@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "profile_order": [
+    "fast",
+    "balanced",
+    "strong",
+    "max"
+  ],
+  "profiles": {
+    "fast": {
+      "cost_tier": "low",
+      "purpose": "分類、抽出、単純な整形、状態確認",
+      "reasoning_depth": "low"
+    },
+    "balanced": {
+      "cost_tier": "medium",
+      "purpose": "通常の実装、文書更新、通常の検証",
+      "reasoning_depth": "medium"
+    },
+    "strong": {
+      "cost_tier": "high",
+      "purpose": "複雑な実装、レビュー、障害対応、データ移行",
+      "reasoning_depth": "high"
+    },
+    "max": {
+      "cost_tier": "maximum",
+      "purpose": "アーキテクチャ、正本設計、重大な破壊リスクを伴う判断",
+      "reasoning_depth": "maximum"
+    }
+  },
+  "bindings": {
+    "fast": {
+      "env": "CODEX_MODEL_FAST"
+    },
+    "balanced": {
+      "env": "CODEX_MODEL_BALANCED"
+    },
+    "strong": {
+      "env": "CODEX_MODEL_STRONG"
+    },
+    "max": {
+      "env": "CODEX_MODEL_MAX"
+    }
+  },
+  "routes": [
+    {
+      "id": "architecture",
+      "profile": "max",
+      "keywords": [
+        "architecture",
+        "design",
+        "system design",
+        "設計",
+        "全体構成",
+        "正本",
+        "データモデル",
+        "責務分担"
+      ]
+    },
+    {
+      "id": "incident",
+      "profile": "strong",
+      "keywords": [
+        "incident",
+        "regression",
+        "debug",
+        "障害",
+        "不具合",
+        "原因調査",
+        "壊れた",
+        "復旧"
+      ]
+    },
+    {
+      "id": "review",
+      "profile": "strong",
+      "keywords": [
+        "review",
+        "audit",
+        "レビュー",
+        "監査",
+        "差分確認",
+        "コードレビュー"
+      ]
+    },
+    {
+      "id": "implementation",
+      "profile": "balanced",
+      "keywords": [
+        "implement",
+        "implementation",
+        "feature",
+        "refactor",
+        "実装",
+        "改修",
+        "リファクタリング",
+        "機能追加"
+      ]
+    },
+    {
+      "id": "verification",
+      "profile": "balanced",
+      "keywords": [
+        "test",
+        "verify",
+        "validation",
+        "検証",
+        "テスト",
+        "確認"
+      ]
+    },
+    {
+      "id": "documentation",
+      "profile": "balanced",
+      "keywords": [
+        "document",
+        "docs",
+        "documentation",
+        "文書",
+        "設計書",
+        "README"
+      ]
+    },
+    {
+      "id": "triage",
+      "profile": "fast",
+      "keywords": [
+        "triage",
+        "classify",
+        "list",
+        "status",
+        "分類",
+        "一覧",
+        "状態確認",
+        "要約",
+        "整理"
+      ]
+    },
+    {
+      "id": "handoff",
+      "profile": "fast",
+      "keywords": [
+        "handoff",
+        "checkpoint",
+        "compact",
+        "引き継ぎ",
+        "チェックポイント",
+        "コンパクション"
+      ]
+    }
+  ],
+  "guardrails": [
+    {
+      "id": "data-loss-or-production",
+      "minimum_profile": "strong",
+      "keywords": [
+        "production",
+        "本番",
+        "delete",
+        "deletion",
+        "削除",
+        "破壊",
+        "data loss",
+        "データ消失",
+        "credential",
+        "secret",
+        "認証情報",
+        "秘密情報",
+        "課金"
+      ]
+    },
+    {
+      "id": "migration-or-public-contract",
+      "minimum_profile": "strong",
+      "keywords": [
+        "migration",
+        "migrate",
+        "移行",
+        "schema",
+        "スキーマ",
+        "公開API",
+        "public api",
+        "互換性"
+      ]
+    }
+  ],
+  "fallback": {
+    "route": "implementation",
+    "profile": "balanced"
+  },
+  "enforcement": {
+    "policy": "The router selects a required capability profile; the caller maps that profile to an actual model.",
+    "chatgpt_work": "Model selection may remain manual. Declare the profile instead of pretending that a switch occurred.",
+    "cli_or_sdk": "Map binding_env to a configured model ID before starting the task."
+  }
+}

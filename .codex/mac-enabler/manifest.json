@@ -1,0 +1,10 @@
+{
+  "source": "kdob1042/mac-enabler",
+  "version": 1,
+  "managed_paths": [
+    "AGENTS.md managed block",
+    ".codex/mac-enabler/model-routing.json",
+    ".codex/mac-enabler/workflow.json",
+    ".codex/mac-enabler/compact-protocol.md"
+  ]
+}
