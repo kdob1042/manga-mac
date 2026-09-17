@@ -23,13 +23,15 @@ export default function LivePreviewControls({writer,current,ready}){
   const [origin,setOrigin]=useState(''),[token,setToken]=useState(''),[base,setBase]=useState('');
   const [revision,setRevision]=useState(''),[status,setStatus]=useState('idle'),[error,setError]=useState(''),[url,setUrl]=useState('');
   const captured=useRef(null),gate=useRef(false);
+  const configurationTouched=useRef(false);
   const lastContent=useRef(null),sendingContent=useRef(null),lastRevision=useRef(null);
   const [records,setRecords]=useState([]);
   const workId=current.current.workId,episodeId=current.current.snapshots.find(s=>s.id===current.current.active)?.episodeId||'publication';
-  useEffect(()=>{if(!ready||!desktop())return;let active=true;call('live_preview_list',{workId,episodeId}).then(async rows=>{if(!active)return;setRecords(rows);const last=rows.at(-1);if(last){setRevision(last.revision);setOrigin(last.destination?.origin??'');setBase(last.destination?.baseRevision??'');if(last.received){const saved=await call('live_preview_restore',{revision:last.revision,workId,episodeId});if(!active)return;lastContent.current=previewContentKey(saved.project);lastRevision.current=last.received.current;setStatus('sent');}}}).catch(()=>{});return()=>{active=false;};},[ready,workId,episodeId]);
+  useEffect(()=>{if(!ready||!desktop())return;let active=true;call('live_preview_list',{workId,episodeId}).then(async rows=>{if(!active)return;setRecords(rows);if(configurationTouched.current||gate.current)return;const last=rows.at(-1);if(last){setRevision(last.revision);setOrigin(last.destination?.origin??'');setBase(last.destination?.baseRevision??'');if(last.received){const saved=await call('live_preview_restore',{revision:last.revision,workId,episodeId});if(!active||configurationTouched.current||gate.current)return;lastContent.current=previewContentKey(saved.project);lastRevision.current=last.received.current;setStatus('sent');}}}).catch(()=>{});return()=>{active=false;};},[ready,workId,episodeId]);
   const working=['preparing','transferring','verifying'].includes(status);
   async function transfer(resume){
     if(gate.current)return;gate.current=true;setError('');setUrl('');
+    configurationTouched.current=true;
     const workId=current.current.workId,episodeId=current.current.snapshots.find(s=>s.id===current.current.active)?.episodeId||'publication';
     try{
       const endpoint=new URL(origin);
@@ -63,7 +65,7 @@ export default function LivePreviewControls({writer,current,ready}){
       lastContent.current=sendingContent.current;lastRevision.current=result.current;
     }catch(e){setStatus('failed');setError(e.message??String(e));}finally{gate.current=false;}
   }
-  return <details className="source-reader"><summary>Live Mangaへ非公開プレビューを転送</summary>
+  return <details className="source-reader" onChangeCapture={()=>{configurationTouched.current=true;}}><summary>Live Mangaへ非公開プレビューを転送</summary>
     <p>保存サービス: Cloudflare R2 · 非公開preview · 対象: {current.current.title} / {current.current.snapshots.find(s=>s.id===current.current.active)?.episodeId??'publication'}</p>
     <p>保存済みの話全体を転送します。タグや選択中のコマでは絞り込みません。制作は転送中も続けられます。</p>
     <p>ページ未配置のコマ: {current.current.panels.filter(p=>!current.current.layout?.pages.some(pg=>pg.slots.some(s=>s.panelId===p.id))).length}（未構成範囲は転送しません）</p>
