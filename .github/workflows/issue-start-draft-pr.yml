@@ -51,17 +51,24 @@ jobs:
             }
 
             const { owner, repo } = context.repo;
-            let permission = 'none';
-            try {
-              const permissionResponse =
-                await github.rest.repos.getCollaboratorPermissionLevel({
-                  owner,
-                  repo,
-                  username: context.actor,
-                });
-              permission = permissionResponse.data.user?.permission || 'none';
-            } catch (error) {
-              core.warning('Could not resolve the actor permission: ' + error.message);
+            // GitHub's collaborator endpoint may report "none" for the owner
+            // of a personal repository. The repository owner is trusted here;
+            // other actors still need an explicit write-capable permission.
+            const isRepositoryOwner =
+              context.actor.toLowerCase() === owner.toLowerCase();
+            let permission = isRepositoryOwner ? 'admin' : 'none';
+            if (!isRepositoryOwner) {
+              try {
+                const permissionResponse =
+                  await github.rest.repos.getCollaboratorPermissionLevel({
+                    owner,
+                    repo,
+                    username: context.actor,
+                  });
+                permission = permissionResponse.data.user?.permission || 'none';
+              } catch (error) {
+                core.warning('Could not resolve the actor permission: ' + error.message);
+              }
             }
             if (!['admin', 'maintain', 'push'].includes(permission)) {
               core.setFailed('Only a repository administrator, maintainer, or write collaborator can start an issue.');
