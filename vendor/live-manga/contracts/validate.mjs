@@ -6,7 +6,8 @@ const obj = (v, required, optional=[]) => {
   if (!v || typeof v !== 'object' || Array.isArray(v) || required.some(k=>!(k in v)) || Object.keys(v).some(k=>![...required,...optional].includes(k))) fail('unknown or missing fields');
 };
 const text = (s, max=2000) => { if(typeof s!=='string'||!s.trim()||s.length>max||/[<>\u0000-\u0008]/.test(s)) fail('invalid text'); };
-const panelText = s => { if(typeof s!=='string'||s.length>2000||/[<>\u0000-\u0008]/.test(s)) fail('invalid panel text'); };const id = s => { if(typeof s!=='string'||!/^[a-zA-Z0-9:_-]{1,128}$/.test(s)) fail('invalid ID'); };
+const panelText = s => { if(typeof s!=='string'||s.length>2000||/[<>\u0000-\u0008]/.test(s)) fail('invalid panel text'); };
+const id = s => { if(typeof s!=='string'||!/^[a-zA-Z0-9:_-]{1,128}$/.test(s)) fail('invalid ID'); };
 const integer = (n,min,max) => { if(!Number.isSafeInteger(n)||n<min||n>max) fail('invalid integer'); };
 const array = (v,min,max) => { if(!Array.isArray(v)||v.length<min||v.length>max) fail('invalid collection'); };
 const unique = values => { if(new Set(values).size!==values.length) fail('duplicate ID'); };
