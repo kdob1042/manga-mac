@@ -373,6 +373,12 @@ Live Mangaの配信契約は矩形のみの実装と併合するときに必ず�
 
 JSとRustで値を検証。Live Manga v1には変換契約がないためトリミング作品の公開を明示拒否し、PNG/CBZは利用可能。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
 
+### 解像度診断と補間拡大（#57の第一段階）
+
+既存Canvasの高品質補間を利用し、2/4倍・一辺4096px・1600万画素に制限。AI超解像ではなく構図を変えない補間であることをUIへ明示する。必要倍率は固定ページ寸法、枠形状、cover/contain、zoomから計算。画素数と細部の品質を同一視しない。
+
+既存jobs(kind=upscale)、ArtworkRevision、候補採用、画像historyを再利用。処理前に元作画と配置基準を記録し、必ず候補として保存。採用時に作画・原文・配置を照合。画像のみ置換し、画像配置/文字は不変。元画像は履歴で保持し、同一比率の拡大なので既存マスク位置を再現できる。中断要求はunknownとして表示し、取り下げまで再送しない。外部API/モデル取得/課金なし。AI細部復元のモデル選定・接続・Mac性能受入は別差分であり、#57を閉じない。
+
 ## Live Manga配信用出力（Issue #39）
 
 制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。

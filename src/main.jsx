@@ -14,6 +14,7 @@ import { emptyProject, sourceForPanel, affectedScenes, revise, sourceUnits } fro
 import { call, desktop, loadProject, saveProject } from './bridge';
 import { syncSource, planScene, generatePanel, editRegion } from './pipeline';
 import { exportCBZ, pagePNG, download } from './render';
+import UpscaleControls from './UpscaleControls.jsx';
 import './style.css';
 import LLMSettings from './LLMSettings';
 import { defaultConnection, cancelLLMRequests } from './llm';
@@ -185,6 +186,7 @@ function App() {
     </div>
     {chosen && !layoutMode && <PanelMotionControls project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} onShot={id => { setRequestedShot(id); setMedium('video'); }}/>}
     {chosen && !layoutMode && <LetteringControls key={`${chosen.id}:${project.revision}`} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/>}
+    {chosen && !layoutMode && <UpscaleControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/>}
     {chosen && <section className="shot-controls" aria-label="AI演出">
       <h3>このコマの演出</h3><p>下の欄に「勇の肩越しから」「もう少し寄って」などを入力してください。構図・演技の変更は撮影からやり直し、旧作画を残して候補を作ります。</p>
       <button disabled={!!busy || !desktop()} onClick={() => run('Blenderで演出中', directChosen)}>Blenderで演出して漫画化</button>
@@ -198,7 +200,7 @@ function App() {
     </details>
     {chosen && <section className="shot-controls" aria-label="作画候補">
       <button disabled={!!busy || !chosen.capture_revision || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>
-      {project.jobs.filter(j => j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
+      {project.jobs.filter(j => j.kind !== 'upscale' && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
         <p>{job.status === 'unknown' ? '応答未確定：再実行する前に結果を確認してください' : '作画候補：採用前の原稿を保持しています'}</p>
         {job.status === 'unknown' && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
         {job.output_revision && <><img className="shot-preview" src={project.artworks.find(a => a.id === job.output_revision)?.panel.image} alt="新しい作画候補"/><button disabled={!!busy} onClick={() => run('作画候補を採用中', async () => commit(await adoptCandidate(current.current, job.id)))}>この候補を採用</button></>}
