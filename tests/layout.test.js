@@ -25,11 +25,21 @@ test('unassignment retained across reload; new content gets new pages without re
  const reloaded=ensureLayout(JSON.parse(JSON.stringify(p)));assert.deepEqual(reloaded.layout,p.layout);assert.match(layoutWarnings(p.layout,panels).join(),/未割当/);
  const extended=ensureLayout({...p,panels:[...panels,{id:'new'}]});assert.deepEqual(extended.layout.pages.slice(0,3),p.layout.pages);assert.equal(extended.layout.pages[3].slots[0].panelId,'new');
 });
+test('superseded per-page locks are removed on load',()=>{
+ const p=project(),legacy=structuredClone(p);legacy.layout.pages[1].locked=true;
+ const migrated=ensureLayout(legacy);assert.equal('locked' in migrated.layout.pages[1],false);assert.deepEqual(migrated.layout.pages[1].slots,p.layout.pages[1].slots);
+});
 test('overlaps, missing/duplicate references and reordered content cannot silently export',()=>{
  const p=project(),l=structuredClone(p.layout);l.pages[0].slots[1].points=l.pages[0].slots[0].points;assert.match(layoutWarnings(l,panels).join(),/重な/);
  l.pages[0].slots[1].panelId='p0';assert.throws(()=>validateLayout(l,panels));
 });
-test('reflow pulls and pushes panels across following pages without touching artwork or source order',()=>{
+test('local geometry edit does not reflow or alter any page assignment',()=>{
+ const p=project(),l=structuredClone(p.layout),assignments=p.layout.pages.map(pg=>pg.slots.map(s=>s.panelId));
+ l.pages[1].slots[0].points[0][0]+=.01;const changed=changeLayout(p,l);
+ assert.deepEqual(changed.layout.pages.map(pg=>pg.slots.map(s=>s.panelId)),assignments);
+ assert.deepEqual(changed.layout.pages[0],p.layout.pages[0]);assert.notDeepEqual(changed.layout.pages[1].slots[0].points,p.layout.pages[1].slots[0].points);
+});
+test('reflow pulls and pushes panels across every following page without touching artwork or source order',()=>{
  const p=project(),beforePanels=p.panels,beforeJobs=p.jobs;
  const wider=structuredClone(p.layout);wider.pages[0].slots=template(5,wider.pages[0].slots.map(s=>s.panelId));
  const pulled=reflowLayout(p,wider,0);
@@ -40,21 +50,17 @@ test('reflow pulls and pushes panels across following pages without touching art
  assert.deepEqual(pushed.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2'],['p3','p4','p5','p6'],['p7','p8'],['p9']]);
  assert.deepEqual(layoutWarnings(pushed,panels),[]);assert.equal(p.panels,beforePanels);assert.equal(p.jobs,beforeJobs);
 });
-test('reflow keeps pages before start byte-identical and inserts capacity before a locked page',()=>{
+test('reflow keeps pages before start byte-identical and continues through the suffix',()=>{
  const p=project(),l=structuredClone(p.layout),first=structuredClone(l.pages[0]);
  l.pages[1].slots=template(3,['p4','p5','p6']);
- const fromSecond=reflowLayout(p,l,1);assert.deepEqual(fromSecond.pages[0],first);
- assert.deepEqual(fromSecond.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3'],['p4','p5','p6'],['p7','p8'],['p9']]);
- const locked=structuredClone(p.layout),fixed=structuredClone(locked.pages[1]);locked.pages[1].locked=true;fixed.locked=true;
- locked.pages[0].slots=template(3,['p0','p1','p2']);
- const flowed=reflowLayout(p,locked,0),fixedAfter=flowed.pages.find(pg=>pg.id===fixed.id);
- assert.deepEqual(fixedAfter,fixed);assert.deepEqual(flowed.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2'],['p3'],['p4','p5','p6','p7'],['p8','p9']]);
+ const flowed=reflowLayout(p,l,1);assert.deepEqual(flowed.pages[0],first);
+ assert.deepEqual(flowed.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3'],['p4','p5','p6'],['p7','p8'],['p9']]);
  assert.deepEqual(layoutWarnings(flowed,panels),[]);
 });
-test('reflow rejects starting at a locked page and malformed locked assignments',()=>{
- const p=project(),l=structuredClone(p.layout);l.pages[1].locked=true;
- assert.throws(()=>reflowLayout(p,l,1),/固定ページ/);
- l.pages[1].slots[0].panelId=null;assert.throws(()=>reflowLayout(p,l,0),/固定ページ/);
+test('changeLayout automatically reflows only when slot capacity changes',()=>{
+ const p=project(),l=structuredClone(p.layout);l.pages[1].slots=template(3,l.pages[1].slots.slice(0,3).map(s=>s.panelId));
+ const changed=changeLayout(p,l);assert.deepEqual(changed.layout.pages[0],p.layout.pages[0]);
+ assert.deepEqual(changed.layout.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3'],['p4','p5','p6'],['p7','p8'],['p9']]);
 });
 test('AI candidate protects other pages, stale base and source order; rejects invalid shape',()=>{
  const p=project(),page=structuredClone(p.layout.pages[0]);page.slots[0].points[0][0]+=.03;
@@ -62,13 +68,6 @@ test('AI candidate protects other pages, stale base and source order; rejects in
  assert.deepEqual(adopted.layout.pages.slice(1),p.layout.pages.slice(1));assert.equal(adopted.panels,p.panels);
  assert.throws(()=>adoptLayoutProposal({...p,active:'new'},c),/変更/);
  page.slots.reverse();assert.throws(()=>validateProposal(p,{reason:'bad',pages:[page]},[page.id]),/読書順/);
-});
-test('AI cannot alter locked pages but whole-work proposal may preserve them',()=>{
- const p=project();p.layout.pages[1].locked=true;const scope=p.layout.pages.map(pg=>pg.id);
- assert.throws(()=>validateProposal(p,{reason:'bad',pages:p.layout.pages.map((pg,i)=>i===1?{...pg,slots:template(4,['p4','p5','p6','p7'])}:pg)},scope),/固定ページ/);
- const proposal=p.layout.pages.map(pg=>({id:pg.id,slots:structuredClone(pg.slots)}));
- const c=validateProposal(p,{reason:'固定ページ保持',pages:proposal},scope);assert.equal(c.layout.pages[1].locked,true);
- assert.throws(()=>validateProposal(p,{reason:'local',pages:[proposal[1]]},[p.layout.pages[1].id]),/固定ページ/);
 });
 test('whole-work AI can paginate four plus six without losing any source IDs',()=>{
  const p=project(); const pages=[{id:'new-a',slots:template(4,panels.slice(0,4).map(p=>p.id))},{id:'new-b',slots:template(6,panels.slice(4).map(p=>p.id))}];
