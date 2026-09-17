@@ -37,3 +37,53 @@ export function undoLayout(project,redo=false){const from=redo?'layoutRedo':'lay
 export function pagePanels(project,page){return (page?.slots??[]).filter(s=>s.panelId!==null).map(s=>project.panels.find(p=>p.id===s.panelId)).filter(Boolean);}
 export function contentBox(points){const b=bounds(points),cx=b.x+b.width/2,cy=b.y+b.height/2;let scale=1;while(scale>.01){const w=b.width*scale,h=b.height*scale;if([[cx-w/2,cy-h/2],[cx+w/2,cy-h/2],[cx+w/2,cy+h/2],[cx-w/2,cy+h/2]].every(p=>inside(p,points)))return Object.fromEntries(Object.entries({x:(cx-w/2)*1600,y:(cy-h/2)*2260,width:w*1600,height:h*2260}).map(([k,v])=>[k,Math.round(v*1e8)/1e8]));scale-=.01;}throw Error('コマ内の文字領域が不足しています');}
 export function assertLegacyLiveLayout(project){if(!project.layout)return;if(Object.keys(project.layout.imageCrops??{}).length)throw Error('Live Manga v1は画像トリミング未対応です。PNG／CBZで書き出してください');validateLayout(project.layout,project.panels);const geometry=l=>l.pages.map(p=>p.slots.map(({panelId,points})=>({panelId,points})));if(JSON.stringify(geometry(project.layout))!==JSON.stringify(geometry(initialLayout(project.panels))))throw Error('Live Manga v1は従来の4コマ配置だけに対応しています。自由コマ割りはPNG／CBZで書き出してください');}
+
+// Every splice is checked against the same old layout; input is never mutated.
+export function layoutSplice(project,start,count,replacementPages){
+ const pages=project.layout.pages;
+ if(!Number.isInteger(start)||!Number.isInteger(count)||start<0||count<0||start+count>pages.length)throw Error('ページ区間が不正です');
+ return {baseContentToken:project.contentToken??JSON.stringify(project.layout),beforePageId:pages[start-1]?.id??null,afterPageId:pages[start+count]?.id??null,oldPageIds:pages.slice(start,start+count).map(p=>p.id),replacementPages:structuredClone(replacementPages)};
+}
+export function validateLayoutPatch(project,changedPanels,splices,baseContentToken=project.contentToken){
+ if(project.contentToken!==baseContentToken)throw Error('配置の基準版が変わりました');
+ if(!Array.isArray(splices)||!Array.isArray(changedPanels)||new Set(changedPanels.map(p=>p.id)).size!==changedPanels.length)throw Error('配置パッチが不正です');
+ const original=project.layout.pages,inside=new Set();
+ const ranges=splices.map(s=>{
+  if(s.baseContentToken!==undefined&&s.baseContentToken!==(project.contentToken??JSON.stringify(project.layout)))throw Error('配置の基準版が変わりました');
+  if(!Array.isArray(s.oldPageIds)||!Array.isArray(s.replacementPages)||new Set(s.oldPageIds).size!==s.oldPageIds.length)throw Error('ページ区間が不正です');
+  const start=s.oldPageIds.length?original.findIndex(p=>p.id===s.oldPageIds[0]):s.beforePageId===null?0:original.findIndex(p=>p.id===s.beforePageId)+1,end=start+s.oldPageIds.length;
+  if(start<0||end>original.length||JSON.stringify(original.slice(start,end).map(p=>p.id))!==JSON.stringify(s.oldPageIds)||(original[start-1]?.id??null)!==s.beforePageId||(original[end]?.id??null)!==s.afterPageId)throw Error('ページの前後境界が変わりました');
+  for(const p of original.slice(start,end)){
+   inside.add(p.id);
+   if((p.manual||p.elements?.length)&&!s.replacementPages.some(n=>JSON.stringify(n)===JSON.stringify(p)))throw Error('独立した手動要素があるページは削除できません');
+  }
+  return {start,end,splice:s};
+ }).sort((a,b)=>a.start-b.start||a.end-b.end);
+ for(let i=1;i<ranges.length;i++){const a=ranges[i-1],b=ranges[i];if(b.start<a.end||b.start===a.start||a.start===a.end&&b.start===a.end||b.start===b.end&&b.start===a.end)throw Error('ページ置換区間が重複しています');}
+ const layout=structuredClone(project.layout);
+ for(const {start,end,splice} of [...ranges].reverse())layout.pages.splice(start,end-start,...structuredClone(splice.replacementPages));
+ const nextIds=new Set(changedPanels.map(p=>p.id)),oldIds=new Set(project.panels.map(p=>p.id));
+ for(const page of original.filter(p=>!inside.has(p.id)))for(const slot of page.slots){if(!slot.panelId)continue;const old=project.panels.find(p=>p.id===slot.panelId),next=changedPanels.find(p=>p.id===slot.panelId);if(JSON.stringify(old)!==JSON.stringify(next))throw Error('対象外のコマ・原文・作画は変更できません');}
+ for(const panel of project.panels)if(!nextIds.has(panel.id)&&panel.manual)throw Error('手動コマは自動削除できません');
+ for(const binding of project.panelMotions??[]){const old=project.panels.find(p=>p.id===binding.panelId),next=changedPanels.find(p=>p.id===binding.panelId);if(old&&(!next||old.image!==next.image||old.artwork_revision!==next.artwork_revision||JSON.stringify([old.sourceRefs,old.snapshotId,old.unitIds])!==JSON.stringify([next.sourceRefs,next.snapshotId,next.unitIds])))throw Error('動画の開始画像・原稿対応が変わります。動画割当を含む更新案を確認してください');}
+ layout.knownPanelIds=changedPanels.map(p=>p.id);
+ if(layout.imageCrops)for(const id of Object.keys(layout.imageCrops))if(!nextIds.has(id))delete layout.imageCrops[id];
+ validateLayout(layout,changedPanels);
+ const before=original.flatMap(assignedIds),after=layout.pages.flatMap(assignedIds);
+ const required=changedPanels.filter(p=>before.includes(p.id)||!oldIds.has(p.id)).map(p=>p.id);
+ if(required.some(id=>!after.includes(id))) {const error=Error('残すコマを配置できません。隣接ページを含む範囲へ広げてください');error.code='LAYOUT_SCOPE_EXPANSION_REQUIRED';error.panelIds=required.filter(id=>!after.includes(id));throw error;}
+ if(JSON.stringify(changedPanels.filter(p=>after.includes(p.id)).map(p=>p.id))!==JSON.stringify(after))throw Error('配置パッチが読書順を変更しています');
+ for(const {splice} of ranges)for(const page of splice.replacementPages)for(let i=0;i<page.slots.length;i++)if(page.slots.slice(i+1).some(s=>overlaps(page.slots[i].points,s.points)))throw Error('置換ページのコマ枠が重なっています');
+ return layout;
+}
+export function applyLayoutSplices(project,splices,label='区間のコマ割り変更',baseContentToken=project.contentToken){
+ const layout=validateLayoutPatch(project,project.panels,splices,baseContentToken);
+ if(JSON.stringify(layout)===JSON.stringify(project.layout))return project;
+ return {...project,layout,layoutHistory:[...(project.layoutHistory??[]),{layout:project.layout,label}].slice(-100),layoutRedo:[]};
+}
+export function reflowLayoutInterval(project,start,count,capacity,opId){
+ if(!Number.isInteger(capacity)||capacity<1||capacity>16||typeof opId!=='string'||!opId)throw Error('局所配置の枠数・操作IDが不正です');
+ const pages=project.layout.pages.slice(start,start+count),ids=pages.flatMap(assignedIds),replacement=[];
+ for(let at=0;at<Math.max(1,ids.length);at+=capacity){const index=replacement.length,old=pages[index],slots=template(at>0?Math.min(capacity,ids.length-at):capacity,ids.slice(at,at+capacity)).map((slot,i)=>({...slot,id:`layout:${opId}:slot:${index}:${i}`}));replacement.push({id:old?.id??`layout:${opId}:page:${index}`,slots});}
+ return layoutSplice(project,start,count,replacement);
+}
