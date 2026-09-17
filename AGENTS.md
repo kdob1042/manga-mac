@@ -18,7 +18,7 @@ CIもこのブランチ運用に合わせる。PRと`dev` pushでは、変更分
 ## Issue／PRの着手状態
 
 - 状態の正本はIssueのopen/closedとPR。Projectは自動同期される表示で、`status:*`ラベルを追加・手動管理しない。
-- エージェントは実装前にIssueへ`agent:start`を付けるか、コメントで`/start`と入力する。Actionsが最新`dev`から空コミット付きブランチとDraft PRを作る。既存PRがある場合は再利用する。Draft PR作成を確認してからそのブランチで実装する。
+- エージェントは実装前にIssueへ`/start`だけのコメントを投稿する。Actionsが内部マーカーを付け、最新`dev`から空コミット付きブランチとDraft PRを作る。既存PRがある場合は再利用する。Draft PR作成を確認してからそのブランチで実装する。`agent:start`を手で付けない。
 - Issue作成→Todo、Draftを含むopen PRあり→In Progress、現在のCI失敗・変更要求・PRを閉じたままの未完了Issue→Needs attention、Issue closed→Done。Ready for reviewでもIn Progressのままとする。
 - PR本文に独立した行で`Refs #<番号>`を残す。全受入条件を満たす場合だけ`Closes #<番号>`へ変更する。部分実装なら、先に残件Issueを作って本文に`Parent: #<元Issue番号>`を記載し、その後PRをマージする。devへのマージ後、完了PRまたは残件移管を確認した同期処理が元Issueを閉じる。残件Issueなしの部分PRでは閉じない。
 - 詳細・障害復旧は[Project自動同期](docs/PROJECT_AUTOMATION.md)を参照。Projectを手でDoneにしてIssueを閉じる逆同期は使わない。既存のdev起点・PR経由ルールを優先する。
