@@ -359,6 +359,17 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 
 未実施: Mac GUI操作、実有料生成、実iPhone/Android、R2公開。新規割当は既存schema v4の任意配列として移行し、旧作品は空配列になる。rollbackは更新前のアプリと作品フォルダを保持する。刊行物は独立した不変出力なので旧版へ戻しても変更されない。
 
+## #60 / #61 / #62 / #64 初稿・共通編集の段階実装（2026-09-17）
+
+開始dev `bf6e9e7a72d7e6d879dffa8d1506cb8ab288294a`。全公開ブランチ/open PR/対象Issueのコメントを照合し、Web素材取込のPR #65と実演出受入PR #52を除外。作業は `feature/initial-draft-editing`、PR #66。未公開の別スレッド内作業の完全な検出はできない。
+
+- Node 79件成功、Web build成功（既存のimport警告とbundleサイズ警告あり）。原文/対象外保持、明示コマ番号のモデル誤選択拒否、軽量複合編集の全操作事前検証、保存後Undo/Redo、固定枠拒否、文字配置のみ再開を確認。
+- Rust LLM/storage/HTTP等49件成功、既存の外部ツール等3件ignored。Jevの実wire形状を人工HTTP adapterで確認し、画像送信・不正確信度を拒否。Rust fmt/clippy成功。実Jev API要求0回。
+- 初回PR CIのweb/storage/実Blenderは成功。追加UIは6コマ初稿→文字配置の失敗→作画再生成0回で再開→3コマ目の自然言語文字移動→Undo/Redo→手動ドラッグ→CBZを通過。初回llmのclippy指摘（試験のMutex guard範囲）を修正済み。
+- 後続コミットは解像度診断・補間拡大・配置仕上げ・動画準備/既存動画割当を共通入口へ追加。手動と自然言語で同じ関数を使う。最終コミットのCI結果はPRのchecksが正本。
+- ローカルChromium導入は配布先timeoutで未実施。PR CIのChromium結果を用いる。Mac GUI、実API/実モデル日本語品質、Mac 24GB品質・性能、署名/公証はnot_run。
+
+未実装：画像理解による顔/服等の領域特定と重要領域回避、生成を含む複合編集、採用済み原作改訂場面の別初稿、対象場面を絞った初稿、自然言語候補の永続比較。Jev未設定時は利用者が選択済みの演出LLMだけを使う。閾値0.75は未校正。以上を完了したとみなしてIssue全体をcloseしない。
 ## WEB-ASSET-01: Web配布3D素材のBlender取込（2026-09-17）
 
 開始dev `f9ce6fd`。既存Blender CLI、固定checkpoint、依存packing、Asset Library参照を再利用し、HTTPS取得と標準import／appendへの薄い接続を追加した。独立した素材分類DB、3Dパーサ、任意コード実行、アドオン自動導入は追加していない。

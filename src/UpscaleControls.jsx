@@ -1,20 +1,12 @@
+import { prepareInterpolation } from './panel-actions';
 import React,{useEffect,useState} from 'react';
 import {imageOf} from './render';
-import {beginUpscale,finishUpscale,adoptUpscale,discardUpscale,requiredScale,placementKey} from './upscale.js';
+import {adoptUpscale,discardUpscale,requiredScale,placementKey} from './upscale.js';
 export default function UpscaleControls({project,panel,current,commit,run,busy}) {
   const [size,setSize]=useState(null),[factor,setFactor]=useState(2);
   useEffect(()=>{let stopped=false;setSize(null);if(panel.image)imageOf(panel.image).then(im=>{if(!stopped)setSize([im.width,im.height]);}).catch(()=>{});return()=>{stopped=true;};},[panel.image]);
   const jobs=project.jobs.filter(j=>j.kind==='upscale'&&j.panelId===panel.id&&['candidate','unknown'].includes(j.status));
-  async function prepare(){
-    const p=current.current,source=p.panels.find(x=>x.id===panel.id),im=await imageOf(source.image),job=await beginUpscale(p,panel.id,im.width,im.height,factor);
-    await commit({...p,jobs:[...p.jobs,job]});
-    try {
-      const canvas=document.createElement('canvas');canvas.width=job.upscale.width;canvas.height=job.upscale.height;
-      const ctx=canvas.getContext('2d');if(!ctx)throw Error('画像処理を開始できません');ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';ctx.drawImage(im,0,0,canvas.width,canvas.height);
-      const image=canvas.toDataURL('image/png');if(!image.startsWith('data:image/png;base64,'))throw Error('画像を保存できません');
-      await commit(await finishUpscale(current.current,job,source,image));
-    }catch(e){await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'failed'}:j)});throw e;}
-  }
+  const prepare=()=>prepareInterpolation(()=>current.current,commit,panel.id,factor);
   let scale=null;try{if(size)scale=requiredScale(project,panel.id,...size);}catch{}
   return <section className="shot-controls" aria-label="画像の高解像度化"><h3>画像の高解像度化</h3>
     <p>ローカル補間拡大です。AI超解像ではなく、描かれていない細部は復元しません。元画像を残して候補を作り、配置・セリフ・吹き出しは変更しません。</p>
