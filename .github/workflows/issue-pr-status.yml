@@ -20,6 +20,11 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
+            if (context.eventName === 'pull_request' &&
+                !/(?:refs|fixes|closes|resolves)\\s+#\\d+\\b/i.test(context.payload.pull_request.body || '')) {
+              core.info('No same-repository issue reference found in the PR body.');
+              return;
+            }
             const statusDefinitions = [
               { name: 'agent:start', color: '1f6feb', description: 'Start a managed implementation task' },
               { name: 'agent:started', color: '0969da', description: 'A managed draft PR has been created' },
