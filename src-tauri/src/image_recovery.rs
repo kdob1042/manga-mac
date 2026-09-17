@@ -115,10 +115,9 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
         }
     }
     if let Some(finishing) = job.get("finishing") {
-        let placement: Value = serde_json::from_str(
-            job["placement_key"].as_str().ok_or("Missing placement")?,
-        )
-        .map_err(err)?;
+        let placement: Value =
+            serde_json::from_str(job["placement_key"].as_str().ok_or("Missing placement")?)
+                .map_err(err)?;
         let slots: Vec<Value> = hydrated["layout"]["pages"]
             .as_array()
             .ok_or("Missing pages")?
@@ -361,7 +360,14 @@ mod tests {
         project["layout"] = json!({"version":1,"knownPanelIds":[panel_id],"pages":[{"id":"page","slots":[slot.clone()]}]});
         let placement = json!({"active":project["active"],"slots":[slot],"crop":null});
         let bytes = STANDARD
-            .decode(project["panels"][0]["image"].as_str().unwrap().split_once(',').unwrap().1)
+            .decode(
+                project["panels"][0]["image"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap()
+                    .1,
+            )
             .unwrap();
         let w = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
         let h = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
@@ -382,7 +388,8 @@ mod tests {
         bad["recovery"]["panel"]["finishing"]["parent_hash"] = json!("wrong");
         assert!(reserve(&mut db, &root, &bad).is_err());
         let mut moved = project.clone();
-        moved["layout"]["imageCrops"] = json!({panel_id.as_str().unwrap():{"zoom":2,"x":0.5,"y":0.5}});
+        moved["layout"]["imageCrops"] =
+            json!({panel_id.as_str().unwrap():{"zoom":2,"x":0.5,"y":0.5}});
         save(&mut db, &root, &moved.to_string()).unwrap();
         assert!(reserve(&mut db, &root, &request).is_err());
         save(&mut db, &root, &project.to_string()).unwrap();
