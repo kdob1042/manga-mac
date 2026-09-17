@@ -3,7 +3,11 @@ import contractData from '../source-contracts/kamiya-kawai.json' with { type: 'j
 const contracts = new Map([[contractData.repository.toLowerCase(), contractData]]);
 
 export function sourceContract(repo) {
-  return contracts.get(String(repo).toLowerCase()) ?? null;
+  const known = contracts.get(String(repo).toLowerCase());
+  if (known) return known;
+  if (!/^[\w.-]+\/[\w.-]+$/.test(String(repo))) return null;
+  // Same supported manifest contract, without claiming another work's verified commit.
+  return {...contractData, repository: repo, aligned_source_commit: '', aligned_manifest_blob: '', aligned_at: null};
 }
 
 export function validateSourceContract(repo, manifest) {
@@ -77,5 +81,5 @@ export function mergeSourceReferences(characters, references, repo, snapshotId) 
 export function contractLabel(snapshot) {
   const contract = snapshot?.contract;
   if (!contract) return '構成仕様未記録';
-  return `構成schema ${contract.manifest_schema_version}対応 · 確認基準 ${contract.aligned_source_commit.slice(0, 8)}`;
+  return `構成schema ${contract.manifest_schema_version}対応 · ${contract.aligned_source_commit ? `確認基準 ${contract.aligned_source_commit.slice(0, 8)}` : '共通構成仕様'}`;
 }
