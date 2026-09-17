@@ -705,11 +705,11 @@ mod tests {
         }
         let result = export(&db, &dir, &out, &payload["request"]).unwrap();
         println!("LIVE_MANGA_PACKAGE={}", result["path"]);
-        if let Some(prepared)=payload.get("preview") {
+        if let Some(prepared) = payload.get("preview") {
             super::super::live_preview::validate_metadata(&prepared["preview"]).unwrap();
-            let request=json!({"manifest":prepared["preview"]["manifest"],"preview":prepared["preview"],"sources":prepared["sources"],"projectRevision":payload["previewProject"]["revision"]});
-            let result=export_snapshot(&dir,&out,&request,&payload["previewProject"]).unwrap();
-            println!("LIVE_PREVIEW_PACKAGE={}",result["path"]);
+            let request = json!({"manifest":prepared["preview"]["manifest"],"preview":prepared["preview"],"sources":prepared["sources"],"projectRevision":payload["previewProject"]["revision"]});
+            let result = export_snapshot(&dir, &out, &request, &payload["previewProject"]).unwrap();
+            println!("LIVE_PREVIEW_PACKAGE={}", result["path"]);
         }
         fs::remove_dir_all(dir).unwrap();
     }
