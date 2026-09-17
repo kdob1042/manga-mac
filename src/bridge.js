@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
-import { migrateProject } from './revisions';
-import { restoreVideoResults } from './video-remote';
+import { migrateProject } from './revisions.js';
+import { restoreVideoResults } from './video-remote.js';
 export const desktop = () => !!window.__TAURI_INTERNALS__;
 export async function call(command, args = {}) {
   if (!desktop()) throw Error('この操作はMacアプリで利用できます。ブラウザではサンプルの組版を確認できます。');
