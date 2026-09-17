@@ -22,3 +22,14 @@ CIもこのブランチ運用に合わせる。非文書変更のPR（`feature/*
 - Draft PR作成後は status:in-progress、Ready for review後は status:review、devまたはmainへのマージ後は status:done になる。未マージで閉じたPRは status:blocked とする。
 - PR本文には Refs #<番号> を残し、実装完了・lint／typecheck／test／build確認後にだけReady for reviewへ変更する。
 - 作業ブランチを切っただけでは着手扱いにしない。既存のdev起点・PR経由ルールを優先する。
+
+## Issue／PRの部分実装と残件
+
+詳細な手順は [Issue・PRの残件運用](docs/ISSUE_WORKFLOW.md) を参照する。
+
+- Issueを部分実装する場合は、マージ前に受入条件を「今回完了するもの」と「未完了のもの」に分ける。
+- 独立して実装できる未完了項目は、実装可能な単位の別Issueへ切り出す。残件Issueには目的、範囲、受入条件、依存関係を記載し、元Issueと実装PRから相互リンクする。
+- PR本文では、Issue全体を完了する場合だけ `Closes #<番号>`（または `Fixes`／`Resolves`）を使う。部分実装・調査・準備・関連対応は `Refs #<番号>` とする。
+- 元Issueの必須受入条件が残っている場合、残件Issueを作っただけで元Issueを閉じない。PRのマージ後も、元Issue、残件Issue、PR、statusラベルの状態を確認する。
+- 「CI成功」「実装済み」「実機受入済み」を同じ完了状態として扱わない。未検証の条件は残件として明記する。
+
