@@ -365,6 +365,14 @@ AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す�
 
 Live Mangaの配信契約は矩形のみの実装と併合するときに必ず確認する。自由四角形の外接矩形をそのまま配信して対応済みとしない。未対応の配信経路は拒否し、polygonと同じ画像変換を扱える契約へ拡張するまでPNG/CBZを利用する。
 
+### 非破壊画像トリミング
+
+既存Canvas描画とpolygon clipを再利用する漫画固有の組版機能であり、Blenderの汎用合成を再実装しない。`layout.imageCrops[panelId] = {zoom,x,y}` に画像配置だけを保持する。zoomはcover基準1〜8倍、x/yは余剰幅・高さ上の位置0〜1（中央0.5）。外接矩形を覆う等方拡大後、凸四角形でマスクする。パンは余白が露出しない範囲へ制限。座標は画素数から独立し、将来の同一比率の高解像度画像にも適用できる。
+
+設定のない旧コマは従来contain表示を保持。ユーザーが「画像トリミング」で有効にしたコマだけ全面表示にする。枠操作と画像操作を明示切替し、画像ドラッグは一操作一保存、Esc/cancelは破棄。layoutHistory/Redoを共用し、テンプレート再配置・AI案でもpanelIdに紐付いた配置を保持する。画像原本・ArtworkRevision・文字/吹き出しデータ・生成Jobsを変更しない。文字層には画像の位置・拡大率を適用せず、現在の文字組版を維持する。通常の作画画面は原本表示、組版プレビューとPNG/CBZは同じ変換で描画する。
+
+JSとRustで値を検証。Live Manga v1には変換契約がないためトリミング作品の公開を明示拒否し、PNG/CBZは利用可能。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
+
 ## Live Manga配信用出力（Issue #39）
 
 制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
