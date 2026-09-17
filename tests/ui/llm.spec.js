@@ -29,5 +29,5 @@ test('registration clears UI key; normal typed jobs use only the connection ID',
   await page.screenshot({ path: 'test-results/llm-registration.png', fullPage: true });
   await page.getByLabel('演出・コマ計画の接続先').selectOption('anthropic');
   await expect(page.getByLabel('演出・コマ計画のAPIキー')).toHaveValue('');
-  expect(await page.evaluate(() => window.nativeCalls.some(c => c.command === 'remove_llm' && c.args.connectionId === 'registered-fixture'))).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.nativeCalls.some(c => c.command === 'remove_llm' && c.args.connectionId === 'registered-fixture'))).toBe(true);
 });
