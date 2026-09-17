@@ -38,12 +38,18 @@ export async function syncSource(repo, token, episodeId, previous) {
     at: new Date().toISOString(),
   };
 }
-export async function planScene(scene, snapshot, characters, model) {
+export async function planScene(scene, snapshot, characters, model, ask = askLLM) {
   const units = sourceUnits(scene.id, scene.text);
-  if (!units.length) return [];
-  const schema = { type: 'object', properties: { panels: { type: 'array', items: { type: 'object', properties: { unitIds: { type: 'array', items: { type: 'string' } }, prompt: { type: 'string' }, characterIds: { type: 'array', items: { type: 'string' } } }, required: ['unitIds', 'prompt', 'characterIds'], additionalProperties: false } } }, required: ['panels'], additionalProperties: false };
-  const result = await askLLM(model, { schema, prompt: JSON.stringify({ task: '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。ページ配置は別工程で決めるため、ページ当たりのコマ数を制限しない。各コマに出演する人物IDを漏らさず含める。', units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
-  return validatePlan(JSON.parse(result), units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
+  const schema = { type: 'object', properties: { panels: { type: 'array', minItems: 1, items: { type: 'object', properties: { unitIds: { type: 'array', items: { type: 'string' } }, prompt: { type: 'string' }, characterIds: { type: 'array', items: { type: 'string' } } }, required: ['unitIds', 'prompt', 'characterIds'], additionalProperties: false } } }, required: ['panels'], additionalProperties: false };
+  const task = units.length
+    ? '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。必要に応じて原文に対応しない画像だけのコマを追加してよい。その場合unitIdsは空配列にする。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。ページ配置は別工程で決めるため、ページ当たりのコマ数を制限しない。各コマに出演する人物IDを漏らさず含める。'
+    : '原文の段落がない場面です。scene.designと設定から、必ず1つ以上の画像だけのコマを設計する。unitIdsは空配列にする。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用し、未登録の人物を登録人物で代用しない。';
+  const result = await ask(model, { schema, prompt: JSON.stringify({ task, units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
+  let plan = JSON.parse(result);
+  if (!units.length && (!plan || !Array.isArray(plan.panels) || !plan.panels.length)) {
+    plan = { panels: [{ unitIds: [], prompt: typeof scene.design === 'string' && scene.design.trim() ? scene.design.trim() : 'A wordless manga panel with no text or speech balloons.', characterIds: [] }] };
+  }
+  return validatePlan(plan, units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
 export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null) {
   const refs = panel.characterIds.map(id => {
