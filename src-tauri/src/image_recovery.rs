@@ -81,12 +81,38 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
     }
     let mut hydrated = project.clone();
     hydrate(&mut hydrated, &root.join("artifacts"))?;
-    let panel = hydrated["panels"]
-        .as_array()
-        .ok_or("Missing panels")?
-        .iter()
-        .find(|p| p["id"] == job["panelId"])
-        .ok_or("Missing panel")?;
+    let panel = if let Some(op) = job.get("sourcePatchOp") {
+        let owner = hydrated["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == *op)
+            .ok_or("Missing source candidate")?;
+        let prepared = &owner["source_candidate"]["prepared"];
+        if owner["kind"] != "sourcePatch"
+            || owner["status"] != "candidate"
+            || owner["source_patch"]["baseContentToken"] != super::source_refs::token(&project)
+            || prepared["identity"]["workId"] != project["workId"]
+            || prepared["identity"]["targetSnapshotId"] != project["active"]
+            || prepared["expected"] != owner["source_patch"]["expected"]
+            || job["kind"] != "generate"
+        {
+            return Err("Source generation candidate is stale or inactive".into());
+        }
+        owner["source_candidate"]["patch"]["panels"]
+            .as_array()
+            .ok_or("Missing candidate panels")?
+            .iter()
+            .find(|p| p["id"] == job["panelId"])
+            .ok_or("Missing candidate panel")?
+    } else {
+        hydrated["panels"]
+            .as_array()
+            .ok_or("Missing panels")?
+            .iter()
+            .find(|p| p["id"] == job["panelId"])
+            .ok_or("Missing panel")?
+    };
     if panel["artwork_revision"] != job["base_revision"]
         || panel["snapshotId"] != job["source_revision"]
     {
@@ -271,6 +297,44 @@ mod tests {
             json!({"request_hash":destination["request_hash"],"hash":hash(&bytes)}).to_string(),
         )
         .unwrap();
+    }
+    #[test]
+    fn source_candidate_generation_checks_base_without_adopting_panels() {
+        for stale in [false, true] {
+            let (mut db, root, mut p, mut request) = setup();
+            let adopted = p["panels"].clone();
+            let mut candidate = request["recovery"]["panel"].clone();
+            candidate["id"] = json!("candidate-panel");
+            candidate.as_object_mut().unwrap().remove("generation");
+            p["workId"] = json!("work");
+            p["jobs"][0]["kind"] = json!("generate");
+            p["jobs"][0]["panelId"] = json!("candidate-panel");
+            p["jobs"][0]["scope"]["id"] = json!("candidate-panel");
+            p["jobs"][0]["sourcePatchOp"] = json!("source-op");
+            save(&mut db, &root, &p.to_string()).unwrap();
+            let base = super::super::source_refs::token(&raw_project(&db).unwrap());
+            let active = p["active"].clone();
+            p["jobs"].as_array_mut().unwrap().push(json!({
+                "id":"source-op","kind":"sourcePatch","status":"candidate",
+                "source_patch":{"baseContentToken":base,"expected":{}},
+                "source_candidate":{"prepared":{"identity":{"workId":"work","targetSnapshotId":active},"expected":{}},"patch":{"panels":[candidate]}}
+            }));
+            if stale {
+                p["panels"][0]["prompt"] = json!("changed after planning");
+            }
+            save(&mut db, &root, &p.to_string()).unwrap();
+            request["job"] = p["jobs"][0].clone();
+            request["recovery"]["kind"] = json!("generate");
+            request["recovery"]["panel"]["id"] = json!("candidate-panel");
+            assert_eq!(reserve(&mut db, &root, &request).is_ok(), !stale);
+            if !stale {
+                let mut result = raw_project(&db).unwrap();
+                hydrate(&mut result, &root.join("artifacts")).unwrap();
+                assert_eq!(result["panels"], adopted);
+                assert!(reserve(&mut db, &root, &request).is_err());
+            }
+            fs::remove_dir_all(root).unwrap();
+        }
     }
     #[test]
     fn helper_completion_survives_restart_without_ui_save_and_collects_idempotently() {
