@@ -1,0 +1,237 @@
+name: Start issue with draft PR
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: issue-start-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  start:
+    if: >-
+      (github.event_name == 'issues' &&
+       ((github.event.action == 'labeled' && github.event.label.name == 'agent:start') ||
+        (github.event.action == 'opened' &&
+         contains(join(github.event.issue.labels.*.name, ','), 'agent:start'))))
+      || (github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request == null &&
+          startsWith(github.event.comment.body, '/start'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the managed branch and draft PR
+        uses: actions/github-script@v7
+        env:
+          BASE_BRANCH: dev
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue;
+            const action = context.payload.action;
+            const labels = (issue.labels || []).map((label) => label.name || label);
+            const fromStartLabel =
+              context.eventName === 'issues' &&
+              ((action === 'labeled' && context.payload.label?.name === 'agent:start') ||
+               (action === 'opened' && labels.includes('agent:start')));
+            const commentBody = context.payload.comment?.body || '';
+            const fromStartComment =
+              context.eventName === 'issue_comment' &&
+              /^\s*\/start(?:\s|$)/i.test(commentBody);
+            if (!fromStartLabel && !fromStartComment) {
+              core.info('The event did not contain an approved start request.');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            let permission = 'none';
+            try {
+              const permissionResponse =
+                await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner,
+                  repo,
+                  username: context.actor,
+                });
+              permission = permissionResponse.data.user?.permission || 'none';
+            } catch (error) {
+              core.warning('Could not resolve the actor permission: ' + error.message);
+            }
+            if (!['admin', 'maintain', 'push'].includes(permission)) {
+              core.setFailed('Only a repository administrator, maintainer, or write collaborator can start an issue.');
+              return;
+            }
+
+            const repository = await github.rest.repos.get({ owner, repo });
+            let baseBranch = process.env.BASE_BRANCH;
+            try {
+              await github.rest.repos.getBranch({ owner, repo, branch: baseBranch });
+            } catch {
+              baseBranch = repository.data.default_branch;
+            }
+
+            const managedLabels = [
+              { name: 'agent:start', color: '1f6feb', description: 'Start a managed implementation task' },
+              { name: 'agent:started', color: '0969da', description: 'A managed draft PR has been created' },
+              { name: 'status:ready', color: 'fbca04', description: 'Ready and not yet started' },
+              { name: 'status:in-progress', color: '0e8a16', description: 'A draft or open implementation PR exists' },
+              { name: 'status:review', color: '5319e7', description: 'Implementation PR is ready for review' },
+              { name: 'status:blocked', color: 'b60205', description: 'Work is blocked or a PR was closed without merge' },
+              { name: 'status:done', color: '6f42c1', description: 'Implementation was merged' },
+            ];
+            for (const label of managedLabels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                try {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name: label.name,
+                    color: label.color,
+                    description: label.description,
+                  });
+                } catch (createError) {
+                  if (createError.status !== 422) throw createError;
+                }
+              }
+            }
+
+            const openPulls = await github.paginate(
+              github.rest.pulls.list,
+              { owner, repo, state: 'open', per_page: 100 },
+            );
+            const reference = new RegExp(
+              "(?:refs|fixes|closes|resolves)\\s+#" + issue.number + "\\b",
+              'i',
+            );
+            const existingPull = openPulls.find((pull) =>
+              reference.test(pull.body || '') ||
+              pull.head.ref.startsWith('issue/' + issue.number + '-'),
+            );
+            if (existingPull) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: issue.number,
+                labels: ['agent:started', 'status:in-progress'],
+              });
+              core.info(
+                'Issue #' + issue.number + ' is already linked to PR #' + existingPull.number + '.',
+              );
+              return;
+            }
+
+            const slug = (issue.title || 'work')
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, '-')
+              .replace(/^-+|-+$/g, '')
+              .slice(0, 48) || 'work';
+            const branch = 'issue/' + issue.number + '-' + slug;
+            const baseReference = await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: 'heads/' + baseBranch,
+            });
+            const baseSha = baseReference.data.object.sha;
+            let branchSha = null;
+            try {
+              const existingBranch = await github.rest.repos.getBranch({
+                owner,
+                repo,
+                branch,
+              });
+              branchSha = existingBranch.data.commit.sha;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            const baseCommit = await github.rest.repos.getCommit({
+              owner,
+              repo,
+              ref: baseSha,
+            });
+            if (!branchSha || branchSha === baseSha) {
+              const startCommit = await github.rest.git.createCommit({
+                owner,
+                repo,
+                message: 'chore: start issue #' + issue.number,
+                tree: baseCommit.data.commit.tree.sha,
+                parents: [baseSha],
+              });
+              if (!branchSha) {
+                await github.rest.git.createRef({
+                  owner,
+                  repo,
+                  ref: 'refs/heads/' + branch,
+                  sha: startCommit.data.sha,
+                });
+              } else {
+                await github.rest.git.updateRef({
+                  owner,
+                  repo,
+                  ref: 'heads/' + branch,
+                  sha: startCommit.data.sha,
+                  force: false,
+                });
+              }
+              branchSha = startCommit.data.sha;
+            }
+
+            const pull = await github.rest.pulls.create({
+              owner,
+              repo,
+              title: 'WIP: #' + issue.number + ' ' + issue.title,
+              head: branch,
+              base: baseBranch,
+              draft: true,
+              maintainer_can_modify: true,
+              body: [
+                '## Linked issue',
+                '',
+                'Refs #' + issue.number,
+                '',
+                'This Draft PR is created automatically when the issue is started.',
+                'Base branch: ' + baseBranch,
+                'Keep this PR in draft until implementation and required checks are complete.',
+                'Change the PR to ready for review only after the acceptance criteria are met.',
+              ].join('\n'),
+            });
+            await github.rest.issues.addLabels({
+              owner,
+              repo,
+              issue_number: issue.number,
+              labels: ['agent:started', 'status:in-progress'],
+            });
+            try {
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: issue.number,
+                name: 'status:ready',
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: issue.number,
+              body: [
+                '着手として記録しました。Draft PR: #' + pull.data.number,
+                '',
+                'branch: ' + branch,
+                'base: ' + baseBranch,
+                '実装完了後にPRをReady for reviewへ変更してください。',
+              ].join('\n'),
+            });
+            core.notice(
+              'Created Draft PR #' + pull.data.number + ' for issue #' + issue.number + '.',
+            );
