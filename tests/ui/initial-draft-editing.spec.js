@@ -6,9 +6,11 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.calls.push({command,args});
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
-     if(command==='load_project')return JSON.stringify(project);
+     if(command==='load_project')return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});
      if(command==='save_project'){project=JSON.parse(args.data);window.saved=project;return;}
-     if(command==='backup_status')return {config:null,status:{},restored:[]};
+     if(command==='prepare_source_patch'){const plan={expected:args.expected,baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,scope:{pageIds:project.layout.pages.map(p=>p.id)}};project.jobs.push({id:args.opId,kind:'sourcePatch',status:'planned',source_patch:plan});return plan;}
+   if(command==='commit_source_patch'){const before={panels:project.panels,layout:project.layout,sourceApplication:project.sourceApplication};project={...project,...args.patch,workId:'fixture-work',contentToken:'applied-token',history:[...project.history,{...before,sourcePatch:true,edit:true,after:args.patch}],sourcePatchReceipts:{[args.opId]:true}};project.jobs=project.jobs.map(j=>j.id===args.opId?{...j,status:'complete'}:j);window.saved=project;window.savedProject=project;return project;}
+   if(command==='backup_status')return {config:null,status:{},restored:[]};
      if(command==='register_llm')return 'fixture-plan';
      if(command==='remove_llm')return;
      if(command==='generate_image'){const c=document.createElement('canvas');c.width=args.request.width;c.height=args.request.height;const ctx=c.getContext('2d');ctx.fillStyle='#c5d7c9';ctx.fillRect(0,0,c.width,c.height);return c.toDataURL();}
@@ -19,7 +21,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
          value={reason:'6コマ',pages:[{id:input.pages[0].id,slots:ids.map((id,i)=>{const x=i%2===0?.52:.04,y=.03+Math.floor(i/2)*.32,w=.44,h=.30;return {id:`slot${i}`,panelId:id,points:[[x,y],[x+w,y],[x+w,y+h],[x,y+h]]};})}]};
        }else if(r.purpose==='lettering'){
          lettering++;if(lettering===2&&!failed){failed=true;throw Error('文字配置の接続失敗');}
-         value={reason:'本文の配置',layout:{...JSON.parse(r.prompt).current,mode:'balloons'}};
+         const input=JSON.parse(r.prompt);value={reason:'本文の配置',layout:input.current?{...input.current,mode:'balloons'}:{mode:'balloons',boxes:input.boxes.map(({text,...box})=>box)}};
        }else if(r.purpose==='edit'){
          const input=JSON.parse(r.prompt),target=input.context.panels[2],layout=structuredClone(target.lettering);layout.boxes[0].x=.1;
          if(input.instruction.includes('解像度'))value={reason:'3コマ目を診断',operations:[{kind:'resolution',panelId:target.id,args:{}}]};

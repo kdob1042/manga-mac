@@ -1,3 +1,4 @@
+import {upgradeSourceProject,sealSnapshots,migrateSourceApplication} from './source-application.js';
 import { invoke } from '@tauri-apps/api/core';
 import { migrateProject } from './revisions';
 import { restoreVideoResults } from './video-remote';
@@ -7,15 +8,25 @@ export async function call(command, args = {}) {
   return invoke(command, args);
 }
 export async function saveProject(project) {
-  const normalized = await migrateProject(project);
-  if (desktop()) await call('save_project', { data: JSON.stringify(normalized) });
+  let normalized = await migrateProject(project);
+  if(desktop()&&normalized.version<5)normalized=await upgradeSourceProject(normalized);
+  if(normalized.version>=5){await sealSnapshots(normalized.snapshots);migrateSourceApplication(normalized);}
+  if (desktop()) {
+    await call('save_project', { data: JSON.stringify(normalized) });
+    if(normalized.version>=5){const saved=await call('load_project');return migrateProject(JSON.parse(saved));}
+  }
   else await idb('readwrite', store => store.put(normalized, 'project'));
   return normalized;
 }
 export async function loadProject() {
   const data = desktop() ? await call('load_project') : await idb('readonly', store => store.get('project'));
   if (!data) return null;
-  const normalized = await migrateProject(typeof data === 'string' ? JSON.parse(data) : data, true);
+  let normalized = await migrateProject(typeof data === 'string' ? JSON.parse(data) : data, true);
+  if(desktop()&&normalized.version<5){
+    // Existing native save creates the pre-migration backup and commits once.
+    // Do not expose the migrated UI state until the save has succeeded.
+    normalized=await saveProject(await upgradeSourceProject(normalized));
+  }
   const restored = restoreVideoResults(normalized);
   // Persist recovered artifact references before playback asks native storage for them.
   if (JSON.stringify(restored) !== JSON.stringify(normalized)) return saveProject(restored);

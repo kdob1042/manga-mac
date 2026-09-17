@@ -15,7 +15,10 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
     }
     let mut seen = HashSet::new();
     for (i, b) in boxes.iter().enumerate() {
-        let id = b["unit_id"].as_str().ok_or_else(fail)?;
+        let modern = b.get("sourceRefs").is_some();
+        let id = b[if modern { "id" } else { "unit_id" }]
+            .as_str()
+            .ok_or_else(fail)?;
         if !seen.insert(id)
             || ids.is_some_and(|ids| ids[i] != id)
             || b.as_object().is_none_or(|o| {
@@ -23,6 +26,7 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
                     ![
                         "id",
                         "unit_id",
+                        "sourceRefs",
                         "x",
                         "y",
                         "width",
@@ -41,7 +45,7 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
             return Err(fail());
         }
         if let Some(box_id) = b.get("id") {
-            if box_id.as_str() != Some(format!("letter:{id}").as_str()) {
+            if !modern && box_id.as_str() != Some(format!("letter:{id}").as_str()) {
                 return Err(fail());
             }
         }

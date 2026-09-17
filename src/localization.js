@@ -1,3 +1,4 @@
+import {textForRefs} from './source-refs.js';
 import { sourceUnits } from './core.js';
 import { askLLM } from './llm.js';
 
@@ -116,7 +117,8 @@ export function textForUnits(unitIds, snapshot, localization = null) {
 }
 
 export function textForPanel(panel, snapshot, localization = null) {
-  return textForUnits(panel.unitIds, snapshot, localization);
+  if(panel.sourceRefs)return textForRefs(panel.sourceRefs,Array.isArray(snapshot)?snapshot:[snapshot],localization);
+  return textForUnits(panel.unitIds, Array.isArray(snapshot)?snapshot.find(s=>s.id===panel.snapshotId):snapshot, localization);
 }
 
 function vttTime(milliseconds) {
@@ -141,11 +143,10 @@ export function videoWebVTT(shots, snapshots, localization = null) {
     )
       throw Error('字幕時刻が不正です');
     const snapshot = snapshots.find((item) => item.id === shot.snapshotId);
-    if (!snapshot) throw Error('原作スナップショットがありません');
-    if (!resolvers.has(snapshot))
+    if (!shot.sourceRefs && !snapshot) throw Error('原作スナップショットがありません');
+    if (!shot.sourceRefs && !resolvers.has(snapshot))
       resolvers.set(snapshot, createTextResolver(snapshot, localization));
-    const text = resolvers
-      .get(snapshot)(shot.unitIds)
+    const text = (shot.sourceRefs ? textForRefs(shot.sourceRefs,snapshots,localization) : resolvers.get(snapshot)(shot.unitIds))
       .replace(/\r/g, '')
       .replace(/-->/g, '→')
       .trim();
