@@ -18,6 +18,8 @@ test('upscale candidates preserve placement, source and lettering; reject stale 
  assert.deepEqual(q.panels,p.panels);assert.equal(q.jobs.at(-1).status,'candidate');assert.deepEqual(q.layout,p.layout);
  const stale=structuredClone(q);stale.layout.pages[0].slots[0].points[0][0]+=.001;
  await assert.rejects(adoptUpscale(stale,j.id),/配置/);
+ const recropped=structuredClone(q);recropped.layout.imageCrops={[panel.id]:{zoom:2,x:.5,y:.5}};
+ await assert.rejects(adoptUpscale(recropped,j.id),/配置/);
  const a=await adoptUpscale(q,j.id);assert.equal(a.panels[0].artwork_revision,`artwork:${j.id}`);assert.deepEqual(a.history.at(-1).panels,p.panels);assert.deepEqual(a.layout,p.layout);assert.deepEqual(a.snapshots,p.snapshots);assert.deepEqual(a.panels[0].lettering,panel.lettering);assert.equal(a.artworks.at(-1).parent_revision,panel.artwork_revision);
  await assert.rejects(adoptUpscale(a,j.id));
 });
