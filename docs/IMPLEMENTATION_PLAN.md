@@ -113,9 +113,11 @@ LLMが`ready`等の完了を返したこと自体は、Blender操作の完了証
 
 CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用しない。[B1] 参照解決にはファイル・datablockと版を使う。名称変更等のID補助が必要ならBlender側の小さなcustom propertyで保持し、アプリ独自素材モデルへ拡張しない。解決不能なら要再対応付けとし、似た名前の別素材へ自動差し替えしない。
 
-原作リポジトリとの構造契約は`source-contracts/`の機械可読ファイルで管理する。対応するmanifest schema、読書順・設定・参照画像の解決規則、アプリ側で最後に整合確認した原作commit／manifest blobを記録する。この確認基準commitは脚本内容の版ではなく、アプリ実装がどの時点のリポジトリ構造を前提に検証されたかを示す。作品のSourceSnapshotには実際に取り込んだ原稿commitと契約情報を別々に保存・表示する。
+原稿インターフェース（#124）は `source-protocol.js` を正本とする汎用schema。リポジトリ名から仕様を引かず、同一commitの `manifest.json` を検証して内部SourceModelへ正規化する。作品固有JSON・整合基準commitは同梱しない。schema 1と既存schema 4は `episodes[].scene_ids`、`scenes[].id/path`、任意の `settings[].id/path` を持つ。人物参照は `references.characters: [{name: "人物A", image: "portraits/a.png", description: "任意の説明"}]` で自己記述する。設定ID・画像ディレクトリ・alt命名は任意。宣言がないschema 4だけ、任意の設定Markdown内の旧キャラクター基準画captionを互換adapterで読む。構造化宣言があれば空配列でも優先する。
 
-キャラクター基準画は、同一原稿commitの`VISUAL`設定内Markdown画像から、契約で許可した`assets/illustrations/`配下だけを解決する。画像の実形式・20MB上限・SHA-256をRust境界で確認し、原稿版を利用者が取り込んだ時点で2D参照へ反映する。新版確認だけで採用中の参照を変更しない。
+場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値は変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
+
+schema 5の最小読書順台帳はscene/settingsの解決宣言を欠くため未対応と明示する。原稿側の固有ディレクトリ走査をアプリへ転載しない。原稿側で自己記述するschema 1を提供すれば作品追加のコード変更は不要。現行原稿側の宣言提供と通し確認は #136 に残す（原稿repoは本変更で編集しない）。
 
 「二人を近づける」という編集意図や撮影記録として数値を保存してよいが、それを編集可能な第二の3D正本として使わない。座標の表示キャッシュはBlenderから再取得可能とし、Blenderで変更した結果を古いキャッシュで上書きしない。
 
@@ -123,7 +125,7 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 作品表示名・GitHub repository・選択中episodeをアプリ共通の登録一覧へ保存する。本文を登録一覧へ複製しない。既存作品はprimaryの保存領域をそのまま登録し、新規作品には独立したSQLite・画像・動画・Blender・履歴・Job領域を作る。作品切替は既存workspace切替・再起動を使い、進行中処理のロックを維持する。GitHub tokenは起動中だけ保持し、切替後は再入力する。既存原稿元は登録後に別repoへ付替えず、追加操作を使う。
 
-新規原稿元も現行manifest schema 4・VISUAL参照設定・許可画像ルートを検証する。Kamiya-Kawai固有の検証基準commitを別作品へ転載しない。コミット固定・原文非改変・safePath・画像hash検証は既存同期経路を使う。自由形式・任意フォルダ対応は含めない。
+新規原稿元も同じ汎用protocolを検証する。未接続の初回作品には既定repoを割り当てず、利用者が接続先を指定して登録する。コミット固定・原文非改変・safePath・画像hash検証は既存同期経路を使う。
 
 ### 原稿の手動取込み（#107）
 
@@ -236,6 +238,18 @@ SourceUpdateは共通差分の選択をnative prepareで既存Jobへ固定して
 AIが選ぶ画像再利用は更新案で確認する。新IDへは採用画像とcropを引き継ぎ、旧コマ専用の撮影bindingを転用しない。配置は#116の同一基準の区間置換を使い、前後のページと手動要素・動画対応を検査する。新規作画はproductionの既存beginJob/finishJob、FLUX要求・receipt復旧を共有する。nativeはsourcePatchOpの候補・作品・基準・対象原稿を照合して予約する。採用漫画を変えず候補内へ素材を保存し、停止後は不足分だけを再開する。unknownの結果は復旧を確認し、再生成で置き換えない。新しい生成キューや原稿DBを持たない。
 
 必要素材が全て揃った後、既存pagePNGで文字収容を確認し、明示適用で#114の単一transactionへ渡す。漫画・反映列・Undo/Redo・receiptを同時保存し、旧panel IDを含むlayout履歴を安全に退避する。台詞／削除／移動だけなら作画要求は0回。既存一括初稿も素材完成後に同じprepare/commitで選択場面の反映を確定する。表示・選択・外部原稿の取込み・計画成功だけでは反映済みにしない。実モデルの演出品質はfixtureによる通信・保存境界の検証とは区別する。
+
+### 選択差分の並列実行（#129）
+
+原稿の追加実行は全画面busyと分離し、既存sourcePatch Jobにrun/group・固定した選択・依存キー・工程を付加する。複数選択は共有コマ・原稿単位・context参照・配置ページ・挿入境界を共有する連結成分へまとめ、別の実行から重なる範囲は採用／停止まで待機する。タグ文字列を実行時に評価せず、呼出元が解決した実block IDと任意のscene IDを開始時に固定する。選択・表示だけでは生成しない。
+
+共有の小さな資源待機列を既存入口へ接続する。ローカル画像／Ollamaは共用推論枠1、外部LLMは同一接続で最大2（逐次設定は1）。nativeも同じ画像engine mutexとLLM endpoint上限を持つ。モデル・接続先の自動切替はない。Blenderは既存directPanelの演出→読戻し→固定撮影の全区間で排他し、個々のAPI呼出しだけの排他にしない。選択原稿の作画は既存画像候補経路であり、Blender／動画の新しい生成経路を追加しない。GPU待機を終えてから候補依存を再検査し、未送信の待機停止と成否不明の送信済み要求を区別する。
+
+作品保存は一つの短いwriter列へ集約する。非同期Job更新は最新作品への更新関数とし、古い全体objectはtoken／保存revisionが違えば拒否する。通常native保存もIMMEDIATE transaction内でworkId/contentTokenを比較する。sourcePatch prepare・rebase・採用も同じwriter列に入り、推論中は保存排他を保持しない。Job進捗は内容tokenを変えない。
+
+prepare時にnativeで対象原稿unitと前後アンカー、scope内ページ・コマ、contextに依存するコマ、crop・配置設定・人物／画風参照・動画対応・入力snapshotから読取り依存hashを固定する。独立した採用で全体tokenが変わっても、同じ選択操作／scope／読取り依存が維持される場合だけ既存差分計算から最新Bへ操作を再構築し、native rebaseで検査・保存する。最新sourceApplication全体へ旧候補をコピーしない。再構築した局所配置を#116、被覆と採用を#114で再検査し、確定transactionでも依存とtokenを確認する。実際の依存変更は候補を保持して再確認を要求する。旧版の依存hashなし候補は同じ全体基準でだけ検査を追加でき、古い基準へはrebaseしない。
+
+個別停止／全停止は独立処理を巻き戻さない。遅い応答は更新案に保持し、自動採用しない。再開は不足素材だけを既存image Job／receiptから回収し、unknownを再POSTしない。完了opIdは応答消失・再起動・Undo後も重複採用しない。Undoはグループの漫画と反映列だけを戻し、取得済み素材や費用は維持する。人工応答の並行・逆順完了・独立採用・停止／再開と保存競合を通常試験とし、実機速度やメモリの倍率を推測して報告しない。
 
 ## 7. 修正の振り分けと保護
 

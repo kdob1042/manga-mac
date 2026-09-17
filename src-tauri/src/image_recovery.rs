@@ -89,6 +89,7 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             .find(|j| j["id"] == *op)
             .ok_or("Missing source candidate")?;
         let prepared = &owner["source_candidate"]["prepared"];
+        super::source_patch::validate_dependencies(&project, &owner["source_patch"])?;
         if owner["kind"] != "sourcePatch"
             || owner["status"] != "candidate"
             || owner["source_patch"]["baseContentToken"] != super::source_refs::token(&project)

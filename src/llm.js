@@ -1,4 +1,5 @@
 // Providers share one validated JSON contract. No automatic provider fallback.
+import {withResource} from './execution.js';
 export const providers = {
   ollama: { label: 'Ollama（ローカル）', baseUrl: 'http://127.0.0.1:11434' },
   openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
@@ -8,7 +9,7 @@ export const providers = {
   custom: { label: 'OpenAI互換API', baseUrl: '' },
 };
 export function defaultConnection(provider = 'ollama') {
-  return { provider, purpose: 'plan', baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? 'qwen3:8b' : '', apiKey: '', connectionId: '', jsonMode: true };
+  return { provider, purpose: 'plan', baseUrl: providers[provider].baseUrl, model: provider === 'ollama' ? 'qwen3:8b' : '', apiKey: '', connectionId: '', jsonMode: true, concurrency:provider==='ollama'?1:2 };
 }
 export async function registerConnection(config) {
   const { call } = await import('./bridge.js');
@@ -25,7 +26,10 @@ export async function cancelLLMRequests() {
   const { call } = await import('./bridge.js');
   await Promise.all([...activeRequests].map(requestId => call('cancel_llm', { requestId })));
 }
-export async function askLLM(config, { prompt, schema, images = [], purpose = config.purpose }) {
+export async function askLLM(config, { prompt, schema, images = [], purpose = config.purpose, cancelled=()=>false, waiting=()=>{},started=()=>{} }) {
+ return withResource(config.provider==='ollama'?'local-inference':`llm:${config.connectionId}`,config.provider==='ollama'?1:Math.min(2,config.concurrency??2),()=>{started();return requestLLM(config,{prompt,schema,images,purpose});},{cancelled,waiting});
+}
+async function requestLLM(config,{prompt,schema,images,purpose}){
   if (!config.connectionId) throw Error('AIの接続を登録・テストしてください');
   const { call } = await import('./bridge.js');
   const requestId = crypto.randomUUID();

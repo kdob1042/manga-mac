@@ -27,9 +27,10 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
    }
    if(command==='prepare_source_patch'){
     if(args.baseContentToken!==project.contentToken||args.workId!==project.workId)throw Error('stale');
-    const plan={baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,expected:args.expected,scope:{pageIds:project.layout.pages.map(p=>p.id)}};
+    const plan={baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,expected:args.expected,scope:{pageIds:project.layout.pages.map(p=>p.id),panelIds:(await import('/src/source-application.js')).buildAffectedScope(project,args.expected.sourceEdits).contentPanelIds}};
     save({...project,jobs:[...project.jobs,{id:args.opId,kind:'sourcePatch',status:'planned',source_patch:plan}]});return plan;
    }
+   if(command==='rebase_source_patch'){const job=project.jobs.find(j=>j.id===args.opId);job.source_patch={...job.source_patch,baseContentToken:args.baseContentToken,expected:args.expected};return job.source_patch;}
    if(command==='commit_source_patch'){
     if(project.sourcePatchReceipts?.[args.opId])return project;
     if(args.baseContentToken!==project.contentToken)throw Error('stale');
@@ -41,7 +42,7 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
  });
  await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.getByText('原稿と漫画への反映状態',{exact:true}).click();const source=page.getByRole('region',{name:'原稿',exact:true});await expect(source.getByRole('checkbox')).toHaveCount(initialDraft?1:2);await source.getByRole('checkbox').first().check();
- await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();const candidate=page.getByRole('region',{name:'原稿反映の更新案'});await expect(candidate).toBeVisible();
+ await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();const candidate=page.getByRole('region',{name:'原稿反映の更新案'});await expect(candidate).toBeVisible();await expect(candidate).toContainText('更新案を確認できます');
 
  if(initialDraft){
   await expect(candidate.getByRole('button',{name:'この更新案を適用'})).toBeDisabled();

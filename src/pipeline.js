@@ -4,37 +4,31 @@ import { generationSize, imageRequest } from './image-input';
 import { call } from './bridge';
 import { askLLM } from './llm';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core';
-import { referenceDeclarations, sourceContract, validateSourceContract } from './source-contract';
+import { referenceDeclarations, normalizeSourceManifest } from './source-protocol';
 export async function syncSource(repo, token, episodeId, previous) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
   const commit = await call('github_get', { repo, path: 'commits/main', token });
   const sha = JSON.parse(commit).sha;
-  const registered = sourceContract(repo);
   if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo && Array.isArray(previous.references)
-    && previous.contract?.aligned_source_commit === registered?.aligned_source_commit) return previous;
+    && previous.protocol?.version === 1) return previous;
   const read = path => call('github_file', { repo, path: safePath(path), sha, token });
-  const manifest = JSON.parse(await read('manifest.json'));
-  const contract = validateSourceContract(repo, manifest);
-  const selected = orderedScenes(manifest, episodeId);
+  const manifestText = await read('manifest.json');
+  const manifest = JSON.parse(manifestText);
+  const model = normalizeSourceManifest(manifest);
+  const selected = orderedScenes(model, episodeId);
   const scenes = [];
   for (const s of selected) scenes.push({ ...s, text: await read(s.path), design: s.design_path ? await read(s.design_path) : '' });
   const settings = [];
-  for (const s of manifest.settings ?? []) settings.push({ ...s, text: await read(s.path) });
+  for (const s of model.settings) settings.push({ ...s, text: await read(s.path) });
   const references = [];
-  for (const setting of settings) {
-    for (const declaration of referenceDeclarations(setting, contract)) {
+  for (const declaration of referenceDeclarations(model, settings)) {
       const asset = await call('github_asset', { repo, path: declaration.path, sha, token });
       references.push({ ...declaration, ...asset });
-    }
   }
   return {
     id: `${repo}@${sha}:${episodeId}`, repo, sha, episodeId, manifest, scenes, settings, references,
-    contract: {
-      version: contract.contract_version,
-      manifest_schema_version: manifest.schema_version,
-      aligned_source_commit: contract.aligned_source_commit,
-      aligned_manifest_blob: contract.aligned_manifest_blob,
-    },
+    protocol: {version: 1, manifest_schema_version: manifest.schema_version},
+    sync: {source_commit: sha, manifest_sha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manifestText))), b=>b.toString(16).padStart(2,'0')).join(''), at: new Date().toISOString()},
     at: new Date().toISOString(),
   };
 }
@@ -45,7 +39,7 @@ export async function planScene(scene, snapshot, characters, model) {
   const result = await askLLM(model, { schema, prompt: JSON.stringify({ task: '完成脚本の漫画演出を設計。原文を創作・省略・並べ替えない。全unitIdsを順に一度ずつ割り当て、関連する段落をまとめて1コマにする。原作の明示指示を優先。絵のpromptは英語、文字や吹き出しは描かない。人物は登録IDだけ使用。未登録の人物を登録人物で代用しない。ページ配置は別工程で決めるため、ページ当たりのコマ数を制限しない。各コマに出演する人物IDを漏らさず含める。', units, design: scene.design, settings: snapshot.settings, characters: characters.map(({ id, name, description }) => ({ id, name, description })) }) });
   return validatePlan(JSON.parse(result), units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null) {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null) {
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
@@ -77,7 +71,7 @@ export async function generatePanel(panel, characters, original = null, instruct
     panel: { ...panel, image: null, ...(job?.finishing ? {finishing:job.finishing} : {}), generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width, height, input_mapping: mapping, original_hash: request.original_hash, capture_revision: capture?.id ?? panel.capture_revision ?? null, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1,
       instructions: edit ? [...panel.instructions, instruction] : panel.instructions },
     ...(edit ? { original, original_hash: await imageHash(original), rect: edit.rect } : {}) };
-  const image = await call('generate_image', { request });
+  const image = await call('generate_image', { request },permit);
   return completeImage(request.recovery, image);
 }
 export async function editRegion(panel, characters, instruction, rect, job = null, styles = []) {

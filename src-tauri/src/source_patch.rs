@@ -191,6 +191,159 @@ fn scope(p: &Value, expected: &Value) -> Result<Value> {
         .collect();
     Ok(json!({"panelIds":ids,"pageIds":pages}))
 }
+// The read set is minted from native state, never accepted from the model/UI.
+fn dependencies(p: &Value, scope: &Value, expected: &Value) -> Result<Value> {
+    let edits = array(&expected["sourceEdits"], "edits")?;
+    let units: Vec<_> = array(&p["sourceApplication"]["units"], "units")?
+        .iter()
+        .filter(|u| {
+            edits.iter().any(|e| {
+                e["beforeUnitId"] == u["id"]
+                    || e["afterUnitId"] == u["id"]
+                    || e["oldUnitIds"]
+                        .as_array()
+                        .is_some_and(|ids| ids.contains(&u["id"]))
+            })
+        })
+        .cloned()
+        .collect();
+    let page_ids = array(&scope["pageIds"], "pages")?;
+    let pages = array(&p["layout"]["pages"], "pages")?;
+    let selected: Vec<_> = pages
+        .iter()
+        .filter(|page| page_ids.contains(&page["id"]))
+        .cloned()
+        .collect();
+    let mut intervals = vec![];
+    for (i, page) in pages.iter().enumerate() {
+        if page_ids.contains(&page["id"]) && (i == 0 || !page_ids.contains(&pages[i - 1]["id"])) {
+            let mut end = i + 1;
+            while end < pages.len() && page_ids.contains(&pages[end]["id"]) {
+                end += 1;
+            }
+            intervals.push(json!({"before":if i>0 {pages[i-1]["id"].clone()} else {Value::Null}, "pages":pages[i..end].iter().map(|p|p["id"].clone()).collect::<Vec<_>>(), "after":pages.get(end).map(|p|p["id"].clone()).unwrap_or(Value::Null)}));
+        }
+    }
+    let panel_ids: Vec<_> = selected
+        .iter()
+        .flat_map(|page| {
+            page["slots"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|s| s["panelId"].clone())
+        })
+        .collect();
+    let primary: Vec<_> = array(&p["panels"], "panels")?
+        .iter()
+        .filter(|panel| panel_ids.contains(&panel["id"]))
+        .collect();
+    let context: Vec<_> = primary
+        .iter()
+        .flat_map(|panel| panel["contextRefs"].as_array().into_iter().flatten())
+        .collect();
+    let panels: Vec<_> = array(&p["panels"], "panels")?
+        .iter()
+        .filter(|panel| {
+            panel_ids.contains(&panel["id"])
+                || panel["sourceRefs"]
+                    .as_array()
+                    .is_some_and(|refs| refs.iter().any(|r| context.iter().any(|c| overlaps(r, c))))
+        })
+        .cloned()
+        .collect();
+    let crops: Vec<_> = panels
+        .iter()
+        .map(|panel| {
+            json!([
+                panel["id"],
+                p["layout"]["imageCrops"][panel["id"].as_str().unwrap_or("")]
+            ])
+        })
+        .collect();
+    let mut layout = p["layout"].clone();
+    if let Some(value) = layout.as_object_mut() {
+        value.remove("pages");
+        value.remove("imageCrops");
+    }
+    Ok(json!(super::hash(json!({"layout":layout,"active":p["active"],"snapshot":p["snapshots"].as_array().and_then(|s|s.iter().find(|s|s["id"]==p["active"])),"characters":p["characters"],"style":p["style_references"],"units":units,"panels":panels,"pages":selected,"intervals":intervals,"crops":crops,"motions":p["panelMotions"]}).to_string().as_bytes())))
+}
+fn same_edits(a: &Value, b: &Value) -> Result<bool> {
+    let a = array(&a["sourceEdits"], "edits")?;
+    let b = array(&b["sourceEdits"], "edits")?;
+    Ok(a.len() == b.len()
+        && a.iter().zip(b).all(|(a, b)| {
+            [
+                "kind",
+                "oldUnitIds",
+                "newRefs",
+                "beforeUnitId",
+                "afterUnitId",
+                "targetStart",
+            ]
+            .iter()
+            .all(|key| a[*key] == b[*key])
+        }))
+}
+pub fn validate_dependencies(p: &Value, plan: &Value) -> Result<()> {
+    if plan.get("dependencies").is_some()
+        && plan["dependencies"] != dependencies(p, &plan["scope"], &plan["expected"])?
+    {
+        return Err("Source dependencies changed; candidate retained for review".into());
+    }
+    Ok(())
+}
+pub fn rebase(
+    db: &mut Connection,
+    root: &Path,
+    work: &str,
+    op: &str,
+    base: &str,
+    expected: Value,
+) -> Result<Value> {
+    let tx = db
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(err)?;
+    let mut p = raw_project(&tx)?;
+    let target = p["active"].as_str().ok_or("Missing target")?.to_owned();
+    identity(&p, work, base, &target)?;
+    let job = array(&p["jobs"], "jobs")?
+        .iter()
+        .find(|j| j["id"] == op)
+        .ok_or("Missing source job")?;
+    if job["status"] == "cancelled" || job["status"] == "complete" {
+        return Err("Source job no longer active".into());
+    }
+    let previous = &job["source_patch"];
+    if previous["targetSnapshotId"] != target || !same_edits(&previous["expected"], &expected)? {
+        return Err("Source selection changed; replan required".into());
+    }
+    let scope = scope(&p, &expected)?;
+    let current_dependencies = dependencies(&p, &scope, &previous["expected"])?;
+    let valid_dependencies = if previous.get("dependencies").is_some() {
+        previous["dependencies"] == current_dependencies
+    } else {
+        previous["baseContentToken"] == base
+    };
+    if scope != previous["scope"] || !valid_dependencies {
+        return Err("Source dependencies changed; candidate retained for review".into());
+    }
+    let application = expected_units(&p, &expected)?;
+    let mut plan = previous.clone();
+    plan["dependencies"] = current_dependencies;
+    plan["baseContentToken"] = json!(base);
+    plan["expected"] = expected;
+    plan["sourceApplication"] = application;
+    p["jobs"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|j| j["id"] == op)
+        .unwrap()["source_patch"] = plan.clone();
+    save_in_transaction(&tx, root, &p.to_string(), true)?;
+    tx.commit().map_err(err)?;
+    Ok(plan)
+}
 pub fn prepare(
     db: &mut Connection,
     root: &Path,
@@ -210,7 +363,8 @@ pub fn prepare(
     identity(&p, work, base, target)?;
     let application = expected_units(&p, &expected)?;
     let scope = scope(&p, &expected)?;
-    let plan = json!({"baseContentToken":base,"targetSnapshotId":target,"expected":expected,"sourceApplication":application,"scope":scope});
+    let dependencies = dependencies(&p, &scope, &expected)?;
+    let plan = json!({"baseContentToken":base,"targetSnapshotId":target,"expected":expected,"sourceApplication":application,"scope":scope,"dependencies":dependencies});
     let jobs = p["jobs"].as_array_mut().ok_or("Missing jobs")?;
     if let Some(job) = jobs.iter().find(|j| j["id"].as_str() == Some(op)) {
         if job["source_patch"] != plan {
@@ -408,6 +562,7 @@ pub fn commit(
         return Err("Source plan identity changed".into());
     }
     expected_units(&p, &plan["expected"])?;
+    validate_dependencies(&p, plan)?;
     let mut next = validate_patch(&p, plan, &patch)?;
     let before = json!({"panels":p["panels"],"layout":p["layout"],"sourceApplication":p["sourceApplication"],"layoutHistory":p.get("layoutHistory").cloned().unwrap_or(json!([])),"layoutRedo":p.get("layoutRedo").cloned().unwrap_or(json!([]))});
     next["layoutHistory"] = json!([]);
@@ -563,5 +718,134 @@ mod tests {
         assert_eq!(raw_project(&db).unwrap(), before);
         assert!(commit(&mut db, &root, "work", &op, "stale", "s", patch).is_err());
         std::fs::remove_dir_all(root).unwrap();
+    }
+    fn disjoint_fixture() -> Value {
+        let mut p = fixture();
+        let (_, patch) = request(&p);
+        let mut old_scenes = vec![];
+        let mut new_scenes = vec![];
+        let mut panels = vec![];
+        let mut pages = vec![];
+        let mut units = vec![];
+        for i in 0..9 {
+            let id = format!("scene{i}");
+            let old = format!("old{i}");
+            let new = if i == 0 || i == 8 {
+                format!("new{i}")
+            } else {
+                old.clone()
+            };
+            old_scenes
+                .push(json!({"id":id,"text":old,"sourceHash":super::super::hash(old.as_bytes())}));
+            new_scenes
+                .push(json!({"id":id,"text":new,"sourceHash":super::super::hash(new.as_bytes())}));
+            let r = json!({"snapshotId":"old","sceneId":id,"startCp":0,"endCp":4});
+            units.push(json!({"id":format!("u{i}"),"source":r,"requiredText":[r]}));
+            let mut panel = patch["panels"][0].clone();
+            panel["id"] = json!(format!("p{i}"));
+            panel["sourceRefs"] = json!([r]);
+            panel["lettering"]["boxes"][0]["sourceRefs"] = json!([r]);
+            panel["lettering"]["boxes"][0]["id"] = json!(format!("box{i}"));
+            panels.push(panel);
+            let mut page = patch["layout"]["pages"][0].clone();
+            page["id"] = json!(format!("page{i}"));
+            page["slots"][0]["id"] = json!(format!("slot{i}"));
+            page["slots"][0]["panelId"] = json!(format!("p{i}"));
+            pages.push(page);
+        }
+        p["snapshots"] = json!([{"id":"old","scenes":old_scenes},{"id":"s","scenes":new_scenes}]);
+        p["panels"] = json!(panels);
+        p["layout"]["pages"] = json!(pages);
+        p["sourceApplication"]["units"] = json!(units);
+        p
+    }
+    fn replace_request(p: &Value, index: usize) -> (Value, Value) {
+        let old = &p["sourceApplication"]["units"];
+        let mut units = old.as_array().unwrap().clone();
+        let mut source = units[index]["source"].clone();
+        source["snapshotId"] = json!("s");
+        units[index] = json!({"id":format!("new{index}"),"source":source,"requiredText":[source]});
+        let expected = json!({"afterUnits":units,"sourceEdits":[{"kind":"replace","start":index,"end":index+1,"targetStart":index,"beforeUnitId":if index>0 {old[index-1]["id"].clone()} else {Value::Null},"afterUnitId":old.get(index+1).map(|u|u["id"].clone()).unwrap_or(Value::Null),"oldUnitIds":[old[index]["id"]],"newRefs":[source]}]});
+        let mut patch = json!({"panels":p["panels"],"layout":p["layout"],"sourceApplication":{"version":1,"units":units}});
+        patch["panels"][index]["id"] = json!(format!("new-panel{index}"));
+        patch["panels"][index]["replacesPanelIds"] = json!([p["panels"][index]["id"]]);
+        patch["panels"][index]["sourceRefs"] = json!([source]);
+        patch["panels"][index]["lettering"]["boxes"][0]["sourceRefs"] = json!([source]);
+        patch["layout"]["pages"][index]["slots"][0]["panelId"] = json!(format!("new-panel{index}"));
+        (expected, patch)
+    }
+    #[test]
+    fn disjoint_adoption_rebases_native_plan_without_losing_other_result_or_undo_receipt() {
+        let (mut db, root) = super::super::tests::setup();
+        let p = disjoint_fixture();
+        super::super::save(&mut db, &root, &p.to_string()).unwrap();
+        let base = source_refs::token(&raw_project(&db).unwrap());
+        let a = uuid::Uuid::new_v4().to_string();
+        let b = uuid::Uuid::new_v4().to_string();
+        let (ea, pa) = replace_request(&p, 0);
+        let (eb, pb) = replace_request(&p, 8);
+        prepare(&mut db, &root, "work", &a, &base, "s", ea).unwrap();
+        prepare(&mut db, &root, "work", &b, &base, "s", eb).unwrap();
+        let after_b = commit(&mut db, &root, "work", &b, &base, "s", pb).unwrap();
+        assert!(commit(&mut db, &root, "work", &a, &base, "s", pa).is_err());
+        let base_b = after_b["contentToken"].as_str().unwrap();
+        let (ea, pa) = replace_request(&after_b, 0);
+        rebase(&mut db, &root, "work", &a, base_b, ea).unwrap();
+        let complete = commit(&mut db, &root, "work", &a, base_b, "s", pa.clone()).unwrap();
+        assert_eq!(complete["panels"][0]["id"], "new-panel0");
+        assert_eq!(complete["panels"][8]["id"], "new-panel8");
+        for i in 1..8 {
+            assert_eq!(complete["panels"][i], p["panels"][i]);
+        }
+        assert_eq!(complete["history"].as_array().unwrap().len(), 2);
+        assert_eq!(complete["history"][1]["panels"][8], after_b["panels"][8]);
+        let mut undo = complete.clone();
+        for key in ["panels", "layout", "sourceApplication"] {
+            undo[key] = complete["history"][1][key].clone();
+        }
+        super::super::save_checked(&mut db, &root, &undo.to_string()).unwrap();
+        drop(db);
+        let mut db = Connection::open(root.join("test.sqlite3")).unwrap();
+        let repeated = commit(&mut db, &root, "work", &a, base_b, "s", pa).unwrap();
+        assert_eq!(repeated["panels"][0]["id"], "p0");
+        assert_eq!(repeated["panels"][8]["id"], "new-panel8");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn native_rebase_rejects_target_reference_and_anchor_changes_and_save_cas_is_atomic() {
+        for change in ["panel", "character", "target", "anchor"] {
+            let (mut db, root) = super::super::tests::setup();
+            let p = disjoint_fixture();
+            super::super::save(&mut db, &root, &p.to_string()).unwrap();
+            let base = source_refs::token(&raw_project(&db).unwrap());
+            let op = uuid::Uuid::new_v4().to_string();
+            let (expected, _) = replace_request(&p, 0);
+            prepare(&mut db, &root, "work", &op, &base, "s", expected.clone()).unwrap();
+            let stale = loaded(&db, &root).unwrap();
+            let mut changed = stale.clone();
+            match change {
+                "panel" => changed["panels"][0]["prompt"] = json!("manual"),
+                "character" => changed["characters"] = json!([{"id":"new"}]),
+                "target" => changed["active"] = json!("old"),
+                _ => changed["layout"]["pages"][2]["id"] = json!("another-anchor"),
+            };
+            super::super::save_checked(&mut db, &root, &changed.to_string()).unwrap();
+            let latest = raw_project(&db).unwrap();
+            assert!(rebase(
+                &mut db,
+                &root,
+                "work",
+                &op,
+                &source_refs::token(&latest),
+                expected
+            )
+            .is_err());
+            assert_eq!(raw_project(&db).unwrap(), latest);
+            if change != "character" {
+                assert!(super::super::save_checked(&mut db, &root, &stale.to_string()).is_err());
+                assert_eq!(raw_project(&db).unwrap(), latest);
+            }
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 }

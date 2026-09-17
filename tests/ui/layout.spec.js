@@ -46,7 +46,7 @@ test('AI layout uses registered router and explicit adoption without regeneratin
    let project={...fixture,jobs:[],history:[]};window.nativeCalls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.nativeCalls.push(command);
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify(project);
      if(command==='save_project'){project=JSON.parse(args.data);window.savedProject=project;return;}
      if(command==='backup_status')return {config:null,status:{},restored:[]};

@@ -52,7 +52,7 @@ export async function proposeSourceReplan(project,prepared,ask){
  const panels=project.panels.filter(p=>!input.scope.contentPanelIds.includes(p.id)).concat(replacements);
  return makeSourceCandidate(project,prepared,panels,redraw,response.reason);
 }
-function makeSourceCandidate(project,prepared,panels,redrawPanelIds,reason){
+export function makeSourceCandidate(project,prepared,panels,redrawPanelIds,reason){
  const {expected,identity}=prepared;
  const rank=p=>{const indices=expected.afterUnits.flatMap((u,i)=>(p.sourceRefs??[]).some(r=>intersect(r,u.source))?[i]:[]);if(indices.length)return Math.min(...indices);const index=project.panels.findIndex(old=>old.id===p.id);for(let i=index-1;i>=0;i--){const prev=project.panels[i];const found=expected.afterUnits.findIndex(u=>(prev.sourceRefs??[]).some(r=>intersect(r,u.source)));if(found>=0)return found+.5;}return -.5;};
  panels=[...panels].sort((a,b)=>rank(a)-rank(b));
