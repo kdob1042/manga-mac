@@ -4,6 +4,8 @@ pub mod backup;
 pub mod image_recovery;
 #[path = "layout.rs"]
 pub mod layout;
+#[path = "lettering.rs"]
+pub mod lettering;
 
 #[path = "live_export.rs"]
 pub mod live_export;
@@ -411,6 +413,19 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
     if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
+    }
+    if let Some(panels) = project["panels"].as_array() {
+        for panel in panels {
+            if let Some(value) = panel.get("lettering") {
+                let ids = panel["unitIds"]
+                    .as_array()
+                    .ok_or("Missing source units")?
+                    .iter()
+                    .map(|v| v.as_str().ok_or_else(|| "Invalid source unit".to_string()))
+                    .collect::<Result<Vec<_>>>()?;
+                lettering::validate(value, Some(&ids))?;
+            }
+        }
     }
     if let Some(pages) = project.get("layout") {
         let ids = project["panels"]
