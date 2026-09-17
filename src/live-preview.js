@@ -16,7 +16,7 @@ export function capturePreview(writer, current, capture) {
   });
 }
 export function previewContentKey(project){
-  return JSON.stringify({workId:project.workId,title:project.title,active:project.active,locale:project.output_locale,layout:project.layout,panels:project.panels,panelMotions:project.panelMotions,localizations:project.localizations,snapshots:project.snapshots.map(s=>({id:s.id,episodeId:s.episodeId,scenes:s.scenes.map(scene=>({id:scene.id,text:scene.text,tags:scene.tags??s.manifest?.scenes?.find(x=>x.id===scene.id)?.tags}))}))});
+  return JSON.stringify({workId:project.workId,title:project.title,active:project.active,locale:project.output_locale,layout:project.layout,panels:project.panels,panelMotions:project.panelMotions,localizations:project.localizations,snapshots:project.snapshots.map(s=>({id:s.id,episodeId:s.episodeId,scenes:s.scenes.map(scene=>({id:scene.id,text:scene.text,tags:scene.tags??s.manifest?.scenes?.find(x=>x.id===scene.id)?.tags}))}))},(_key,value)=>value&&typeof value==='object'&&!Array.isArray(value)?Object.fromEntries(Object.keys(value).sort().map(key=>[key,value[key]])):value);
 }
 
 // Dependencies keep canvas and native media outside the immutable projection.

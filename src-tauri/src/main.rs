@@ -653,6 +653,7 @@ async fn live_preview_send(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     static GATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    live_preview::begin(&revision)?;
     let _guard = GATE.lock().await;
     live_preview::send(
         &state.root,

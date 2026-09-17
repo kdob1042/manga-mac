@@ -26,6 +26,15 @@ fn check_cancelled(revision: &str) -> Result<()> {
     }
     Ok(())
 }
+pub fn begin(revision: &str) -> Result<()> {
+    uuid::Uuid::parse_str(revision).map_err(|_| "Invalid revision")?;
+    CANCELLED
+        .get_or_init(Default::default)
+        .lock()
+        .map_err(|_| "Cancel state unavailable")?
+        .remove(revision);
+    Ok(())
+}
 fn safe_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 128
@@ -82,11 +91,7 @@ pub async fn send(
     base: Option<String>,
     scope: (&str, &str),
 ) -> Result<Value> {
-    CANCELLED
-        .get_or_init(Default::default)
-        .lock()
-        .map_err(|_| "Cancel state unavailable")?
-        .remove(revision);
+    check_cancelled(revision)?;
     let origin = approved_origin(origin)?.origin().ascii_serialization();
     if !(43..=128).contains(&token.len())
         || !token
@@ -279,5 +284,15 @@ mod tests {
         assert!(!safe_id("../other"));
         assert!(!safe_id("a/b"));
         assert!(safe_id("work-1"));
+    }
+    #[test]
+    fn cancellation_survives_waiting_for_the_commit_gate() {
+        let revision = uuid::Uuid::new_v4().to_string();
+        begin(&revision).unwrap();
+        cancel(&revision).unwrap();
+        assert!(check_cancelled(&revision).is_err());
+        begin(&revision).unwrap();
+        assert!(check_cancelled(&revision).is_ok());
+        assert!(begin("../other").is_err());
     }
 }
