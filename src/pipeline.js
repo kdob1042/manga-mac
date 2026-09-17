@@ -1,10 +1,10 @@
-import { imageHash } from './revisions';
-import { completeImage } from './image-recovery';
-import { generationSize, imageRequest } from './image-input';
-import { call } from './bridge';
-import { askLLM } from './llm';
-import { orderedScenes, safePath, sourceUnits, validatePlan } from './core';
-import { referenceDeclarations, sourceContract, validateSourceContract } from './source-contract';
+import { imageHash } from './revisions.js';
+import { completeImage } from './image-recovery.js';
+import { generationSize, imageRequest } from './image-input.js';
+import { call } from './bridge.js';
+import { askLLM } from './llm.js';
+import { orderedScenes, safePath, sourceUnits, validatePlan } from './core.js';
+import { referenceDeclarations, sourceContract, validateSourceContract } from './source-contract.js';
 export async function syncSource(repo, token, episodeId, previous) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
   const commit = await call('github_get', { repo, path: 'commits/main', token });
@@ -74,7 +74,7 @@ export async function generatePanel(panel, characters, original = null, instruct
   const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution);
   if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
-    const { fitInput } = await import('./render');
+    const { fitInput } = await import('./render.js');
     const fitted = await fitInput(source, width, height); source = fitted.image; mapping = fitted.mapping;
   }
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
