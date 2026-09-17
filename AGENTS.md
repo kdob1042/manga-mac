@@ -13,3 +13,12 @@ CIもこのブランチ運用に合わせる。非文書変更のPR（`feature/*
 受け入れ可能なまとまりごとに`dev → main`のPRを作り、必要な検証後に反映する。`main`と`dev`へ直接pushしない。公開・配布上の重大不具合だけ`hotfix/* → main`を許し、反映後は`main → dev`で同期する。ローカルに置いただけで完了としない。コード用リポジトリの更新と、アプリが読み取り専用で扱う原作リポジトリを混同しない。
 
 文書更新、実装、共通テスト、Macビルド、実Blender接続、実機の画像品質・性能検証を別々に報告する。文書のみの変更では既存実装を変更せず、設計上の機能を実装済みと表記しない。
+
+
+## Issue／PRの着手状態
+
+- 実装可能なIssueは status:ready、未着手の定義はDraft PRが存在しないこととする。
+- 着手はIssueへ agent:start ラベルを付けるか、Issueコメントで /start と入力する。GitHub Actionsが最新の dev から issue/<番号>-<短い名前> ブランチとDraft PRを作る。
+- Draft PR作成後は status:in-progress、Ready for review後は status:review、devまたはmainへのマージ後は status:done になる。未マージで閉じたPRは status:blocked とする。
+- PR本文には Refs #<番号> を残し、実装完了・lint／typecheck／test／build確認後にだけReady for reviewへ変更する。
+- 作業ブランチを切っただけでは着手扱いにしない。既存のdev起点・PR経由ルールを優先する。

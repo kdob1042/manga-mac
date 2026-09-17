@@ -24,6 +24,7 @@ pub enum Provider {
     Anthropic,
     Deepseek,
     Custom,
+    Jev,
 }
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -32,6 +33,9 @@ pub enum Purpose {
     Direction,
     Layout,
     Translation,
+    Edit,
+    Lettering,
+    Classify,
     Probe,
 }
 #[derive(Deserialize)]
@@ -57,6 +61,7 @@ impl Connection {
     fn path(&self) -> &str {
         match self.provider {
             Provider::Ollama => "/api/chat",
+            Provider::Jev => "/v1/systemone",
             Provider::Anthropic => "/v1/messages",
             _ => "/chat/completions",
         }
@@ -153,6 +158,9 @@ impl Connections {
         {
             return Err("認証情報が不正です".into());
         }
+        if (input.provider == Provider::Jev) != (input.purpose == Purpose::Classify) {
+            return Err("Jevは操作判断専用の接続です".into());
+        }
         let endpoint = match input.provider {
             Provider::Ollama => "http://127.0.0.1:11434",
             Provider::Openai => "https://api.openai.com/v1",
@@ -160,6 +168,7 @@ impl Connections {
             Provider::Anthropic => "https://api.anthropic.com",
             Provider::Deepseek => "https://api.deepseek.com/v1",
             Provider::Custom => input.endpoint.trim_end_matches('/'),
+            Provider::Jev => "https://api.typesafe.ai",
         }
         .to_string();
         // Resolve at registration for feedback and again before every send to prevent DNS rebinding.
@@ -227,7 +236,11 @@ impl Connections {
             && request.purpose != connection.purpose
             && !(matches!(
                 request.purpose,
-                Purpose::Translation | Purpose::Direction | Purpose::Layout
+                Purpose::Translation
+                    | Purpose::Direction
+                    | Purpose::Layout
+                    | Purpose::Edit
+                    | Purpose::Lettering
             ) && connection.purpose == Purpose::Plan)
         {
             return Err("用途に対応する接続を選択してください".into());
@@ -331,6 +344,9 @@ where
         + Sync
         + 'static,
 {
+    if connection.provider == Provider::Jev {
+        return complete_jev(connection, request, transport).await;
+    }
     let message = message(request)?;
     match connection.provider {
         Provider::Ollama => {
@@ -387,6 +403,42 @@ where
             .await
         }
     }
+}
+// TypeSafe's typed evaluation protocol, not a chat-completions alias.
+// Contract checked 2026-09-17: https://docs.typesafe.ai/api
+async fn complete_jev<H: rig_core::http_client::HttpClientExt>(
+    connection: &Connection,
+    request: &Request,
+    transport: H,
+) -> Result<Value, String> {
+    use rig_core::http_client::Request as HttpRequest;
+    if request.purpose != Purpose::Classify
+        || !request.images.is_empty()
+        || request.prompt.len() > 32768
+    {
+        return Err(failure());
+    }
+    let state: Value = serde_json::from_str(&request.prompt).map_err(|_| failure())?;
+    let body = json!({"model":connection.model,"state":state,"questions":{"operation":{
+        "type":"choice","instructions":"漫画の修正指示を分類。判定だけを行い本文を書き換えない。複数の種類ならcompound、不明ならunclear。",
+        "criteria":{"lettering":"吹き出し・文字の配置やスタイル","crop":"再作画せず画像の位置と拡大率を変更","layout":"コマ枠の配置と形","direction":"カメラ・人物間距離・ポーズなどBlender演出","region":"画像の一部だけ描き直す","compound":"複数種の操作","readonly":"原作本文の変更","resolution":"必要解像度を診断","upscale":"補間拡大候補","finishing":"元画像から配置に合わせて仕上げ候補を再生成","video_prepare":"動画生成の準備","video_assign":"既存の採用動画を割当","unsupported":"対応操作にない要求","unclear":"対象や意図が不明"}
+    }}});
+    let req = HttpRequest::builder()
+        .method("POST")
+        .uri(format!("{}{}", connection.endpoint, connection.path()))
+        .header("authorization", format!("Bearer {}", connection.credential))
+        .header("content-type", "application/json")
+        .body(bytes::Bytes::from(body.to_string()))
+        .map_err(|_| failure())?;
+    let response = transport
+        .send::<_, bytes::Bytes>(req)
+        .await
+        .map_err(|_| failure())?;
+    let bytes = response.into_body().await.map_err(|_| failure())?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| failure())?;
+    let answer = value["answers"]["operation"].clone();
+    validate_output(Purpose::Classify, &answer)?;
+    Ok(answer)
 }
 fn normalize(response: CompletionResponse) -> Result<Value, String> {
     if response.finish_reason() != Some(FinishReason::Stop) {
@@ -450,6 +502,83 @@ struct DirectionOutput {
 }
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
+        Purpose::Classify => {
+            let choices = [
+                "lettering",
+                "crop",
+                "layout",
+                "direction",
+                "region",
+                "compound",
+                "readonly",
+                "unsupported",
+                "unclear",
+                "resolution",
+                "upscale",
+                "finishing",
+                "video_prepare",
+                "video_assign",
+            ];
+            if value["type"] != "choice"
+                || !choices.contains(&value["choice"].as_str().unwrap_or(""))
+                || value["confidence"]
+                    .as_f64()
+                    .is_none_or(|v| !(0.0..=1.0).contains(&v))
+            {
+                return Err(failure());
+            }
+            let probabilities = value["probabilities"].as_object().ok_or_else(failure)?;
+            if probabilities.len() != choices.len()
+                || choices.iter().any(|key| {
+                    probabilities
+                        .get(*key)
+                        .and_then(Value::as_f64)
+                        .is_none_or(|v| !(0.0..=1.0).contains(&v))
+                })
+                || (probabilities
+                    .values()
+                    .filter_map(Value::as_f64)
+                    .sum::<f64>()
+                    - 1.0)
+                    .abs()
+                    > 0.01
+            {
+                return Err(failure());
+            }
+        }
+        Purpose::Edit => {
+            if value.as_object().is_none_or(|o| o.len() != 2)
+                || value["reason"].as_str().is_none_or(|s| s.len() > 4000)
+                || value["operations"].as_array().is_none_or(|ops| {
+                    ops.len() > 8
+                        || ops.iter().any(|op| {
+                            ![
+                                "lettering",
+                                "crop",
+                                "layout",
+                                "direction",
+                                "region",
+                                "resolution",
+                                "upscale",
+                                "finishing",
+                                "video_prepare",
+                                "video_assign",
+                            ]
+                            .contains(&op["kind"].as_str().unwrap_or(""))
+                                || !op["panelId"].is_string()
+                                || !op["args"].is_object()
+                        })
+                })
+            {
+                return Err(failure());
+            }
+        }
+        Purpose::Lettering => {
+            if !value["reason"].is_string() || !value["layout"].is_object() {
+                return Err(failure());
+            }
+            crate::storage::lettering::validate(&value["layout"], None)?;
+        }
         Purpose::Layout => {
             let object = value.as_object().ok_or_else(failure)?;
             if object.len() != 2
