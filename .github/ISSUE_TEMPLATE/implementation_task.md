@@ -25,5 +25,5 @@ assignees: ""
 
 ## Start
 
-When this issue is ready, a maintainer can either add the "agent:start" label or comment "/start".
-That creates a Draft PR from "dev", links it with "Refs #<issue>", and marks the issue "status:in-progress".
+When this issue is ready, the agent posts the exact comment "/start".
+The workflow adds its internal marker, creates a Draft PR from "dev", links it with "Refs #<issue>", and marks the Project item "In Progress".
