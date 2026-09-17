@@ -1,9 +1,9 @@
 {
   "repository": "kdob1042/live-manga",
   "version": "1.0.0",
-  "commit": "e9f0355a13bd1c0b5acf5b6e9b79ad4a02b012a9",
+  "commit": "7a7e1ed432394df608451ecf717dc428acb9f170",
   "files": {
-    "contracts/validate.mjs": "79d9d43a9cf5a6e38542f18aabdc47b9ae5405b65bdc2eb5a58ba90a7bd3adf5",
+    "contracts/validate.mjs": "683fb9948e14262ad4050efc7b818495b0bf104b294e67b8a8156eadc08e4713",
     "contracts/schema.json": "de85a9d3c5bee45dea9851b0418ba4b2f7d60461976642168138ae856fd97eb3",
     "contracts/types.ts": "7edcbcf14feab8e48afd5c5e654ef12984d612383d298cc6d8e1643fdb2a1614",
     "contracts/package.mjs": "4ce3c9ee8eaa7c0a27eedec688acb8db0a568e7095838d3a6aeb2b03fc698e32",
