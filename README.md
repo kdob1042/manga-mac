@@ -66,7 +66,7 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 - `dev`: 通常開発の統合先。非文書変更をマージした後は、共通Linuxチェックと`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を完了させる。
 - `feature/*`・`fix/*`・`docs/*`: `dev`から作り、原則として`dev`宛てのPRにする。
 - `dev → main`: `dev`でのMac検証が成功したまとまりだけをPRで昇格させる。PRでは共通Linuxチェックを確認し、mainマージ後の配布用DMG生成とは分けて扱う。
-- `hotfix/* → main`: 重大不具合だけの例外。反映後は`main → dev`で必ず同期する。
+- `hotfix/* → main`: 重大不具合だけの例外。main固有の修正は必要に応じて別PRで`dev`にも反映し、履歴を合わせるだけの`main → dev`マージは行わない。
 
 `macOS validation`が失敗したコミットは`main`へ昇格させず、原因を修正して`dev`へ反映する。`main`と`dev`へ直接pushせず、PRを経由する。原作同期機能が読む`Kamiya-Kawai/main`と、本アプリの開発用`dev`を混同しない。
 
@@ -90,7 +90,7 @@ cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-ap
 npm run tauri dev
 ```
 
-GitHub Actionsでは、PRで共通Linuxチェック、`dev`へのマージ後にMac固有のビルド・回帰試験・検証用DMG生成、`main`へのマージ後に配布用DMG生成を行います。Actionsの成功は、実機での生成品質・視覚・性能受入試験の代替にはなりません。
+GitHub Actionsでは、通常のコード変更PRで共通Linuxチェック、`dev`へのコード変更マージ後にMac固有のビルド・回帰試験・検証用DMG生成、`main`へのコード変更マージ後に配布用DMG生成を行います。ドキュメントのみ、検証済みの`dev → main`昇格、差分のない同期では変更分類だけを実行します。Actionsの成功は、実機での生成品質・視覚・性能受入試験の代替にはなりません。
 
 ## 実機受入試験
 
