@@ -1,0 +1,43 @@
+name: Automation checks
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths: ['.github/scripts/**', '.github/workflows/**', 'AGENTS.md', 'docs/ISSUE_WORKFLOW.md', 'docs/PROJECT_AUTOMATION.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test .github/scripts/project-sync.test.cjs
+  project-access:
+    # No checkout or repository code execution in the credential probe job.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          script: |
+            if (!process.env.PROJECTS_TOKEN) throw new Error('Missing PROJECTS_TOKEN');
+            const result = await github.graphql('query { user(login:"kdob1042") { projectV2(number:1) { viewerCanUpdate fields(first:100) { nodes { ... on ProjectV2SingleSelectField { name options { name } } } } } } }');
+            const project = result.user?.projectV2;
+            if (!project?.viewerCanUpdate) throw new Error('PROJECTS_TOKEN cannot update Project #1');
+            const status = project.fields.nodes.find(f => f.name === 'Status');
+            for (const name of ['Todo', 'In Progress', 'Needs attention', 'Done']) {
+              if (!status?.options.some(o => o.name === name)) throw new Error('Missing status: ' + name);
+            }
+            core.notice('Project write access and all status options verified.');
+
