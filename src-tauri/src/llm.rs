@@ -421,7 +421,7 @@ async fn complete_jev<H: rig_core::http_client::HttpClientExt>(
     let state: Value = serde_json::from_str(&request.prompt).map_err(|_| failure())?;
     let body = json!({"model":connection.model,"state":state,"questions":{"operation":{
         "type":"choice","instructions":"漫画の修正指示を分類。判定だけを行い本文を書き換えない。複数の種類ならcompound、不明ならunclear。",
-        "criteria":{"lettering":"吹き出し・文字の配置やスタイル","crop":"再作画せず画像の位置と拡大率を変更","layout":"コマ枠の配置と形","direction":"カメラ・人物間距離・ポーズなどBlender演出","region":"画像の一部だけ描き直す","compound":"複数種の操作","readonly":"原作本文の変更","unsupported":"対応操作にない要求","unclear":"対象や意図が不明"}
+        "criteria":{"lettering":"吹き出し・文字の配置やスタイル","crop":"再作画せず画像の位置と拡大率を変更","layout":"コマ枠の配置と形","direction":"カメラ・人物間距離・ポーズなどBlender演出","region":"画像の一部だけ描き直す","compound":"複数種の操作","readonly":"原作本文の変更","resolution":"必要解像度を診断","upscale":"補間拡大候補","finishing":"元画像から配置に合わせて仕上げ候補を再生成","video_prepare":"動画生成の準備","video_assign":"既存の採用動画を割当","unsupported":"対応操作にない要求","unclear":"対象や意図が不明"}
     }}});
     let req = HttpRequest::builder()
         .method("POST")
@@ -513,6 +513,11 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
                 "readonly",
                 "unsupported",
                 "unclear",
+                "resolution",
+                "upscale",
+                "finishing",
+                "video_prepare",
+                "video_assign",
             ];
             if value["type"] != "choice"
                 || !choices.contains(&value["choice"].as_str().unwrap_or(""))
@@ -547,8 +552,19 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
                 || value["operations"].as_array().is_none_or(|ops| {
                     ops.len() > 8
                         || ops.iter().any(|op| {
-                            !["lettering", "crop", "layout", "direction", "region"]
-                                .contains(&op["kind"].as_str().unwrap_or(""))
+                            ![
+                                "lettering",
+                                "crop",
+                                "layout",
+                                "direction",
+                                "region",
+                                "resolution",
+                                "upscale",
+                                "finishing",
+                                "video_prepare",
+                                "video_assign",
+                            ]
+                            .contains(&op["kind"].as_str().unwrap_or(""))
                                 || !op["panelId"].is_string()
                                 || !op["args"].is_object()
                         })

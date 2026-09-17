@@ -21,7 +21,9 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
          value={reason:'本文の配置',layout:{...JSON.parse(r.prompt).current,mode:'balloons'}};
        }else if(r.purpose==='edit'){
          const input=JSON.parse(r.prompt),target=input.context.panels[2],layout=structuredClone(target.lettering);layout.boxes[0].x=.1;
-         value={reason:'3コマ目の文字を左へ',operations:[{kind:'lettering',panelId:target.id,args:layout}]};
+         if(input.instruction.includes('解像度'))value={reason:'3コマ目を診断',operations:[{kind:'resolution',panelId:target.id,args:{}}]};
+         else if(input.instruction.includes('2倍'))value={reason:'補間拡大候補',operations:[{kind:'upscale',panelId:target.id,args:{factor:2}}]};
+         else value={reason:'3コマ目の文字を左へ',operations:[{kind:'lettering',panelId:target.id,args:layout}]};
        }else throw Error('Unexpected purpose '+r.purpose);
        return {request_id:r.request_id,value};
      }
@@ -45,4 +47,10 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
  await page.screenshot({path:'test-results/initial-draft-editing.png',fullPage:true});
  const exported=await page.evaluate(async()=>{const {exportCBZ}=await import('/src/render.js');return (await exportCBZ(window.saved)).size;});expect(exported).toBeGreaterThan(1000);
+ await page.getByLabel('編集の指示',{exact:true}).fill('3コマ目の解像度を確認');await page.getByRole('button',{name:'修正する ↑',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();
+ await expect(page.getByRole('status').filter({hasText:'元画像 768×768px／必要'})).toBeVisible();
+ await page.getByLabel('編集の指示',{exact:true}).fill('3コマ目を2倍に補間拡大');await page.getByRole('button',{name:'修正する ↑',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>window.saved.jobs.filter(j=>j.kind==='upscale'&&j.status==='candidate').length)).toBe(1);
+ expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
+ expect(await page.evaluate(()=>window.saved.panels.map(p=>p.image))).toEqual(before.panels.map(p=>p.image));
 });

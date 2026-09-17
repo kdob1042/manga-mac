@@ -33,3 +33,16 @@ test('AI locks, uncertainty and generation composites fail closed; manual unlock
 test('page-local reading order resolves six-panel and second page IDs without selecting',()=>{
  const p=fixture(),ctx=editContext(p,1,'p0',null);assert.equal(ctx.selected,null);assert.deepEqual(ctx.panels.map(p=>[p.number,p.id]),[[1,'p4'],[2,'p5']]);
 });
+test('explicit ordinal is enforced against wrong model target and nonexistent page before execution',async()=>{
+ const p=fixture(),ctx=editContext(p,0,null,null);
+ await assert.rejects(()=>planEdit(p,ctx,'3コマ目の文字を左へ',async()=>JSON.stringify({reason:'wrong target',operations:[{kind:'lettering',panelId:'p0',args:defaultLettering(p.panels[0])}]})),/指定されたコマ/);
+ await assert.rejects(()=>planEdit(p,ctx,'9コマ目を直す',async()=>assert.fail()),/ありません/);
+ await assert.rejects(()=>planEdit(p,ctx,'2ページ目を直す',async()=>assert.fail()),/ページを表示/);
+});
+test('finishing/video operations validate capability and refuse mixed operations before starting any job',()=>{
+ const p=fixture(),ctx=editContext(p,0,null,null);
+ for(const [kind,args] of [['resolution',{}],['finishing',{}],['upscale',{factor:2}],['video_prepare',{instruction:'目を閉じる',ratio:'960:960'}]])assert.doesNotThrow(()=>validateEditPlan(p,{reason:'準備',operations:[{kind,panelId:'p0',args}]},ctx));
+ assert.throws(()=>validateEditPlan(p,{reason:'不正',operations:[{kind:'upscale',panelId:'p0',args:{factor:8}}]},ctx));
+ assert.throws(()=>validateEditPlan(p,{reason:'不正',operations:[{kind:'video_assign',panelId:'p0',args:{shotId:'invented'}}]},ctx));
+ assert.throws(()=>executeLocalEdits(p,candidate(p,[{kind:'resolution',panelId:'p0',args:{}}])));
+});

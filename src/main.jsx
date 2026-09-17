@@ -1,3 +1,4 @@
+import { panelAction } from './panel-actions';
 import JevSettings from './JevSettings';
 import { classifyEdit } from './jev';
 import { editContext, editBase, planEdit, validateEditPlan, executeLocalEdits, undoEdit } from './edit-commands';
@@ -166,6 +167,7 @@ function App() {
     if(candidate.base!==editBase(current.current))throw Error('作品が変わったため候補を作り直してください');
     validateEditPlan(current.current,candidate.plan,candidate.context);
     const op=candidate.plan.operations[0];
+    if(['resolution','upscale','finishing','video_prepare','video_assign'].includes(op.kind)){const message=await panelAction(()=>current.current,commit,op,id=>{setRequestedShot(id);setMedium('video');});setSelected(op.panelId);setEditCandidate(null);setInstruction('');setNotice(message);return;}
     if(op.kind==='direction') {await stagePanel(op.panelId,op.args.instruction);if(!cancel.current)await drawChosen(op.panelId);}
     else if(op.kind==='region') {
       const p=current.current,panel=p.panels.find(p=>p.id===op.panelId),job=await beginJob(p,panel,'edit');

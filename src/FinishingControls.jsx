@@ -1,11 +1,11 @@
+import { prepareFinishing } from './panel-actions';
 import React,{useEffect,useState} from 'react';
 import {call,desktop} from './bridge';
 import {imageOf,pagePNG} from './render';
 import {pagePanels} from './layout.js';
-import {beginFinishing,finishingPlan,finishingInstruction} from './finishing.js';
+import {finishingPlan} from './finishing.js';
 import {placementKey} from './placement.js';
-import {generatePanel} from './pipeline';
-import {finishJob,adoptCandidate,abandonJob} from './revisions.js';
+import {adoptCandidate,abandonJob} from './revisions.js';
 import {recoverImageResult} from './image-recovery';
 
 function PlacementComparison({project,panel,artwork}) {
@@ -27,15 +27,7 @@ export default function FinishingControls({project,panel,current,commit,run,busy
     return()=>{stopped=true;};
   },[project.layout,panel.image,panel.id]);
   const jobs=project.jobs.filter(j=>j.finishing&&j.panelId===panel.id&&['candidate','unknown'].includes(j.status));
-  async function prepare(){
-    const p=current.current,source=p.panels.find(x=>x.id===panel.id),im=await imageOf(source.image);
-    const job=await beginFinishing(p,panel.id,im.width,im.height);
-    await commit({...p,jobs:[...p.jobs,job]});
-    try {
-      const result=await generatePanel(source,p.characters,source.image,finishingInstruction(job),job,null,p.style_references??[]);
-      await commit(await finishJob(current.current,job,result,false,true));
-    }catch(e){await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)});throw e;}
-  }
+  const prepare=()=>prepareFinishing(()=>current.current,commit,panel.id);
   return <section className="shot-controls" aria-label="配置に合わせた仕上げ"><h3>配置に合わせた仕上げ</h3>
     <p>拡大・縮小・位置は「画像トリミング」で調整します。配置は固定したまま、元画像と人物・画風参照を使って絵を再生成できます。構図や細部の一致は保証されないため、比較して採用してください。枠・セリフ・吹き出しは生成画像へ焼き込みません。</p>
     {error&&<p>{error}</p>}

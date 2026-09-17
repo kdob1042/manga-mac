@@ -287,7 +287,7 @@ fn layout_output_uses_validated_geometry_on_plan_connection() {
 
 #[tokio::test]
 async fn jev_uses_typed_evaluation_without_chat_or_images() {
-    let answer = json!({"type":"choice","choice":"crop","confidence":0.9,"probabilities":{"lettering":0.01,"crop":0.92,"layout":0.01,"direction":0.01,"region":0.01,"compound":0.01,"readonly":0.01,"unsupported":0.01,"unclear":0.01}});
+    let answer = json!({"type":"choice","choice":"crop","confidence":0.9,"probabilities":{"lettering":0.01,"crop":0.92,"layout":0.01,"direction":0.01,"region":0.01,"compound":0.01,"readonly":0.01,"unsupported":0.01,"unclear":0.01,"resolution":0,"upscale":0,"finishing":0,"video_prepare":0,"video_assign":0}});
     let fixture = Fixture {
         response: json!({"model":"jev-latest","answers":{"operation":answer}}).to_string(),
         ..Default::default()
@@ -302,12 +302,13 @@ async fn jev_uses_typed_evaluation_without_chat_or_images() {
     r.images.clear();
     let value = complete(&c, &r, fixture.clone()).await.unwrap();
     assert_eq!(value["choice"], "crop");
-    let calls = fixture.calls.lock().unwrap();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].0, "https://api.typesafe.ai/v1/systemone");
-    assert_eq!(calls[0].2["questions"]["operation"]["type"], "choice");
-    assert!(calls[0].2.get("messages").is_none());
-    drop(calls);
+    {
+        let calls = fixture.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "https://api.typesafe.ai/v1/systemone");
+        assert_eq!(calls[0].2["questions"]["operation"]["type"], "choice");
+        assert!(calls[0].2.get("messages").is_none());
+    }
     r.images.push("data:image/png;base64,AAAA".into());
     assert!(complete(&c, &r, fixture.clone()).await.is_err());
     assert_eq!(fixture.calls.lock().unwrap().len(), 1);
