@@ -17,11 +17,11 @@ CIもこのブランチ運用に合わせる。PRと`dev` pushでは、変更分
 
 ## Issue／PRの着手状態
 
-- 実装可能なIssueは status:ready、未着手の定義はDraft PRが存在しないこととする。
-- 着手はIssueへ agent:start ラベルを付けるか、Issueコメントで /start と入力する。GitHub Actionsが最新の dev から issue/<番号>-<短い名前> ブランチとDraft PRを作る。
-- Draft PR作成後は status:in-progress、Ready for review後は status:review、devまたはmainへのマージ後は status:done になる。未マージで閉じたPRは status:blocked とする。
-- PR本文には Refs #<番号> を残し、実装完了・lint／typecheck／test／build確認後にだけReady for reviewへ変更する。
-- 作業ブランチを切っただけでは着手扱いにしない。既存のdev起点・PR経由ルールを優先する。
+- 状態の正本はIssueのopen/closedとPR。Projectは自動同期される表示で、`status:*`ラベルを追加・手動管理しない。
+- エージェントは実装前にIssueへ`agent:start`を付けるか、コメントで`/start`と入力する。Actionsが最新`dev`から空コミット付きブランチとDraft PRを作る。既存PRがある場合は再利用する。Draft PR作成を確認してからそのブランチで実装する。
+- Issue作成→Todo、Draftを含むopen PRあり→In Progress、現在のCI失敗・変更要求・PRを閉じたままの未完了Issue→Needs attention、Issue closed→Done。Ready for reviewでもIn Progressのままとする。
+- PR本文に独立した行で`Refs #<番号>`を残す。全受入条件を満たす場合だけ`Closes #<番号>`へ変更する。部分実装なら、先に残件Issueを作って本文に`Parent: #<元Issue番号>`を記載し、その後PRをマージする。devへのマージ後、完了PRまたは残件移管を確認した同期処理が元Issueを閉じる。残件Issueなしの部分PRでは閉じない。
+- 詳細・障害復旧は[Project自動同期](docs/PROJECT_AUTOMATION.md)を参照。Projectを手でDoneにしてIssueを閉じる逆同期は使わない。既存のdev起点・PR経由ルールを優先する。
 
 ## Issue／PRの部分実装と残件
 
@@ -30,6 +30,5 @@ CIもこのブランチ運用に合わせる。PRと`dev` pushでは、変更分
 - Issueを部分実装する場合は、マージ前に受入条件を「今回完了するもの」と「未完了のもの」に分ける。
 - 独立して実装できる未完了項目は、実装可能な単位の別Issueへ切り出す。残件Issueには目的、範囲、受入条件、依存関係を記載し、元Issueと実装PRから相互リンクする。
 - PR本文では、Issue全体を完了する場合だけ `Closes #<番号>`（または `Fixes`／`Resolves`）を使う。部分実装・調査・準備・関連対応は `Refs #<番号>` とする。
-- 元Issueの必須受入条件が残っている場合、残件Issueを作っただけで元Issueを閉じない。PRのマージ後も、元Issue、残件Issue、PR、statusラベルの状態を確認する。
+- 元Issueの必須受入条件が残る場合は、残件Issueを作り本文に`Parent: #<元Issue番号>`を記載してから元Issueを閉じる。PRのマージ後も、元Issue、残件Issue、PR、Projectの状態を確認する。
 - 「CI成功」「実装済み」「実機受入済み」を同じ完了状態として扱わない。未検証の条件は残件として明記する。
-
