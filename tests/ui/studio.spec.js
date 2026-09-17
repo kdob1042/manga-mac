@@ -9,7 +9,7 @@ test('opens a sample, preserves source on reload, and reports unavailable native
   await expect(page.locator('.panel')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/studio.png', fullPage: true });
   await page.getByRole('button', { name: '接続・人物設定' }).click();
-  await page.getByRole('button', { name: '更新を確認する' }).click();
+  await page.getByRole('button', { name: 'GitHub側の更新を確認' }).click();
   await expect(page.getByRole('alert')).toContainText('Macアプリ');
   expect(errors).toEqual([]);
 });
