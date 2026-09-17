@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {capturePreview,preparePreview,transferPreview} from '../src/live-preview.js';
+import {capturePreview,preparePreview,transferPreview,previewContentKey} from '../src/live-preview.js';
 import {createProjectWriter} from '../src/project-writer.js';
 import {initialLayout} from '../src/layout.js';
 import {previewMatches} from '../vendor/live-manga/contracts/preview.mjs';
@@ -83,4 +83,29 @@ test('unassigned slots stay in place; uncomposed panels are not invented into ne
  assert.match(preview.panels[1].id,/^preview-slot:/);
  assert.equal(preview.manifest.pages[0].panels.some(p=>p.id==='p2'),false);
  captured.project.layout.pages=[];await assert.rejects(preparePreview(captured,deps),/ページ/);
+});
+test('filters never alter a saved package; shared scenes and tag-only updates retain immutable text references',async()=>{
+ const captured=fixture();
+ captured.project.snapshots[0].scenes.push({id:'c',text:'図書館',tags:['old-library']});
+ captured.project.snapshots[1].scenes.push({id:'c',text:'新しい図書館',tags:['図書館']});
+ captured.project.panels[0].sourceRefs.push({snapshotId:'old',sceneId:'c',startCp:0,endCp:3});
+ const baseline=await preparePreview(captured,deps),key=previewContentKey(captured.project);
+ captured.project.selectedBlockIds=['different'];captured.project.tagFilter=['雨'];
+ assert.deepEqual(await preparePreview(captured,deps),baseline);assert.equal(previewContentKey(captured.project),key);
+ assert.deepEqual(previewMatches(baseline.preview,['雨','図書館'],'all').pageIds,[]);
+ assert.deepEqual(previewMatches(baseline.preview,['図書館'],'any').pageIds,['saved-page']);
+ assert.deepEqual(previewMatches(baseline.preview,[]).panelIds,['p1']);
+ assert.equal(baseline.preview.manifest.pages[0].panels.length,2);
+ captured.project.snapshots[1].scenes[0].tags=['晴れ'];
+ const next=await preparePreview({...captured,revision:crypto.randomUUID()},deps);
+ assert.notEqual(previewContentKey(captured.project),key);
+ assert.deepEqual(next.preview.scenes[0].tags,['晴れ']);assert.deepEqual(baseline.preview.scenes[0].tags,['雨']);
+ assert.equal(next.preview.manifest.pages[0].panels[0].text,'原稿\n\n図書館');
+ assert.deepEqual(next.preview.manifest.pages[0].panels,baseline.preview.manifest.pages[0].panels);
+});
+test('stale motion becomes a labeled still without altering the saved binding',async()=>{
+ const captured=fixture();captured.project.panelMotions=[{panelId:'p2',videoRevision:'missing'}];const binding=structuredClone(captured.project.panelMotions);
+ const result=await preparePreview(captured,deps);
+ assert.equal(result.preview.panels[1].motion,'stale');assert.equal(result.preview.manifest.pages[0].panels[1].motion,undefined);
+ assert.deepEqual(captured.project.panelMotions,binding);
 });

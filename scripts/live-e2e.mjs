@@ -21,6 +21,7 @@ try{
   const {shotFromPanel,assignMotion}=await import('/src/panel-motion.js');
   const {beginVideoJob,collectVideoResult,adoptVideoCandidate}=await import('/src/video.js');
   const {prepareLiveManga}=await import('/src/live-export.js');
+  const {prepareBrowserPreview}=await import('/src/LivePreviewControls.jsx');
   const {imageOf}=await import('/src/canvas-image.js');
   const {template}=await import('/src/layout.js');
   const {pagePNG}=await import('/src/render.js');
@@ -49,13 +50,28 @@ try{
    let different=0;for(let i=0;i<layered.length;i++)if(Math.abs(layered[i]-complete[i])>2)different++;
    if(different>pg.width*pg.height*.002)throw Error(`Reader layers differ from PNG (${different} channels)`);
   }
-  return {project:p,request};
+  const previewProject=structuredClone(p);previewProject.workId='artificial';
+  const {legacyPanelRefs}=await import('/src/source-refs.js');
+  previewProject.snapshots[0].scenes[0].tags=['雨'];
+  previewProject.snapshots[0].scenes.push({id:'library',text:'図書館。',tags:['図書館']});
+  for(const panel of previewProject.panels){panel.sourceRefs=legacyPanelRefs(panel,previewProject.snapshots);panel.lettering=null;}
+  previewProject.panels[0].lettering={mode:'caption'};
+  const libraryRef={snapshotId:previewProject.snapshots[0].id,sceneId:'library',startCp:0,endCp:4};
+  previewProject.panels[2].sourceRefs=[libraryRef];previewProject.panels[5].sourceRefs.push(libraryRef);
+  previewProject.secret='PRIVATE_PREVIEW_CANARY';
+  previewProject.panels[2].image=null;previewProject.panels[3].unitIds=[];previewProject.panels[3].sourceRefs=[];previewProject.panels[3].lettering=null;
+  // No API/model calls: only already-created artificial video is probed.
+  window.__TAURI_INTERNALS__={invoke:async command=>{if(command==='live_preview_video_probe')return {width:512,height:512,duration:5,codec:'h264',audio:false};throw Error('Unexpected preview call: '+command);}};
+  const preview=await prepareBrowserPreview({project:previewProject,revision:crypto.randomUUID(),savedAt:'2026-09-17T00:00:00.000Z'});
+  return {project:p,request,previewProject,preview};
  },{legacy,hash,size:bytes.length,poster:'data:image/png;base64,'+fs.readFileSync(png).toString('base64')});
  payload.video=bytes.toString('base64');const input=join(dir,'request.json');fs.writeFileSync(input,JSON.stringify(payload));
  const output=process.env.LIVE_MANGA_E2E_OUTPUT??join(dir,'output');
  execFileSync('cargo',['test','--locked','--manifest-path','tests/storage/Cargo.toml','browser_export_request_integration','--','--ignored','--nocapture'],{env:{...process.env,LIVE_MANGA_E2E_REQUEST:input,LIVE_MANGA_E2E_OUTPUT:output},stdio:'inherit'});
  const packagePath=join(output,'live-manga-'+payload.request.manifest.releaseId);
  const {verifyPackage}=await import('../vendor/live-manga/contracts/package.mjs');await verifyPackage(packagePath);
+ const {exercisePreviewPackage}=await import('./preview-e2e.mjs');
+ await exercisePreviewPackage(join(output,'live-manga-'+payload.preview.preview.manifest.releaseId));
  if(process.env.LIVE_MANGA_E2E_RESULT)fs.writeFileSync(process.env.LIVE_MANGA_E2E_RESULT,JSON.stringify({path:packagePath,releaseId:payload.request.manifest.releaseId}));
  console.log('LIVE_MANGA_PACKAGE='+packagePath);
 }finally{if(browser)await browser.close();server.kill();}

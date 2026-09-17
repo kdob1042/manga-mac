@@ -29,7 +29,7 @@ fn exact(value: &Value, keys: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-fn validate_metadata(preview: &Value) -> Result<()> {
+pub(super) fn validate_metadata(preview: &Value) -> Result<()> {
     exact(
         preview,
         &[
