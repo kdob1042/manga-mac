@@ -33,3 +33,25 @@ test('changing an approved destination clears its in-memory credential',async({p
  await view.getByLabel('承認するWorker origin').fill('https://second.example');
  await expect(view.getByLabel('転送用キー',{exact:true})).toHaveValue('');
 });
+test('late restoration cannot replace a newly typed destination or transfer key',async({page})=>{
+ await page.goto('/');
+ await page.evaluate(async()=>{
+  const {default:React}=await import('/node_modules/.vite/deps/react.js'),{default:ReactDOM}=await import('/node_modules/.vite/deps/react-dom_client.js');
+  const {default:View}=await import('/src/LivePreviewControls.jsx');
+  window.__TAURI_INTERNALS__={invoke:async command=>{if(command==='live_preview_list')return new Promise(resolve=>{window.finishPreviewLoad=resolve;});throw Error('Unexpected command '+command);}};
+  const holder=document.createElement('div');holder.id='preview-race-test';document.body.prepend(holder);
+  const current={current:{workId:'work',title:'人工作品',snapshots:[],panels:[],layout:{pages:[]}}};
+  ReactDOM.createRoot(holder).render(React.createElement(View,{current,writer:{},ready:true}));
+ });
+ const view=page.locator('#preview-race-test');await view.locator('summary').click();
+ await expect.poll(()=>page.evaluate(()=>typeof window.finishPreviewLoad)).toBe('function');
+ await view.getByLabel('承認するWorker origin').fill('https://new.example');
+ await view.getByLabel('転送用キー',{exact:true}).fill('n'.repeat(43));
+ await page.evaluate(()=>window.finishPreviewLoad([{revision:'old',savedAt:'2026-09-17T00:00:00.000Z',destination:{origin:'https://old.example',baseRevision:null},received:null}]));
+ await expect(view.getByLabel('保存した転送記録')).toBeVisible();
+ await expect(view.getByLabel('承認するWorker origin')).toHaveValue('https://new.example');
+ await expect(view.getByLabel('転送用キー',{exact:true})).toHaveValue('n'.repeat(43));
+ await view.getByLabel('保存した転送記録').selectOption('old');
+ await expect(view.getByLabel('承認するWorker origin')).toHaveValue('https://old.example');
+ await expect(view.getByLabel('転送用キー',{exact:true})).toHaveValue('');
+});
