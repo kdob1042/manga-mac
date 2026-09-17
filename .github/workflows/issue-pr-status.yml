@@ -1,0 +1,106 @@
+name: Sync issue status labels
+
+on:
+  issues:
+    types: [opened, reopened]
+  pull_request:
+    types: [opened, reopened, ready_for_review, converted_to_draft, closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Synchronize status labels
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const statusDefinitions = [
+              { name: 'status:ready', color: 'fbca04', description: 'Ready and not yet started' },
+              { name: 'status:in-progress', color: '0e8a16', description: 'A draft or open implementation PR exists' },
+              { name: 'status:review', color: '5319e7', description: 'Implementation PR is ready for review' },
+              { name: 'status:blocked', color: 'b60205', description: 'Work is blocked or a PR was closed without merge' },
+              { name: 'status:done', color: '6f42c1', description: 'Implementation was merged' },
+            ];
+            for (const label of statusDefinitions) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel({
+                  owner,
+                  repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description,
+                });
+              }
+            }
+
+            async function setStatus(issueNumber, status) {
+              const current = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issueNumber,
+              });
+              const otherLabels = (current.data.labels || [])
+                .map((label) => label.name || label)
+                .filter((name) => !name.startsWith('status:'));
+              await github.rest.issues.setLabels({
+                owner,
+                repo,
+                issue_number: issueNumber,
+                labels: otherLabels.concat(['status:' + status]),
+              });
+            }
+
+            function linkedIssueNumbers(body) {
+              const numbers = new Set();
+              const pattern = /(?:refs|fixes|closes|resolves)\s+#(\d+)\b/gi;
+              for (const match of body.matchAll(pattern)) numbers.add(Number(match[1]));
+              return [...numbers];
+            }
+
+            if (context.eventName === 'issues') {
+              const issue = context.payload.issue;
+              const currentLabels = (issue.labels || []).map((label) => label.name || label);
+              const hasStatus = currentLabels.some((name) => name.startsWith('status:'));
+              const hasStartRequest =
+                currentLabels.includes('agent:start') ||
+                currentLabels.includes('agent:started');
+              if (context.payload.action === 'opened' && !hasStatus && !hasStartRequest) {
+                await setStatus(issue.number, 'ready');
+              } else if (context.payload.action === 'reopened') {
+                await setStatus(issue.number, 'ready');
+              }
+              return;
+            }
+
+            const pull = context.payload.pull_request;
+            const linked = linkedIssueNumbers(pull.body || '');
+            if (linked.length === 0) {
+              core.info('No same-repository issue reference found in the PR body.');
+              return;
+            }
+
+            let status = 'in-progress';
+            if (context.payload.action === 'ready_for_review') status = 'review';
+            if (context.payload.action === 'closed') {
+              status = pull.merged ? 'done' : 'blocked';
+            }
+            for (const issueNumber of linked) {
+              await setStatus(issueNumber, status);
+              if (context.payload.action === 'opened' || context.payload.action === 'reopened') {
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: issueNumber,
+                  labels: ['agent:started'],
+                });
+              }
+            }
