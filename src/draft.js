@@ -1,7 +1,7 @@
 import { proposeLayout, adoptLayoutProposal } from './layout-ai.js';
 import { proposeLettering } from './lettering-ai.js';
 import { setLettering } from './lettering.js';
-import { sourceUnits } from './core.js';
+import { panelHasText, sourceUnits } from './core.js';
 import { editBase } from './edit-commands.js';
 import { pagePanels, initialLayout, validateLayout, layoutWarnings } from './layout.js';
 
@@ -51,7 +51,7 @@ export function draftPageStatus(project, page) {
   const panels = pagePanels(project,page);
   if (!panels.length || panels.length !== page.slots.length) return '未割当';
   if (panels.some(p=>!p.image)) return '作画待ち';
-  if (panels.some(p=>!p.lettering)) return '文字配置待ち';
+  if (panels.some(p=>panelHasText(p)&&!p.lettering)) return '文字配置待ち';
   return '見た目を確認';
 }
 // Sequential domain stages persisted in the existing jobs. Image jobs stay authoritative.
@@ -73,7 +73,7 @@ export async function finishDraftLettering({current,commit,ask,cancelled,notify,
   for(const id of ids) {
     if(cancelled())return;
     const p=current(),panel=p.panels.find(p=>p.id===id);
-    if(!panel?.image || panel.lettering)continue;
+    if(!panel?.image || !panelHasText(panel) || panel.lettering)continue;
     notify(`${id} の文字を配置中`);
     const job={id:crypto.randomUUID(),kind:'draft_lettering',panelId:id,status:'running',source_revision:panel.snapshotId};
     await commit({...p,jobs:[...p.jobs,job]});
@@ -102,7 +102,7 @@ export async function reviewDraft(project,render) {
   const pages=[];
   for(const page of project.layout.pages) {
     const panels=pagePanels(project,page);
-    if(panels.some(p=>!p.image||!p.lettering))throw Error('初稿の作画または文字配置が未完了です');
+    if(panels.some(p=>!p.image||(panelHasText(p)&&!p.lettering)))throw Error('初稿の作画または必要な文字配置が未完了です');
     pages.push(await render(panels,project.snapshots,project.localizations,project.output_locale,page,false,project.layout.imageCrops));
   }
   if(!pages.length)throw Error('初稿ページがありません');
