@@ -6,6 +6,10 @@ export default function BlenderSettings({ disabled, run, notify, project }) {
   const [binary, setBinary] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [library, setLibrary] = useState(''), [source, setSource] = useState('');
   const [assets, setAssets] = useState([]), [asset, setAsset] = useState(''), [filter, setFilter] = useState('');
+  const [webUrl, setWebUrl] = useState(''), [webFileName, setWebFileName] = useState('');
+  const [webPage, setWebPage] = useState(''), [webLicense, setWebLicense] = useState('');
+  const [webDownload, setWebDownload] = useState(null), [webCandidates, setWebCandidates] = useState([]);
+  const [webCandidate, setWebCandidate] = useState('');
   const [session, setSession] = useState(null), [lens, setLens] = useState(50);
   useEffect(() => { if (desktop()) call('blender_latest').then(setSession).catch(() => notify('Blenderの保存状態を読めませんでした')); }, []);
   const affected = project ? changedBaseUsers(project, session) : [];
@@ -30,10 +34,49 @@ export default function BlenderSettings({ disabled, run, notify, project }) {
     try {
       const result = await call('blender_execute', { request: { session_id: session.session_id, request_id: crypto.randomUUID(), expected_revision: session.revision, operation } });
       setSession(result); if (result.state?.library_assets) setAssets(result.state.library_assets); notify('Blenderの実値と保存結果を確認しました');
+      return result;
     } catch (error) {
       await refresh().catch(() => notify('要求状態を取得できませんでした。状態確認を再度行ってください。'));
       throw error;
     }
+  });
+  const downloadWebAsset = () => run('Web素材を取得してBlenderで確認中', async () => {
+    const downloaded = await call('blender_download_web_asset', {
+      sessionId: session.session_id,
+      expectedRevision: session.revision,
+      input: { download_url: webUrl, file_name: webFileName, source_page: webPage, license: webLicense },
+    });
+    const result = await call('blender_execute', { request: {
+      session_id: session.session_id,
+      request_id: crypto.randomUUID(),
+      expected_revision: session.revision,
+      operation: { kind: 'webcatalog', file: downloaded.file, hash: downloaded.hash },
+    } });
+    setSession(result);
+    setWebDownload(downloaded);
+    setWebCandidates(result.state?.web_asset_candidates ?? []);
+    setWebCandidate('');
+    notify('Web素材を固定して、Blenderで取り込める内容を確認しました');
+  });
+  const importWebAsset = () => run('Web素材をBlenderへ取り込み中', async () => {
+    const candidate = webCandidates[Number(webCandidate)];
+    if (!candidate || !webDownload) throw Error('取り込むWeb素材を選択してください');
+    const result = await call('blender_execute', { request: {
+      session_id: session.session_id,
+      request_id: crypto.randomUUID(),
+      expected_revision: session.revision,
+      operation: {
+        kind: 'webimport', file: webDownload.file, hash: webDownload.hash,
+        entry: candidate.entry, format: candidate.format,
+        asset_type: candidate.asset_type, name: candidate.name,
+        source_url: webDownload.source_url, source_page: webDownload.source_page,
+        license: webDownload.license,
+      },
+    } });
+    setSession(result);
+    setWebCandidates([]);
+    setWebCandidate('');
+    notify('Web素材をBlenderへ取り込み、出典・ライセンス・取得ハッシュを保存しました');
   });
   const jobStatus = job => job.status === 'running' ? '処理中' : job.status === 'candidate' ? '旧版の候補' : '結果未確定';
   return <fieldset disabled={disabled}><legend>Blender 4.5.13</legend>
@@ -62,6 +105,20 @@ export default function BlenderSettings({ disabled, run, notify, project }) {
       <label>Blenderの既存アセット<select value={asset} onChange={e => setAsset(e.target.value)}><option value="">選択</option>{assets.map((a, i) => ({ a, i })).filter(({ a }) => `${a.name} ${a.file}`.toLowerCase().includes(filter.toLowerCase())).map(({ a, i }) => <option key={i} value={i}>{a.name} — {a.file} ({a.kind})</option>)}</select></label>
       <button disabled={pending || asset === '' || !assets[Number(asset)]} onClick={() => { const a = assets[Number(asset)]; operate({ kind: 'import', file: a.file, hash: a.hash, asset_type: a.kind, name: a.name }); }}>選択素材を舞台へ取り込む</button>
       <small>Blenderでアセットに指定されたObject・Collection・Action（ポーズ素材）を表示します。素材を更新したら再検索してください。</small>
+      <details className="web-asset-import"><summary>Webの既存3D素材を取り込む</summary>
+        <p>配布元で利用条件を確認し、素材ファイルの直接URLを指定します。任意スクリプトやアドオンは実行しません。</p>
+        <label>素材のダウンロードURL<input type="url" value={webUrl} onChange={e => setWebUrl(e.target.value)} placeholder="https://example.com/model.glb"/></label>
+        <label>保存ファイル名（URLに拡張子がない場合）<input value={webFileName} onChange={e => setWebFileName(e.target.value)} placeholder="model.glb"/></label>
+        <label>配布ページURL（任意）<input type="url" value={webPage} onChange={e => setWebPage(e.target.value)} placeholder="https://example.com/assets/model"/></label>
+        <label>ライセンス表記<input value={webLicense} onChange={e => setWebLicense(e.target.value)} placeholder="CC0 1.0 / 購入ライセンス名など"/></label>
+        <button disabled={pending || !webUrl.trim() || !webLicense.trim()} onClick={downloadWebAsset}>取得して内容を確認</button>
+        <small>HTTPSのみ、512MB以下。blend / GLB・glTF / FBX / OBJ / ZIPに対応します。ZIPは安全な相対パスと展開容量を検証します。</small>
+        {!!webCandidates.length && <>
+          <p>取得済み：{webDownload.file}（{Math.ceil(webDownload.bytes / 1024)} KB）</p>
+          <label>取り込む内容<select aria-label="取り込むWeb素材" value={webCandidate} onChange={e => setWebCandidate(e.target.value)}><option value="">選択</option>{webCandidates.map((item, index) => <option key={`${item.entry}:${item.asset_type}:${item.name}`} value={index}>{item.label}</option>)}</select></label>
+          <button disabled={pending || webCandidate === ''} onClick={importWebAsset}>選択したWeb素材を舞台へ取り込む</button>
+        </>}
+      </details>
       <button disabled={pending} onClick={() => operate({ kind: 'capture', width: 768, height: 768 })}>撮影する</button>
       <button onClick={() => run('Blenderの状態を確認中', async () => {
         const current = await refresh();

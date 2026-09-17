@@ -1,4 +1,5 @@
 import { ensureLayout } from './layout.js';
+import { placementKey } from './placement.js';
 // Manga revisions only: Blender remains the owner of 3D state.
 export async function digest(bytes) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -74,6 +75,7 @@ export async function finishJob(project, job, generated, cancelled = false, cand
 
 export async function adoptCandidate(project, jobId) {
   const job = project.jobs.find(j => j.id === jobId), panel = project.panels.find(p => p.id === job?.panelId);
+  if (job?.placement_key && job.placement_key !== placementKey(project,job.panelId)) throw Error('配置が変わったため、この候補は採用できません');
   const artwork = project.artworks.find(a => a.id === job?.output_revision);
   if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel)))) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
   return { ...project, panels: project.panels.map(p => p.id === panel.id ? structuredClone(artwork.panel) : p),

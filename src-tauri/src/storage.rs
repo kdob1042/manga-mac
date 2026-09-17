@@ -482,6 +482,8 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value) -> Result<()> {
                 "base_revision",
                 "source_revision",
                 "active_snapshot",
+                "placement_key",
+                "finishing",
             ] {
                 if target[field] != job[field] {
                     return Err("Submitted job inputs are immutable".into());

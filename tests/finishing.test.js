@@ -1,0 +1,31 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {migrateProject,finishJob,adoptCandidate} from '../src/revisions.js';
+import {finishingPlan,beginFinishing,finishingInstruction} from '../src/finishing.js';
+const fixture=JSON.parse(readFileSync(new URL('./fixtures/legacy-v1.json',import.meta.url)));
+test('placement finishing sizes support reduction and enlargement without changing aspect',async()=>{
+ const p=await migrateProject(fixture),id=p.panels[0].id;
+ const smaller=finishingPlan(p,id,1024,1024);
+ assert.equal(smaller.sourceSufficient,true);assert.equal(smaller.width,768);assert.equal(smaller.height,768);
+ const larger=finishingPlan(p,id,512,512);assert.equal(larger.sourceSufficient,false);assert.equal(larger.width,768);assert.equal(larger.sufficient,true);
+ p.layout.imageCrops={[id]:{zoom:2,x:.3,y:.8}};
+ const limited=finishingPlan(p,id,768,512);assert.equal(limited.width*512,limited.height*768);assert.equal(limited.sufficient,false);assert.ok(limited.width<=1024);
+ assert.throws(()=>finishingPlan(p,id,769,512),/縦横比/);
+ assert.throws(()=>finishingPlan(p,id,0,512));
+ assert.throws(()=>finishingPlan(p,'unassigned',768,768));
+});
+test('regeneration stays a candidate and cannot bypass placement gate through generic adoption',async()=>{
+ const p=await migrateProject(fixture),panel=p.panels[0],job=await beginFinishing(p,panel.id,768,768);
+ assert.equal(job.kind,'retake');assert.equal(job.finishing.parent_revision,panel.artwork_revision);
+ assert.match(finishingInstruction(job),/Do not zoom, crop/);
+ const q=await finishJob({...p,jobs:[job]},job,{...panel,finishing:job.finishing},false,true);
+ assert.deepEqual(q.panels,p.panels);assert.deepEqual(q.layout,p.layout);assert.equal(q.jobs[0].status,'candidate');
+ const stale=structuredClone(q);stale.layout.imageCrops={[panel.id]:{zoom:2,x:.5,y:.5}};
+ await assert.rejects(adoptCandidate(stale,job.id),/配置/);
+ const staleArt=structuredClone(q);staleArt.panels[0].prompt+=' changed';await assert.rejects(adoptCandidate(staleArt,job.id));
+ const adopted=await adoptCandidate(await migrateProject(q,true),job.id);
+ assert.deepEqual(adopted.layout,p.layout);assert.deepEqual(adopted.snapshots,p.snapshots);assert.deepEqual(adopted.panels[0].lettering,panel.lettering);
+ assert.deepEqual(adopted.history.at(-1).panels,p.panels);
+ await assert.rejects(beginFinishing({...p,jobs:[{...job,status:'unknown'}]},panel.id,768,768),/未確定/);
+});

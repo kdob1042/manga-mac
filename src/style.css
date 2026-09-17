@@ -45,4 +45,7 @@
 
 .layout-editor input[type="range"] { width: 180px; margin: 0; }
 .layout-editor input[type="checkbox"] { width: auto; }
+.upscale-compare { display: flex; gap: 12px; }
+.upscale-compare figure { margin: 0; width: 45%; }
+.upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }
 .layout-editor .toolbar label { flex-wrap: nowrap; }
