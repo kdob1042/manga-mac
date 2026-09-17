@@ -18,3 +18,18 @@ test('real renderer emits fixed incomplete preview with valid PNGs without model
  expect(result.panels.map(p=>p.lettering)).toEqual(['pending','none','pending']);
  for(const [w,h,expectedW,expectedH] of result.dimensions)expect([w,h]).toEqual([expectedW,expectedH]);
 });
+test('changing an approved destination clears its in-memory credential',async({page})=>{
+ await page.goto('/');
+ await page.evaluate(async()=>{
+  const {default:React}=await import('/node_modules/.vite/deps/react.js'),{default:ReactDOM}=await import('/node_modules/.vite/deps/react-dom_client.js');
+  const {default:View}=await import('/src/LivePreviewControls.jsx');
+  const holder=document.createElement('div');holder.id='preview-controls-test';document.body.prepend(holder);
+  const current={current:{workId:'work',title:'人工作品',snapshots:[],panels:[],layout:{pages:[]}}};
+  ReactDOM.createRoot(holder).render(React.createElement(View,{current,writer:{},ready:false}));
+ });
+ const view=page.locator('#preview-controls-test');await view.locator('summary').click();
+ await view.getByLabel('承認するWorker origin').fill('https://first.example');
+ await view.getByLabel('転送用キー',{exact:true}).fill('w'.repeat(43));
+ await view.getByLabel('承認するWorker origin').fill('https://second.example');
+ await expect(view.getByLabel('転送用キー',{exact:true})).toHaveValue('');
+});

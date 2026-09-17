@@ -68,13 +68,13 @@ export default function LivePreviewControls({writer,current,ready}){
     <p>保存済みの話全体を転送します。タグや選択中のコマでは絞り込みません。制作は転送中も続けられます。</p>
     <p>ページ未配置のコマ: {current.current.panels.filter(p=>!current.current.layout?.pages.some(pg=>pg.slots.some(s=>s.panelId===p.id))).length}（未構成範囲は転送しません）</p>
     {lastContent.current&&lastContent.current!==previewContentKey(current.current)&&<p role="status">前回転送後に変更あり</p>}
-    <label>承認するWorker origin <input value={origin} disabled={working} onChange={e=>setOrigin(e.target.value)} placeholder="https://preview.example.com"/></label>
+    <label>承認するWorker origin <input value={origin} disabled={working} onChange={e=>{setOrigin(e.target.value);setToken('');lastRevision.current=null;setStatus('idle');setUrl('');}} placeholder="https://preview.example.com"/></label>
     <label>転送用キー <input type="password" autoComplete="off" value={token} disabled={working} onChange={e=>setToken(e.target.value)}/></label>
     <p>キーはこの画面のメモリだけに保持します。閲覧には別の読み取り用認証が必要です。</p>
     <label>転送先の現在版（初回は空欄） <input value={base} disabled={working} onChange={e=>setBase(e.target.value)}/></label>
     <button disabled={!ready||!desktop()||working||!current.current.panels.length} onClick={()=>transfer(false)}>この転送先へ保存済みの話を転送</button>
     <label>再開する転送版 <input value={revision} disabled={working} onChange={e=>{captured.current=null;setRevision(e.target.value);}}/></label>
-    {!!records.length&&<label>保存した転送記録<select disabled={working} value={revision} onChange={e=>{const row=records.find(r=>r.revision===e.target.value);if(!row)return;captured.current=null;setRevision(row.revision);setOrigin(row.destination?.origin??'');setBase(row.destination?.baseRevision??'');setStatus('idle');setUrl('');}}><option value="">転送版を選択</option>{records.map(r=><option key={r.revision} value={r.revision}>{r.savedAt} · {r.received?'受信確認済み':'未完了'} · {r.revision}</option>)}</select></label>}
+    {!!records.length&&<label>保存した転送記録<select disabled={working} value={revision} onChange={e=>{const row=records.find(r=>r.revision===e.target.value);if(!row)return;captured.current=null;setRevision(row.revision);setOrigin(row.destination?.origin??'');setToken('');lastRevision.current=null;setBase(row.destination?.baseRevision??'');setStatus('idle');setUrl('');}}><option value="">転送版を選択</option>{records.map(r=><option key={r.revision} value={r.revision}>{r.savedAt} · {r.received?'受信確認済み':'未完了'} · {r.revision}</option>)}</select></label>}
     <button disabled={!ready||!desktop()||working||!revision} onClick={()=>transfer(true)}>不足分から再開</button>
     <button disabled={status!=='transferring'} onClick={()=>call('live_preview_cancel',{revision}).then(()=>setError('送信中のアセットを回収して停止します。確定済みの場合は結果を確認します。')).catch(e=>setError(String(e)))}>転送を停止</button>
     <output aria-live="polite">{labels[status]}</output>{error&&<p role="alert">{error}</p>}

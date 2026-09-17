@@ -76,7 +76,7 @@ export async function preparePreview(captured, { image, layers, placeholder, pro
 // Fixed envelope and base revision survive retries; only missing verified bytes are resent.
 export async function transferPreview({preview,baseRevision,request,upload,onStatus=()=>{}}) {
   validatePreview(preview);
-  const m=preview.manifest, path=`/previews/${encodeURIComponent(m.workId)}/${encodeURIComponent(m.episodeId)}/transfers/${encodeURIComponent(m.releaseId)}`;
+  const m=preview.manifest, path=`/previews/${m.workId}/${m.episodeId}/transfers/${m.releaseId}`;
   onStatus('transferring');
   await request('PUT',path,{preview,baseRevision});
   let state=await request('GET',path);
