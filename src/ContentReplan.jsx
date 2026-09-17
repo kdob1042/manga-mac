@@ -70,7 +70,7 @@ export default function ContentReplan({ project, current, commit, run, busy, mod
 
   return <details className="content-replan">
     <summary>内容を再計画（コマの分割・統合）</summary>
-    <p>原文unitのまとまりだけをAIに再提案します。ページ配置・既存画像・確定済みprefixは候補採用まで変更しません。</p>
+    <p>原文unitのまとまりだけをAIに再提案します。ページ配置・既存画像は候補採用まで変更しません。選択外の場面の内容は保持します。</p>
     <fieldset disabled={busy}>
       <legend>対象場面</legend>
       {available.map((scene) => <label key={scene.id}><input type="checkbox" aria-label={`内容再計画対象 ${scene.id}`} checked={sceneIds.includes(scene.id)} onChange={(event) => toggleScene(scene.id, event.target.checked)}/>{scene.id}</label>)}
@@ -82,7 +82,7 @@ export default function ContentReplan({ project, current, commit, run, busy, mod
     {candidate && <div className="content-replan-candidate">
       <strong>{candidate.reason}</strong>
       {candidate.scenes.map((scene) => <div key={scene.sceneId}>
-        <p>{scene.sceneId}：保持 {scene.retainedPanelIds.length}コマ / 再作画待ち {scene.redrawPanelIds.length}コマ / 確定済み {scene.protectedPanelIds.length}コマ</p>
+        <p>{scene.sceneId}：保持 {scene.retainedPanelIds.length}コマ / 再作画待ち {scene.redrawPanelIds.length}コマ</p>
         {!!scene.redrawPanelIds.length && <small>再作画対象: {scene.redrawPanelIds.join(', ')}</small>}
       </div>)}
       {candidate.summary?.changed && <small>採用後はP{candidate.summary.firstAffectedPageIndex + 1}以降のページ割当だけを決定的に詰め直します。既存画像・原稿・対象外場面は保持します。</small>}
