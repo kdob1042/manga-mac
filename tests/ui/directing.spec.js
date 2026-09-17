@@ -12,7 +12,7 @@ test('one action directs four isolated shots, draws them, and edits without a fa
     const imageHash = async image => [...new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(atob(image.split(',')[1]), c=>c.charCodeAt(0))))].map(b=>b.toString(16).padStart(2,'0')).join('');
     window.__TAURI_INTERNALS__ = { invoke:async(command,args)=>{
       calls.push({command,args});
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if(command==='load_project') return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});
       if(command==='save_project') {project=JSON.parse(args.data);window.savedProject=project;return;}
       if(command==='prepare_source_patch'){const plan={expected:args.expected,baseContentToken:args.baseContentToken,targetSnapshotId:args.targetSnapshotId,scope:{pageIds:project.layout.pages.map(p=>p.id)}};project.jobs.push({id:args.opId,kind:'sourcePatch',status:'planned',source_patch:plan});return plan;}

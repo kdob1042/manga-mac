@@ -9,7 +9,7 @@ test('video capture uses the shared controls without creating manga panels; rest
     const state = { operations: ['pose', 'capture'], rigs: ['Actor'], assets: [{ kind: 'ACTION', name: 'LeanPose', library: null }], dependencies_pinned: true, checkpoint: { hash }, state: { scene: 'Stage', camera: 'Camera', frame: 1, lens: 50 }, scenes: [{ name: 'Stage', cameras: ['Camera'], objects: ['Actor'] }] };
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
       const sessions = JSON.parse(sessionStorage.getItem('fixture-sessions') || '{}');
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if (command === 'load_project') return sessionStorage.getItem('fixture-project') || JSON.stringify(initial);
       if (command === 'save_project') { sessionStorage.setItem('fixture-project', args.data); return; }
       if (command === 'blender_latest') return { session_id: 'base', revision: 1, state };

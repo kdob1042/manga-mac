@@ -113,9 +113,11 @@ LLMが`ready`等の完了を返したこと自体は、Blender操作の完了証
 
 CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用しない。[B1] 参照解決にはファイル・datablockと版を使う。名称変更等のID補助が必要ならBlender側の小さなcustom propertyで保持し、アプリ独自素材モデルへ拡張しない。解決不能なら要再対応付けとし、似た名前の別素材へ自動差し替えしない。
 
-原作リポジトリとの構造契約は`source-contracts/`の機械可読ファイルで管理する。対応するmanifest schema、読書順・設定・参照画像の解決規則、アプリ側で最後に整合確認した原作commit／manifest blobを記録する。この確認基準commitは脚本内容の版ではなく、アプリ実装がどの時点のリポジトリ構造を前提に検証されたかを示す。作品のSourceSnapshotには実際に取り込んだ原稿commitと契約情報を別々に保存・表示する。
+原稿インターフェース（#124）は `source-protocol.js` を正本とする汎用schema。リポジトリ名から仕様を引かず、同一commitの `manifest.json` を検証して内部SourceModelへ正規化する。作品固有JSON・整合基準commitは同梱しない。schema 1と既存schema 4は `episodes[].scene_ids`、`scenes[].id/path`、任意の `settings[].id/path` を持つ。人物参照は `references.characters: [{name: "人物A", image: "portraits/a.png", description: "任意の説明"}]` で自己記述する。設定ID・画像ディレクトリ・alt命名は任意。宣言がないschema 4だけ、任意の設定Markdown内の旧キャラクター基準画captionを互換adapterで読む。構造化宣言があれば空配列でも優先する。
 
-キャラクター基準画は、同一原稿commitの`VISUAL`設定内Markdown画像から、契約で許可した`assets/illustrations/`配下だけを解決する。画像の実形式・20MB上限・SHA-256をRust境界で確認し、原稿版を利用者が取り込んだ時点で2D参照へ反映する。新版確認だけで採用中の参照を変更しない。
+場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値は変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
+
+schema 5の最小読書順台帳はscene/settingsの解決宣言を欠くため未対応と明示する。原稿側の固有ディレクトリ走査をアプリへ転載しない。原稿側で自己記述するschema 1を提供すれば作品追加のコード変更は不要。現行原稿側の宣言提供と通し確認は #136 に残す（原稿repoは本変更で編集しない）。
 
 「二人を近づける」という編集意図や撮影記録として数値を保存してよいが、それを編集可能な第二の3D正本として使わない。座標の表示キャッシュはBlenderから再取得可能とし、Blenderで変更した結果を古いキャッシュで上書きしない。
 
@@ -123,7 +125,7 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 作品表示名・GitHub repository・選択中episodeをアプリ共通の登録一覧へ保存する。本文を登録一覧へ複製しない。既存作品はprimaryの保存領域をそのまま登録し、新規作品には独立したSQLite・画像・動画・Blender・履歴・Job領域を作る。作品切替は既存workspace切替・再起動を使い、進行中処理のロックを維持する。GitHub tokenは起動中だけ保持し、切替後は再入力する。既存原稿元は登録後に別repoへ付替えず、追加操作を使う。
 
-新規原稿元も現行manifest schema 4・VISUAL参照設定・許可画像ルートを検証する。Kamiya-Kawai固有の検証基準commitを別作品へ転載しない。コミット固定・原文非改変・safePath・画像hash検証は既存同期経路を使う。自由形式・任意フォルダ対応は含めない。
+新規原稿元も同じ汎用protocolを検証する。未接続の初回作品には既定repoを割り当てず、利用者が接続先を指定して登録する。コミット固定・原文非改変・safePath・画像hash検証は既存同期経路を使う。
 
 ### 原稿の手動取込み（#107）
 
