@@ -1,3 +1,4 @@
+import {textForRefs} from './source-refs.js';
 import {
   initialLayout,
   validateLayout,
@@ -197,16 +198,16 @@ export async function pageLayers(
             (item) => item.locale === 'en' && item.snapshot_id === p.snapshotId,
           )
         : null;
-    if (locale === 'en' && !localization)
+    if (locale === 'en' && !p.sourceRefs && !localization)
       throw Error('現在の原作に対応する英訳がありません');
-    if (!resolveText.has(snapshot))
+    if (!p.sourceRefs && !resolveText.has(snapshot))
       resolveText.set(snapshot, createTextResolver(snapshot, localization));
     const textForUnits = resolveText.get(snapshot);
-    const text = textForUnits(p.unitIds);
+    const text = p.sourceRefs?textForRefs(p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??p.sourceRefs,snapshots,locale==='en'?localizations:null):textForUnits(p.unitIds);
     if (p.lettering?.mode === 'balloons') {
       const layout = validateLettering(p, p.lettering);
       for (const box of layout.boxes) {
-        const unitText = textForUnits([box.unit_id]);
+        const unitText = box.sourceRefs?textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null):textForUnits([box.unit_id]);
         drawLettering(
           ctx,
           unitText,

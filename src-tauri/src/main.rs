@@ -191,21 +191,20 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
         let snapshot = p["snapshots"]
             .as_array()
             .and_then(|ss| ss.iter().find(|s| s["id"] == p["active"]));
-        entries = storage::source_library::register(
-            &state.base,
-            storage::source_library::Entry {
-                id: id.clone(),
-                name: p["title"].as_str().unwrap_or("最初の作品").into(),
-                repo: snapshot
-                    .and_then(|s| s["repo"].as_str())
-                    .unwrap_or("kdob1042/Kamiya-Kawai")
-                    .into(),
-                episode: snapshot
-                    .and_then(|s| s["episodeId"].as_str())
-                    .unwrap_or("P01")
-                    .into(),
-            },
-        )?;
+        if let Some(source) = snapshot.filter(|s| s["repo"].as_str().is_some()) {
+            entries = storage::source_library::register(
+                &state.base,
+                storage::source_library::Entry {
+                    id: id.clone(),
+                    name: p["title"].as_str().unwrap_or("最初の作品").into(),
+                    repo: source["repo"].as_str().unwrap().into(),
+                    episode: snapshot
+                        .and_then(|s| s["episodeId"].as_str())
+                        .unwrap_or("P01")
+                        .into(),
+                },
+            )?;
+        }
     }
     Ok(serde_json::json!({"entries":entries,"active":id}))
 }
@@ -219,10 +218,9 @@ fn source_register(
 ) -> Result<Value, String> {
     let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
     let existing = storage::source_library::list(&state.base)?;
-    if id
-        .as_ref()
-        .is_some_and(|id| !existing.iter().any(|e| &e.id == id))
-    {
+    if id.as_ref().is_some_and(|id| {
+        !existing.iter().any(|e| &e.id == id) && !(id == "primary" && state.root == state.base)
+    }) {
         return Err("未登録の作品です".into());
     }
     let new = id.is_none();
@@ -261,6 +259,46 @@ fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
 fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
     let db = state.db.lock().map_err(err)?;
     storage::load(&db, &state.root)
+}
+#[tauri::command]
+fn prepare_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    target_snapshot_id: String,
+    expected: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::prepare(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
+        &target_snapshot_id,
+        expected,
+    )
+}
+#[tauri::command]
+fn commit_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    target_snapshot_id: String,
+    patch: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::commit(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
+        &target_snapshot_id,
+        patch,
+    )
 }
 #[tauri::command]
 fn video_playback(
@@ -719,6 +757,8 @@ fn main() {
             source_library,
             source_register,
             save_project,
+            prepare_source_patch,
+            commit_source_patch,
             load_project,
             video_playback,
             video_export,

@@ -1,3 +1,4 @@
+import {textForRefs} from './source-refs.js';
 // Pure domain logic. Source text is never produced by a language model.
 export function orderedScenes(manifest, episodeId) {
   if (!Array.isArray(manifest.episodes) || !Array.isArray(manifest.scenes)) throw Error('manifest の形式が不正です');
@@ -38,12 +39,13 @@ export function affectedScenes(previous, next) {
   return next.scenes.filter(s => settingsChanged || !previous.scenes.some(p => p.id === s.id && p.text === s.text && p.design === s.design)).map(s => s.id);
 }
 export function sourceForPanel(panel, snapshot) {
+  if(panel.sourceRefs)return textForRefs(panel.sourceRefs,Array.isArray(snapshot)?snapshot:[snapshot]);
   const scene = snapshot.scenes.find(s => s.id === panel.sceneId);
   if (!scene) throw Error('原作スナップショットがありません');
   const units = sourceUnits(scene.id, scene.text);
   return panel.unitIds.map(id => { const unit = units.find(u => u.id === id); if (!unit) throw Error('原文の参照がありません'); return unit.text; }).join('\n\n');
 }
 export function revise(project, panels, label) {
-  return { ...project, panels, history: [...project.history, { panels: project.panels, label, at: new Date().toISOString() }] };
+  return { ...project, panels, history: [...project.history, { panels: project.panels, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), label, at: new Date().toISOString() }] };
 }
 export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });

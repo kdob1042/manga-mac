@@ -1,0 +1,26 @@
+{
+  "text": "日本😀é\r\n次行",
+  "sourceHash": "bf24f64350ea409fe26f18c521a84a59cd544f636e4b010b3b872c45a71dec7c",
+  "cases": [
+    {
+      "startCp": 0,
+      "endCp": 3,
+      "text": "日本😀"
+    },
+    {
+      "startCp": 3,
+      "endCp": 5,
+      "text": "é"
+    },
+    {
+      "startCp": 5,
+      "endCp": 7,
+      "text": "\r\n"
+    },
+    {
+      "startCp": 7,
+      "endCp": 9,
+      "text": "次行"
+    }
+  ]
+}

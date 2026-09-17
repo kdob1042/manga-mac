@@ -26,6 +26,7 @@ export async function produceDraft({
   askLLM,
   imageOf,
   pagePNG,
+  finalizeSource,
 }) {
   if (!current().active) throw Error('まず原作を接続してください');
   let p = current();
@@ -155,9 +156,38 @@ export async function produceDraft({
     setNotice('停止しました。完成したコマと文字配置は保存済みです');
     return;
   }
+  if(finalizeSource)await finalizeSource();
   const proofs = await reviewDraft(current(), pagePNG);
   showProof(proofs[0]);
   setNotice(
     `初稿 ${proofs.length}ページを表示しました。人物・衣装・文字の読みやすさを確認し、下の欄か手動で修正できます。`,
   );
+}
+
+// Reuse the ordinary image jobs and recovery for a source candidate. Only the
+// candidate receives generated panels; the adopted manga remains unchanged.
+export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{}}){
+ const check=()=>{const p=current(),owner=p.jobs.find(j=>j.id===opId&&j.kind==='sourcePatch');
+  const c=owner?.source_candidate;if(owner?.status!=='candidate'||!c||c.prepared.identity.workId!==p.workId||c.prepared.identity.baseContentToken!==p.contentToken)throw Error('原稿反映の候補が古いか、取り下げられています');return {p,c};};
+ const candidateProject=({p,c})=>({...p,...c.patch});
+ const persist=async result=>{const {p,c}=check();const patch={...c.patch,panels:result.panels};const updated={...c,patch,redrawPanelIds:c.redrawPanelIds.filter(id=>!patch.panels.find(p=>p.id===id)?.image)};
+  return commit({...p,artworks:result.artworks,jobs:result.jobs.map(j=>j.id===opId?{...j,source_candidate:updated}:j)});};
+ for(const id of check().c.redrawPanelIds){
+  if(cancelled())return;
+  let cp=candidateProject(check()),panel=cp.panels.find(p=>p.id===id);if(panel.image)continue;
+  const pending=cp.jobs.find(j=>j.sourcePatchOp===opId&&j.panelId===id&&['unknown','candidate'].includes(j.status));
+  if(pending){
+   const {recoverImageResult}=await import('./image-recovery.js'),{adoptCandidate}=await import('./revisions.js');
+   if(pending.status==='unknown')cp=await recoverImageResult(cp,pending.id,await recover(pending.id));
+   await persist(await adoptCandidate(cp,pending.id));continue;
+  }
+  const job={...await beginJob(cp,panel),sourcePatchOp:opId};
+  await commit({...current(),jobs:[...current().jobs,job]});notify(`${id} の必要な作画を生成中`);
+  try {
+   const generated=await generate(panel,cp.characters,null,'',job,null,cp.style_references??[]);
+   await persist(await finishJob(candidateProject(check()),job,generated));
+  }catch(e){
+   const p=current();if(p.workId===cp.workId)await commit({...p,jobs:p.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)});throw e;
+  }
+ }
 }

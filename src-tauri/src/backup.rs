@@ -272,9 +272,10 @@ fn manifest_size(m: &Manifest) -> Result<u64> {
     })
 }
 fn validate_project(project: &Value, root: &Path) -> Result<()> {
-    if !matches!(project["version"].as_u64(), Some(1..=4)) {
+    if !matches!(project["version"].as_u64(), Some(1..=5)) {
         return Err("新しい作品形式です。対応版アプリが必要です".into());
     }
+    super::source_refs::validate(project)?;
     reject_secrets(project)?;
     if let Some(captures) = project["captures"].as_array() {
         for capture in captures {
@@ -473,7 +474,7 @@ pub fn verify_bundle(root: &Path) -> Result<Manifest> {
     let m: Manifest = read_json(&root.join("manifest.json"))?;
     if m.format != FORMAT
         || !uuid(&m.series)
-        || !(1..=4).contains(&m.project_schema)
+        || !(1..=5).contains(&m.project_schema)
         || !m.files.contains_key("manga.sqlite3")
     {
         return Err("未対応のバックアップ形式です。対応版アプリが必要です".into());

@@ -18,6 +18,7 @@ test('four corners, cancel, undo/redo and six-panel persistence keep artwork and
    await page.getByLabel('選択枠のコマ',{exact:true}).selectOption(`panel${i}`);
    await expect(page.getByLabel('選択枠のコマ',{exact:true})).toHaveCount(0); // committed page resets selection
  }
+ await page.locator('.thumbnail').nth(1).click();await page.getByRole('button',{name:'このページを外す'}).click();
  await page.getByTestId('layout-slot-0').click({position:{x:60,y:45}});
  const before=await page.getByTestId('layout-slot-0').getAttribute('points');
  for(let i=0;i<4;i++){
@@ -45,7 +46,7 @@ test('AI layout uses registered router and explicit adoption without regeneratin
    let project={...fixture,jobs:[],history:[]};window.nativeCalls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.nativeCalls.push(command);
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify(project);
      if(command==='save_project'){project=JSON.parse(args.data);window.savedProject=project;return;}
      if(command==='backup_status')return {config:null,status:{},restored:[]};
@@ -69,4 +70,13 @@ test('AI layout uses registered router and explicit adoption without regeneratin
  const saved=await page.evaluate(()=>window.savedProject);expect(saved.panels[0].image).toBe(legacy.panels[0].image);expect(saved.jobs.at(-1).status).toBe('complete');
  expect((await page.evaluate(()=>window.nativeCalls)).some(c=>/generate_image|blender_execute|video_generate/.test(c))).toBe(false);
  await page.screenshot({path:'test-results/free-layout-ai.png',fullPage:true});
+});
+
+
+test('middle two pages reflow locally, survive reload and Undo, and use no generation',async({page})=>{
+ await page.goto('/');await page.evaluate(async fixture=>{const {saveProject}=await import('/src/bridge.js');fixture.panels=Array.from({length:16},(_,i)=>({...fixture.panels[0],id:`panel${i}`}));fixture.history=[];fixture.jobs=[];await saveProject(fixture);},legacy);
+ await page.reload();const original=await page.evaluate(async()=>JSON.parse(JSON.stringify(await (await import('/src/bridge.js')).loadProject())));
+ await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await page.locator('.thumbnail').nth(1).click();await page.getByLabel('対象ページ数',{exact:true}).fill('2');await page.getByLabel('枠数',{exact:true}).selectOption('3');await page.getByRole('button',{name:'テンプレートを適用'}).click();await expect(page.locator('.thumbnail')).toHaveCount(5);
+ await page.reload();const next=await page.evaluate(async()=>JSON.parse(JSON.stringify(await (await import('/src/bridge.js')).loadProject())));expect(next.layout.pages[0]).toEqual(original.layout.pages[0]);expect(next.layout.pages[4]).toEqual(original.layout.pages[3]);expect(next.panels).toEqual(original.panels);expect(next.jobs).toEqual([]);
+ await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await page.getByRole('button',{name:'枠をUndo'}).click();await expect(page.locator('.thumbnail')).toHaveCount(4);await page.getByRole('button',{name:'枠をRedo'}).click();await expect(page.locator('.thumbnail')).toHaveCount(5);
 });

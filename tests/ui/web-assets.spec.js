@@ -9,7 +9,7 @@ test('downloads, catalogs and imports a licensed web asset through the Blender b
     };
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
       window.nativeCalls.push({ command, args });
-      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if (command === 'load_project') return null;
       if (command === 'blender_latest' || command === 'blender_status') return structuredClone(window.blenderSession);
       if (command === 'blender_download_web_asset') {

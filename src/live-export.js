@@ -18,7 +18,7 @@ export async function prepareLiveManga(project, probeVideo) {
   for(const [name,layer] of [['art','art'],['overlay','overlay'],['fallback','complete']])page[name]=await image(await pageLayers(panels,project.snapshots,project.localizations,project.output_locale,layer));
   for(const [i,p] of panels.entries()) {
    const im=await imageOf(p.image),snapshot=project.snapshots.find(s=>s.id===p.snapshotId),localization=project.output_locale==='en'?project.localizations.find(l=>l.snapshot_id===p.snapshotId&&l.locale==='en'):null;
-   const panel={id:p.id,...panelLayout(i,im.width,im.height),poster:await image(p.image),text:textForPanel(p,snapshot,localization)};
+   const panel={id:p.id,...panelLayout(i,im.width,im.height),poster:await image(p.image),text:textForPanel(p,p.sourceRefs?project.snapshots:snapshot,p.sourceRefs&&localization?project.localizations:localization)};
    const status=await motionStatus(project,p);if(status.state==='stale')throw Error(`コマ ${offset+i+1}: ${status.message}。動画の変更または割当解除が必要です`);
    if(status.revision) {
     const v=status.revision,meta=await probeVideo(v.id),a={id:v.artifact.hash,path:`assets/${v.artifact.hash}.mp4`,sha256:v.artifact.hash,mime:'video/mp4',bytes:v.artifact.size,...meta};
