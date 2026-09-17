@@ -18,6 +18,7 @@ export async function recoverImageResult(project, jobId, receipt) {
   if (!job) throw Error('制作要求がありません');
   if (job.output_revision && ['candidate', 'complete'].includes(job.status)) return project;
   if (job.status !== 'unknown' || receipt?.job_id !== job.id || receipt.input_hash !== job.input_hash || receipt.context?.kind !== job.kind || receipt.context?.panel?.id !== job.panelId || receipt.context?.panel?.snapshotId !== job.source_revision || receipt.hash !== await imageHash(receipt.image)) throw Error('保存結果と制作要求が一致しません');
+  if(job.finishing && (!receipt.context.panel.finishing || Object.keys(job.finishing).length!==Object.keys(receipt.context.panel.finishing).length || Object.entries(job.finishing).some(([k,v])=>receipt.context.panel.finishing[k]!==v))) throw Error('仕上げ要求と保存結果が一致しません');
   const generated = await completeImage(receipt.context, receipt.image);
   // Recovery never adopts. The existing adoption check still compares the inputs.
   return finishJob({ ...project, jobs: project.jobs.map(item => item.id === jobId ? { ...item, status: 'running' } : item) }, job, generated, false, true);

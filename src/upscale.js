@@ -1,12 +1,11 @@
 import {bounds,contentBox,PAGE} from './layout.js';
 import {cropRect} from './image-crop.js';
 import {beginJob,finishJob,adoptCandidate,abandonJob} from './revisions.js';
+import {placementKey} from './placement.js';
+export {placementKey} from './placement.js';
 export function upscaleSize(width,height,factor) {
   if(![2,4].includes(factor)||![width,height].every(n=>Number.isInteger(n)&&n>0)||width*factor>4096||height*factor>4096||width*height*factor*factor>16777216)throw Error('拡大は2倍・4倍、最大4096px・1600万画素までです');
   return {width:width*factor,height:height*factor};
-}
-export function placementKey(project,id) {
-  return JSON.stringify({active:project.active,slots:project.layout.pages.flatMap(p=>p.slots.filter(s=>s.panelId===id)),crop:project.layout.imageCrops?.[id]??null});
 }
 export function requiredScale(project,id,width,height) {
   const slot=project.layout.pages.flatMap(p=>p.slots).find(s=>s.panelId===id);
