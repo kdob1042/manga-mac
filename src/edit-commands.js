@@ -113,6 +113,13 @@ export function undoEdit(project, redo=false) {
   const from=redo?'editRedo':'history',entry=project[from]?.at(-1);
   if(!entry) return project;
   if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
+  if(entry.contentReplan) {
+    const currentState=[project.panels,project.layout,project.layoutHistory??[],project.layoutRedo??[],project.confirmedThroughPanelId??null];
+    const expectedState=redo?[entry.panels,entry.layout,entry.layoutHistory??[],entry.layoutRedo??[],entry.confirmedThroughPanelId??null]:[entry.after.panels,entry.after.layout,entry.after.layoutHistory??[],entry.after.layoutRedo??[],entry.after.confirmedThroughPanelId??null];
+    if(JSON.stringify(currentState)!==JSON.stringify(expectedState)) throw Error('別の編集があるため先にその操作を戻してください');
+    const state=redo?entry.after:{panels:entry.panels,layout:entry.layout,layoutHistory:entry.layoutHistory??[],layoutRedo:entry.layoutRedo??[],confirmedThroughPanelId:entry.confirmedThroughPanelId??null};
+    return {...project,...state,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?(project.editRedo??[]).slice(0,-1):[...(project.editRedo??[]),entry]};
+  }
   if(!entry.edit) {
     if(redo) return project;
     return {...project,panels:entry.panels,history:project.history.slice(0,-1),editRedo:[]};
