@@ -253,7 +253,7 @@ fn source_register(
 #[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
     let mut db = state.db.lock().map_err(err)?;
-    storage::save(&mut db, &state.root, &data)
+    storage::save_checked(&mut db, &state.root, &data)
 }
 #[tauri::command]
 fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
@@ -277,6 +277,24 @@ fn prepare_source_patch(
         &op_id,
         &base_content_token,
         &target_snapshot_id,
+        expected,
+    )
+}
+#[tauri::command]
+fn rebase_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    expected: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::rebase(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
         expected,
     )
 }
@@ -446,6 +464,11 @@ async fn llm_request(
     request: llm::Request,
     state: State<'_, AppState>,
 ) -> Result<llm::Response, String> {
+    let _local_guard = if state.connections.is_local(&request.connection_id)? {
+        Some(state.engine.lock().await)
+    } else {
+        None
+    };
     state.connections.request(request).await
 }
 fn engine_path() -> Result<PathBuf, String> {
@@ -515,10 +538,7 @@ async fn prepare_engine(state: State<'_, AppState>) -> Result<String, String> {
 }
 #[tauri::command]
 async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
-    let _guard = state
-        .engine
-        .try_lock()
-        .map_err(|_| "画像エンジンは処理中です")?;
+    let _guard = state.engine.lock().await;
     let width = request["width"].as_u64().unwrap_or(768);
     let height = request["height"].as_u64().unwrap_or(768);
     if !(256..=1024).contains(&width)
@@ -758,6 +778,7 @@ fn main() {
             source_register,
             save_project,
             prepare_source_patch,
+            rebase_source_patch,
             commit_source_patch,
             load_project,
             video_playback,
