@@ -1,0 +1,45 @@
+import {diffArrays} from 'diff';
+import {sourceResolver,tokenizeSnapshot} from './source-refs.js';
+const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const key=u=>JSON.stringify([u.source.sceneId,u.text]);
+const frequencies=a=>{const map=new Map();for(const u of a)map.set(key(u),(map.get(key(u))??0)+1);return map;};
+export function buildChangeSet(project,targetSnapshotId=project.active,budget={}){
+ const target=project.snapshots.find(s=>s.id===targetSnapshotId);if(!target)throw Error('対象原稿がありません');
+ const resolve=sourceResolver(project.snapshots),old=(project.sourceApplication?.units??[]).map(u=>({...u,text:resolve(u.source)})),fresh=tokenizeSnapshot(target);
+ const oldCount=frequencies(old),newCount=frequencies(fresh),oldKeys=old.map(key),newKeys=fresh.map(key);
+ const token=project.contentToken??JSON.stringify([project.active,project.sourceApplication,project.panels,project.layout]);
+ const id=JSON.stringify([project.workId??'local',token,targetSnapshotId]);
+ const result={id,workId:project.workId??'local',targetSnapshotId,baseContentToken:token,budget,blocks:[]};
+ if(equal(oldKeys,newKeys))return result;
+ const coarse=old.length+fresh.length>(budget.maxUnits??4000);
+ const diff=coarse?undefined:diffArrays(oldKeys,newKeys,{timeout:budget.timeout??100,maxEditLength:budget.maxEditLength??2000});
+ // Only globally unique matches anchor changed regions. Repeated text inside a
+ // changed region is not evidence for which occurrence/illustration survived.
+ const anchors=[];let oi=0,ni=0;
+ if(diff)for(const part of diff){if(part.added)ni+=part.count;else if(part.removed)oi+=part.count;else {for(let i=0;i<part.count;i++)if(oldCount.get(oldKeys[oi+i])===1&&newCount.get(newKeys[ni+i])===1)anchors.push([oi+i,ni+i]);oi+=part.count;ni+=part.count;}}
+ anchors.push([old.length,fresh.length]);let os=0,ns=0;
+ for(const [oe,ne] of anchors){const before=old.slice(os,oe),after=fresh.slice(ns,ne);
+  if(!equal(before.map(key),after.map(key))){const index=result.blocks.length;
+   result.blocks.push({id:`${id}:${index}`,groupId:`${id}:group:${index}`,kind:before.length?(after.length?'replace':'delete'):'insert',oldUnitIds:before.map(u=>u.id),newRefs:after.map(u=>u.source),beforeUnitId:os>0?old[os-1].id:null,afterUnitId:oe<old.length?old[oe].id:null,start:os,end:oe,targetStart:ns,...(!diff?{diagnostic:'coarse_diff'}:before.concat(after).some(u=>(oldCount.get(key(u))??0)>1||(newCount.get(key(u))??0)>1)?{diagnostic:'ambiguous_alignment'}:{})});
+  }os=oe+1;ns=ne+1;
+ }
+ // An unambiguous move is one operation; its deletion cannot be selected alone.
+ for(const insertion of result.blocks.filter(b=>b.kind==='insert')){
+  const texts=insertion.newRefs.map(source=>({source,text:resolve(source)}));
+  if(texts.some(u=>oldCount.get(key(u))!==1||newCount.get(key(u))!==1))continue;
+  const deletion=result.blocks.find(b=>b.kind==='delete'&&equal(b.oldUnitIds.map(id=>key(old.find(u=>u.id===id))),texts.map(key)));
+  if(deletion){insertion.kind='move';insertion.oldUnitIds=deletion.oldUnitIds;insertion.moveStart=deletion.start;insertion.moveEnd=deletion.end;deletion.merged=true;}
+ }
+ result.blocks=result.blocks.filter(b=>!b.merged);return result;
+}
+export function buildExpectedApplication(project,changeset,selectedBlockIds){
+ const current=buildChangeSet(project,changeset.targetSnapshotId,changeset.budget);
+ if(current.id!==changeset.id||!equal(current.blocks,changeset.blocks))throw Error('原稿または漫画が変わりました。差分を選び直してください');
+ if(!Array.isArray(selectedBlockIds)||new Set(selectedBlockIds).size!==selectedBlockIds.length||selectedBlockIds.some(id=>!current.blocks.some(b=>b.id===id)))throw Error('選択した差分が不正です');
+ const selected=current.blocks.filter(b=>selectedBlockIds.includes(b.id)),units=project.sourceApplication?.units??[],deleted=new Set(selected.flatMap(b=>b.oldUnitIds));
+ const additions=new Map();const byId=new Map(units.map(u=>[u.id,u]));
+ for(const b of selected){const entries=b.kind==='move'?b.oldUnitIds.map(id=>byId.get(id)):b.newRefs.map((source,i)=>({id:`source:${b.id}:${i}`,source,requiredText:[source]}));const at=additions.get(b.start)??[];at.push({order:b.targetStart,entries});additions.set(b.start,at);}
+ const afterUnits=[];for(let i=0;i<=units.length;i++){for(const addition of (additions.get(i)??[]).sort((a,b)=>a.order-b.order))afterUnits.push(...addition.entries);if(i<units.length&&!deleted.has(units[i].id))afterUnits.push(units[i]);}
+ if(new Set(afterUnits.map(u=>u.id)).size!==afterUnits.length)throw Error('反映する原稿が重複しています');
+ return {changeSetId:current.id,targetSnapshotId:current.targetSnapshotId,baseContentToken:current.baseContentToken,afterUnits,sourceEdits:selected,retainRefs:units.filter(u=>!deleted.has(u.id)).map(u=>u.source)};
+}

@@ -1,5 +1,4 @@
 import { sourceUnits, validatePlan } from './core.js';
-import { confirmedPageIndex, confirmedPrefix } from './confirmation.js';
 import { layoutWarnings, reflowLayout, validateLayout } from './layout.js';
 import { digest } from './revisions.js';
 
@@ -67,7 +66,6 @@ export async function contentBase(project) {
     source,
     panels,
     layout: project.layout,
-    confirmedThroughPanelId: project.confirmedThroughPanelId ?? null,
     draftScope: project.draftScope ?? null,
   })));
 }
@@ -85,32 +83,7 @@ function sceneContext(project, scene) {
     throw Error(`${scene.id} の既存コマは原文unitを完全には参照していません`);
   }
 
-  const protectedIds = new Set(confirmedPrefix(project).panelIds);
-  let protectedCount = 0;
-  for (let i = 0; i < oldPanels.length; i += 1) {
-    if (protectedIds.has(oldPanels[i].id)) {
-      if (i !== protectedCount) throw Error(`${scene.id} の確定済みprefixが連続していません`);
-      protectedCount += 1;
-    } else if (protectedCount && oldPanels.slice(i).some((panel) => protectedIds.has(panel.id))) {
-      throw Error(`${scene.id} の確定済みprefixが不正です`);
-    }
-  }
-  const protectedPanels = oldPanels.slice(0, protectedCount);
-  const protectedUnitIds = protectedPanels.flatMap((panel) => panel.unitIds ?? []);
-  if (!equal(protectedUnitIds, unitIds.slice(0, protectedUnitIds.length))) {
-    throw Error(`${scene.id} の確定済みprefixを変更する再計画はできません`);
-  }
-  const mutableUnits = units.slice(protectedUnitIds.length);
-  if (!mutableUnits.length) throw Error(`${scene.id} は全て確定済みです`);
-  return {
-    snapshot,
-    scene,
-    units,
-    oldPanels,
-    protectedPanels,
-    mutableOldPanels: oldPanels.slice(protectedCount),
-    mutableUnits,
-  };
+  return {snapshot,scene,units,oldPanels,mutableOldPanels:oldPanels,mutableUnits:units};
 }
 
 function planMatchesPanel(panel, plan) {
@@ -141,7 +114,6 @@ function replanPrompt(context, instruction) {
     ],
     instruction,
     scene: { id: context.scene.id, design: context.scene.design ?? '' },
-    protectedPrefix: context.protectedPanels.map((panel) => ({ id: panel.id, unitIds: panel.unitIds })),
     currentPanels: context.mutableOldPanels.map((panel) => ({
       id: panel.id,
       unitIds: panel.unitIds,
@@ -155,15 +127,7 @@ function replanPrompt(context, instruction) {
 
 function sceneCandidate(context, response, jobId) {
   const used = new Set();
-  const panels = context.protectedPanels.map((panel) => ({
-    id: panel.id,
-    unitIds: [...panel.unitIds],
-    prompt: panel.prompt,
-    characterIds: [...panel.characterIds],
-    reusePanelId: panel.id,
-    protected: true,
-    redraw: false,
-  }));
+  const panels = [];
   for (const [index, plan] of response.panels.entries()) {
     const old = context.mutableOldPanels.find((panel) => !used.has(panel.id) && planMatchesPanel(panel, plan));
     if (old) {
@@ -174,7 +138,6 @@ function sceneCandidate(context, response, jobId) {
         prompt: plan.prompt,
         characterIds: [...plan.characterIds],
         reusePanelId: old.id,
-        protected: false,
         redraw: false,
       });
     } else {
@@ -184,7 +147,6 @@ function sceneCandidate(context, response, jobId) {
         prompt: plan.prompt,
         characterIds: [...plan.characterIds],
         reusePanelId: null,
-        protected: false,
         redraw: true,
       });
     }
@@ -193,7 +155,6 @@ function sceneCandidate(context, response, jobId) {
     sceneId: context.scene.id,
     reason: response.reason,
     oldPanelIds: context.oldPanels.map((panel) => panel.id),
-    protectedPanelIds: context.protectedPanels.map((panel) => panel.id),
     retainedPanelIds: panels.filter((panel) => panel.reusePanelId).map((panel) => panel.id),
     redrawPanelIds: panels.filter((panel) => panel.redraw).map((panel) => panel.id),
     panels,
@@ -219,23 +180,20 @@ function panelFromCandidate(panel, sceneId, snapshotId, existingIds) {
 }
 
 function candidatePanelPlan(panel) {
-  if (!panel || typeof panel.id !== 'string' || !Array.isArray(panel.unitIds) || !panel.unitIds.length || typeof panel.prompt !== 'string' || !Array.isArray(panel.characterIds) || (typeof panel.reusePanelId !== 'string' && panel.reusePanelId !== null) || typeof panel.protected !== 'boolean' || typeof panel.redraw !== 'boolean') {
+  if (!panel || typeof panel.id !== 'string' || !Array.isArray(panel.unitIds) || !panel.unitIds.length || typeof panel.prompt !== 'string' || !Array.isArray(panel.characterIds) || (typeof panel.reusePanelId !== 'string' && panel.reusePanelId !== null) || typeof panel.redraw !== 'boolean') {
     throw Error('保存された内容再計画案が不正です');
   }
   return panel;
 }
 
 function materializeScene(project, context, scenePlan, allCurrentIds) {
-  if (!scenePlan || scenePlan.sceneId !== context.scene.id || !Array.isArray(scenePlan.panels) || !scenePlan.panels.length || !Array.isArray(scenePlan.oldPanelIds) || !Array.isArray(scenePlan.protectedPanelIds) || !Array.isArray(scenePlan.retainedPanelIds) || !Array.isArray(scenePlan.redrawPanelIds)) throw Error('保存された内容再計画案が不正です');
-  const protectedIds = new Set(context.protectedPanels.map((panel) => panel.id));
+  if (!scenePlan || scenePlan.sceneId !== context.scene.id || !Array.isArray(scenePlan.panels) || !scenePlan.panels.length || !Array.isArray(scenePlan.oldPanelIds) || !Array.isArray(scenePlan.retainedPanelIds) || !Array.isArray(scenePlan.redrawPanelIds)) throw Error('保存された内容再計画案が不正です');
   const oldById = new Map(context.oldPanels.map((panel) => [panel.id, panel]));
   const seen = new Set();
   const panels = scenePlan.panels.map((raw) => {
     const panel = candidatePanelPlan(raw);
     if (seen.has(panel.id)) throw Error('内容再計画案のコマIDが重複しています');
     seen.add(panel.id);
-    if (panel.protected !== protectedIds.has(panel.id)) throw Error('確定済みprefixの扱いが変わっています');
-    if (panel.protected && panel.reusePanelId !== panel.id) throw Error('確定済みprefixは再作画できません');
     if (panel.redraw !== !panel.reusePanelId) throw Error('再作画対象の記録が不正です');
     if (panel.reusePanelId) {
       const old = oldById.get(panel.reusePanelId);
@@ -249,7 +207,7 @@ function materializeScene(project, context, scenePlan, allCurrentIds) {
   if (!equal(actual, expected)) throw Error('内容再計画案が原文unitの完全性・順序を満たしていません');
   const expectedRetained = panels.filter((panel) => context.oldPanels.some((old) => old.id === panel.id)).map((panel) => panel.id);
   const expectedRedraw = panels.filter((panel) => !context.oldPanels.some((old) => old.id === panel.id)).map((panel) => panel.id);
-  if (!equal(scenePlan.oldPanelIds, context.oldPanels.map((panel) => panel.id)) || !equal(scenePlan.protectedPanelIds, [...protectedIds]) || !equal(scenePlan.retainedPanelIds, expectedRetained) || !equal(scenePlan.redrawPanelIds, expectedRedraw)) throw Error('内容再計画案の変更対象記録が不正です');
+  if (!equal(scenePlan.oldPanelIds, context.oldPanels.map((panel) => panel.id)) || !equal(scenePlan.retainedPanelIds, expectedRetained) || !equal(scenePlan.redrawPanelIds, expectedRedraw)) throw Error('内容再計画案の変更対象記録が不正です');
   return panels;
 }
 
@@ -261,7 +219,6 @@ function reflowForContent(project, nextPanels, removedIds, redrawPanelIds) {
   const firstRemoved = project.panels.find((panel) => removedIds.has(panel.id));
   const firstPageIndex = project.layout.pages.findIndex((page) => page.slots.some((slot) => slot.panelId === firstRemoved?.id));
   if (firstPageIndex < 0) throw Error('内容変更対象のコマがページに割り当てられていません');
-  if (firstPageIndex <= confirmedPageIndex(project)) throw Error('確定済みページを内容再計画の対象にできません');
   const cleared = structuredClone(project.layout);
   cleared.pages = cleared.pages.map((page, index) => index >= firstPageIndex ? {
     ...page,
@@ -383,7 +340,6 @@ export async function adoptContentReplan(project, candidate) {
     layout: structuredClone(project.layout),
     layoutHistory: structuredClone(project.layoutHistory ?? []),
     layoutRedo: structuredClone(project.layoutRedo ?? []),
-    confirmedThroughPanelId: project.confirmedThroughPanelId ?? null,
   };
   const after = {
     panels: structuredClone(materialized.panels),
@@ -392,7 +348,6 @@ export async function adoptContentReplan(project, candidate) {
     // history entry is the single safe Undo boundary for this operation.
     layoutHistory: [],
     layoutRedo: [],
-    confirmedThroughPanelId: project.confirmedThroughPanelId ?? null,
   };
   return {
     ...project,

@@ -78,7 +78,7 @@ export function validateEditPlan(project, plan, context) {
     } else if (op.kind === 'crop') {
       if (!p.image || !exact(op.args,['x','y','zoom'])) throw Error('画像配置の対象・引数が不正です');
       validateCrop(op.args);
-      preview = changeLayout(preview, {...preview.layout,imageCrops:{...preview.layout.imageCrops,[p.id]:op.args}},'画像配置');
+      preview = changeLayout(preview, {...preview.layout,imageCrops:{...preview.layout.imageCrops,[p.id]:op.args}},'画像配置',{pageIds:[context.pageId]});
     } else if (op.kind === 'layout') {
       if (!exact(op.args,['pages']) || !Array.isArray(op.args.pages) || op.args.pages.length !== 1 || op.args.pages[0].id !== context.pageId) throw Error('コマ割りは表示ページだけを変更できます');
       const before = preview.layout.pages.find(pg => pg.id === context.pageId);
@@ -87,7 +87,7 @@ export function validateEditPlan(project, plan, context) {
       const layout = {...preview.layout,pages:preview.layout.pages.map(pg=>pg.id===context.pageId?op.args.pages[0]:pg)};
       validateLayout(layout,preview.panels);
       if(layoutWarnings(layout,preview.panels).length) throw Error('枠の重なり・未割当・読書順を確認してください');
-      preview=changeLayout(preview,layout,'コマ割り');
+      preview=changeLayout(preview,layout,'コマ割り',{pageIds:[context.pageId]});
     } else if(commands[op.kind].runner) {
       if(!p.image)throw Error('採用済み作画が必要です');
       if(['resolution','finishing'].includes(op.kind) && !exact(op.args,[]))throw Error('操作の引数が不正です');
@@ -114,10 +114,10 @@ export function undoEdit(project, redo=false) {
   if(!entry) return project;
   if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(entry.contentReplan) {
-    const currentState=[project.panels,project.layout,project.layoutHistory??[],project.layoutRedo??[],project.confirmedThroughPanelId??null];
-    const expectedState=redo?[entry.panels,entry.layout,entry.layoutHistory??[],entry.layoutRedo??[],entry.confirmedThroughPanelId??null]:[entry.after.panels,entry.after.layout,entry.after.layoutHistory??[],entry.after.layoutRedo??[],entry.after.confirmedThroughPanelId??null];
+    const currentState=[project.panels,project.layout,project.layoutHistory??[],project.layoutRedo??[]];
+    const expectedState=redo?[entry.panels,entry.layout,entry.layoutHistory??[],entry.layoutRedo??[]]:[entry.after.panels,entry.after.layout,entry.after.layoutHistory??[],entry.after.layoutRedo??[]];
     if(JSON.stringify(currentState)!==JSON.stringify(expectedState)) throw Error('別の編集があるため先にその操作を戻してください');
-    const state=redo?entry.after:{panels:entry.panels,layout:entry.layout,layoutHistory:entry.layoutHistory??[],layoutRedo:entry.layoutRedo??[],confirmedThroughPanelId:entry.confirmedThroughPanelId??null};
+    const state=redo?entry.after:{panels:entry.panels,layout:entry.layout,layoutHistory:entry.layoutHistory??[],layoutRedo:entry.layoutRedo??[]};
     return {...project,...state,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?(project.editRedo??[]).slice(0,-1):[...(project.editRedo??[]),entry]};
   }
   if(!entry.edit) {

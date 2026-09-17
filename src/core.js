@@ -1,3 +1,4 @@
+import {textForRefs} from './source-refs.js';
 // Pure domain logic. Source text is never produced by a language model.
 export function orderedScenes(manifest, episodeId) {
   if (!Array.isArray(manifest.episodes) || !Array.isArray(manifest.scenes)) throw Error('manifest の形式が不正です');
@@ -38,6 +39,7 @@ export function affectedScenes(previous, next) {
   return next.scenes.filter(s => settingsChanged || !previous.scenes.some(p => p.id === s.id && p.text === s.text && p.design === s.design)).map(s => s.id);
 }
 export function sourceForPanel(panel, snapshot) {
+  if(panel.sourceRefs)return textForRefs(panel.sourceRefs,Array.isArray(snapshot)?snapshot:[snapshot]);
   const scene = snapshot.scenes.find(s => s.id === panel.sceneId);
   if (!scene) throw Error('原作スナップショットがありません');
   const units = sourceUnits(scene.id, scene.text);
