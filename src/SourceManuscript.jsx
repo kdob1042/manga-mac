@@ -7,7 +7,7 @@ export default function SourceManuscript({project,busy=false,onApply,current}){
  useEffect(()=>{setSelection({id:null,ids:[]});setError('');},[view?.changes?.id,project.workId]);
  const snapshot=project.snapshots.find(s=>s.id===project.active);
  if(!snapshot)return <section aria-label="原稿"><h2>原稿</h2><p>GitHubから原稿を取り込むとここで確認できます。</p></section>;
- if(view?.error)return <section aria-label="原稿"><h2>原稿</h2><p role="status">原稿の反映状態を確認する準備ができていません。{view.error}</p>{snapshot.scenes.map(scene=><section key={scene.id}><h3>{scene.id}</h3><pre className="source-text">{scene.text}</pre></section>)}</section>;
+ if(view?.error)return <section aria-label="原稿"><h2>原稿</h2><p role="status">原稿と漫画の対応を確認できないため、現在は本文のみ表示しています。</p>{snapshot.scenes.map(scene=><section key={scene.id}><h3>{scene.id}</h3><pre className="source-text">{scene.text}</pre></section>)}</section>;
  const {changes,rows,resolve}=view,ids=selection.id===changes.id?selection.ids:[];
  const toggle=id=>{setError('');setSelection({id:changes.id,ids:toggleSourceGroup(changes,ids,id)});};
  const parts=list=>list.map(({ref,changed},i)=><React.Fragment key={i}>{i>0&&!(list[i-1].ref.snapshotId===ref.snapshotId&&list[i-1].ref.sceneId===ref.sceneId&&list[i-1].ref.endCp===ref.startCp)&&'\n\n'}{changed?<mark>{resolve(ref)}</mark>:resolve(ref)}</React.Fragment>);
