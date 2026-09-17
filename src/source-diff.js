@@ -7,9 +7,10 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
  const target=project.snapshots.find(s=>s.id===targetSnapshotId);if(!target)throw Error('対象原稿がありません');
  const resolve=sourceResolver(project.snapshots),old=(project.sourceApplication?.units??[]).map(u=>({...u,text:resolve(u.source)})),fresh=tokenizeSnapshot(target);
  const oldCount=frequencies(old),newCount=frequencies(fresh),oldKeys=old.map(key),newKeys=fresh.map(key);
- const token=project.contentToken??JSON.stringify([project.active,project.sourceApplication,project.panels,project.layout]);
- const id=JSON.stringify([project.workId??'local',token,targetSnapshotId]);
- const result={id,workId:project.workId??'local',targetSnapshotId,baseContentToken:token,budget,blocks:[]};
+ if(typeof project.contentToken!=='string'||!project.contentToken||typeof project.workId!=='string'||!project.workId)throw Error('保存された作品の基準tokenがありません');
+ const token=project.contentToken;
+ const id=JSON.stringify([project.workId,token,targetSnapshotId]);
+ const result={id,workId:project.workId,targetSnapshotId,baseContentToken:token,budget,blocks:[]};
  if(equal(oldKeys,newKeys))return result;
  const coarse=old.length+fresh.length>(budget.maxUnits??4000);
  const diff=coarse?undefined:diffArrays(oldKeys,newKeys,{timeout:budget.timeout??100,maxEditLength:budget.maxEditLength??2000});
@@ -42,4 +43,15 @@ export function buildExpectedApplication(project,changeset,selectedBlockIds){
  const afterUnits=[];for(let i=0;i<=units.length;i++){for(const addition of (additions.get(i)??[]).sort((a,b)=>a.order-b.order))afterUnits.push(...addition.entries);if(i<units.length&&!deleted.has(units[i].id))afterUnits.push(units[i]);}
  if(new Set(afterUnits.map(u=>u.id)).size!==afterUnits.length)throw Error('反映する原稿が重複しています');
  return {changeSetId:current.id,targetSnapshotId:current.targetSnapshotId,baseContentToken:current.baseContentToken,afterUnits,sourceEdits:selected,retainRefs:units.filter(u=>!deleted.has(u.id)).map(u=>u.source)};
+}
+
+// Highlighting never changes the selectable block or its immutable source refs.
+export function highlightSourceChange(snapshots,oldRefs,newRefs,budget={}){
+ const resolve=sourceResolver(snapshots);
+ const tokens=refs=>refs.flatMap(ref=>[...resolve(ref)].map((text,i)=>({text,ref:{...ref,startCp:ref.startCp+i,endCp:ref.startCp+i+1}})));
+ const old=tokens(oldRefs),fresh=tokens(newRefs),oldFlags=old.map(()=>true),newFlags=fresh.map(()=>true);
+ const parts=old.length+fresh.length>(budget.maxCodePoints??20000)?undefined:diffArrays(old.map(t=>t.text),fresh.map(t=>t.text),{timeout:budget.timeout??50,maxEditLength:budget.maxEditLength??2000});
+ let a=0,b=0;if(parts)for(const part of parts){if(part.removed)a+=part.count;else if(part.added)b+=part.count;else {for(let i=0;i<part.count;i++){oldFlags[a+i]=false;newFlags[b+i]=false;}a+=part.count;b+=part.count;}}
+ const ranges=(list,flags)=>{const result=[];for(const [i,token] of list.entries()){const previous=result.at(-1);if(previous&&previous.changed===flags[i]&&previous.ref.snapshotId===token.ref.snapshotId&&previous.ref.sceneId===token.ref.sceneId&&previous.ref.endCp===token.ref.startCp)previous.ref.endCp=token.ref.endCp;else result.push({ref:{...token.ref},changed:flags[i]});}return result;};
+ return {old:ranges(old,oldFlags),new:ranges(fresh,newFlags),coarse:!parts};
 }

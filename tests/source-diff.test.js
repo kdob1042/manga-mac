@@ -22,3 +22,9 @@ test('partial import followed by revision retains unapplied additions; repeated 
 test('unique moves reuse old unit identities and references; stale selections are rejected',()=>{
  const p=fixture(['A','B','C'],['B','C','A']),c=buildChangeSet(p);assert.equal(c.blocks.length,1);assert.equal(c.blocks[0].kind,'move');const result=buildExpectedApplication(p,c,[c.blocks[0].id]);assert.deepEqual(result.afterUnits.map(u=>u.id),['u1','u2','u0']);assert.equal(result.afterUnits[2].source.snapshotId,'old');p.contentToken='changed';assert.throws(()=>buildExpectedApplication(p,c,[c.blocks[0].id]),/選び直/);
 });
+test('character highlights use exact scalar ranges without changing block selection',async()=>{
+ const {highlightSourceChange}=await import('../src/source-diff.js'),p=fixture(['日本😀です'],['日本😺です']),c=buildChangeSet(p),before=structuredClone(c);
+ const out=highlightSourceChange(p.snapshots,[p.sourceApplication.units[0].source],c.blocks[0].newRefs),resolve=sourceResolver(p.snapshots);
+ assert.deepEqual(out.old.filter(r=>r.changed).map(r=>resolve(r.ref)),['😀']);assert.deepEqual(out.new.filter(r=>r.changed).map(r=>resolve(r.ref)),['😺']);assert.deepEqual(c,before);
+ assert.equal(highlightSourceChange(p.snapshots,[p.sourceApplication.units[0].source],c.blocks[0].newRefs,{maxCodePoints:1}).coarse,true);
+});
