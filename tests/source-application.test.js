@@ -14,3 +14,7 @@ test('split dialogue preserves exact coverage and rejects duplicate or omitted l
  const duplicate=structuredClone(next);duplicate.panels[0].lettering.boxes.push(duplicate.panels[0].lettering.boxes[0]);assert.throws(()=>validateApplication(duplicate),/欠落・重複/);
  p.lettering.boxes.shift();assert.throws(()=>validateApplication(next),/欠落・重複/);
 });
+test('applied content requires unique placement and reference reading order, even for repeated text',async()=>{
+ const next=await upgradeSourceProject(fixture());next.layout.pages[0].slots=[];assert.throws(()=>validateApplication(next),/配置/);
+ const p=await upgradeSourceProject(fixture());p.sourceApplication.units.reverse();assert.throws(()=>validateApplication(p),/読書順/);
+});

@@ -46,17 +46,28 @@ export function migrateSourceApplication(project){
 }
 export function validateApplication(project,units=project.sourceApplication?.units??[]){
  const resolve=sourceResolver(project.snapshots),seen=new Set(),consumed=[];
+ const placed=(project.layout?.pages??[]).flatMap(page=>page.slots.map(slot=>slot.panelId)).filter(Boolean);
+ const ordered=placed.map(id=>project.panels.find(p=>p.id===id)).filter(Boolean);
  for(const unit of units){
   if(!unit.id||seen.has(unit.id)||!Array.isArray(unit.requiredText))throw Error('反映原稿の識別子が不正です');seen.add(unit.id);resolve(unit.source);
   if(consumed.some(r=>intersect(r,unit.source)))throw Error('同じ原文を重複して反映できません');consumed.push(unit.source);
   for(const ref of unit.requiredText){resolve(ref);if(!covers([ref],[unit.source]))throw Error('掲載する台詞が原稿単位の外にあります');}
-  const linked=project.panels.filter(p=>(p.sourceRefs??[]).some(r=>intersect(r,unit.source)));
+  const linked=ordered.filter(p=>(p.sourceRefs??[]).some(r=>intersect(r,unit.source)));
+  if(project.panels.some(p=>(p.sourceRefs??[]).some(r=>intersect(r,unit.source))&&placed.filter(id=>id===p.id).length!==1))throw Error('原稿に対応するコマの配置が欠落・重複しています');
   if(!linked.length||linked.some(p=>!p.image)||!covers([unit.source],linked.flatMap(p=>p.sourceRefs)))throw Error('原稿に対応する作画が未完成です');
   const boxes=linked.flatMap(p=>p.lettering?.boxes??[]),refs=boxes.flatMap(b=>b.sourceRefs??[]).filter(r=>intersect(r,unit.source));
   if(!covers(unit.requiredText,refs,{exact:true}))throw Error('掲載する台詞の欠落・重複があります');
-  const expected=unit.requiredText.map(resolve).join(''),actual=refs.map(resolve).join('');if(expected!==actual)throw Error('掲載する台詞の順序が不正です');
+  if(!sameRefOrder(unit.requiredText,refs))throw Error('掲載する台詞の順序が不正です');
  }
+ const required=units.flatMap(u=>u.requiredText),shown=ordered.flatMap(p=>p.lettering?.boxes??[]).flatMap(b=>b.sourceRefs??[]).filter(r=>required.some(e=>intersect(e,r)));
+ if(!sameRefOrder(required,shown))throw Error('掲載する台詞の読書順が不正です');
  return true;
+}
+function sameRefOrder(expected,actual){
+ let i=0,j=0,a=expected[0]?.startCp,b=actual[0]?.startCp;
+ while(i<expected.length&&j<actual.length){const e=expected[i],r=actual[j];if(e.snapshotId!==r.snapshotId||e.sceneId!==r.sceneId||a!==b)return false;
+ const end=Math.min(e.endCp,r.endCp);a=end;b=end;if(end===e.endCp){i++;a=expected[i]?.startCp;}if(end===r.endCp){j++;b=actual[j]?.startCp;}}
+ return i===expected.length&&j===actual.length;
 }
 export function buildAffectedScope(project,sourceEdits){
  const ids=new Set(sourceEdits.flatMap(e=>e.oldUnitIds)),units=(project.sourceApplication?.units??[]).filter(u=>ids.has(u.id));

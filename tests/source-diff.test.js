@@ -7,6 +7,11 @@ test('all/none selections across all binary paragraph sequences preserve exact t
  for(const old of arrays)for(const fresh of arrays){const p=fixture(old,fresh),c=buildChangeSet(p);
  assert.deepEqual(text(p,buildExpectedApplication(p,c,[]).afterUnits),old);
  assert.deepEqual(text(p,buildExpectedApplication(p,c,c.blocks.map(b=>b.id)).afterUnits),fresh);
+ for(let mask=0;mask<2**c.blocks.length;mask++){
+  const selected=c.blocks.filter((_,i)=>mask&(1<<i)).map(b=>b.id),after=buildExpectedApplication(p,c,selected);
+  const partial={...p,contentToken:`partial:${mask}`,sourceApplication:{version:1,units:after.afterUnits}},remaining=buildChangeSet(partial);
+  assert.deepEqual(text(partial,buildExpectedApplication(partial,remaining,remaining.blocks.map(b=>b.id)).afterUnits),fresh);
+ }
  }
 });
 test('partial import followed by revision retains unapplied additions; repeated dialogue is ambiguous',()=>{
