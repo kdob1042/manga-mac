@@ -7,11 +7,14 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 binary = str(Path(sys.argv[1]).resolve(strict=True))
 worker = Path(__file__).with_name('worker.py').resolve()
 root = Path(sys.argv[2]).resolve()
 root.mkdir(parents=True, exist_ok=True)
+web_root = root / 'web-assets'
+web_root.mkdir(exist_ok=True)
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -32,7 +35,7 @@ original = sha(source)
 def operation(name, source, operation, valid=True):
     out = root / name
     out.mkdir()
-    result = run(worker, {'input': str(source), 'input_hash': sha(source), 'library_root': str(root), 'output_root': str(out), 'operation': operation})
+    result = run(worker, {'input': str(source), 'input_hash': sha(source), 'library_root': str(root), 'web_asset_root': str(web_root), 'output_root': str(out), 'operation': operation})
     if not valid:
         assert result.returncode != 0 and not (out / 'result.json').exists()
         return None
@@ -170,3 +173,54 @@ operation('reject-direct-aim', source, {'kind':'aim','location':[0,0,0],'target'
 operation('reject-direct-light', source, {'kind':'light','object':'Light','energy':-1,'color':[1,1,1]}, False)
 (root/'acceptance-direction.json').write_text(json.dumps({'placement':'pass','camera_aim':'pass','lighting':'pass','capture':'pass','source_unchanged':'pass','invalid_operations':'pass','real_AI':'not_run','Mac':'not_run'}))
 print('Actual Blender AI-operation primitives: placement, aim, lighting, capture and rejection passed')
+
+# WEB-ASSET: direct files and ZIP bundles use fixed Blender importers and retain provenance.
+triangle = "o WebTriangle\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n"
+direct_folder = web_root / 'direct'
+direct_folder.mkdir()
+direct_obj = direct_folder / 'triangle.obj'
+direct_obj.write_text(triangle)
+direct_ref = {'file': 'direct/triangle.obj', 'hash': sha(direct_obj)}
+web_catalog = operation('web-catalog', source, {'kind': 'webcatalog', **direct_ref})
+candidate = web_catalog['web_asset_candidates'][0]
+assert candidate == {'entry': 'triangle.obj', 'format': 'obj', 'asset_type': None,
+                     'name': None, 'label': 'triangle.obj'}
+provenance = {'source_url': 'https://assets.example/triangle.obj',
+              'source_page': 'https://assets.example/triangle', 'license': 'CC0 1.0'}
+selected = {key: candidate[key] for key in ['entry', 'format', 'asset_type', 'name']}
+web_import = operation('web-import', root / 'web-catalog/checkpoint.blend',
+                       {'kind': 'webimport', **direct_ref, **selected, **provenance})
+assert web_import['imported_web_asset']['license'] == 'CC0 1.0'
+assert web_import['imported_web_asset']['datablocks']
+inspect_web = root / 'inspect-web.py'
+inspect_web.write_text("import bpy\nbpy.ops.wm.open_mainfile(filepath=" + repr(str(root / 'web-import/checkpoint.blend')) + ", load_ui=False, use_scripts=False)\nobj=bpy.data.objects['WebTriangle']\nassert obj['manga_mac_source_url']=='https://assets.example/triangle.obj'\nassert obj['manga_mac_license']=='CC0 1.0'\n")
+assert run(inspect_web).returncode == 0
+
+bundle_folder = web_root / 'bundle'
+bundle_folder.mkdir()
+bundle = bundle_folder / 'triangle.zip'
+with zipfile.ZipFile(bundle, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr('model/triangle.obj', triangle)
+bundle_ref = {'file': 'bundle/triangle.zip', 'hash': sha(bundle)}
+bundle_catalog = operation('web-zip-catalog', root / 'web-import/checkpoint.blend',
+                           {'kind': 'webcatalog', **bundle_ref})
+zip_candidate = bundle_catalog['web_asset_candidates'][0]
+assert zip_candidate['entry'] == 'model/triangle.obj'
+zip_selected = {key: zip_candidate[key] for key in ['entry', 'format', 'asset_type', 'name']}
+bundle_import = operation('web-zip-import', root / 'web-zip-catalog/checkpoint.blend',
+                          {'kind': 'webimport', **bundle_ref, **zip_selected, **provenance})
+assert bundle_import['imported_web_asset']['entry'] == 'model/triangle.obj'
+assert not (root / 'web-zip-import/web-import').exists()
+
+unsafe = bundle_folder / 'unsafe.zip'
+with zipfile.ZipFile(unsafe, 'w') as archive:
+    archive.writestr('../escape.obj', triangle)
+operation('reject-web-zip-escape', root / 'web-zip-import/checkpoint.blend',
+          {'kind': 'webcatalog', 'file': 'bundle/unsafe.zip', 'hash': sha(unsafe)}, False)
+operation('reject-web-stale', root / 'web-zip-import/checkpoint.blend',
+          {'kind': 'webcatalog', 'file': 'direct/triangle.obj', 'hash': '0' * 64}, False)
+(root/'acceptance-web-assets.json').write_text(json.dumps({
+    'direct_obj_import': 'pass', 'zip_bundle_import': 'pass', 'provenance': 'pass',
+    'archive_escape_rejected': 'pass', 'source_unchanged': sha(source) == original,
+    'network_download': 'not_run', 'Mac': 'not_run'}))
+print('Actual Blender web-asset catalog, import, provenance and ZIP rejection passed')

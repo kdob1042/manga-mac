@@ -89,6 +89,21 @@ pub enum Operation {
         asset_type: String,
         name: String,
     },
+    Webcatalog {
+        file: String,
+        hash: String,
+    },
+    Webimport {
+        file: String,
+        hash: String,
+        entry: String,
+        format: String,
+        asset_type: Option<String>,
+        name: Option<String>,
+        source_url: String,
+        source_page: Option<String>,
+        license: String,
+    },
     Camera {
         lens: f64,
     },
@@ -459,6 +474,19 @@ fn sync_output(folder: &Path) -> Result<(), String> {
 fn bounded(v: &[f64; 3], limit: f64) -> bool {
     v.iter().all(|n| n.is_finite() && n.abs() <= limit)
 }
+fn relative_path(value: &str, max: usize) -> bool {
+    !value.is_empty()
+        && value.len() <= max
+        && !value.contains('\\')
+        && !value.starts_with('/')
+        && !value
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        && !value.chars().any(char::is_control)
+}
+fn https_reference(value: &str) -> bool {
+    value.starts_with("https://") && value.len() <= 4096 && !value.chars().any(char::is_control)
+}
 pub fn validate_operation(operation: &Operation) -> Result<(), String> {
     match operation {
         Operation::Camera { lens } if !lens.is_finite() || !(10.0..=250.0).contains(lens) => {
@@ -483,6 +511,46 @@ pub fn validate_operation(operation: &Operation) -> Result<(), String> {
             || name.len() > 256 =>
         {
             return Err("素材参照が不正です".into())
+        }
+        Operation::Webcatalog { file, hash }
+            if !relative_path(file, 4096)
+                || hash.len() != 64
+                || !hash.bytes().all(|b| b.is_ascii_hexdigit()) =>
+        {
+            return Err("Web素材参照が不正です".into())
+        }
+        Operation::Webimport {
+            file,
+            hash,
+            entry,
+            format,
+            asset_type,
+            name,
+            source_url,
+            source_page,
+            license,
+        } if !relative_path(file, 4096)
+            || !relative_path(entry, 4096)
+            || hash.len() != 64
+            || !hash.bytes().all(|b| b.is_ascii_hexdigit())
+            || !matches!(format.as_str(), "blend" | "glb" | "gltf" | "fbx" | "obj")
+            || !https_reference(source_url)
+            || source_page
+                .as_ref()
+                .is_some_and(|value| !https_reference(value))
+            || license.is_empty()
+            || license.len() > 200
+            || license.chars().any(char::is_control)
+            || (format == "blend"
+                && (!matches!(
+                    asset_type.as_deref(),
+                    Some("OBJECT" | "COLLECTION" | "ACTION")
+                ) || name
+                    .as_ref()
+                    .is_none_or(|value| value.is_empty() || value.len() > 256)))
+            || (format != "blend" && (asset_type.is_some() || name.is_some())) =>
+        {
+            return Err("Web素材の取込指定が不正です".into())
         }
         Operation::Pose { rig, action, frame }
             if rig.is_empty()
@@ -574,7 +642,9 @@ pub async fn execute(
         current
     };
     let folder = root.join("blender").join(&request.request_id);
-    let result = run(&current, &folder, &request.operation).await;
+    let web_root = root.join("web-assets");
+    std::fs::create_dir_all(&web_root).map_err(|_| error())?;
+    let result = run(&current, &folder, &web_root, &request.operation).await;
     let mut db = db.lock().map_err(|_| error())?;
     match result {
         Ok(result) => {
@@ -624,7 +694,12 @@ pub async fn execute(
         }
     }
 }
-async fn run(session: &Session, folder: &Path, operation: &Operation) -> Result<Value, String> {
+async fn run(
+    session: &Session,
+    folder: &Path,
+    web_root: &Path,
+    operation: &Operation,
+) -> Result<Value, String> {
     if hash(&session.checkpoint)? != session.hash {
         return Err("Blenderの入力版が変更されています".into());
     }
@@ -633,7 +708,7 @@ async fn run(session: &Session, folder: &Path, operation: &Operation) -> Result<
     // The executable script is fixed application content, never text from a model or job.
     let script = folder.with_extension("py");
     std::fs::write(&script, WORKER).map_err(|_| error())?;
-    let input = json!({"input":session.checkpoint,"input_hash":session.hash,"library_root":session.library,"output_root":folder,"operation":operation});
+    let input = json!({"input":session.checkpoint,"input_hash":session.hash,"library_root":session.library,"web_asset_root":web_root,"output_root":folder,"operation":operation});
     let mut command = tokio::process::Command::new(&session.binary);
     command.env_clear();
     for name in ["HOME", "TMPDIR", "PATH", "LANG", "DISPLAY", "XAUTHORITY"] {
