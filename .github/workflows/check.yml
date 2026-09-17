@@ -1,9 +1,10 @@
 name: Check and build Mac app
-# Pull requests always run a cheap classifier so skipped heavy jobs report a successful conclusion.
-# Normal code-change PRs run the Linux checks.
-# Docs-only PRs, dev-to-main promotions, and unchanged branch synchronizations reuse existing validation.
-# A merge to dev runs macOS validation only when the pushed tree contains code changes.
-# A merge to main packages code changes for distribution.
+# Pull requests always run a cheap classifier; heavy jobs are scoped to changed areas.
+# Normal code-change PRs run only the affected component checks.
+# Docs-only PRs, dev-to-main promotions, and unchanged synchronizations skip heavy jobs.
+# Shared app or dependency changes use the full safety net.
+# A merge to dev runs macOS validation only when native/app packaging files changed.
+# A merge to main packages app changes for distribution.
 on:
   push:
     branches: [dev, main]
@@ -27,20 +28,31 @@ jobs:
     name: classify changes
     runs-on: ubuntu-latest
     outputs:
-      run_heavy: ${{ steps.classify.outputs.run_heavy }}
+      run_web: ${{ steps.classify.outputs.run_web }}
+      run_storage: ${{ steps.classify.outputs.run_storage }}
+      run_llm: ${{ steps.classify.outputs.run_llm }}
+      run_blender: ${{ steps.classify.outputs.run_blender }}
+      run_mac: ${{ steps.classify.outputs.run_mac }}
+      run_release: ${{ steps.classify.outputs.run_release }}
+      run_ui: ${{ steps.classify.outputs.run_ui }}
+      run_live: ${{ steps.classify.outputs.run_live }}
+      run_restic: ${{ steps.classify.outputs.run_restic }}
+      run_blender_render: ${{ steps.classify.outputs.run_blender_render }}
+      run_audit: ${{ steps.classify.outputs.run_audit }}
       reason: ${{ steps.classify.outputs.reason }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Test change classifier
+        run: node --test scripts/classify-ci.test.js
       - id: classify
-        name: Decide validation scope
+        name: Classify changed paths
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF_NAME: ${{ github.ref_name }}
-          PR_BASE: ${{ github.event.pull_request.base.ref || '' }}
-          PR_HEAD: ${{ github.event.pull_request.head.ref || '' }}
+          CI_EVENT_NAME: ${{ github.event_name }}
+          CI_PR_BASE: ${{ github.event.pull_request.base.ref || '' }}
+          CI_PR_HEAD: ${{ github.event.pull_request.head.ref || '' }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha || '' }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           BEFORE_SHA: ${{ github.event.before || '' }}
@@ -48,49 +60,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          set_output() {
-            echo "run_heavy=$1" >> "$GITHUB_OUTPUT"
-            echo "reason=$2" >> "$GITHUB_OUTPUT"
-          }
-
-          if [[ "$EVENT_NAME" == "pull_request" ]]; then
-            if [[ "$PR_HEAD" == "dev" && "$PR_BASE" == "main" ]]; then
-              set_output false "dev-to-main-promotion"
-              exit 0
-            fi
-            # A main-to-dev sync is cheap only when its actual diff is empty or docs-only.
-            # A real main-side hotfix must still receive the full validation.
+          if [[ "$CI_EVENT_NAME" == "pull_request" ]]; then
             files="$(git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")"
-          elif [[ "$EVENT_NAME" == "push" ]]; then
+          elif [[ "$CI_EVENT_NAME" == "push" ]]; then
             if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
               files="$(git diff-tree --no-commit-id --name-only -r "$CURRENT_SHA")"
             else
               files="$(git diff --name-only "$BEFORE_SHA" "$CURRENT_SHA")"
             fi
           else
-            set_output true "manual-run"
-            exit 0
+            files=""
           fi
-
-          if [[ -z "$files" ]]; then
-            set_output false "no-file-change"
-            exit 0
-          fi
-
-          while IFS= read -r file; do
-            [[ -z "$file" ]] && continue
-            if [[ "$file" != docs/* && "$file" != *.md ]]; then
-              set_output true "code-change"
-              exit 0
-            fi
-          done <<< "$files"
-
-          set_output false "docs-only"
+          printf '%s\n' "$files" | node scripts/classify-ci.mjs >> "$GITHUB_OUTPUT"
 
   llm:
     needs: classify
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      needs.classify.outputs.run_llm == 'true' &&
       (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
@@ -115,13 +101,13 @@ jobs:
           env HTTP_PROXY=http://127.0.0.1:1 HTTPS_PROXY=http://127.0.0.1:1 ALL_PROXY=http://127.0.0.1:1 NO_PROXY= cargo test --offline --locked --manifest-path tests/llm/Cargo.toml
           cargo clippy --locked --manifest-path tests/llm/Cargo.toml --all-targets -- -D warnings
       - name: Audit exact candidate dependency closure
-        if: always()
+        if: always() && needs.classify.outputs.run_audit == 'true'
         run: |
           cargo install cargo-audit --version 0.22.2 --locked
           python scripts/audit_osv.py src-tauri/Cargo.lock review/osv.json
           cargo audit --file src-tauri/Cargo.lock --json > review/rustsec.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: always() && needs.classify.outputs.run_audit == 'true'
         with:
           name: SDK-candidate-review
           path: |
@@ -136,7 +122,7 @@ jobs:
   blender:
     needs: classify
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      needs.classify.outputs.run_blender == 'true' &&
       (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
@@ -149,6 +135,7 @@ jobs:
           toolchain: 1.98.1
           components: rustfmt, clippy
       - name: Download fixed official Blender and verify publisher checksum
+        if: needs.classify.outputs.run_blender_render == 'true'
         run: |
           mkdir -p "$RUNNER_TEMP/blender"
           cd "$RUNNER_TEMP/blender"
@@ -159,6 +146,7 @@ jobs:
           echo "BLENDER_BIN=$RUNNER_TEMP/blender/blender-4.5.13-linux-x64/blender" >> "$GITHUB_ENV"
           echo "BLENDER_FIXTURES=$GITHUB_WORKSPACE/blender-results" >> "$GITHUB_ENV"
       - name: Actual Blender camera render and save/reopen
+        if: needs.classify.outputs.run_blender_render == 'true'
         run: python blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
       - name: Validate committed Blender test lock
         run: |
@@ -169,7 +157,7 @@ jobs:
           cargo test --locked --manifest-path tests/blender/Cargo.toml
           cargo clippy --locked --manifest-path tests/blender/Cargo.toml --all-targets -- -D warnings
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: always() && needs.classify.outputs.run_blender_render == 'true'
         with:
           name: Blender-candidate-review
           path: |
@@ -182,7 +170,7 @@ jobs:
   storage:
     needs: classify
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      needs.classify.outputs.run_storage == 'true' &&
       (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
@@ -196,9 +184,11 @@ jobs:
       - name: Install media probe
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install checksum-pinned backup tools
+        if: needs.classify.outputs.run_restic == 'true'
         run: sh scripts/install-backup-tools.sh "$RUNNER_TEMP/manga-backup-tools"
       - run: cargo test --locked --manifest-path tests/storage/Cargo.toml
       - name: Actual restic encrypted roundtrip and retention
+        if: needs.classify.outputs.run_restic == 'true'
         env:
           RESTIC_TEST_BIN: ${{ runner.temp }}/manga-backup-tools/restic
           RCLONE_TEST_BIN: ${{ runner.temp }}/manga-backup-tools/rclone
@@ -209,7 +199,7 @@ jobs:
   web:
     needs: classify
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      needs.classify.outputs.run_web == 'true' &&
       (github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
@@ -223,14 +213,19 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:ui
+      - name: Install browser for UI tests
+        if: needs.classify.outputs.run_ui == 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Browser UI tests
+        if: needs.classify.outputs.run_ui == 'true'
+        run: npm run test:ui
       - name: Real Live Manga exporter integration
+        if: needs.classify.outputs.run_live == 'true'
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
           node scripts/live-e2e.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: always()
+        if: always() && needs.classify.outputs.run_ui == 'true'
         with:
           name: UI-test-results
           path: test-results/
@@ -240,9 +235,14 @@ jobs:
     # The macOS runner validates every non-doc change after it is merged to dev.
     # PRs use the Linux jobs above; main uses the release-only job below.
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      always() &&
+      needs.classify.outputs.run_mac == 'true' &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
-      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev'))
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/dev')) &&
+      (needs.web.result == 'success' || needs.web.result == 'skipped') &&
+      (needs.storage.result == 'success' || needs.storage.result == 'skipped') &&
+      (needs.llm.result == 'success' || needs.llm.result == 'skipped') &&
+      (needs.blender.result == 'success' || needs.blender.result == 'skipped')
     runs-on: macos-26
     needs: [classify, web, storage, llm, blender]
     timeout-minutes: 90
@@ -301,7 +301,7 @@ jobs:
     # main is packaged only after the corresponding dev commit was validated.
     needs: classify
     if: >
-      needs.classify.outputs.run_heavy == 'true' &&
+      needs.classify.outputs.run_release == 'true' &&
       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'))
     runs-on: macos-26
