@@ -214,7 +214,6 @@
         },
         "text": {
           "type": "string",
-          "minLength": 1,
           "maxLength": 2000,
           "pattern": "^[^<>\\u0000-\\u0008]+$"
         },
