@@ -50,3 +50,14 @@
 .upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }
 .layout-editor .toolbar label { flex-wrap: nowrap; }
 .lettering-stage{position:relative;width:min(100%,480px);aspect-ratio:1;margin:12px 0}.lettering-stage canvas,.lettering-stage svg{position:absolute;width:100%;height:100%;inset:0}.lettering-stage svg{touch-action:none}.edit-candidate{border:1px solid #c4b7a6;padding:16px;margin:12px 0;border-radius:12px}.edit-candidate pre{white-space:pre-wrap;max-height:220px;overflow:auto}.draft-summary{padding:12px;background:#f4f1e9;border-radius:8px;margin:12px 0}
+
+.draft-controls details { margin: 12px 0; }
+.draft-controls label { display: block; margin: 8px 0; }
+.draft-controls input[type=checkbox] { width: auto; margin-right: 8px; }
+.proposal-comparison { display: flex; gap: 12px; }
+.proposal-comparison figure { margin: 0; width: 50%; }
+.proposal-comparison img { max-width: 100%; }
+
+.recognized-region { position: relative; max-width: 320px; }
+.recognized-region img { width: 100%; display: block; }
+.recognized-region span { position: absolute; border: 2px solid #d65030; background: #d6503020; pointer-events: none; }

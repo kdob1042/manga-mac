@@ -68,7 +68,7 @@ export async function prepareDraftLayout({current,commit,ask,cancelled}) {
     await commit({...next,jobs:next.jobs.map(j=>j.id===job.id?{...j,status:'complete'}:j)});
   }catch(e){await commit({...current(),jobs:current().jobs.map(j=>j.id===job.id?{...j,status:'failed'}:j)});throw e;}
 }
-export async function finishDraftLettering({current,commit,ask,cancelled,notify,check}) {
+export async function finishDraftLettering({current,commit,ask,cancelled,notify,check,recognize}) {
   const ids=current().panels.map(p=>p.id);
   for(const id of ids) {
     if(cancelled())return;
@@ -79,7 +79,8 @@ export async function finishDraftLettering({current,commit,ask,cancelled,notify,
     await commit({...p,jobs:[...p.jobs,job]});
     const base=editBase(current());
     try {
-      const layout=await proposeLettering(current(),panel,'初稿の文字配置',ask);
+      const visual=recognize?await recognize(current(),panel):null;
+      const layout=await proposeLettering(current(),panel,'初稿の文字配置',ask,visual);
       if(cancelled()||base!==editBase(current()))throw Error('文字配置を停止しました。作画は保存済みです');
       const next=setLettering(current(),id,layout);
       if(check)await check(next,id);

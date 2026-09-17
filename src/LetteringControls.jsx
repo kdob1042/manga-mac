@@ -1,3 +1,4 @@
+import {recognizeRegions} from './visual-regions';
 import React, { useState, useRef, useEffect } from 'react';
 import { defaultLettering, setLettering, validateLettering } from './lettering';
 import { drawLettering, imageOf, pagePNG } from './render';
@@ -55,7 +56,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
       <button disabled={box.locked} onClick={()=>change({tail:box.tail?null:[Math.min(1,box.x+box.width/2),Math.min(1,box.y+box.height+.08)]})}>{box.tail?'しっぽを外す':'しっぽを付ける'}</button>
     </>}
     <button onClick={()=>run('文字配置を保存中',()=>save(layout))}>文字配置を適用</button>
-    <button disabled={!model?.connectionId} onClick={()=>run('文字配置を提案中',async()=>{const p=current.current,base=editBase(p);const value=await proposeLettering(p,panel,'文字量に合わせて整えて', (prompt,schema)=>askLLM(model,{purpose:'lettering',prompt,schema}));await commit(executeLocalEdits(current.current,{base,context:editContext(p,pageIndex,panel.id,null),plan:{reason:'AI文字配置',operations:[{kind:'lettering',panelId:panel.id,args:value}]}}));})}>AIで文字を配置</button>
-    <small>ドラッグは1操作で保存。Escapeで取消。本文と順序を保持します。AI配置は画像内の顔・手の位置を認識しません。</small>
+    <button disabled={!model?.connectionId} onClick={()=>run('文字配置を提案中',async()=>{const p=current.current,base=editBase(p);const visual=model.visualEditing?await recognizeRegions(p,[panel.id],'文字配置で顔・手・重要な描写を避ける',(prompt,schema,images)=>askLLM(model,{purpose:'vision',prompt,schema,images}),imageOf):null;const value=await proposeLettering(p,panel,'文字量に合わせて整えて', (prompt,schema)=>askLLM(model,{purpose:'lettering',prompt,schema}),visual);await commit(executeLocalEdits(current.current,{base,context:editContext(p,pageIndex,panel.id,null),plan:{reason:'AI文字配置',operations:[{kind:'lettering',panelId:panel.id,args:value}]}}));})}>AIで文字を配置</button>
+    <small>ドラッグは1操作で保存。Escapeで取消。本文と順序を保持します。画像送信を有効にすると認識した顔・手の領域を避けます。認識結果の見た目も確認してください。</small>
   </fieldset>;
 }

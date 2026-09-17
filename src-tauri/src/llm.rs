@@ -35,6 +35,7 @@ pub enum Purpose {
     Translation,
     Edit,
     Lettering,
+    Vision,
     Classify,
     Probe,
 }
@@ -225,6 +226,9 @@ impl Connections {
         {
             return Err("LLM要求が上限または形式に適合しません".into());
         }
+        if request.purpose == Purpose::Vision && request.images.is_empty() {
+            return Err("対象認識には画像が必要です".into());
+        }
         let connection = self
             .entries
             .lock()
@@ -241,6 +245,7 @@ impl Connections {
                     | Purpose::Layout
                     | Purpose::Edit
                     | Purpose::Lettering
+                    | Purpose::Vision
             ) && connection.purpose == Purpose::Plan)
         {
             return Err("用途に対応する接続を選択してください".into());
@@ -567,6 +572,29 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
                             .contains(&op["kind"].as_str().unwrap_or(""))
                                 || !op["panelId"].is_string()
                                 || !op["args"].is_object()
+                        })
+                })
+            {
+                return Err(failure());
+            }
+        }
+        Purpose::Vision => {
+            if value.as_object().is_none_or(|o| o.len() != 3)
+                || !value["uncertain"].is_boolean()
+                || !value["reason"].is_string()
+                || value["regions"].as_array().is_none_or(|rs| {
+                    rs.len() > 32
+                        || rs.iter().any(|r| {
+                            !r["panelId"].is_string()
+                                || !r["label"].is_string()
+                                || !["edit", "avoid", "subject"]
+                                    .contains(&r["purpose"].as_str().unwrap_or(""))
+                                || r["rect"].as_array().is_none_or(|a| {
+                                    a.len() != 4
+                                        || a.iter().any(|v| {
+                                            v.as_f64().is_none_or(|n| !(0.0..=1.0).contains(&n))
+                                        })
+                                })
                         })
                 })
             {
