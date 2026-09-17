@@ -114,6 +114,56 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             return Err("Edit source hash mismatch".into());
         }
     }
+    if let Some(finishing) = job.get("finishing") {
+        let placement: Value =
+            serde_json::from_str(job["placement_key"].as_str().ok_or("Missing placement")?)
+                .map_err(err)?;
+        let slots: Vec<Value> = hydrated["layout"]["pages"]
+            .as_array()
+            .ok_or("Missing pages")?
+            .iter()
+            .flat_map(|p| p["slots"].as_array().into_iter().flatten())
+            .filter(|s| s["panelId"] == panel["id"])
+            .cloned()
+            .collect();
+        let panel_id = panel["id"].as_str().ok_or("Missing panel ID")?;
+        let current = json!({"active":hydrated["active"],"slots":slots,"crop":hydrated["layout"]["imageCrops"][panel_id]});
+        let uri = panel["image"].as_str().ok_or("Missing source image")?;
+        let bytes = STANDARD
+            .decode(uri.split_once(',').ok_or("Invalid source image")?.1)
+            .map_err(err)?;
+        if bytes.len() < 24 || &bytes[..8] != b"\x89PNG\r\n\x1a\n" {
+            return Err("Finishing requires PNG artwork".into());
+        }
+        let w = u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?) as u64;
+        let h = u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?) as u64;
+        let out_w = request["width"].as_u64().unwrap_or(0);
+        let out_h = request["height"].as_u64().unwrap_or(0);
+        if job["kind"] != "retake"
+            || finishing["method"] != "reference-regeneration"
+            || finishing != &context["panel"]["finishing"]
+            || placement != current
+            || slots.len() != 1
+            || finishing["parent_hash"] != hash(&bytes)
+            || finishing["parent_revision"] != panel["artwork_revision"]
+            || finishing["sourceWidth"] != w
+            || finishing["sourceHeight"] != h
+            || finishing["width"] != out_w
+            || finishing["height"] != out_h
+            || w == 0
+            || h == 0
+            || w > 4096
+            || h > 4096
+            || !(256..=1024).contains(&out_w)
+            || !(256..=1024).contains(&out_h)
+            || !out_w.is_multiple_of(64)
+            || !out_h.is_multiple_of(64)
+            || out_w * h != out_h * w
+            || request["original"].as_str().is_none()
+        {
+            return Err("Finishing source, placement or dimensions changed".into());
+        }
+    }
     let request_hash = hash(request.to_string().as_bytes());
     let mut metadata = json!({"context":context,"request_hash":request_hash});
     externalize(&mut metadata, &root.join("artifacts"))?;
@@ -299,6 +349,54 @@ mod tests {
         assert!(recover(&db, &root, "local-1").is_err());
         fs::write(dir.join("receipt.json"), vec![b' '; 4097]).unwrap();
         assert!(recover(&db, &root, "local-1").is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn finishing_reservation_checks_source_placement_and_protects_metadata() {
+        let (mut db, root, mut project, mut request) = setup();
+        let panel_id = project["panels"][0]["id"].clone();
+        let slot = json!({"id":"slot","panelId":panel_id,"points":[[0.1,0.1],[0.9,0.1],[0.9,0.9],[0.1,0.9]]});
+        project["layout"] = json!({"version":1,"knownPanelIds":[panel_id],"pages":[{"id":"page","slots":[slot.clone()]}]});
+        let placement = json!({"active":project["active"],"slots":[slot],"crop":null});
+        let bytes = STANDARD
+            .decode(
+                project["panels"][0]["image"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap()
+                    .1,
+            )
+            .unwrap();
+        let w = u32::from_be_bytes(bytes[16..20].try_into().unwrap());
+        let h = u32::from_be_bytes(bytes[20..24].try_into().unwrap());
+        let finishing = json!({"method":"reference-regeneration","sourceWidth":w,"sourceHeight":h,"width":256,"height":256,"parent_hash":hash(&bytes),"parent_revision":null});
+        project["jobs"][0]["kind"] = json!("retake");
+        project["jobs"][0]["placement_key"] = json!(placement.to_string());
+        project["jobs"][0]["finishing"] = finishing.clone();
+        save(&mut db, &root, &project.to_string()).unwrap();
+        request["job"] = project["jobs"][0].clone();
+        request["width"] = json!(256);
+        request["height"] = json!(256);
+        request["original"] = project["panels"][0]["image"].clone();
+        request["recovery"]["kind"] = json!("retake");
+        request["recovery"]["panel"]["generation"]["width"] = json!(256);
+        request["recovery"]["panel"]["generation"]["height"] = json!(256);
+        request["recovery"]["panel"]["finishing"] = finishing;
+        let mut bad = request.clone();
+        bad["recovery"]["panel"]["finishing"]["parent_hash"] = json!("wrong");
+        assert!(reserve(&mut db, &root, &bad).is_err());
+        let mut moved = project.clone();
+        moved["layout"]["imageCrops"] =
+            json!({panel_id.as_str().unwrap():{"zoom":2,"x":0.5,"y":0.5}});
+        save(&mut db, &root, &moved.to_string()).unwrap();
+        assert!(reserve(&mut db, &root, &request).is_err());
+        save(&mut db, &root, &project.to_string()).unwrap();
+        reserve(&mut db, &root, &request).unwrap();
+        assert!(reserve(&mut db, &root, &request).is_err());
+        project["jobs"][0]["finishing"]["width"] = json!(512);
+        assert!(save(&mut db, &root, &project.to_string()).is_err());
         fs::remove_dir_all(root).unwrap();
     }
 }

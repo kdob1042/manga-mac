@@ -65,7 +65,8 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (panel.image) refs.push({ id: panel.artwork_revision ?? panel.id, name: 'Previous accepted expression / style', image: panel.image, hash: await imageHash(panel.image) });
     instruction = [...(panel.instructions ?? []), instruction].filter(Boolean).join('\n');
   }
-  const [width, height] = generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution);
+  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution);
+  if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
     const { fitInput } = await import('./render');
     const fitted = await fitInput(source, width, height); source = fitted.image; mapping = fitted.mapping;
@@ -73,7 +74,7 @@ export async function generatePanel(panel, characters, original = null, instruct
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
   const request = imageRequest({ panel, references: refs, original: source, originalHash: source ? await imageHash(source) : null, width, height, seed, instruction, job, capture });
   request.recovery = { version: 1, kind: job?.kind,
-    panel: { ...panel, image: null, generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width, height, input_mapping: mapping, original_hash: request.original_hash, capture_revision: capture?.id ?? panel.capture_revision ?? null, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1,
+    panel: { ...panel, image: null, ...(job?.finishing ? {finishing:job.finishing} : {}), generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width, height, input_mapping: mapping, original_hash: request.original_hash, capture_revision: capture?.id ?? panel.capture_revision ?? null, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1,
       instructions: edit ? [...panel.instructions, instruction] : panel.instructions },
     ...(edit ? { original, original_hash: await imageHash(original), rect: edit.rect } : {}) };
   const image = await call('generate_image', { request });
