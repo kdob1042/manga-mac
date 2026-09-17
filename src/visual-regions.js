@@ -28,6 +28,7 @@ export function letteringRegions(project,id,visual) {
   const {letters,image}=geometry(project,id,visual.sizes[id]);
   return visual.regions.filter(r=>r.panelId===id).map(r=>({...r,rect:[(image.x+r.rect[0]*image.width-letters.x)/letters.width,(image.y+r.rect[1]*image.height-letters.y)/letters.height,r.rect[2]*image.width/letters.width,r.rect[3]*image.height/letters.height]}));
 }
+export function letteringFrame(project,id) {return geometry(project,id,{width:1,height:1}).letters;}
 export function checkVisualEdit(project,op,visual) {
   if(!visual)return;
   const relevant=visual.regions.filter(r=>r.panelId===op.panelId);

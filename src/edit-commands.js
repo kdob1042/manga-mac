@@ -135,7 +135,7 @@ export async function planEdit(project,context,instruction,ask,classify,recogniz
     if(new Set(context.previousTargets).size!==1)throw Error('直前の対象を一つに特定できません。コマ番号で指定してください');
     context.explicitTargets=[context.previousTargets[0]];
   }
-  const needsVisual=/顔|服|衣装|頭.*切れ|しっぽ.*(人物|由美|勇)|右側の人物|左側の人物/.test(normalized);
+  const needsVisual=/顔|服|衣装|頭.*切れ|しっぽ|手.*避け|右側の人物|左側の人物/.test(normalized);
   if(needsVisual&&!context.region) {
     if(!recognize)throw Error('画像の対象認識には接続設定で作画画像の送信を有効にするか、修正範囲を手動指定してください');
     const ids=context.explicitTargets.length?context.explicitTargets:context.selected?[context.selected]:context.panels.map(p=>p.id);

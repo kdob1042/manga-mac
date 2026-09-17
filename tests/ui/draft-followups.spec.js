@@ -37,7 +37,7 @@ test('selected-scene draft retains old manuscript; saved edit comparison survive
  expect(await page.evaluate(()=>window.saved.panels.map(p=>p.sceneId))).toEqual(['b']);expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(1);
  await page.getByLabel('編集の指示',{exact:true}).fill('1コマ目の画像を右へ');await page.getByRole('button',{name:'修正する ↑',exact:true}).click();await expect(page.getByRole('button',{name:'この編集を適用',exact:true})).toBeVisible();
  await page.reload();await page.getByText(/保存した編集候補（1件）/).click();await page.getByRole('button',{name:'変更前後を比較',exact:true}).click();await expect(page.getByRole('img',{name:'編集候補のページ',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'候補を開く',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.values(window.saved.layout.imageCrops)[0]?.zoom)).toBe(1.2);
+ await page.getByRole('button',{name:'候補を開く',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.values(window.saved.layout.imageCrops??{})[0]?.zoom)).toBe(1.2);
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='llm_request').length)).toBe(0);
  await page.getByText('制作する場面・保存した原稿',{exact:true}).click();const id=await page.evaluate(()=>window.saved.history.find(h=>h.draftCheckpoint).id);await page.getByLabel('保存した原稿',{exact:true}).selectOption(id);
  await expect.poll(()=>page.evaluate(()=>window.saved.panels[0].id)).toBe('old-panel');expect(await page.evaluate(()=>window.saved.history.filter(h=>h.draftCheckpoint).at(-1).panels[0].sceneId)).toBe('b');

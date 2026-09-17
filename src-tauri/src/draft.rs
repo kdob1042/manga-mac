@@ -15,7 +15,7 @@ pub fn validate(project: &Value) -> Result<(), String> {
                 .iter()
                 .map(|p| p["id"].as_str().ok_or("Missing panel ID"))
                 .collect::<Result<HashSet<_>, _>>()?;
-            crate::storage::layout::validate(&entry["layout"], Some(&ids))?;
+            super::layout::validate(&entry["layout"], Some(&ids))?;
             validate_scope(entry.get("draftScope"), project)?;
             for panel in panels {
                 if let Some(lettering) = panel.get("lettering") {
@@ -25,7 +25,7 @@ pub fn validate(project: &Value) -> Result<(), String> {
                         .iter()
                         .map(|v| v.as_str().ok_or("Invalid draft unit"))
                         .collect::<Result<Vec<_>, _>>()?;
-                    crate::storage::lettering::validate(lettering, Some(&units))?;
+                    super::lettering::validate(lettering, Some(&units))?;
                 }
             }
         }

@@ -78,3 +78,11 @@ test('compound invalid tail is rejected before local changes or generated calls;
  await assert.rejects(()=>executeEditSequence({current:()=>p,commit:async v=>{p=v;},candidate:candidate(p,ops),cancelled:()=>cancel,perform:async()=>{calls++;cancel=true;}}),/停止/);
  assert.equal(calls,1);assert.equal(p.jobs.at(-1).status,'partial');
 });
+
+test('previous-target reference is derived from a completed saved operation on the displayed page',async()=>{
+ const p=fixture();p.jobs=[{kind:'edit_proposal',status:'complete',context:{pageId:p.layout.pages[0].id},plan:{operations:[{kind:'crop',panelId:'p2'}]}}];
+ const ctx=editContext(p,0,null,null);
+ const result=await planEdit(p,ctx,'さっきのコマを少し右へ',async()=>JSON.stringify({reason:'直前の対象',operations:[{kind:'crop',panelId:'p2',args:{x:.4,y:.5,zoom:1}}]}));
+ assert.deepEqual(result.context.explicitTargets,['p2']);
+ await assert.rejects(()=>planEdit(p,editContext(p,1,null,null),'さっきのコマを右へ',async()=>assert.fail()),/一つに特定/);
+});

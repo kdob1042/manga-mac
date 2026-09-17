@@ -378,3 +378,14 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - Blender境界: `.blend`、GLB/glTF、FBX、OBJ、ZIPを固定Blender 4.5.13の既存APIで検査・取込。ZIPは相対パス、link禁止、4096件、展開1GB、個別512MB、圧縮率1000倍、候補200件の上限を検証する。
 - provenance: 取得SHA-256、queryを除いた取得元、任意の配布ページ、利用者が確認したライセンス表記を取込datablockへ保存。依存を既存packingでcheckpointへ固定し、展開用一時フォルダを削除する。ライセンスの正しさや利用権を自動判定したという意味ではない。
 - ローカル確認: Python構文、Node 67件、Web build成功。新PlaywrightはChromium実行ファイル未導入のため起動前に停止し、UI合格扱いしない。Rust fmt/test/clippy、固定Blenderのdirect OBJ／ZIP／provenance／path escape fixture、Mac GUI、実公開URL取得は対象PR CIまたは実機で別判定する。
+
+
+## 2026-09-17 PR #76：初稿と編集の後続実装
+
+- 対象場面・原作版を固定した初稿、既存historyによる旧稿チェックポイント/復元、原作取込前保存、初稿ごとのコマID分離を追加。Job/成果物/動画生成を巻き戻さない。
+- 編集候補の永続化/hash照合/共通ページ描画による比較。軽量変更→生成候補の順で複合実行し、途中失敗・取消・完了操作数を既存jobsへ保存。開始済み候補を再送しない。
+- opt-inの選択済み画像対応LLMによる対象矩形認識。元画像座標、contain/crop・文字座標の変換、avoid重なり/subject見切れの検査。既存領域合成を再利用。
+- Node回帰、Rust LLM/HTTP・SQLite再起動/画像artifact保持・保存失敗の回帰、fmt/clippy、Web buildを実行。最終件数・対象head・CI終端結果はPR #76のChecksを参照。
+- 追加画面試験：場面を絞った別初稿→旧稿保持→編集案保存→再起動→比較・採用→旧稿復元。画像認識矩形のプレビュー→領域生成候補→矩形内外RGBAの照合。
+- 初回CIでstorage単独crateからのモジュール参照ミスと、画面試験の非同期保存前の未定義値参照を検出。親モジュール参照と待機条件を修正。テストを削除・無効化して回避していない。
+- 実Jev/視覚LLM/画像モデルへの要求0回。このLinux作業環境からはMac GUI/24GB測定を実施できない。認識品質、Jev暫定閾値の校正、実初稿の視覚品質は未合格として各Issueに保持する。同じコマへの連続生成は先の候補を採用してから次の指示を受ける仕様。
