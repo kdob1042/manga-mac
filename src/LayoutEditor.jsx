@@ -1,8 +1,8 @@
 import React, {useEffect,useRef,useState} from 'react';
 import {template,validQuad,changeLayout,undoLayout,layoutWarnings,pagePanels,bounds,PAGE} from './layout.js';
 import {defaultCrop,cropRect,panCrop} from './image-crop.js';
-import {imageOf} from './render';
-import {pagePNG} from './render';
+import { imageOf } from './canvas-image.js';
+import { pagePNG } from './render.js';
 import {proposeLayout,adoptLayoutProposal,layoutBase} from './layout-ai.js';
 import {askLLM} from './llm';
 export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled}) {

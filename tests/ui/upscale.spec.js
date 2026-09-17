@@ -10,7 +10,7 @@ test('local interpolation candidate adoption, persistence and undo preserve crop
  await page.getByRole('button',{name:'この高解像度候補を採用'}).click();
  await expect(page.getByRole('button',{name:'この高解像度候補を採用'})).toHaveCount(0);
  await page.reload();
- const after=await page.evaluate(async()=>{const p=await(await import('/src/bridge.js')).loadProject();const {imageOf}=await import('/src/render.js');const im=await imageOf(p.panels[0].image);return {p,width:im.width,height:im.height};});
+ const after=await page.evaluate(async()=>{const p=await(await import('/src/bridge.js')).loadProject();const {imageOf}=await import('/src/canvas-image.js');const im=await imageOf(p.panels[0].image);return {p,width:im.width,height:im.height};});
  expect(after.p.layout).toEqual(before.layout);expect(after.p.snapshots).toEqual(before.snapshots);expect(after.p.panels[0].lettering).toEqual(before.panels[0].lettering);expect(after.p.jobs.at(-1).upscale.method).toBe('canvas-high-quality-interpolation');expect(after.width).toBe(after.p.jobs.at(-1).upscale.width);
  await page.getByRole('button',{name:'↶ 元に戻す',exact:true}).click();await expect.poll(async()=>await page.evaluate(async()=>(await(await import('/src/bridge.js')).loadProject()).panels[0].image)).toBe(before.panels[0].image);
 });

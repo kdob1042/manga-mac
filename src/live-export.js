@@ -1,6 +1,7 @@
 import { assertLegacyLiveLayout } from './layout.js';
 import { validate, VERSION } from '../vendor/live-manga/contracts/validate.mjs';
-import { pageLayers, panelLayout, imageOf } from './render';
+import { pageLayers, panelLayout } from './render.js';
+import { imageOf } from './canvas-image.js';
 import { imageHash } from './revisions';
 import { motionStatus } from './panel-motion';
 import { textForPanel } from './localization';

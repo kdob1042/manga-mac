@@ -1,27 +1,29 @@
+import { produceDraft } from './production.js';
 import {recognizeRegions,regionForEdit} from './visual-regions';
 import EditProposals from './EditProposals';
 import DraftControls from './DraftControls';
 import { panelAction, checkPanelAction } from './panel-actions';
 import JevSettings from './JevSettings';
 import { classifyEdit } from './jev';
-import { editContext, editBase, planEdit, validateEditPlan, executeLocalEdits, undoEdit, saveEditProposal, loadEditProposal, resolveEditProposal, executeEditSequence, commands } from './edit-commands';
-import { prepareDraftLayout, finishDraftLettering, reviewDraft, draftScenes, draftPageStatus, preserveDraft } from './draft';
+import { editContext, editBase, planEdit, undoEdit, saveEditProposal, loadEditProposal, resolveEditProposal, executeEditSequence, commands } from './edit-commands';
+import { draftPageStatus, preserveDraft } from './draft';
 import PanelMotionControls from './PanelMotionControls';
 import { exportLiveManga } from './live-export';
 import LayoutEditor from './LayoutEditor';
-import { pagePanels, ensureLayout, layoutWarnings } from './layout.js';
+import { pagePanels, ensureLayout } from './layout.js';
 import { directPanel, activeDirection, abandonDirection } from './directing';
 import { askLLM } from './llm';
 import VideoWorkspace from './VideoWorkspace';
 import LetteringControls from './LetteringControls';
 import { editRoute } from './edit-route';
-import { recordCapture } from './shots';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { emptyProject, sourceForPanel, affectedScenes, revise, sourceUnits } from './core';
+import { emptyProject, affectedScenes, sourceUnits } from './core';
 import { call, desktop, loadProject, saveProject } from './bridge';
 import { syncSource, planScene, generatePanel, editRegion } from './pipeline';
-import { exportCBZ, pagePNG, download, imageOf } from './render';
+import { exportCBZ, download } from './export.js';
+import { pagePNG } from './render.js';
+import { imageOf } from './canvas-image.js';
 import UpscaleControls from './UpscaleControls.jsx';
 import FinishingControls from './FinishingControls.jsx';
 import './style.css';
@@ -92,46 +94,9 @@ function App() {
     setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
-    if (!current.current.active) throw Error('まず原作を接続してください');
-    let p = current.current;
-    const snapshot=p.snapshots.find(s=>s.id===p.active), scenes=draftScenes(p);
-    if(p.panels.some(panel=>!snapshot.scenes.some(scene=>scene.id===panel.sceneId)))throw Error('対象外の場面を含む既存原稿を保持しています。自動初稿では削除しません');
-    // Plan all scene content before page geometry or generation; never discard accepted art.
-    for (const scene of scenes) {
-      if(cancel.current)return;
-      let scenePanels=p.panels.filter(x=>x.sceneId===scene.id);
-      const old=p.snapshots.find(s=>s.id===scenePanels[0]?.snapshotId);
-      if(!scenePanels.length || !old || affectedScenes(old,snapshot).includes(scene.id)) {
-        if(scenePanels.some(p=>p.image))throw Error('原作が変わった場面に採用済み作画があります。旧版を保持しているため、自動初稿では上書きしません');
-        setBusy(`${scene.id} の演出を設計中`);
-        scenePanels=(await planScene(scene,snapshot,p.characters,model)).map(panel=>({...panel,id:`${p.draftScope?.id ?? crypto.randomUUID()}:${panel.id}`}));
-        if(cancel.current)return;
-        p=revise(current.current,[...current.current.panels.filter(x=>x.sceneId!==scene.id),...scenePanels],`${scene.id} の演出計画`);
-        p.panels=scenes.flatMap(s=>p.panels.filter(x=>x.sceneId===s.id));
-        p=await commit(p);
-      }
-    }
-    await prepareDraftLayout({current:()=>current.current,commit,cancelled:()=>cancel.current,ask:(prompt,schema)=>askLLM(model,{purpose:'layout',prompt,schema})});
-    for(const id of current.current.panels.map(p=>p.id)) {
-      if(cancel.current)break;
-      const panel=current.current.panels.find(p=>p.id===id);
-      if(panel.image)continue;
-      if(productionMode==='blender'&&(!panel.capture_revision||activeDirection(current.current,id)))await stagePanel(id);
-      if(cancel.current)break;
-      setBusy(`${id} を作画中`);
-      p=current.current;
-      const livePanel=p.panels.find(x=>x.id===id),job=await beginJob(p,livePanel);
-      await commit({...p,jobs:[...p.jobs,job]});
-      try {
-        const generated=await generatePanel(livePanel,p.characters,null,'',job,p.captures?.find(c=>c.id===livePanel.capture_revision),p.style_references??[]);
-        await commit(await finishJob(current.current,job,generated,cancel.current));
-      }catch(e){await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)});throw e;}
-    }
-    await finishDraftLettering({current:()=>current.current,commit,cancelled:()=>cancel.current,notify:setBusy,recognize:model.visualEditing?(p,panel)=>recognizeRegions(p,[panel.id],'文字配置で顔・手・重要な描写を避ける',(prompt,schema,images)=>askLLM(model,{purpose:'vision',prompt,schema,images}),imageOf):null,check:async(p,id)=>{const pg=p.layout.pages.find(pg=>pg.slots.some(s=>s.panelId===id));await pagePNG(pagePanels(p,pg),p.snapshots,p.localizations,p.output_locale,pg,true,p.layout.imageCrops);},ask:(prompt,schema)=>askLLM(model,{purpose:'lettering',prompt,schema})});
-    if(cancel.current){setNotice('停止しました。完成したコマと文字配置は保存済みです');return;}
-    const proofs=await reviewDraft(current.current,pagePNG);
-    setPage(0);setLayoutMode(false);setPagePreview(proofs[0]);
-    setNotice(`初稿 ${proofs.length}ページを表示しました。人物・衣装・文字の読みやすさを確認し、下の欄か手動で修正できます。`);
+    return produceDraft({ current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode,
+      setBusy, setNotice, stagePanel, planScene, generatePanel, askLLM, imageOf, pagePNG,
+      showProof: image => { setPage(0); setLayoutMode(false); setPagePreview(image); } });
   }
   async function stagePanel(panelId, instruction = '') {
     if (!model.connectionId) throw Error('先に演出AIの接続を登録・テストしてください');
