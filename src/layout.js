@@ -40,7 +40,7 @@ export function validateLayout(layout,panels) {
     Object.values(layout.imageCrops).forEach(validateCrop);
   }
   for(const page of layout.pages) {
-    if(typeof page.id!=='string'||!page.id||pages.has(page.id)||!Array.isArray(page.slots)||page.slots.length>16) throw Error('ページ情報が不正です'); pages.add(page.id);
+    if(typeof page.id!=='string'||!page.id||pages.has(page.id)||!Array.isArray(page.slots)||page.slots.length>16||page.locked!==undefined&&typeof page.locked!=='boolean') throw Error('ページ情報が不正です'); pages.add(page.id);
     for(const slot of page.slots) {
       if(typeof slot.id!=='string'||!slot.id||slots.has(slot.id)||!validQuad(slot.points)) throw Error('コマ枠はページ内の時計回りの凸四角形にしてください'); slots.add(slot.id);
       if(slot.panelId!==null) { if(!known.has(slot.panelId)||assigned.has(slot.panelId)) throw Error('コマ参照の欠落・重複があります');assigned.add(slot.panelId); }
@@ -70,9 +70,62 @@ export function layoutWarnings(layout,panels) {
   if(JSON.stringify(expected)!==JSON.stringify(assigned))warnings.push('ページ割当が原文の読書順と異なります');
   return warnings;
 }
+function assignedIds(page) { return page.slots.filter(s=>s.panelId!==null).map(s=>s.panelId); }
+function sourceIndices(ids,index) {
+  const values=ids.map(id=>index.get(id));
+  if(values.some(v=>v===undefined))throw Error('ページのコマ参照が原文にありません');
+  return values;
+}
+// Reflow only page assignment. Existing artwork/source data and page geometry are never regenerated.
+// Pages before startPageIndex are immutable. A locked page is an immutable assignment/geometry boundary.
+export function reflowLayout(project,layout=project.layout,startPageIndex=0) {
+  validateLayout(layout,project.panels);
+  if(!Number.isInteger(startPageIndex)||startPageIndex<0||startPageIndex>=layout.pages.length)throw Error('詰め直しを開始するページが不正です');
+  if(layout.pages[startPageIndex].locked)throw Error('固定ページからは後続を詰め直せません');
+  const order=project.panels.map(p=>p.id), index=new Map(order.map((id,i)=>[id,i])), next=structuredClone(layout);
+  const output=next.pages.slice(0,startPageIndex), prefix=output.flatMap(assignedIds);
+  if(JSON.stringify(prefix)!==JSON.stringify(order.slice(0,prefix.length)))throw Error('開始ページより前の割当が原文順ではありません。前のページから詰め直してください');
+  let cursor=prefix.length, buffer=[];
+  const appendSegment=(pages,stop)=>{
+    if(stop<cursor)throw Error('固定ページが前の内容と競合しています');
+    const ids=order.slice(cursor,stop);let at=0;
+    for(const page of pages) {
+      if(at>=ids.length)break;
+      const take=Math.min(page.slots.length,ids.length-at);
+      if(!take)continue;
+      const slots=page.slots.slice(0,take).map((slot,i)=>({...slot,panelId:ids[at+i]}));
+      output.push({...page,slots});at+=take;
+    }
+    while(at<ids.length) {
+      const take=Math.min(4,ids.length-at),panelIds=ids.slice(at,at+take);
+      output.push({id:crypto.randomUUID(),slots:template(take,panelIds)});at+=take;
+    }
+    cursor=stop;
+  };
+  for(const page of next.pages.slice(startPageIndex)) {
+    if(!page.locked) {buffer.push(page);continue;}
+    const ids=assignedIds(page);
+    if(!ids.length||ids.length!==page.slots.length)throw Error('固定ページには未割当の枠を残せません');
+    const positions=sourceIndices(ids,index),first=positions[0];
+    if(positions.some((v,i)=>v!==first+i))throw Error('固定ページのコマは原文順で連続している必要があります');
+    appendSegment(buffer,first);buffer=[];output.push(page);cursor=first+ids.length;
+  }
+  appendSegment(buffer,order.length);
+  next.pages=output;next.knownPanelIds=[...order];
+  validateLayout(next,project.panels);
+  const warnings=layoutWarnings(next,project.panels);
+  if(warnings.length)throw Error(`後続の詰め直しに失敗しました: ${warnings.join(' / ')}`);
+  return next;
+}
 export function changeLayout(project,layout,label='コマ割り変更') {
   validateLayout(layout,project.panels);
-  return {...project,layout:structuredClone(layout),layoutHistory:[...(project.layoutHistory??[]),{layout:project.layout,label}].slice(-100),layoutRedo:[]};
+  let next=layout;
+  // Changing a page's slot capacity is pagination, not a local geometry edit: flow the
+  // displaced/freed panels forward from the first changed page. AI whole-work proposals
+  // commonly replace page IDs, so they remain authoritative and are not reflowed here.
+  const changed=layout.pages.findIndex((page,i)=>project.layout?.pages?.[i]?.id===page.id&&project.layout.pages[i].slots.length!==page.slots.length);
+  if(changed>=0)next=reflowLayout(project,layout,changed);
+  return {...project,layout:structuredClone(next),layoutHistory:[...(project.layoutHistory??[]),{layout:project.layout,label}].slice(-100),layoutRedo:[]};
 }
 export function undoLayout(project,redo=false) {
   const from=redo?'layoutRedo':'layoutHistory',to=redo?'layoutHistory':'layoutRedo', entry=project[from]?.at(-1);
