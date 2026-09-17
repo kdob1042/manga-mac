@@ -413,8 +413,24 @@ pub fn initialize(db: &Connection) -> Result<()> {
     )
     .map_err(err)
 }
+fn remove_legacy_confirmation(value: &mut Value) {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("confirmedThroughPanelId");
+        for key in ["history", "editRedo"] {
+            if let Some(entries) = object.get_mut(key).and_then(Value::as_array_mut) {
+                for entry in entries {
+                    remove_legacy_confirmation(entry);
+                }
+            }
+        }
+        if let Some(after) = object.get_mut("after") {
+            remove_legacy_confirmation(after);
+        }
+    }
+}
 pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     let mut project: Value = serde_json::from_str(data).map_err(err)?;
+    remove_legacy_confirmation(&mut project);
     if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
     }
@@ -557,6 +573,7 @@ pub fn load(db: &Connection, root: &Path) -> Result<Option<String>> {
         .map_err(err)?;
     data.map(|data| {
         let mut value: Value = serde_json::from_str(&data).map_err(err)?;
+        remove_legacy_confirmation(&mut value);
         hydrate(&mut value, &root.join("artifacts"))?;
         // A missing video must not make the user's entire manga unreadable.
         // Playback/adoption/export verify the individual artifact on demand.
@@ -583,6 +600,22 @@ mod tests {
         let db = Connection::open(dir.join("test.sqlite3")).unwrap();
         initialize(&db).unwrap();
         (db, dir)
+    }
+    #[test]
+    fn obsolete_boundary_is_removed_from_saved_history_without_changing_art() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        p["confirmedThroughPanelId"] = json!("old-panel");
+        p["history"][0]["confirmedThroughPanelId"] = json!("old-panel");
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        assert!(restored.get("confirmedThroughPanelId").is_none());
+        assert!(restored["history"][0]
+            .get("confirmedThroughPanelId")
+            .is_none());
+        assert_eq!(restored["panels"], p["panels"]);
+        assert_eq!(restored["snapshots"], p["snapshots"]);
+        fs::remove_dir_all(dir).unwrap();
     }
     pub(super) fn fixture() -> Value {
         serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap()

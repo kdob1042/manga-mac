@@ -1,32 +1,33 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {ensureLayout,template,reflowLayout,changeLayout} from '../src/layout.js';
-import {confirmThroughPage,confirmedPageIndex,moveConfirmationBeforePage} from '../src/confirmation.js';
-import {validateProposal} from '../src/layout-ai.js';
+import {ensureLayout,template,reflowLayout,changeLayout,undoLayout} from '../src/layout.js';
+import {validateProposal,adoptLayoutProposal,proposeLayout} from '../src/layout-ai.js';
 const panels=Array.from({length:12},(_,i)=>({id:`p${i}`,unitIds:[`u${i}`],prompt:`p${i}`,characterIds:[]}));
-const make=()=>ensureLayout({panels,active:'source',jobs:[]});
-test('confirmation is one contiguous prefix and can move backward explicitly',()=>{
- let p=confirmThroughPage(make(),1);assert.equal(p.confirmedThroughPanelId,'p7');assert.equal(confirmedPageIndex(p),1);
- p=confirmThroughPage(p,2);assert.equal(confirmedPageIndex(p),2);
- p=moveConfirmationBeforePage(p,1);assert.equal(confirmedPageIndex(p),0);
- p=moveConfirmationBeforePage(p,0);assert.equal(confirmedPageIndex(p),-1);
+const make=()=>ensureLayout({panels,active:'source',jobs:[],snapshots:[]});
+test('legacy confirmation disappears from current and history without changing layout',()=>{
+ const p=make(),legacy={...p,confirmedThroughPanelId:'p7',history:[{panels,confirmedThroughPanelId:'p3',after:{confirmedThroughPanelId:'p7'}}]};
+ const migrated=ensureLayout(legacy);assert.equal(migrated.confirmedThroughPanelId,undefined);assert.deepEqual(migrated.layout,p.layout);
+ assert.equal(migrated.history[0].confirmedThroughPanelId,undefined);assert.equal(migrated.history[0].after.confirmedThroughPanelId,undefined);
+ assert.equal(ensureLayout(JSON.parse(JSON.stringify(migrated))).confirmedThroughPanelId,undefined);
 });
-test('confirmed prefix rejects local edits and reflow until boundary is moved back',()=>{
- const p=confirmThroughPage(make(),0),local=structuredClone(p.layout);local.pages[0].slots[0].points[0][0]+=.01;
- assert.throws(()=>changeLayout(p,local),/確定済み/);
- const pagination=structuredClone(p.layout);pagination.pages[0].slots=template(3,['p0','p1','p2']);
- assert.throws(()=>reflowLayout(p,pagination,0),/確定済み/);
- const suffix=structuredClone(p.layout);suffix.pages[1].slots=template(3,['p4','p5','p6']);
- assert.doesNotThrow(()=>reflowLayout(p,suffix,1));
+test('formerly confirmed page accepts scoped edits; other pages and crop cannot change',()=>{
+ const p=ensureLayout({...make(),confirmedThroughPanelId:'p7'}),local=structuredClone(p.layout);local.pages[0].slots[0].points[0][0]+=.01;
+ const scope={pageIds:[p.layout.pages[0].id]};const next=changeLayout(p,local,'edit',scope);
+ assert.deepEqual(next.layout.pages.slice(1),p.layout.pages.slice(1));assert.deepEqual(undoLayout(next).layout,p.layout);
+ local.pages[1].slots[0].points[0][0]+=.01;assert.throws(()=>changeLayout(p,local,'edit',scope),/対象外/);
+ assert.throws(()=>changeLayout(p,{...p.layout,imageCrops:{p8:{zoom:2,x:.5,y:.5}}},'crop',scope),/対象外/);
+ assert.throws(()=>changeLayout(p,p.layout),/明示/);
 });
-test('AI suffix proposal may repaginate after boundary but cannot change confirmed prefix',()=>{
- const p=confirmThroughPage(make(),0),scope=p.layout.pages.slice(1).map(x=>x.id),prefix=structuredClone(p.layout.pages[0]);
- const proposal=[{id:'new-a',slots:template(5,['p4','p5','p6','p7','p8'])},{id:'new-b',slots:template(3,['p9','p10','p11'])}];
- const candidate=validateProposal(p,{reason:'残りを再構成',pages:proposal},scope);
- assert.deepEqual(candidate.layout.pages[0],prefix);assert.equal(candidate.layout.pages.length,3);assert.equal(candidate.suffixPagination,true);
- assert.throws(()=>validateProposal(p,{reason:'確定範囲',pages:[prefix]},[prefix.id]),/確定済み/);
+test('reflow rejects a changed prefix; scoped AI adoption revalidates persisted candidate',()=>{
+ const p=make(),l=structuredClone(p.layout);l.pages[0].slots[0].points[0][0]+=.01;
+ assert.throws(()=>reflowLayout(p,l,1),/指定範囲/);
+ const scope=p.layout.pages.slice(1).map(x=>x.id),proposal=[{id:'new-a',slots:template(5,['p4','p5','p6','p7','p8'])},{id:'new-b',slots:template(3,['p9','p10','p11'])}];
+ const c=validateProposal(p,{reason:'選択範囲',pages:proposal},scope);assert.deepEqual(adoptLayoutProposal(p,c).layout.pages[0],p.layout.pages[0]);
+ c.layout.pages[0].slots[0].points[0][0]+=.01;assert.throws(()=>adoptLayoutProposal(p,c),/対象外/);
+ assert.throws(()=>validateProposal(p,{reason:'bad',pages:[]},[p.layout.pages[0].id,p.layout.pages[2].id]),/対象ページ/);
 });
-test('confirmation survives JSON save/reload as a stable panel boundary',()=>{
- const p=confirmThroughPage(make(),1),saved=JSON.parse(JSON.stringify(p)),loaded=ensureLayout(saved);
- assert.equal(loaded.confirmedThroughPanelId,p.confirmedThroughPanelId);assert.equal(confirmedPageIndex(loaded),1);
+test('whole-work AI uses exactly the explicit scope and no legacy boundary',async()=>{
+ const p=ensureLayout({...make(),confirmedThroughPanelId:'p7'});let input;
+ await proposeLayout(p,p.layout.pages.map(pg=>pg.id),'全体',async prompt=>{input=JSON.parse(prompt);return JSON.stringify({reason:'全体',pages:input.pages});});
+ assert.equal(input.pages.length,3);assert.equal(input.wholeWork,true);
 });

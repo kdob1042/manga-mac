@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyProject } from '../src/core.js';
 import { ensureLayout } from '../src/layout.js';
-import { confirmThroughPage } from '../src/confirmation.js';
 import { undoEdit } from '../src/edit-commands.js';
 import {
   adoptContentReplan,
@@ -73,14 +72,14 @@ test('invalid response is rejected without changing the current draft', async ()
   assert.deepEqual(project, before);
 });
 
-test('confirmed prefix remains byte-identical and content Undo/Redo restores the whole boundary', async () => {
+test('legacy boundary does not block selected content and Undo/Redo preserves source and artwork', async () => {
   let project = fixture();
-  project = confirmThroughPage(project, 0);
+  project = ensureLayout({...project,confirmedThroughPanelId:'p3'});
   const before = structuredClone(project);
-  const beforePrefix = structuredClone(project.layout.pages[0]), candidate = await changedCandidate(project, 'job-3');
-  assert.equal(candidate.scenes[0].protectedPanelIds.length, 4);
+  const candidate = await changedCandidate(project, 'job-3');
+  assert.equal(project.confirmedThroughPanelId,undefined);
   project = await adoptContentReplan(project, candidate);
-  assert.deepEqual(project.layout.pages[0], beforePrefix);
+  assert.equal(project.panels.find(p=>p.id==='outside').image,'outside-art');
   const undone = undoEdit(project);
   assert.deepEqual(undone.panels, before.panels);
   assert.deepEqual(undone.layout, before.layout);
