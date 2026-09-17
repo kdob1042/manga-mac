@@ -32,6 +32,7 @@ test('four corners, cancel, undo/redo and six-panel persistence keep artwork and
  await page.getByRole('button',{name:'枠をUndo'}).click();await expect(page.getByTestId('layout-slot-0')).not.toHaveAttribute('points',after);
  await page.getByRole('button',{name:'枠をRedo'}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',after);
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',after);
+ await expect(page.locator('.thumbnail')).toHaveCount(1);await page.getByRole('button',{name:'ページ追加'}).click();await expect(page.locator('.thumbnail')).toHaveCount(2);
  await page.locator('.thumbnail').nth(1).click();await page.getByRole('button',{name:'このページを外す'}).click();await expect(page.locator('.thumbnail')).toHaveCount(1);
  const result=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');const {pagePNG,exportCBZ}=await import('/src/render.js');const {pagePanels}=await import('/src/layout.js');const p=await loadProject(),pg=p.layout.pages[0];return {cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer())),png:await pagePNG(pagePanels(p,pg),p.snapshots,[], 'ja',pg),image:p.panels[0].image,jobs:p.jobs.length,slots:pg.slots.length};});
  expect(result.image).toBe(legacy.panels[0].image);expect(result.jobs).toBe(0);expect(result.slots).toBe(6);expect(result.png).toMatch(/^data:image\/png;base64,/);
