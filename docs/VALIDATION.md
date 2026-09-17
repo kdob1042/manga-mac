@@ -358,3 +358,12 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 再現: `CHROMIUM_EXECUTABLE_PATH=... node scripts/live-e2e.mjs`（通常CIはPlaywright同梱Chromium）、FFmpeg/ffprobeとRustが必要。native受入は `cargo test --locked --manifest-path tests/storage/Cargo.toml live_export`。ブラウザ入力を使う試験は専用scriptから明示的に実行し、入力未指定を成功扱いしない。
 
 未実施: Mac GUI操作、実有料生成、実iPhone/Android、R2公開。新規割当は既存schema v4の任意配列として移行し、旧作品は空配列になる。rollbackは更新前のアプリと作品フォルダを保持する。刊行物は独立した不変出力なので旧版へ戻しても変更されない。
+
+## WEB-ASSET-01: Web配布3D素材のBlender取込（2026-09-17）
+
+開始dev `f9ce6fd`。既存Blender CLI、固定checkpoint、依存packing、Asset Library参照を再利用し、HTTPS取得と標準import／appendへの薄い接続を追加した。独立した素材分類DB、3Dパーサ、任意コード実行、アドオン自動導入は追加していない。
+
+- native取得境界: HTTPS、公開IPへの固定DNS解決、最大3回の検証済みHTTPS redirect、512MB上限。URL資格情報、private/link-local/loopback/documentation/multicast宛、未対応拡張子を拒否。query/fragmentは出典記録へ保存しない。
+- Blender境界: `.blend`、GLB/glTF、FBX、OBJ、ZIPを固定Blender 4.5.13の既存APIで検査・取込。ZIPは相対パス、link禁止、4096件、展開1GB、個別512MB、圧縮率1000倍、候補200件の上限を検証する。
+- provenance: 取得SHA-256、queryを除いた取得元、任意の配布ページ、利用者が確認したライセンス表記を取込datablockへ保存。依存を既存packingでcheckpointへ固定し、展開用一時フォルダを削除する。ライセンスの正しさや利用権を自動判定したという意味ではない。
+- ローカル確認: Python構文、Node 67件、Web build成功。新PlaywrightはChromium実行ファイル未導入のため起動前に停止し、UI合格扱いしない。Rust fmt/test/clippy、固定Blenderのdirect OBJ／ZIP／provenance／path escape fixture、Mac GUI、実公開URL取得は対象PR CIまたは実機で別判定する。

@@ -3,6 +3,7 @@ mod backup_commands;
 mod llm;
 mod policy_transport;
 mod runway;
+mod web_asset;
 pub mod storage;
 
 mod blender;
@@ -541,6 +542,32 @@ async fn blender_execute(
     blender::execute(&state.db, &state.root, request).await
 }
 #[tauri::command]
+async fn blender_download_web_asset(
+    session_id: String,
+    expected_revision: u64,
+    input: web_asset::DownloadRequest,
+    state: State<'_, AppState>,
+) -> Result<web_asset::DownloadedAsset, String> {
+    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
+    {
+        let db = state.db.lock().map_err(err)?;
+        let current = blender::status(&db, &session_id)?;
+        if current["revision"].as_u64() != Some(expected_revision)
+            || current["jobs"].as_array().map_or(false, |jobs| {
+                jobs.iter().any(|job| {
+                    matches!(
+                        job["status"].as_str(),
+                        Some("running" | "unknown" | "candidate")
+                    )
+                })
+            })
+        {
+            return Err("Blenderの版または要求状態を再確認してください".into());
+        }
+    }
+    web_asset::download(&state.root, input).await
+}
+#[tauri::command]
 async fn blender_recover(
     session_id: String,
     request_id: String,
@@ -596,6 +623,7 @@ fn main() {
             blender_fork,
             blender_capture,
             blender_register,
+            blender_download_web_asset,
             blender_execute,
             blender_status,
             blender_latest,
