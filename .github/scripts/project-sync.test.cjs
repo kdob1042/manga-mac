@@ -47,6 +47,8 @@ test('CI recovery uses latest run/attempt and current head, ignores unrelated wo
   assert.equal(failingRuns([bad, { ...bad, id: 2, conclusion: 'success' }], 'new', 'CI'), false);
   assert.equal(failingRuns([{ ...bad, run_attempt: 2, conclusion: 'success' }, bad], 'new', 'CI'), false);
   assert.equal(failingRuns([bad, { ...bad, id: 2, status: 'in_progress', conclusion: null }], 'new', 'CI'), false);
+  assert.equal(failingRuns([undefined, bad], 'new', 'CI'), true);
+  assert.equal(failingRuns(undefined, 'new', 'CI'), false);
 });
 test('review approval or dismissal clears attention, comments do not', () => {
   const review = { id: 1, user: { login: 'reviewer' }, state: 'CHANGES_REQUESTED' };
