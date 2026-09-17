@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { orderedScenes, safePath, sourceUnits, validatePlan, compositePixels, sourceForPanel, affectedScenes, revise } from '../src/core.js';
+import { orderedScenes, safePath, sourceUnits, validatePlan, panelHasText, compositePixels, sourceForPanel, affectedScenes, revise } from '../src/core.js';
 test('manifest episode order wins over names and array order', () => {
  const m = { episodes: [{ id: 'P12', scene_ids: ['P12-03', 'P11-01a'] }], scenes: [{ id: 'P11-01a', path: 'manuscript/after.md' }, { id: 'P12-03', path: 'manuscript/final.md' }] };
  assert.deepEqual(orderedScenes(m, 'P12').map(s => s.id), ['P12-03', 'P11-01a']);
@@ -15,6 +15,13 @@ test('model must cover original units exactly once in order', () => {
  assert.equal(validatePlan({ panels }, units, []).length, 3);
  for (const ps of [[...panels].reverse(), panels.slice(1), [...panels, panels[0]]]) assert.throws(() => validatePlan({ panels: ps }, units, []));
  assert.throws(() => validatePlan({ panels: [{ ...panels[0], characterIds: ['invented'] }, ...panels.slice(1)] }, units, []));
+});
+test('image-only panels use an explicit empty source range and remain valid', () => {
+ const visual = { unitIds: [], prompt: 'A wordless manga panel', characterIds: [] };
+ assert.equal(validatePlan({ panels: [visual] }, [], []).length, 1);
+ assert.equal(panelHasText(visual), false);
+ assert.equal(panelHasText({ unitIds: ['s:u0'] }), true);
+ assert.throws(() => validatePlan({ panels: [{ ...visual, unitIds: undefined }] }, [], []));
 });
 test('rendered text is original source, never model output', () => {
  const text = '「好き、だよ」\n\n  話者が振り返った。';

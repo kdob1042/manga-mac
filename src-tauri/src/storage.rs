@@ -17,6 +17,8 @@ pub mod source_refs;
 
 #[path = "live_export.rs"]
 pub mod live_export;
+#[path = "live_preview_storage.rs"]
+pub mod live_preview;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
@@ -248,7 +250,7 @@ fn check_mp4(file: &mut fs::File, size: u64) -> Result<()> {
     Ok(())
 }
 
-fn file_hash(file: &mut fs::File) -> Result<String> {
+pub(crate) fn file_hash(file: &mut fs::File) -> Result<String> {
     file.seek(SeekFrom::Start(0)).map_err(err)?;
     let mut hash = Sha256::new();
     let mut buffer = [0_u8; 65536];

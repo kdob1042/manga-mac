@@ -1,19 +1,29 @@
 import React,{useEffect,useMemo,useState} from 'react';
 import {sourceView,toggleSourceGroup,sourceSelection} from './source-view.js';
+import {tagOptions,matchingScenes,rowSceneIds,tagBlockSelection,sceneTags} from './source-tags.js';
 import './source-view.css';
 export default function SourceManuscript({project,busy=false,onApply,current,pendingBlockIds=[]}){
  const [selection,setSelection]=useState({id:null,ids:[]}),[error,setError]=useState('');
+ const [tags,setTags]=useState([]),[mode,setMode]=useState('any'),[expansion,setExpansion]=useState(null);
  const view=useMemo(()=>{if(!project.active)return null;try{return sourceView(project);}catch(e){return {error:e.message};}},[project]);
- useEffect(()=>{setSelection({id:null,ids:[]});setError('');},[view?.changes?.id,project.workId]);
+ useEffect(()=>{setSelection({id:null,ids:[]});setError('');setExpansion(null);},[view?.changes?.id,project.workId]);
+ useEffect(()=>{setTags([]);setExpansion(null);},[project.active,project.workId]);
  const snapshot=project.snapshots.find(s=>s.id===project.active);
  if(!snapshot)return <section aria-label="原稿"><h2>原稿</h2><p>GitHubから原稿を取り込むとここで確認できます。</p></section>;
  if(view?.error)return <section aria-label="原稿"><h2>原稿</h2><p role="status">原稿と漫画の対応を確認できないため、現在は本文のみ表示しています。</p>{snapshot.scenes.map(scene=><section key={scene.id}><h3>{scene.id}</h3><pre className="source-text">{scene.text}</pre></section>)}</section>;
- const {changes,rows,resolve}=view,ids=selection.id===changes.id?selection.ids:[];
- const toggle=id=>{setError('');setSelection({id:changes.id,ids:toggleSourceGroup(changes,ids,id)});};
+ const {changes,rows:allRows,resolve}=view,ids=selection.id===changes.id?selection.ids:[];
+ const options=tagOptions(snapshot),sceneIds=matchingScenes(snapshot,tags,mode);
+ const rows=tags.length?allRows.filter(row=>rowSceneIds(row).some(id=>sceneIds.includes(id))):allRows;
+ const filterChange=next=>{setTags(next);setSelection({id:changes.id,ids:[]});setExpansion(null);};
+ const selectMatches=()=>{const next=tagBlockSelection(changes,allRows,sceneIds,pendingBlockIds);if(next.additional.length)setExpansion(next);else setSelection({id:changes.id,ids:next.ids});};
+ const toggle=id=>{setError('');const group=changes.blocks.find(b=>b.id===id)?.groupId;if(changes.blocks.some(b=>b.groupId===group&&pendingBlockIds.includes(b.id))){setError('関連する差分が実行中です');return;}setSelection({id:changes.id,ids:toggleSourceGroup(changes,ids,id)});};
  const parts=list=>list.map(({ref,changed},i)=><React.Fragment key={i}>{i>0&&!(list[i-1].ref.snapshotId===ref.snapshotId&&list[i-1].ref.sceneId===ref.sceneId&&list[i-1].ref.endCp===ref.startCp)&&'\n\n'}{changed?<mark>{resolve(ref)}</mark>:resolve(ref)}</React.Fragment>);
  const oldText=refs=>refs.map(resolve).join('\n\n');
  async function apply(){try{setError('');const latest=current?.()??project;await onApply(sourceSelection(latest,changes,ids));setSelection({id:changes.id,ids:[]});}catch(e){setError(e.message);}}
  return <section className="source-manuscript" aria-label="原稿"><h2>原稿</h2><p>原稿 {snapshot.sha?.slice(0,8)??snapshot.id} · 読み取り専用。漫画への反映状態を表示しています。</p>
+  {!!options.length&&<fieldset><legend>シーンタグで検索</legend>{options.map(tag=><label key={tag.key}><input type="checkbox" checked={tags.includes(tag.key)} onChange={()=>filterChange(tags.includes(tag.key)?tags.filter(k=>k!==tag.key):[...tags,tag.key])}/>{tag.label}</label>)}<label>タグの一致条件<select value={mode} onChange={e=>{setMode(e.target.value);filterChange(tags);}}><option value="any">いずれかに一致</option><option value="all">すべてに一致</option></select></label><button onClick={()=>filterChange([])}>絞り込みを解除</button><p>{sceneIds.length} シーン: {sceneIds.join(' / ')}</p><button disabled={busy} onClick={selectMatches}>該当シーンをまとめて選択</button><p>タグは原稿リポジトリの manifest.json の scenes[].tags で編集し、「GitHub側の更新を確認」から取り込みます。転送範囲には影響しません。</p></fieldset>}
+  {!!options.length&&<ul aria-label="シーン別タグ">{snapshot.scenes.filter(scene=>sceneIds.includes(scene.id)).map(scene=><li key={scene.id}>{scene.id}: {sceneTags(snapshot,scene.id).join(' / ')||'タグなし'}</li>)}</ul>}
+  {expansion&&<div role="alert">関連差分のため追加対象が必要です: {expansion.additional.join(' / ')}<button disabled={busy} onClick={()=>{const latest=tagBlockSelection(changes,allRows,sceneIds,pendingBlockIds);setSelection({id:changes.id,ids:latest.ids});setExpansion(null);}}>追加対象を含めて選択</button><button onClick={()=>setExpansion(null)}>取消</button></div>}
   <div className="toolbar"><button disabled={busy||!changes.blocks.length} onClick={()=>setSelection({id:changes.id,ids:changes.blocks.filter(b=>!pendingBlockIds.includes(b.id)).map(b=>b.id)})}>未反映・削除対象をすべて選択</button><button disabled={busy||!ids.length} onClick={()=>setSelection({id:changes.id,ids:[]})}>全解除</button><span role="status">{ids.length} / {changes.blocks.length} ブロックを選択</span><button disabled={busy||!ids.length||!onApply} onClick={apply}>選択箇所を漫画に反映</button></div>
   {!onApply&&<p>差分の確認・選択ができます。漫画への反映は準備中です。</p>}{error&&<p role="alert">{error}</p>}
   {!rows.length&&<p>本文はありません。</p>}

@@ -18,13 +18,18 @@ export function sourceUnits(sceneId, text) {
     return !text.trim() || /^\s*#/.test(text) ? [] : [{ id: `${sceneId}:u${i}`, text }];
   });
 }
+export function panelHasText(panel) {
+  if (Array.isArray(panel?.sourceRefs)) return panel.sourceRefs.length > 0;
+  return Array.isArray(panel?.unitIds) && panel.unitIds.length > 0;
+}
+
 export function validatePlan(plan, units, characters) {
   if (!Array.isArray(plan.panels) || !plan.panels.length || plan.panels.length > 120) throw Error('コマ計画が不正です');
-  const actual = plan.panels.flatMap(p => p.unitIds ?? []);
+  const actual = plan.panels.flatMap(p => p?.unitIds ?? []);
   if (JSON.stringify(actual) !== JSON.stringify(units.map(u => u.id))) throw Error('原文の欠落・重複・順序変更を検出しました');
   const allowed = new Set(characters.map(c => c.id));
   for (const p of plan.panels) {
-    if (typeof p.prompt !== 'string' || !p.prompt.trim() || !Array.isArray(p.characterIds) || p.characterIds.some(id => !allowed.has(id))) throw Error('人物または作画指示が不正です');
+    if (!p || !Array.isArray(p.unitIds) || typeof p.prompt !== 'string' || !p.prompt.trim() || !Array.isArray(p.characterIds) || p.characterIds.some(id => !allowed.has(id))) throw Error('コマ・人物または作画指示が不正です');
   }
   return plan.panels;
 }

@@ -117,6 +117,8 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値は変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
 
+原稿画面のタグ検索（#131）は表示値を保持したまま、検索キーだけNFKC・前後空白除去・小文字化し、最初の表示値を残して重複除去する。ANDは同一scene内、ORはscene単位で判定し、原稿順を保持する。条件変更で生成や転送は実行しない。一括選択は既存差分block/groupへ解決し、他sceneへの拡張は対象を示して確認する。実行中groupは選択しない。既存sourceSelectionで開始時のsnapshot/contentTokenとblock IDを検査する。タグ未定義の原稿は既存操作を維持する。閲覧用投影・転送の通し受入は#130/#135とlive-manga#22で扱い、本検索UIだけでは転送完了にしない。
+
 schema 5の最小読書順台帳はscene/settingsの解決宣言を欠くため未対応と明示する。原稿側の固有ディレクトリ走査をアプリへ転載しない。原稿側で自己記述するschema 1を提供すれば作品追加のコード変更は不要。現行原稿側の宣言提供と通し確認は #136 に残す（原稿repoは本変更で編集しない）。
 
 「二人を近づける」という編集意図や撮影記録として数値を保存してよいが、それを編集可能な第二の3D正本として使わない。座標の表示キャッシュはBlenderから再取得可能とし、Blenderで変更した結果を古いキャッシュで上書きしない。
@@ -453,7 +455,7 @@ AIコマ割りは明示した連続ページ範囲を使い、全ページチェ
 
 内容再分割は選択場面だけの原文を検証し、未選択場面の原文・画像を維持する。配置変更の影響範囲を候補に表示してから採用する。描画・画像生成・Blender・動画は配置だけでは起動しない。途中区間のページ増減を前後保持で適用する拡張は#116で扱う。
 
-Live Mangaの配信契約は矩形のみの実装と併合するときに必ず確認する。自由四角形の外接矩形をそのまま配信して対応済みとしない。未対応の配信経路は拒否し、polygonと同じ画像変換を扱える契約へ拡張するまでPNG/CBZを利用する。
+Live Manga v2では同じpolygonと画像配置を配信する。契約の正本はLive Manga側のcontractsであり、外接矩形だけで自由四角形を代用しない。旧v1の読込互換は読者側で維持する。
 
 ### 途中区間のページ置換（#116）
 
@@ -469,7 +471,7 @@ LayoutSpliceはbeforePageId/afterPageId、連続するoldPageIds、replacementPa
 
 設定のない旧コマは従来contain表示を保持。ユーザーが「画像トリミング」で有効にしたコマだけ全面表示にする。枠操作と画像操作を明示切替し、画像ドラッグは一操作一保存、Esc/cancelは破棄。layoutHistory/Redoを共用し、テンプレート再配置・AI案でもpanelIdに紐付いた配置を保持する。画像原本・ArtworkRevision・文字/吹き出しデータ・生成Jobsを変更しない。文字層には画像の位置・拡大率を適用せず、現在の文字組版を維持する。通常の作画画面は原本表示、組版プレビューとPNG/CBZは同じ変換で描画する。
 
-JSとRustで値を検証。Live Manga v1には変換契約がないためトリミング作品の公開を明示拒否し、PNG/CBZは利用可能。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
+JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。旧v1出力要求では従来の配置制限を維持する。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
 
 ### 解像度診断と補間拡大（#57の第一段階）
 
@@ -487,10 +489,18 @@ JSとRustで値を検証。Live Manga v1には変換契約がないためトリ�
 
 ## Live Manga配信用出力（Issue #39）
 
-制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
+### 保存済み途中稿の非公開転送（#130・#131）
+
+通常制作の保存キュー上で短いcaptureを行い、作品・話・保存版と採用済み内容を固定する。描画と通信はキュー外で行う。専用領域のpreview checkpointと不変assetを保持し、公開刊行のstrict検査は変更しない。未作画・未割当枠には機械的placeholder、文字配置待ちには状態を付け、非対応／不整合動画は静止画へ落とす。ページ未構成の範囲は件数を表示して除外し、架空のページを組まない。
+
+保存済みの話全体を、明示承認したHTTPS Worker経由で非公開R2 previewへ転送する。表示フィルタ・selectedBlockIdsは送信範囲に使わない。一次SourceRef由来のシーンIDとタグだけを共通preview契約へ投影し、contextRefs・原稿全文・設定・候補・キーは出力しない。タグ更新は次回の固定版へ反映し、原文参照を付け替えない。
+
+固定転送ID・digest・基準版・転送先を保持し、再開は受信側の不足asset一覧に従う。動画は検証済みファイルからnative streamで送る。確定は直列化し、受信側CASで遅い旧版による巻戻しを防ぐ。転送用キーはメモリだけに保持し、閲覧用認証と分離する。保存期限・自動同期・クラウド構成変更は追加しない。人工データの試験と実Cloudflare／Mac間の受入は別判定とする。
+
+制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/dev/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
 
 コマ動画は作品内の軽量`panelMotions`参照。採用作画ID/hash、公開動画版ID/hash、原文範囲・人物を固定し、実送信Jobのidentity開始画像と照合する。静止画・原文変更で不整合なら書き出し停止。ショットで新しい版を採用しても公開版は置換しない。`motionHistory`は漫画/動画のUndoと独立。
 
-既存`pagePNG`と共有する`panelLayout/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
+既存`pagePNG`と共有する`panelArtRect/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
 
-初期公開は矩形コマ・無音H.264。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
+新規出力はv2契約による自由四角形・可変コマ数・非破壊cropと無音H.264。PNGと配信画像は同じページ・画像配置を使い、文字と枠は動画の上に重ねる。Rustは公開形状と保存済みlayoutの頂点・割当順を照合する。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
