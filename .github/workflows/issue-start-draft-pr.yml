@@ -79,11 +79,6 @@ jobs:
             const managedLabels = [
               { name: 'agent:start', color: '1f6feb', description: 'Start a managed implementation task' },
               { name: 'agent:started', color: '0969da', description: 'A managed draft PR has been created' },
-              { name: 'status:ready', color: 'fbca04', description: 'Ready and not yet started' },
-              { name: 'status:in-progress', color: '0e8a16', description: 'A draft or open implementation PR exists' },
-              { name: 'status:review', color: '5319e7', description: 'Implementation PR is ready for review' },
-              { name: 'status:blocked', color: 'b60205', description: 'Work is blocked or a PR was closed without merge' },
-              { name: 'status:done', color: '6f42c1', description: 'Implementation was merged' },
             ];
             for (const label of managedLabels) {
               try {
@@ -104,6 +99,23 @@ jobs:
               }
             }
 
+            async function markStarted() {
+              const current = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issue.number,
+              });
+              const otherLabels = (current.data.labels || [])
+                .map((label) => label.name || label)
+                .filter((name) => !name.startsWith('status:') && name !== 'agent:started');
+              await github.rest.issues.setLabels({
+                owner,
+                repo,
+                issue_number: issue.number,
+                labels: otherLabels.concat(['agent:started']),
+              });
+            }
+
             const openPulls = await github.paginate(
               github.rest.pulls.list,
               { owner, repo, state: 'open', per_page: 100 },
@@ -117,12 +129,7 @@ jobs:
               pull.head.ref.startsWith('issue/' + issue.number + '-'),
             );
             if (existingPull) {
-              await github.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number: issue.number,
-                labels: ['agent:started', 'status:in-progress'],
-              });
+              await markStarted();
               core.info(
                 'Issue #' + issue.number + ' is already linked to PR #' + existingPull.number + '.',
               );
@@ -204,22 +211,7 @@ jobs:
                 'Change the PR to ready for review only after the acceptance criteria are met.',
               ].join('\n'),
             });
-            await github.rest.issues.addLabels({
-              owner,
-              repo,
-              issue_number: issue.number,
-              labels: ['agent:started', 'status:in-progress'],
-            });
-            try {
-              await github.rest.issues.removeLabel({
-                owner,
-                repo,
-                issue_number: issue.number,
-                name: 'status:ready',
-              });
-            } catch (error) {
-              if (error.status !== 404) throw error;
-            }
+            await markStarted();
             await github.rest.issues.createComment({
               owner,
               repo,
