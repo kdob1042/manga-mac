@@ -4,7 +4,7 @@ import { wrapText, validateLettering } from './lettering';
 import { containRect } from './image-input';
 import JSZip from 'jszip';
 import { call, desktop } from './bridge';
-import { compositePixels } from './core';
+import { compositePixels, panelHasText } from './core';
 import { textForPanel } from './localization';
 export function imageOf(src) { return new Promise((resolve, reject) => { const im = new Image(); im.onload = () => resolve(im); im.onerror = () => reject(Error('画像を読み込めません')); im.src = src; }); }
 export async function fitInput(image, width, height) {
@@ -78,19 +78,21 @@ export async function pageLayers(panels, snapshots, localizations = [], locale =
       const image = await imageOf(p.image), fit = containRect(image.width, image.height, 716, 716);
       if(layer!=='overlay' && !crop)ctx.drawImage(image, x + 2 + fit.x, y + 2 + fit.y, fit.width, fit.height);
     } else {ctx.fillStyle='#f2f0eb';ctx.fillRect(2,2,716,716);ctx.fillStyle='#777';ctx.font='30px sans-serif';ctx.fillText('未作画',30,50);}
-    if(scale*14<6) throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げてください`);
     if(layer==='art'){ctx.restore();continue;}
-    const snapshot = snapshots.find(s => s.id === p.snapshotId);
-    const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
-    if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
-    const text = textForPanel(p, snapshot, localization);
-    if (p.lettering?.mode === 'balloons') {
-      const layout = validateLettering(p, p.lettering);
-      for (const box of layout.boxes) {
-        const unitText = textForPanel({ ...p, unitIds: [box.unit_id] }, snapshot, localization);
-        drawLettering(ctx, unitText, { x: x + 2 + box.x * 716, y: y + 2 + box.y * 716, width: box.width * 716, height: box.height * 716 }, true, box);
-      }
-    } else drawLettering(ctx, text, { x: x + 10, y: y + 736, width: 700, height: 280 }, false);
+    if (panelHasText(p)) {
+      if(scale*14<6) throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げるか、文字配置を見直してください`);
+      const snapshot = snapshots.find(s => s.id === p.snapshotId);
+      const localization = locale === 'en' ? localizations.find(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) : null;
+      if (locale === 'en' && !localization) throw Error('現在の原作に対応する英訳がありません');
+      const text = textForPanel(p, snapshot, localization);
+      if (p.lettering?.mode === 'balloons') {
+        const layout = validateLettering(p, p.lettering);
+        for (const box of layout.boxes) {
+          const unitText = textForPanel({ ...p, unitIds: [box.unit_id] }, snapshot, localization);
+          drawLettering(ctx, unitText, { x: x + 2 + box.x * 716, y: y + 2 + box.y * 716, width: box.width * 716, height: box.height * 716 }, true, box);
+        }
+      } else drawLettering(ctx, text, { x: x + 10, y: y + 736, width: 700, height: 280 }, false);
+    }
     ctx.restore();
     // The frame stays above the artwork, including full-bleed crops.
     if(crop && layer==='complete') {
