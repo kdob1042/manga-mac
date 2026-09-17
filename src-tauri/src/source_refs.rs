@@ -4,6 +4,9 @@ fn hash(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 pub fn resolve<'a>(project: &'a Value, r: &Value) -> Result<&'a str, String> {
+    if !r["snapshotId"].is_string() || !r["sceneId"].is_string() {
+        return Err("Invalid source identity".into());
+    }
     let snapshot = project["snapshots"]
         .as_array()
         .and_then(|ss| ss.iter().find(|s| s["id"] == r["snapshotId"]))
@@ -28,6 +31,22 @@ pub fn resolve<'a>(project: &'a Value, r: &Value) -> Result<&'a str, String> {
 pub fn validate(project: &Value) -> Result<(), String> {
     if project["version"].as_u64().unwrap_or(0) < 5 {
         return Ok(());
+    }
+    let mut snapshot_ids = std::collections::HashSet::new();
+    for snapshot in project["snapshots"].as_array().ok_or("Missing snapshots")? {
+        if !snapshot_ids.insert(snapshot["id"].as_str().ok_or("Missing snapshot ID")?) {
+            return Err("Duplicate snapshot ID".into());
+        }
+        let mut scene_ids = std::collections::HashSet::new();
+        for scene in snapshot["scenes"].as_array().ok_or("Missing scenes")? {
+            if !scene_ids.insert(scene["id"].as_str().ok_or("Missing scene ID")?) {
+                return Err("Duplicate scene ID".into());
+            }
+            let text = scene["text"].as_str().ok_or("Invalid source text")?;
+            if scene["sourceHash"].as_str() != Some(hash(text).as_str()) {
+                return Err("Immutable source hash mismatch".into());
+            }
+        }
     }
     let application = project
         .get("sourceApplication")

@@ -495,6 +495,20 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
         if old_project["version"].as_u64() == Some(5) && project["version"].as_u64() != Some(5) {
             return Err("Source references require a compatible app version".into());
         }
+        for old_panel in old_project["panels"].as_array().into_iter().flatten() {
+            if old_panel.get("sourceRefs").is_some() {
+                if let Some(next) = project["panels"]
+                    .as_array()
+                    .and_then(|ps| ps.iter().find(|p| p["id"] == old_panel["id"]))
+                {
+                    if next.get("sourceRefs").is_none() {
+                        return Err(
+                            "Source references cannot be discarded by an older editor".into()
+                        );
+                    }
+                }
+            }
+        }
         for snapshot in old_project["snapshots"].as_array().into_iter().flatten() {
             if snapshot["scenes"]
                 .as_array()
@@ -673,6 +687,37 @@ mod tests {
         assert!(save(&mut db, &dir, &old.to_string()).is_err());
         p["layout"]["pages"][0]["slots"][0]["points"][2] = json!([2, 2]);
         assert!(save(&mut db, &dir, &p.to_string()).is_err());
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn source_ranges_roundtrip_and_reject_downgrade_and_snapshot_rewrite() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        let old = p.clone();
+        p["version"] = json!(5);
+        p["sourceApplication"] = json!({"version":1,"units":[]});
+        for snapshot in p["snapshots"].as_array_mut().unwrap() {
+            for scene in snapshot["scenes"].as_array_mut().unwrap() {
+                scene["sourceHash"] = json!(hash(scene["text"].as_str().unwrap().as_bytes()));
+            }
+        }
+        let snapshot = &p["snapshots"][0];
+        let r = json!({"snapshotId":snapshot["id"],"sceneId":snapshot["scenes"][0]["id"],"startCp":0,"endCp":1});
+        p["panels"][0]["sourceRefs"] = json!([r]);
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let before = load(&db, &dir).unwrap();
+        assert!(save(&mut db, &dir, &old.to_string()).is_err());
+        let mut missing = p.clone();
+        missing["panels"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("sourceRefs");
+        assert!(save(&mut db, &dir, &missing.to_string()).is_err());
+        let mut changed = p.clone();
+        changed["snapshots"][0]["scenes"][0]["text"] = json!("rewritten");
+        changed["snapshots"][0]["scenes"][0]["sourceHash"] = json!(hash(b"rewritten"));
+        assert!(save(&mut db, &dir, &changed.to_string()).is_err());
+        assert_eq!(load(&db, &dir).unwrap(), before);
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
