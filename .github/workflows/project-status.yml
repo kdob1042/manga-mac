@@ -29,7 +29,7 @@ jobs:
           PROJECT_OWNER: kdob1042
           PROJECT_NUMBER: '1'
         with:
-          github-token: \${{ secrets.PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
             const projectOwner = process.env.PROJECT_OWNER;
             const projectNumber = Number(process.env.PROJECT_NUMBER);
