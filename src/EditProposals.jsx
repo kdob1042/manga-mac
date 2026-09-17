@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {loadEditProposal,resolveEditProposal,executeLocalEdits} from './edit-commands.js';
 import {pagePanels} from './layout.js';
-import {pagePNG} from './render.js';
+import { pagePNG } from './render.js';
 
 export default function EditProposals({project,current,commit,run,busy,onSelect}) {
   const [proof,setProof]=useState(null);

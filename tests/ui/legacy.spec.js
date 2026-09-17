@@ -6,7 +6,7 @@ test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', a
   await page.goto('/');
   const result = await page.evaluate(async legacy => {
     const { migrateProject } = await import('/src/revisions.js');
-    const { pagePNG, exportCBZ } = await import('/src/render.js');
+    const {pagePNG}=await import('/src/render.js');const {exportCBZ}=await import('/src/export.js');
     const { saveProject } = await import('/src/bridge.js');
     const project = await migrateProject(legacy);
     const before = await pagePNG(legacy.panels, legacy.snapshots);

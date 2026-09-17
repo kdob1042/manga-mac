@@ -1,5 +1,5 @@
 // Thin orchestration shared by manual controls and natural-language commands.
-import { imageOf } from './render';
+import { imageOf } from './canvas-image.js';
 import { beginFinishing, finishingPlan, finishingInstruction } from './finishing.js';
 import { beginUpscale, finishUpscale } from './upscale.js';
 import { generatePanel } from './pipeline';

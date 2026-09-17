@@ -7,7 +7,7 @@ test('interrupted edit recovers a masked candidate once, never adopts or regener
   const results = await page.evaluate(async legacy => {
     const { migrateProject, beginJob, imageHash, adoptCandidate } = await import('/src/revisions.js');
     const { recoverImageResult } = await import('/src/image-recovery.js');
-    const { imageOf } = await import('/src/render.js');
+    const {imageOf}=await import('/src/canvas-image.js');
     const canvas = document.createElement('canvas'); canvas.width = 8; canvas.height = 8;
     const ctx = canvas.getContext('2d'); ctx.fillStyle = '#ff0000'; ctx.fillRect(0,0,8,8);
     legacy.panels[0].image = canvas.toDataURL();
@@ -41,6 +41,7 @@ test('interrupted edit recovers a masked candidate once, never adopts or regener
 test('unknown image UI collects saved output and keeps adopted image across reload', async ({ page }) => {
   await page.addInitScript(legacy => {
     window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
       if (command === 'load_project') return sessionStorage.getItem('image-project') || JSON.stringify(legacy);
       if (command === 'save_project') { sessionStorage.setItem('image-project',args.data); return; }
       if (command === 'recover_image') {

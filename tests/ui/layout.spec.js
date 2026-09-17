@@ -34,7 +34,7 @@ test('four corners, cancel, undo/redo and six-panel persistence keep artwork and
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',after);
  await expect(page.locator('.thumbnail')).toHaveCount(1);await page.getByRole('button',{name:'ページ追加'}).click();await expect(page.locator('.thumbnail')).toHaveCount(2);
  await page.locator('.thumbnail').nth(1).click();await page.getByRole('button',{name:'このページを外す'}).click();await expect(page.locator('.thumbnail')).toHaveCount(1);
- const result=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');const {pagePNG,exportCBZ}=await import('/src/render.js');const {pagePanels}=await import('/src/layout.js');const p=await loadProject(),pg=p.layout.pages[0];return {cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer())),png:await pagePNG(pagePanels(p,pg),p.snapshots,[], 'ja',pg),image:p.panels[0].image,jobs:p.jobs.length,slots:pg.slots.length};});
+ const result=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');const {pagePNG}=await import('/src/render.js');const {exportCBZ}=await import('/src/export.js');const {pagePanels}=await import('/src/layout.js');const p=await loadProject(),pg=p.layout.pages[0];return {cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer())),png:await pagePNG(pagePanels(p,pg),p.snapshots,[], 'ja',pg),image:p.panels[0].image,jobs:p.jobs.length,slots:pg.slots.length};});
  expect(result.image).toBe(legacy.panels[0].image);expect(result.jobs).toBe(0);expect(result.slots).toBe(6);expect(result.png).toMatch(/^data:image\/png;base64,/);
  const zip=await JSZip.loadAsync(result.cbz);expect(await zip.file('001.png').async('base64')).toBe(result.png.split(',')[1]);writeFileSync('test-results/free-layout-six-output.png',Buffer.from(result.png.split(',')[1],'base64'));
  await page.screenshot({path:'test-results/free-layout-six.png',fullPage:true});
@@ -45,6 +45,7 @@ test('AI layout uses registered router and explicit adoption without regeneratin
    let project={...fixture,jobs:[],history:[]};window.nativeCalls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.nativeCalls.push(command);
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify(project);
      if(command==='save_project'){project=JSON.parse(args.data);window.savedProject=project;return;}
      if(command==='backup_status')return {config:null,status:{},restored:[]};

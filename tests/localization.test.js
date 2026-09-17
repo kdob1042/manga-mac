@@ -47,3 +47,15 @@ test('video WebVTT uses the same unit translations as manga', () => {
   assert.match(vtt, /00:00:02\.500 --> 00:00:05\.000\n“Is this seat free\?”/);
   assert.doesNotMatch(vtt, /ここ、空いてる/);
 });
+
+test('text indexes are scoped to one operation and do not leak into later revisions', async () => {
+  const { createTextResolver } = await import('../src/localization.js');
+  const source = structuredClone(snapshot);
+  const english = structuredClone(localization);
+  const resolve = createTextResolver(source, english);
+  assert.equal(resolve(['S01:u1', 'S01:u0']), '“Is this seat free?”\n\nAfter school in the library.');
+  assert.throws(() => resolve(['missing']), /原文の参照/);
+  english.units[1].text = 'Updated translation';
+  assert.equal(createTextResolver(source, english)(['S01:u1']), 'Updated translation');
+  assert.equal(resolve(['S01:u1']), '“Is this seat free?”');
+});

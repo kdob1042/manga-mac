@@ -3,7 +3,7 @@ import { finishJob, imageHash } from './revisions.js';
 // The same validation and masked compositing runs for live and recovered results.
 export async function completeImage(context, image) {
   if (context?.version !== 1 || !context.panel || context.panel.image !== null) throw Error('画像の復旧情報がありません');
-  const { imageOf, mergeRegion } = await import('./render');
+  const { imageOf, mergeRegion } = await import('./canvas-image.js');
   const actual = await imageOf(image), { width, height } = context.panel.generation ?? {};
   if (actual.width !== width || actual.height !== height) throw Error('画像エンジンの出力寸法が要求と一致しません');
   if (context.kind === 'edit') {

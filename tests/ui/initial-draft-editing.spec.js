@@ -5,6 +5,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
    let lettering=0,failed=false;window.calls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
      window.calls.push({command,args});
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify(project);
      if(command==='save_project'){project=JSON.parse(args.data);window.saved=project;return;}
      if(command==='backup_status')return {config:null,status:{},restored:[]};
@@ -46,7 +47,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
  await expect.poll(()=>page.evaluate(()=>window.saved.panels[2].lettering.boxes[0].x)).toBeGreaterThan(.1);
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
  await page.screenshot({path:'test-results/initial-draft-editing.png',fullPage:true});
- const exported=await page.evaluate(async()=>{const {exportCBZ}=await import('/src/render.js');return (await exportCBZ(window.saved)).size;});expect(exported).toBeGreaterThan(1000);
+ const exported=await page.evaluate(async()=>{const {exportCBZ}=await import('/src/export.js');return (await exportCBZ(window.saved)).size;});expect(exported).toBeGreaterThan(1000);
  await page.getByLabel('編集の指示',{exact:true}).fill('3コマ目の解像度を確認');await page.getByRole('button',{name:'修正する ↑',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();
  await expect(page.getByRole('status').filter({hasText:'元画像 768×768px／必要'})).toBeVisible();
  await page.getByLabel('編集の指示',{exact:true}).fill('3コマ目を2倍に補間拡大');await page.getByRole('button',{name:'修正する ↑',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();

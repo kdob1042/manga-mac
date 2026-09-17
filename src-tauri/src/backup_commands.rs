@@ -261,6 +261,9 @@ pub fn workspace_root(base: &Path, id: &str) -> Result<PathBuf, String> {
     if !backup::uuid(id) {
         return Err("復元作品IDが不正です".into());
     }
+    if base.join("works").join(id).exists() {
+        return crate::storage::source_library::root(base, id);
+    }
     let root = base.join("restored").join(id);
     backup::regular(&root.join("manga.sqlite3"))?;
     if root.canonicalize().map_err(err)? != root {

@@ -11,7 +11,7 @@ test('cover preserves aspect and fills portrait/landscape frames, pan clamps wit
 });
 test('crop history, reload and removal do not touch original artwork, lettering, source or jobs',()=>{
  const p=ensureLayout({panels:[{id:'p',image:'original',lettering:{mode:'balloons'},unitIds:['u']}],jobs:[]});
- const l={...p.layout,imageCrops:{p:defaultCrop()}},next=changeLayout(p,l);
+ const l={...p.layout,imageCrops:{p:defaultCrop()}},next=changeLayout(p,l,'crop',{pageIds:p.layout.pages.map(p=>p.id)});
  assert.equal(next.panels,p.panels);assert.equal(next.jobs,p.jobs);assert.deepEqual(ensureLayout(JSON.parse(JSON.stringify(next))).layout,l);
  assert.deepEqual(undoLayout(next).layout,p.layout);assert.deepEqual(undoLayout(undoLayout(next),true).layout,l);
  assert.throws(()=>assertLegacyLiveLayout(next),/トリミング/);assert.doesNotThrow(()=>assertLegacyLiveLayout(p));
