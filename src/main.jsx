@@ -1,7 +1,7 @@
 import {recognizeRegions,regionForEdit} from './visual-regions';
 import EditProposals from './EditProposals';
 import DraftControls from './DraftControls';
-import { panelAction } from './panel-actions';
+import { panelAction, checkPanelAction } from './panel-actions';
 import JevSettings from './JevSettings';
 import { classifyEdit } from './jev';
 import { editContext, editBase, planEdit, validateEditPlan, executeLocalEdits, undoEdit, saveEditProposal, loadEditProposal, resolveEditProposal, executeEditSequence } from './edit-commands';
@@ -171,7 +171,16 @@ function App() {
   async function applyEdit(candidate) {
     let message='編集を保存しました。再作画は候補を確認して採用してください。';
     await executeEditSequence({current:()=>current.current,commit,candidate,cancelled:()=>cancel.current,
-      check:async next=>{const pg=next.layout.pages.find(p=>p.id===candidate.context.pageId);await pagePNG(pagePanels(next,pg),next.snapshots,next.localizations,next.output_locale,pg,true,next.layout.imageCrops);},
+      check:async next=>{
+        const pg=next.layout.pages.find(p=>p.id===candidate.context.pageId);
+        await pagePNG(pagePanels(next,pg),next.snapshots,next.localizations,next.output_locale,pg,true,next.layout.imageCrops);
+        for(const op of candidate.plan.operations) {
+          if(['direction','region','finishing'].includes(op.kind)&&!desktop())throw Error('作画はMacアプリで実行してください');
+          if(op.kind==='direction'&&!model.connectionId)throw Error('演出AIの接続を登録してください');
+          if(['direction','region'].includes(op.kind))await beginJob(next,next.panels.find(p=>p.id===op.panelId),op.kind==='region'?'edit':'retake');
+          await checkPanelAction(next,op);
+        }
+      },
       perform:async(op,context)=>{
         setSelected(op.panelId);
         if(['resolution','upscale','finishing','video_prepare','video_assign'].includes(op.kind)){message=await panelAction(()=>current.current,commit,op,id=>{setRequestedShot(id);setMedium('video');});return;}

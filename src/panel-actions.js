@@ -5,6 +5,17 @@ import { beginUpscale, finishUpscale } from './upscale.js';
 import { generatePanel } from './pipeline';
 import { finishJob } from './revisions.js';
 import { shotFromPanel, assignMotion } from './panel-motion.js';
+export async function checkPanelAction(project,op) {
+  const source=project.panels.find(p=>p.id===op.panelId);
+  if(['finishing','upscale','resolution'].includes(op.kind)) {
+    const im=await imageOf(source.image);
+    if(op.kind==='finishing')await beginFinishing(project,op.panelId,im.width,im.height);
+    else if(op.kind==='upscale')await beginUpscale(project,op.panelId,im.width,im.height,op.args.factor);
+    else finishingPlan(project,op.panelId,im.width,im.height);
+  }
+  if(op.kind==='video_prepare')await shotFromPanel(project,op.panelId,op.args.instruction,op.args.ratio);
+  if(op.kind==='video_assign')await assignMotion(project,op.panelId,op.args.shotId);
+}
 export async function prepareFinishing(current,commit,id) {
   const p=current(),source=p.panels.find(x=>x.id===id),im=await imageOf(source.image),job=await beginFinishing(p,id,im.width,im.height);
   await commit({...p,jobs:[...p.jobs,job]});
