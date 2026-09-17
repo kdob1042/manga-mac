@@ -52,10 +52,33 @@ export const directionSchema = { type: 'object', anyOf: [
   resultSchema(['action'], { anyOf: operationSchemas }),
   resultSchema(['ready','blocked'], { type: 'null' }),
 ] };
+const lensGoal = text => {
+  const matches = [];
+  const patterns = [
+    /(?:焦点距離|レンズ)[^0-9]{0,16}(\d+(?:\.\d+)?)\s*mm/gi,
+    /\b(?:focal(?:\s+length)?|lens)\b[^0-9]{0,16}(\d+(?:\.\d+)?)\s*mm/gi,
+  ];
+  for (const pattern of patterns) {
+    for (const match of String(text ?? '').matchAll(pattern)) matches.push(Number(match[1]));
+  }
+  return matches.at(-1) ?? null;
+};
+export function directionGoal(panel, instruction = '') {
+  const lens = lensGoal(String(panel?.prompt ?? '') + '\n' + String(instruction ?? ''));
+  return lens === null ? null : { lens };
+}
+function completionMismatch(goal, session) {
+  if (!goal) return null;
+  if (goal.lens !== undefined && session.state?.state?.lens !== goal.lens) {
+    return { field: 'lens', expected: goal.lens, actual: session.state.state.lens };
+  }
+  return null;
+}
 export function directionPrompt(project, panel, session, run) {
   const snapshot = project.snapshots.find(s => s.id === panel.snapshotId);
   const payload = { source: sourceForPanel(panel, snapshot), design: snapshot?.scenes.find(s => s.id === panel.sceneId)?.design,
     settings: snapshot?.settings, direction: panel.prompt, instruction: run.instruction,
+    goal: directionGoal(panel, run.instruction),
     characters: panel.characterIds.map(id => { const c = project.characters.find(c => c.id === id); return { id, name: c?.name, description: c?.description }; }),
     characterBindings: (project.character_bindings ?? []).filter(b => b.shot_id === panel.shot_binding.id),
     state: Object.fromEntries(['operations','scenes','objects','rigs','assets','applied_pose'].map(key => [key,session.state[key]])),
@@ -136,7 +159,24 @@ export async function directPanel({ current, commit, call, ask, panelId, instruc
       check();
       if (cancelled()) break;
       if (result.status === 'blocked') { await save({ status: 'blocked', message: result.reason }); throw Error(result.reason); }
-      if (result.status === 'ready') { await save({ phase: 'capture', message: result.reason }); break; }
+      if (result.status === 'ready') {
+        const mismatch = completionMismatch(directionGoal(check(), run.instruction), s);
+        if (mismatch) {
+          if (run.completionCorrections) {
+            throw Error('演出AIが完了を報告しましたが、現在状態が目標と一致しません（' + mismatch.field + ': ' + mismatch.actual + ' !== ' + mismatch.expected + '）');
+          }
+          await save({
+            completionCorrections: (run.completionCorrections ?? 0) + 1,
+            feedback: {
+              rejectedCompletion: mismatch,
+              message: 'Ready was rejected: live Blender ' + mismatch.field + ' is ' + mismatch.actual + ', but the target is ' + mismatch.expected + '. Return the required action or report a real blocker.',
+            },
+          });
+          continue;
+        }
+        await save({ phase: 'capture', message: result.reason });
+        break;
+      }
       if (run.steps.some(x => x.status === 'complete' && JSON.stringify(x.operation) === JSON.stringify(result.operation))) {
         // One bounded semantic correction, never another Blender execution or transport retry.
         if (run.corrections) throw Error('同じ操作の繰り返しを停止しました。詳細調整で構図を確認してください');
