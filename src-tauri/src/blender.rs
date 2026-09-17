@@ -547,7 +547,7 @@ pub fn validate_operation(operation: &Operation) -> Result<(), String> {
                     Some("OBJECT" | "COLLECTION" | "ACTION")
                 ) || name
                     .as_ref()
-                    .map_or(true, |value| value.is_empty() || value.len() > 256)))
+                    .is_none_or(|value| value.is_empty() || value.len() > 256)))
             || (format != "blend" && (asset_type.is_some() || name.is_some())) =>
         {
             return Err("Web素材の取込指定が不正です".into())
