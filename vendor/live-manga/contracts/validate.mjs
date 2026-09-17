@@ -6,7 +6,7 @@ const obj = (v, required, optional=[]) => {
   if (!v || typeof v !== 'object' || Array.isArray(v) || required.some(k=>!(k in v)) || Object.keys(v).some(k=>![...required,...optional].includes(k))) fail('unknown or missing fields');
 };
 const text = (s, max=2000) => { if(typeof s!=='string'||!s.trim()||s.length>max||/[<>\u0000-\u0008]/.test(s)) fail('invalid text'); };
-const id = s => { if(typeof s!=='string'||!/^[a-zA-Z0-9:_-]{1,128}$/.test(s)) fail('invalid ID'); };
+const panelText = s => { if(typeof s!=='string'||s.length>2000||/[<>\u0000-\u0008]/.test(s)) fail('invalid panel text'); };const id = s => { if(typeof s!=='string'||!/^[a-zA-Z0-9:_-]{1,128}$/.test(s)) fail('invalid ID'); };
 const integer = (n,min,max) => { if(!Number.isSafeInteger(n)||n<min||n>max) fail('invalid integer'); };
 const array = (v,min,max) => { if(!Array.isArray(v)||v.length<min||v.length>max) fail('invalid collection'); };
 const unique = values => { if(new Set(values).size!==values.length) fail('duplicate ID'); };
@@ -41,7 +41,7 @@ export function validate(manifest) {
     integer(p.width,1,LIMITS.dimension);integer(p.height,1,LIMITS.dimension);array(p.panels,1,LIMITS.panels);
     for(const k of ['art','overlay','fallback']) {const a=asset(p[k],'image/');if(a.width!==p.width||a.height!==p.height) fail('page layer dimensions differ');if(k==='overlay'&&a.mime!=='image/png')fail('overlay must be PNG');}
     for(const panel of p.panels) {
-      obj(panel,['id','frame','artRect','poster','text'],['motion']);id(panel.id);ids.push(panel.id);text(panel.text);
+      obj(panel,['id','frame','artRect','poster','text'],['motion']);id(panel.id);ids.push(panel.id);panelText(panel.text);
       rect(panel.frame,p.width,p.height);rect(panel.artRect,p.width,p.height);
       const f=panel.frame,r=panel.artRect;
       if(r.x<f.x||r.y<f.y||r.x+r.width>f.x+f.width+.001||r.y+r.height>f.y+f.height+.001)fail('art outside panel');
