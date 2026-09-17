@@ -316,3 +316,25 @@ async fn jev_uses_typed_evaluation_without_chat_or_images() {
     bad["confidence"] = json!(2);
     assert!(validate_output(Purpose::Classify, &bad).is_err());
 }
+
+#[tokio::test]
+async fn visual_regions_use_existing_image_transport_and_validate_uncertainty_contract() {
+    let value = json!({"uncertain":false,"reason":"visible target","regions":[{"panelId":"p","purpose":"edit","label":"shirt","rect":[0.2,0.3,0.3,0.4]}]});
+    let fixture = Fixture {
+        response: response(Provider::Openai, "stop", &value.to_string()).to_string(),
+        ..Default::default()
+    };
+    let mut r = request();
+    r.purpose = Purpose::Vision;
+    let result = complete(&connection(Provider::Openai), &r, fixture.clone())
+        .await
+        .unwrap();
+    validate_output(Purpose::Vision, &result).unwrap();
+    assert_eq!(fixture.calls.lock().unwrap().len(), 1);
+    let mut bad = value.clone();
+    bad["regions"][0]["rect"] = json!([0, 0, 2, 1]);
+    assert!(validate_output(Purpose::Vision, &bad).is_err());
+    bad = value;
+    bad["uncertain"] = json!("probably");
+    assert!(validate_output(Purpose::Vision, &bad).is_err());
+}

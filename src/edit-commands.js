@@ -1,6 +1,30 @@
+import {checkVisualEdit,regionForEdit,letteringRegions} from './visual-regions.js';
 import { defaultLettering, validateLettering, setLettering } from './lettering.js';
 import { validateLayout, layoutWarnings, changeLayout, pagePanels } from './layout.js';
 import { validateCrop } from './image-crop.js';
+import { digest } from './revisions.js';
+
+async function proposalBase(project) {
+  return digest(new TextEncoder().encode(JSON.stringify([project.active,project.panels,project.layout,project.characters,project.style_references,project.output_locale,project.localizations,project.panelMotions,project.videoShots])));
+}
+export async function saveEditProposal(project,candidate) {
+  if(candidate.base!==editBase(project))throw Error('要求後に作品が変わりました。現在の原稿から再提案してください');
+  validateEditPlan(project,candidate.plan,candidate.context);
+  const job={id:crypto.randomUUID(),kind:'edit_proposal',status:'candidate',source_revision:project.active,at:new Date().toISOString(),input_hash:await proposalBase(project),plan:candidate.plan,context:candidate.context};
+  return {...project,jobs:[...project.jobs,job]};
+}
+export async function loadEditProposal(project,id) {
+  const job=project.jobs.find(j=>j.id===id&&j.kind==='edit_proposal');
+  if(!job||job.status!=='candidate')throw Error('編集候補がありません');
+  if(project.jobs.some(j=>j.kind==='edit_execution'&&j.proposal_id===id))throw Error('実行を開始済みの候補です。保存結果・未確定要求を確認してください');
+  if(job.input_hash!==await proposalBase(project))throw Error('原稿が変わった候補です。現在の原稿から再提案してください');
+  validateEditPlan(project,job.plan,job.context);
+  return {base:editBase(project),plan:job.plan,context:job.context,jobId:job.id};
+}
+export function resolveEditProposal(project,id,status) {
+  if(!['complete','abandoned'].includes(status))throw Error('候補の状態が不正です');
+  return {...project,jobs:project.jobs.map(j=>j.id===id&&j.kind==='edit_proposal'?{...j,status}:j)};
+}
 
 // The registry describes only executable operations. No generated code or URLs.
 export const commands = {
@@ -19,7 +43,9 @@ export function editBase(project) { return JSON.stringify([project.revision ?? 0
 export function editContext(project, pageIndex, selected, rect) {
   const page = project.layout.pages[pageIndex];
   if (!page) throw Error('表示ページがありません');
+  const previous=project.jobs.findLast(j=>j.kind==='edit_proposal'&&j.status==='complete'&&j.context?.pageId===page.id);
   return { pageId: page.id, pageNumber: pageIndex + 1, selected: page.slots.some(s => s.panelId === selected) ? selected : null,
+    previousTargets:previous?.plan.operations.map(op=>op.panelId).filter(id=>page.slots.some(s=>s.panelId===id))??[],
     panels: pagePanels(project, page).map((p, i) => ({ id: p.id, number: i + 1, characterIds: p.characterIds, lettering: p.lettering ?? defaultLettering(p), crop: project.layout.imageCrops?.[p.id] ?? null, hasImage: !!p.image })),
     videoShots: (project.videoShots??[]).filter(s=>s.adopted_revision).map(s=>({id:s.id,sceneId:s.sceneId,unitIds:s.unitIds})),
     pages: [page], region: rect ?? null, operations: Object.keys(commands) };
@@ -29,9 +55,17 @@ const exact = (v, keys) => object(v) && Object.keys(v).every(k => keys.includes(
 export function validateEditPlan(project, plan, context) {
   if (!exact(plan, ['reason','operations']) || typeof plan.reason !== 'string' || !plan.reason.trim() || plan.reason.length > 2000 || !Array.isArray(plan.operations) || !plan.operations.length || plan.operations.length > 8) throw Error('編集内容が不明です。対象と変更内容を具体的にしてください');
   const targets = new Set(context.panels.map(p => p.id));
+  let generationStarted=false;
+  const generated=new Set();
   let preview = project;
   for (const op of plan.operations) {
     if (!exact(op, ['kind','panelId','args']) || !commands[op.kind] || !object(op.args)) throw Error('未対応の編集操作です');
+    if(commands[op.kind].generation||commands[op.kind].runner) {
+      generationStarted=true;
+      if(plan.operations.length>1&&['resolution','video_prepare','video_assign'].includes(op.kind))throw Error('診断・動画の準備と割当は個別に実行してください');
+      if(generated.has(op.panelId))throw Error('同じコマへの複数の生成は、先の候補を採用してから指示してください');
+      generated.add(op.panelId);
+    } else if(generationStarted)throw Error('文字・枠・cropの調整を先に、生成を後にする計画が必要です');
     if (op.kind !== 'layout' && !targets.has(op.panelId)) throw Error('表示ページ外の対象は変更できません');
     if (context.explicitTargets?.length && op.kind!=='layout' && !context.explicitTargets.includes(op.panelId)) throw Error('指示で指定されたコマ以外への変更は実行しません');
     const p = preview.panels.find(p => p.id === op.panelId);
@@ -55,18 +89,17 @@ export function validateEditPlan(project, plan, context) {
       if(layoutWarnings(layout,preview.panels).length) throw Error('枠の重なり・未割当・読書順を確認してください');
       preview=changeLayout(preview,layout,'コマ割り');
     } else if(commands[op.kind].runner) {
-      if(plan.operations.length!==1)throw Error('この操作は一つずつ実行してください。まだ変更していません');
       if(!p.image)throw Error('採用済み作画が必要です');
       if(['resolution','finishing'].includes(op.kind) && !exact(op.args,[]))throw Error('操作の引数が不正です');
       if(op.kind==='upscale' && (!exact(op.args,['factor']) || ![2,4].includes(op.args.factor)))throw Error('補間拡大は2倍または4倍を指定してください');
       if(op.kind==='video_prepare' && (!exact(op.args,['instruction','ratio']) || typeof op.args.instruction!=='string' || !op.args.instruction.trim() || op.args.instruction.length>1000 || !['960:960','1280:720','720:1280','1104:832','832:1104'].includes(op.args.ratio)))throw Error('動画の指示と対応寸法を指定してください');
       if(op.kind==='video_assign' && (!exact(op.args,['shotId']) || !context.videoShots?.some(s=>s.id===op.args.shotId)))throw Error('保存済みの採用動画を指定してください');
     } else {
-      if (plan.operations.length !== 1) throw Error('再生成を含む複合指示は一つずつ実行してください。まだ変更していません');
       if (!exact(op.args,['instruction']) || typeof op.args.instruction !== 'string' || !op.args.instruction.trim() || op.args.instruction.length > 4000) throw Error('再生成の指示が不正です');
-      if (op.kind==='region' && (!p.image || !context.region || context.selected!==p.id)) throw Error('この画像の修正範囲をドラッグで指定してください。自動領域認識は未対応です');
+      if (op.kind==='region') {if(!p.image)throw Error('採用済み作画が必要です');regionForEdit(context,p.id);}
     }
   }
+  for(const op of plan.operations)checkVisualEdit(preview,op,context.visual);
   return preview;
 }
 export function executeLocalEdits(project, candidate) {
@@ -79,6 +112,7 @@ export function executeLocalEdits(project, candidate) {
 export function undoEdit(project, redo=false) {
   const from=redo?'editRedo':'history',entry=project[from]?.at(-1);
   if(!entry) return project;
+  if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(!entry.edit) {
     if(redo) return project;
     return {...project,panels:entry.panels,history:project.history.slice(0,-1),editRedo:[]};
@@ -89,7 +123,7 @@ export function undoEdit(project, redo=false) {
   return {...project,...state,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?project.editRedo.slice(0,-1):[...(project.editRedo??[]),entry]};
 }
 export const editPlanSchema = {type:'object',properties:{reason:{type:'string'},operations:{type:'array',minItems:0,maxItems:8,items:{type:'object',properties:{kind:{type:'string',enum:Object.keys(commands)},panelId:{type:'string'},args:{type:'object'}},required:['kind','panelId','args'],additionalProperties:false}}},required:['reason','operations'],additionalProperties:false};
-export async function planEdit(project,context,instruction,ask,classify) {
+export async function planEdit(project,context,instruction,ask,classify,recognize) {
   const base=editBase(project);
   const normalized=instruction.normalize('NFKC');
   const pageNumbers=[...normalized.matchAll(/(\d+)ページ目/g)].map(m=>Number(m[1]));
@@ -97,11 +131,48 @@ export async function planEdit(project,context,instruction,ask,classify) {
   const numbers=[...normalized.matchAll(/(\d+)コマ目/g)].map(m=>Number(m[1]));
   if(numbers.some(n=>!context.panels.some(p=>p.number===n)))throw Error('指定のコマが表示ページにありません');
   context={...context,explicitTargets:numbers.length?numbers.map(n=>context.panels.find(p=>p.number===n).id):(/このコマ/.test(normalized)&&context.selected?[context.selected]:[])};
-  if(/顔.*(避け|かから|重なら)|頭.*切れ|しっぽ.*(人物|由美|勇)/.test(normalized))throw Error('画像内の対象位置を自動認識する編集は未対応です。手動で位置を指定してください');
+  if(!context.explicitTargets.length&&/さっき|直前/.test(normalized)) {
+    if(new Set(context.previousTargets).size!==1)throw Error('直前の対象を一つに特定できません。コマ番号で指定してください');
+    context.explicitTargets=[context.previousTargets[0]];
+  }
+  const needsVisual=/顔|服|衣装|頭.*切れ|しっぽ|手.*避け|右側の人物|左側の人物/.test(normalized);
+  if(needsVisual&&!context.region) {
+    if(!recognize)throw Error('画像の対象認識には接続設定で作画画像の送信を有効にするか、修正範囲を手動指定してください');
+    const ids=context.explicitTargets.length?context.explicitTargets:context.selected?[context.selected]:context.panels.map(p=>p.id);
+    const visual=await recognize(ids,instruction);
+    context={...context,visual,letteringRegions:Object.fromEntries(ids.map(id=>[id,letteringRegions(project,id,visual)]))};
+  }
   const decision=classify?await classify(instruction,context):null;
   if(decision && ['unclear','unsupported','readonly'].includes(decision.choice)) throw Error('変更内容を確認してください。原文変更・未対応操作は実行しません');
-  const prompt=JSON.stringify({task:'漫画の編集計画をJSONで返す。対象は表示ページの読書順numberからidへ解決。明示対象がない時だけselectedを使う。曖昧/未対応ならoperations空。原文とunit_id順序、固定locked枠、対象外を保持。画像内の顔や服の位置を推測しない。視覚的な位置指定は未対応として確認する。lettering argsは完全な{mode,boxes}、crop argsは{x,y,zoom}（x/yは切り取り基準、右へ動かす時はxを減らす）、layout argsは{pages:[表示ページ]}。direction/region argsは{instruction}。regionは手選択済み領域のみ。文字の内容は変更できない。文字サイズfontSizeは14〜72、lineHeightは1〜2、paddingは0〜40。複数の軽い変更は操作順に分ける。resolution/finishing argsは{}、upscaleは{factor:2または4}。video_prepareは{instruction,ratio}で5秒無音動画の準備のみ（生成しない）。video_assignは{shotId}でvideoShotsの既存採用動画を選ぶ。これらの操作と画像再生成を伴う複合操作は未対応。',instruction,context,decision});
+  const prompt=JSON.stringify({task:'漫画の編集計画をJSONで返す。対象は表示ページの読書順numberからidへ解決。明示対象がない時だけselectedを使う。曖昧/未対応ならoperations空。原文とunit_id順序、固定locked枠、対象外を保持。画像内の位置はcontext.visualとletteringRegionsだけを根拠にする。letteringRegionsは文字枠と同じ座標でavoidに文字を重ねない。subjectの矩形へしっぽ先端を向ける。根拠がなければ推測せず確認する。lettering argsは完全な{mode,boxes}、crop argsは{x,y,zoom}（x/yは切り取り基準、右へ動かす時はxを減らす）、layout argsは{pages:[表示ページ]}。direction/region argsは{instruction}。regionは手選択済み領域またはvisualのedit矩形を使う。文字の内容は変更できない。文字サイズfontSizeは14〜72、lineHeightは1〜2、paddingは0〜40。複数の軽い変更は操作順に分ける。resolution/finishing argsは{}、upscaleは{factor:2または4}。video_prepareは{instruction,ratio}で5秒無音動画の準備のみ（生成しない）。video_assignは{shotId}でvideoShotsの既存採用動画を選ぶ。複合操作は文字・枠・cropを先にまとめ、その後に生成する順序にする。同じコマの連続生成は先の採用が必要なため分ける。診断・動画準備・動画割当は単独操作。',instruction,context,decision});
   const plan=JSON.parse(await ask(prompt,editPlanSchema));
   validateEditPlan(project,plan,context);
   return {base,context,plan};
+}
+
+export async function executeEditSequence({current,commit,candidate,perform,check,cancelled=()=>false}) {
+  if(candidate.base!==editBase(current()))throw Error('要求後に作品が変わりました');
+  const preview=validateEditPlan(current(),candidate.plan,candidate.context);
+  if(check)await check(preview);
+  if(cancelled())return;
+  if(candidate.base!==editBase(current()))throw Error('検証中に作品が変わりました');
+  const local=candidate.plan.operations.filter(op=>!commands[op.kind].generation&&!commands[op.kind].runner);
+  const generated=candidate.plan.operations.filter(op=>commands[op.kind].generation||commands[op.kind].runner);
+  const id=crypto.randomUUID();
+  if(generated.length)await commit({...current(),jobs:[...current().jobs,{id,kind:'edit_execution',status:'running',source_revision:current().active,proposal_id:candidate.jobId??null,operations:candidate.plan.operations,completed:0}]});
+  let completed=0;
+  const record=async(status)=>{if(generated.length)await commit({...current(),jobs:current().jobs.map(j=>j.id===id?{...j,status,completed}:j)});};
+  try {
+    if(local.length) {
+      await commit(executeLocalEdits(current(),{...candidate,base:editBase(current()),plan:{...candidate.plan,operations:local}}));
+      completed=local.length;await record('running');
+    }
+    for(const op of generated) {
+      if(cancelled())throw Error('途中で停止しました。保存済みの編集と候補は保持しています');
+      await perform(op,candidate.context);
+      if(cancelled())throw Error('途中で停止しました。生成結果は候補・復旧欄を確認してください');
+      completed++;await record('running');
+    }
+    await record('complete');
+  }catch(e){await record('partial');throw Error(`${e.message}（保存済み ${completed}/${candidate.plan.operations.length} 操作。自動再送はしません）`);}
 }

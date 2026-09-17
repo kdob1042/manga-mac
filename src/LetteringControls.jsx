@@ -1,8 +1,8 @@
+import {recognizeRegions,letteringFrame} from './visual-regions';
 import React, { useState, useRef, useEffect } from 'react';
 import { defaultLettering, setLettering, validateLettering } from './lettering';
-import { drawLettering, imageOf, pagePNG } from './render';
+import { drawLettering, imageOf, pagePNG, pageLayers } from './render';
 import { pagePanels } from './layout';
-import { containRect } from './image-input';
 import { textForPanel } from './localization';
 import { proposeLettering } from './lettering-ai';
 import { askLLM } from './llm';
@@ -24,7 +24,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
     async function paint() {
       const ctx=canvas.current?.getContext('2d');if(!ctx)return;
       ctx.clearRect(0,0,720,720);ctx.fillStyle='#f5f3ef';ctx.fillRect(0,0,720,720);
-      if(panel.image){const im=await imageOf(panel.image);if(stale)return;const fit=containRect(im.width,im.height,716,716);ctx.drawImage(im,2+fit.x,2+fit.y,fit.width,fit.height);}
+      if(panel.image){const p=current.current,pg=p.layout.pages[pageIndex],frame=letteringFrame(p,panel.id);const im=await imageOf(await pageLayers(pagePanels(p,pg),p.snapshots,p.localizations,p.output_locale,'art',pg,true,p.layout.imageCrops));if(stale)return;ctx.drawImage(im,frame.x,frame.y,frame.width,frame.height,2,2,716,716);}
       const p=current.current,snapshot=p.snapshots.find(s=>s.id===panel.snapshotId),localization=p.output_locale==='en'?p.localizations.find(l=>l.snapshot_id===panel.snapshotId&&l.locale==='en'):null;
       if(p.output_locale==='en'&&!localization)throw Error('英訳未作成');
       for(const b of layout.boxes)drawLettering(ctx,textForPanel({...panel,unitIds:[b.unit_id]},snapshot,localization),{x:2+b.x*716,y:2+b.y*716,width:b.width*716,height:b.height*716},true,b);
@@ -55,7 +55,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
       <button disabled={box.locked} onClick={()=>change({tail:box.tail?null:[Math.min(1,box.x+box.width/2),Math.min(1,box.y+box.height+.08)]})}>{box.tail?'しっぽを外す':'しっぽを付ける'}</button>
     </>}
     <button onClick={()=>run('文字配置を保存中',()=>save(layout))}>文字配置を適用</button>
-    <button disabled={!model?.connectionId} onClick={()=>run('文字配置を提案中',async()=>{const p=current.current,base=editBase(p);const value=await proposeLettering(p,panel,'文字量に合わせて整えて', (prompt,schema)=>askLLM(model,{purpose:'lettering',prompt,schema}));await commit(executeLocalEdits(current.current,{base,context:editContext(p,pageIndex,panel.id,null),plan:{reason:'AI文字配置',operations:[{kind:'lettering',panelId:panel.id,args:value}]}}));})}>AIで文字を配置</button>
-    <small>ドラッグは1操作で保存。Escapeで取消。本文と順序を保持します。AI配置は画像内の顔・手の位置を認識しません。</small>
+    <button disabled={!model?.connectionId} onClick={()=>run('文字配置を提案中',async()=>{const p=current.current,base=editBase(p);const visual=model.visualEditing?await recognizeRegions(p,[panel.id],'文字配置で顔・手・重要な描写を避ける',(prompt,schema,images)=>askLLM(model,{purpose:'vision',prompt,schema,images}),imageOf):null;const value=await proposeLettering(p,panel,'文字量に合わせて整えて', (prompt,schema)=>askLLM(model,{purpose:'lettering',prompt,schema}),visual);await commit(executeLocalEdits(current.current,{base,context:editContext(p,pageIndex,panel.id,null),plan:{reason:'AI文字配置',operations:[{kind:'lettering',panelId:panel.id,args:value}]}}));})}>AIで文字を配置</button>
+    <small>ドラッグは1操作で保存。Escapeで取消。本文と順序を保持します。画像送信を有効にすると認識した顔・手の領域を避けます。認識結果の見た目も確認してください。</small>
   </fieldset>;
 }

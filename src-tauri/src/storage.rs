@@ -1,5 +1,7 @@
 #[path = "backup.rs"]
 pub mod backup;
+#[path = "draft.rs"]
+pub mod draft;
 #[path = "image_recovery.rs"]
 pub mod image_recovery;
 #[path = "layout.rs"]
@@ -414,6 +416,7 @@ pub fn save(db: &mut Connection, root: &Path, data: &str) -> Result<()> {
     if !matches!(project["version"].as_u64(), Some(1..=4)) {
         return Err("Unsupported project schema".into());
     }
+    draft::validate(&project)?;
     if let Some(panels) = project["panels"].as_array() {
         for panel in panels {
             if let Some(value) = panel.get("lettering") {
@@ -677,6 +680,31 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(),
             original
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn draft_checkpoint_artifacts_roundtrip_and_invalid_scope_preserves_saved_work() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        p["layout"] = json!({"version":1,"pages":[]});
+        p["snapshots"] = json!([{"id":"source","scenes":[{"id":"scene"}]}]);
+        p["draftScope"] = json!({"id":"draft","snapshotId":"source","sceneIds":["scene"]});
+        p["history"] = json!([{"id":"checkpoint","draftCheckpoint":true,"active":"source","panels":p["panels"],"layout":p["layout"],"draftScope":p["draftScope"]}]);
+        p["panels"] = json!([]);
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let stored: String = db
+            .query_row("SELECT data FROM project", [], |r| r.get(0))
+            .unwrap();
+        assert!(!stored.contains("base64,"));
+        let mut corrupt = p.clone();
+        corrupt["history"][0]["draftScope"]["sceneIds"] = json!(["missing"]);
+        assert!(save(&mut db, &dir, &corrupt.to_string()).is_err());
+        drop(db);
+        let db = Connection::open(dir.join("test.sqlite3")).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&load(&db, &dir).unwrap().unwrap()).unwrap(),
+            p
         );
         fs::remove_dir_all(dir).unwrap();
     }
