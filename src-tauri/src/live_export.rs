@@ -95,7 +95,58 @@ fn keys(v: &Value, allowed: &[&str]) -> Result<()> {
     }
     Ok(())
 }
+// Defense at the native publication boundary; the vendored contracts remain canonical.
+fn clip_geometry(panel: &Value, w: f64, h: f64, frame: [f64; 4], art: [f64; 4]) -> Result<()> {
+    let points = panel["clip"].as_array().ok_or("Missing clip")?;
+    if points.len() != 4 {
+        return Err("Clip requires four vertices".into());
+    }
+    let mut q = [[0.0; 2]; 4];
+    for (i, point) in points.iter().enumerate() {
+        let pair = point.as_array().ok_or("Invalid clip vertex")?;
+        if pair.len() != 2 {
+            return Err("Invalid clip vertex".into());
+        }
+        for j in 0..2 {
+            let n = pair[j].as_f64().ok_or("Invalid clip coordinate")?;
+            if !n.is_finite() || n < 0.0 || n > [w, h][j] {
+                return Err("Clip outside page".into());
+            }
+            q[i][j] = n;
+        }
+    }
+    let cross = |a: [f64; 2], b: [f64; 2], c: [f64; 2]| {
+        (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    };
+    if (0..4).any(|i| cross(q[i], q[(i + 1) % 4], q[(i + 2) % 4]) / (w * h) <= 1e-8) {
+        return Err("Clip must be clockwise and convex".into());
+    }
+    let min_x = q.iter().map(|p| p[0]).fold(f64::INFINITY, f64::min);
+    let min_y = q.iter().map(|p| p[1]).fold(f64::INFINITY, f64::min);
+    let max_x = q.iter().map(|p| p[0]).fold(f64::NEG_INFINITY, f64::max);
+    let max_y = q.iter().map(|p| p[1]).fold(f64::NEG_INFINITY, f64::max);
+    let [fx, fy, fw, fh] = frame;
+    if [fx - min_x, fy - min_y, fx + fw - max_x, fy + fh - max_y]
+        .iter()
+        .any(|n| n.abs() > 0.001)
+    {
+        return Err("Frame must bound clip".into());
+    }
+    let [x, y, rw, rh] = art;
+    let covers = x <= fx + 0.001
+        && y <= fy + 0.001
+        && x + rw >= fx + fw - 0.001
+        && y + rh >= fy + fh - 0.001;
+    let contained = [[x, y], [x + rw, y], [x + rw, y + rh], [x, y + rh]]
+        .iter()
+        .all(|p| (0..4).all(|i| cross(q[i], q[(i + 1) % 4], *p) >= -0.001));
+    if !covers && !contained {
+        return Err("Art must cover frame or fit inside clip".into());
+    }
+    Ok(())
+}
 fn geometry(m: &Value) -> Result<()> {
+    let v2 = m["schemaVersion"] == "2.0.0";
     let assets = m["assets"].as_array().ok_or("Missing assets")?;
     let pages = m["pages"].as_array().ok_or("Missing pages")?;
     if pages.is_empty() || pages.len() > 100 {
@@ -154,13 +205,15 @@ fn geometry(m: &Value) -> Result<()> {
                 let values =
                     ["x", "y", "width", "height"].map(|k| r[k].as_f64().unwrap_or(f64::NAN));
                 let [x, y, rw, rh] = values;
+                let transformed = v2 && name == "artRect";
                 if values.iter().any(|n| !n.is_finite())
-                    || x < 0.0
-                    || y < 0.0
                     || rw <= 0.0
                     || rh <= 0.0
-                    || x + rw > w as f64 + 0.001
-                    || y + rh > h as f64 + 0.001
+                    || if transformed {
+                        values.iter().any(|n| n.abs() > (w.max(h) as f64) * 65536.0)
+                    } else {
+                        x < 0.0 || y < 0.0 || x + rw > w as f64 + 0.001 || y + rh > h as f64 + 0.001
+                    }
                 {
                     return Err("Rectangle out of bounds".into());
                 }
@@ -168,7 +221,9 @@ fn geometry(m: &Value) -> Result<()> {
             }
             let [x, y, rw, rh] = boxes[1];
             let [fx, fy, fw, fh] = boxes[0];
-            if x < fx || y < fy || x + rw > fx + fw + 0.001 || y + rh > fy + fh + 0.001 {
+            if v2 {
+                clip_geometry(panel, w as f64, h as f64, boxes[0], boxes[1])?;
+            } else if x < fx || y < fy || x + rw > fx + fw + 0.001 || y + rh > fy + fh + 0.001 {
                 return Err("Art outside frame".into());
             }
             let a = resolve(&panel["poster"], true)?;
@@ -208,7 +263,9 @@ fn public_fields(m: &Value) -> Result<()> {
             "assets",
         ],
     )?;
-    if m["format"] != "live-manga" || m["schemaVersion"] != "1.0.0" {
+    if m["format"] != "live-manga"
+        || !matches!(m["schemaVersion"].as_str(), Some("1.0.0" | "2.0.0"))
+    {
         return Err("Unsupported contract".into());
     }
     for page in m["pages"].as_array().ok_or("Missing pages")? {
@@ -221,7 +278,11 @@ fn public_fields(m: &Value) -> Result<()> {
         for panel in page["panels"].as_array().ok_or("Missing panels")? {
             keys(
                 panel,
-                &["id", "frame", "artRect", "poster", "text", "motion"],
+                if m["schemaVersion"] == "2.0.0" {
+                    &["id", "frame", "artRect", "poster", "text", "motion", "clip"]
+                } else {
+                    &["id", "frame", "artRect", "poster", "text", "motion"]
+                },
             )?;
             for name in ["frame", "artRect"] {
                 keys(&panel[name], &["x", "y", "width", "height"])?;
@@ -235,12 +296,57 @@ fn public_fields(m: &Value) -> Result<()> {
 }
 pub fn export(db: &Connection, root: &Path, downloads: &Path, request: &Value) -> Result<Value> {
     let project = raw_project(db)?;
-    super::layout::require_legacy_live_layout(&project)?;
+
     if project["revision"] != request["projectRevision"] {
         return Err("作品が更新されました。もう一度書き出してください".into());
     }
     let manifest = &request["manifest"];
     public_fields(manifest)?;
+    if manifest["schemaVersion"] == "1.0.0" {
+        super::layout::require_legacy_live_layout(&project)?;
+    } else if let Some(layout) = project.get("layout") {
+        let panels = project["panels"]
+            .as_array()
+            .ok_or("Missing project panels")?;
+        let ids = panels.iter().filter_map(|p| p["id"].as_str()).collect();
+        super::layout::validate(layout, Some(&ids))?;
+        let authored = layout["pages"].as_array().ok_or("Missing layout pages")?;
+        let published = manifest["pages"].as_array().ok_or("Missing public pages")?;
+        if authored.len() != published.len() {
+            return Err("Publication layout mismatch".into());
+        }
+        let mut order = Vec::new();
+        for (source, page) in authored.iter().zip(published) {
+            let slots = source["slots"].as_array().ok_or("Missing slots")?;
+            let output = page["panels"].as_array().ok_or("Missing public panels")?;
+            if slots.len() != output.len() || page["width"] != 1600 || page["height"] != 2260 {
+                return Err("Publication layout mismatch".into());
+            }
+            for (slot, panel) in slots.iter().zip(output) {
+                if slot["panelId"].is_null() || slot["panelId"] != panel["id"] {
+                    return Err("Publication assignment mismatch".into());
+                }
+                order.push(panel["id"].clone());
+                for i in 0..4 {
+                    for (j, scale) in [1600.0, 2260.0].iter().enumerate() {
+                        let expected = slot["points"][i][j]
+                            .as_f64()
+                            .ok_or("Invalid source point")?
+                            * scale;
+                        if panel["clip"][i][j]
+                            .as_f64()
+                            .is_none_or(|n| (n - expected).abs() > 0.001)
+                        {
+                            return Err("Publication clip mismatch".into());
+                        }
+                    }
+                }
+            }
+        }
+        if order != panels.iter().map(|p| p["id"].clone()).collect::<Vec<_>>() {
+            return Err("Publication reading order mismatch".into());
+        }
+    }
     geometry(manifest)?;
     let release = manifest["releaseId"].as_str().ok_or("Missing release")?;
     if uuid::Uuid::parse_str(release).is_err() {
@@ -414,7 +520,9 @@ pub fn export(db: &Connection, root: &Path, downloads: &Path, request: &Value) -
         let _ = fs::remove_file(reservation);
         publish?;
         super::sync_dir(downloads)?;
-        Ok(json!({"releaseId":release,"path":destination,"schemaVersion":"1.0.0","bytes":total}))
+        Ok(
+            json!({"releaseId":release,"path":destination,"schemaVersion":manifest["schemaVersion"],"bytes":total}),
+        )
     })();
     if result.is_err() {
         let _ = fs::remove_dir_all(staging);
@@ -475,7 +583,41 @@ mod tests {
             }
             assert!(export(&db, &dir, &out, &bad).is_err());
         }
-        assert_eq!(fs::read_dir(&out).unwrap().count(), 1);
+        let mut v2 = request.clone();
+        v2["manifest"]["schemaVersion"] = json!("2.0.0");
+        v2["manifest"]["releaseId"] = json!(uuid::Uuid::new_v4().to_string());
+        v2["manifest"]["pages"][0]["panels"][0]["clip"] = json!([[0, 0], [1, 0], [1, 1], [0, 1]]);
+        v2["manifest"]["pages"][0]["panels"][0]["artRect"] =
+            json!({"x":-0.5,"y":-0.5,"width":2,"height":2});
+        let v2_result = export(&db, &dir, &out, &v2).unwrap();
+        assert_eq!(v2_result["schemaVersion"], "2.0.0");
+        assert!(export(&db, &dir, &out, &v2).is_err());
+        for mutation in [
+            "missing",
+            "clockwise",
+            "outside",
+            "bounds",
+            "transform",
+            "private",
+            "v1",
+        ] {
+            let mut bad = v2.clone();
+            bad["manifest"]["releaseId"] = json!(uuid::Uuid::new_v4().to_string());
+            let panel = &mut bad["manifest"]["pages"][0]["panels"][0];
+            match mutation {
+                "missing" => {
+                    panel.as_object_mut().unwrap().remove("clip");
+                }
+                "clockwise" => panel["clip"] = json!([[0, 0], [0, 1], [1, 1], [1, 0]]),
+                "outside" => panel["clip"][0][0] = json!(-1),
+                "bounds" => panel["frame"]["width"] = json!(0.8),
+                "transform" => panel["artRect"]["x"] = json!(-1e12),
+                "private" => panel["artRect"]["prompt"] = json!("private"),
+                _ => bad["manifest"]["schemaVersion"] = json!("1.0.0"),
+            }
+            assert!(export(&db, &dir, &out, &bad).is_err(), "{mutation}");
+        }
+        assert_eq!(fs::read_dir(&out).unwrap().count(), 2);
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
@@ -492,6 +634,17 @@ mod tests {
         super::super::put_video(&dir, bytes.as_slice(), None).unwrap();
         super::super::save(&mut db, &dir, &payload["project"].to_string()).unwrap();
         let out = std::path::PathBuf::from(std::env::var("LIVE_MANGA_E2E_OUTPUT").unwrap());
+        for mutate in ["shape", "assignment", "count"] {
+            let mut bad = payload["request"].clone();
+            match mutate {
+                "shape" => bad["manifest"]["pages"][0]["panels"][0]["clip"][0][0] = json!(1),
+                "assignment" => bad["manifest"]["pages"][0]["panels"][0]["id"] = json!("other"),
+                _ => {
+                    bad["manifest"]["pages"].as_array_mut().unwrap().pop();
+                }
+            }
+            assert!(export(&db, &dir, &out, &bad).is_err());
+        }
         let result = export(&db, &dir, &out, &payload["request"]).unwrap();
         println!("LIVE_MANGA_PACKAGE={}", result["path"]);
         fs::remove_dir_all(dir).unwrap();

@@ -403,7 +403,7 @@ AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す�
 
 全ページを対象にするAIコマ割りは、確定境界がある場合は自動的に境界の次ページから末尾までへscopeを縮める。suffixではページ数、各ページのコマ数、panelのページ割当、レイアウトを再提案できるが、確定済みprefixを候補へ含めない。既存のAI候補・プレビュー・採用／破棄フローとvalidatorを再利用し、第二のplanner・DB・履歴を作らない。原文unitや既存panel内容の省略・統合・分割はこの機能の責務外とし、必要なら既存planSceneの原文完全性契約を守る別工程で扱う。
 
-Live Mangaの配信契約は矩形のみの実装と併合するときに必ず確認する。自由四角形の外接矩形をそのまま配信して対応済みとしない。未対応の配信経路は拒否し、polygonと同じ画像変換を扱える契約へ拡張するまでPNG/CBZを利用する。
+Live Manga v2では同じpolygonと画像配置を配信する。契約の正本はLive Manga側のcontractsであり、外接矩形だけで自由四角形を代用しない。旧v1の読込互換は読者側で維持する。
 
 ### 非破壊画像トリミング
 
@@ -411,7 +411,7 @@ Live Mangaの配信契約は矩形のみの実装と併合するときに必ず�
 
 設定のない旧コマは従来contain表示を保持。ユーザーが「画像トリミング」で有効にしたコマだけ全面表示にする。枠操作と画像操作を明示切替し、画像ドラッグは一操作一保存、Esc/cancelは破棄。layoutHistory/Redoを共用し、テンプレート再配置・AI案でもpanelIdに紐付いた配置を保持する。画像原本・ArtworkRevision・文字/吹き出しデータ・生成Jobsを変更しない。文字層には画像の位置・拡大率を適用せず、現在の文字組版を維持する。通常の作画画面は原本表示、組版プレビューとPNG/CBZは同じ変換で描画する。
 
-JSとRustで値を検証。Live Manga v1には変換契約がないためトリミング作品の公開を明示拒否し、PNG/CBZは利用可能。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
+JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。旧v1出力要求では従来の配置制限を維持する。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
 
 ### 解像度診断と補間拡大（#57の第一段階）
 
@@ -429,10 +429,10 @@ JSとRustで値を検証。Live Manga v1には変換契約がないためトリ�
 
 ## Live Manga配信用出力（Issue #39）
 
-制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/feature/live-manga-v1/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
+制作は本アプリ、閲覧はlive-manga。配信契約の正本は[Live Manga contracts](https://github.com/kdob1042/live-manga/tree/dev/contracts)。`vendor/live-manga/lock.json`のversion/commit/SHA256で固定し、`scripts/sync-live-contract.mjs`で照合・更新する。vendorは手編集しない。
 
 コマ動画は作品内の軽量`panelMotions`参照。採用作画ID/hash、公開動画版ID/hash、原文範囲・人物を固定し、実送信Jobのidentity開始画像と照合する。静止画・原文変更で不整合なら書き出し停止。ショットで新しい版を採用しても公開版は置換しない。`motionHistory`は漫画/動画のUndoと独立。
 
-既存`pagePNG`と共有する`panelLayout/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
+既存`pagePNG`と共有する`panelArtRect/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
 
-初期公開は矩形コマ・無音H.264。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
+新規出力はv2契約による自由四角形・可変コマ数・非破壊cropと無音H.264。PNGと配信画像は同じページ・画像配置を使い、文字と枠は動画の上に重ねる。Rustは公開形状と保存済みlayoutの頂点・割当順を照合する。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。

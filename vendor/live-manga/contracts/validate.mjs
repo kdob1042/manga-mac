@@ -1,5 +1,6 @@
-// Canonical v1 contract. Shared verbatim by pinned, hash-verified consumers.
-export const VERSION = '1.0.0';
+// Canonical v1/v2 contract. Shared verbatim by pinned, hash-verified consumers.
+export const VERSION = '2.0.0';
+export const VERSIONS = Object.freeze(['1.0.0', VERSION]);
 export const LIMITS = Object.freeze({ pages: 100, panels: 32, dimension: 8192, assets: 4000, imageBytes: 32*1024*1024, videoBytes: 128*1024*1024, totalBytes: 1024*1024*1024 });
 const fail = message => { throw Error(`Live Manga: ${message}`); };
 const obj = (v, required, optional=[]) => {
@@ -10,13 +11,29 @@ const id = s => { if(typeof s!=='string'||!/^[a-zA-Z0-9:_-]{1,128}$/.test(s)) fa
 const integer = (n,min,max) => { if(!Number.isSafeInteger(n)||n<min||n>max) fail('invalid integer'); };
 const array = (v,min,max) => { if(!Array.isArray(v)||v.length<min||v.length>max) fail('invalid collection'); };
 const unique = values => { if(new Set(values).size!==values.length) fail('duplicate ID'); };
-function rect(r, width, height) {
+function rect(r, width, height, transformed=false) {
   obj(r,['x','y','width','height']);
-  if(Object.values(r).some(n=>typeof n!=='number'||!Number.isFinite(n))||r.x<0||r.y<0||r.width<=0||r.height<=0||r.x+r.width>width+.001||r.y+r.height>height+.001) fail('rectangle outside page');
+  if(Object.values(r).some(n=>typeof n!=='number'||!Number.isFinite(n))||r.width<=0||r.height<=0||(transformed ? Object.values(r).some(n=>Math.abs(n)>Math.max(width,height)*65536) : r.x<0||r.y<0||r.x+r.width>width+.001||r.y+r.height>height+.001)) fail('rectangle outside page');
+}
+function quad(panel, width, height) {
+  const q=panel.clip, f=panel.frame, r=panel.artRect;
+  array(q,4,4);
+  for(const p of q) {
+    array(p,2,2);
+    if(p.some(n=>typeof n!=='number'||!Number.isFinite(n))||p[0]<0||p[0]>width||p[1]<0||p[1]>height)fail('clip outside page');
+  }
+  const cross=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
+  if(q.some((p,i)=>cross(p,q[(i+1)%4],q[(i+2)%4])/(width*height)<=1e-8))fail('clip must be a clockwise convex quad');
+  const xs=q.map(p=>p[0]),ys=q.map(p=>p[1]);
+  if([f.x-Math.min(...xs),f.y-Math.min(...ys),f.x+f.width-Math.max(...xs),f.y+f.height-Math.max(...ys)].some(n=>Math.abs(n)>.001))fail('frame must bound clip');
+  const covers=r.x<=f.x+.001&&r.y<=f.y+.001&&r.x+r.width>=f.x+f.width-.001&&r.y+r.height>=f.y+f.height-.001;
+  const corners=[[r.x,r.y],[r.x+r.width,r.y],[r.x+r.width,r.y+r.height],[r.x,r.y+r.height]];
+  const contained=corners.every(p=>q.every((a,i)=>cross(a,q[(i+1)%4],p)>=-.001));
+  if(!covers&&!contained)fail('art must cover frame or fit inside clip');
 }
 export function validate(manifest) {
   obj(manifest,['format','schemaVersion','releaseId','workId','episodeId','title','language','pages','assets']);
-  if(manifest.format!=='live-manga'||manifest.schemaVersion!==VERSION) fail('unsupported schema version');
+  if(manifest.format!=='live-manga'||!VERSIONS.includes(manifest.schemaVersion)) fail('unsupported schema version');
   for(const k of ['releaseId','workId','episodeId']) id(manifest[k]);
   text(manifest.title,200); if(!['ja','en'].includes(manifest.language)) fail('unsupported language');
   array(manifest.assets,1,LIMITS.assets); array(manifest.pages,1,LIMITS.pages);
@@ -41,10 +58,11 @@ export function validate(manifest) {
     integer(p.width,1,LIMITS.dimension);integer(p.height,1,LIMITS.dimension);array(p.panels,1,LIMITS.panels);
     for(const k of ['art','overlay','fallback']) {const a=asset(p[k],'image/');if(a.width!==p.width||a.height!==p.height) fail('page layer dimensions differ');if(k==='overlay'&&a.mime!=='image/png')fail('overlay must be PNG');}
     for(const panel of p.panels) {
-      obj(panel,['id','frame','artRect','poster','text'],['motion']);id(panel.id);ids.push(panel.id);text(panel.text);
-      rect(panel.frame,p.width,p.height);rect(panel.artRect,p.width,p.height);
+      obj(panel,['id','frame','artRect','poster','text',...(manifest.schemaVersion===VERSION?['clip']:[])],['motion']);id(panel.id);ids.push(panel.id);text(panel.text);
+      rect(panel.frame,p.width,p.height);rect(panel.artRect,p.width,p.height,manifest.schemaVersion===VERSION);
       const f=panel.frame,r=panel.artRect;
-      if(r.x<f.x||r.y<f.y||r.x+r.width>f.x+f.width+.001||r.y+r.height>f.y+f.height+.001)fail('art outside panel');
+      if(manifest.schemaVersion===VERSION)quad(panel,p.width,p.height);
+      else if(r.x<f.x||r.y<f.y||r.x+r.width>f.x+f.width+.001||r.y+r.height>f.y+f.height+.001)fail('art outside panel');
       const poster=asset(panel.poster,'image/');
       if(Math.abs(poster.width/poster.height-r.width/r.height)>.001)fail('poster ratio mismatch');
       if(panel.motion) {obj(panel.motion,['asset','end']);if(panel.motion.end!=='poster')fail('unsupported end behavior');const v=asset(panel.motion.asset,'video/');if(v.width*poster.height!==v.height*poster.width)fail('motion ratio mismatch');}
