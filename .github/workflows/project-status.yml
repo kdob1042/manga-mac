@@ -1,0 +1,226 @@
+name: Sync project status
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_run:
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+
+jobs:
+  attention:
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.merged == false)
+      || (github.event_name == 'workflow_run' &&
+          github.event.workflow_run.name != 'Sync project status' &&
+          github.event.workflow_run.conclusion != 'success' &&
+          github.event.workflow_run.conclusion != 'skipped' &&
+          github.event.workflow_run.conclusion != 'neutral')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mark linked issues as needing attention
+        uses: actions/github-script@v7
+        env:
+          PROJECT_OWNER: kdob1042
+          PROJECT_NUMBER: '1'
+        with:
+          github-token: \${{ secrets.PROJECTS_TOKEN || secrets.GITHUB_TOKEN }}
+          script: |
+            const projectOwner = process.env.PROJECT_OWNER;
+            const projectNumber = Number(process.env.PROJECT_NUMBER);
+            const { owner, repo } = context.repo;
+            const sameRepository = owner + '/' + repo;
+            const linkedIssueNumbers = (body) => {
+              const numbers = new Set();
+              const pattern = /(?:refs|fixes|closes|resolves)\s+#(\d+)\b/gi;
+              for (const match of (body || '').matchAll(pattern)) {
+                numbers.add(Number(match[1]));
+              }
+              return [...numbers];
+            };
+
+            const pullRequests = [];
+            if (context.eventName === 'pull_request') {
+              pullRequests.push(context.payload.pull_request);
+            } else {
+              for (const entry of (context.payload.workflow_run.pull_requests || [])) {
+                const response = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: entry.number,
+                });
+                if (response.data.state === 'open' && !response.data.merged) {
+                  pullRequests.push(response.data);
+                }
+              }
+            }
+
+            const issueNumbers = new Set();
+            for (const pull of pullRequests) {
+              for (const number of linkedIssueNumbers(pull.body)) {
+                issueNumbers.add(number);
+              }
+            }
+            if (issueNumbers.size === 0) {
+              core.info('No open linked issues require attention.');
+              return;
+            }
+
+            const projectQuery = [
+              'query($login: String!, $number: Int!) {',
+              '  user(login: $login) {',
+              '    projectV2(number: $number) {',
+              '      id',
+              '      fields(first: 100) {',
+              '        nodes {',
+              '          ... on ProjectV2SingleSelectField {',
+              '            id',
+              '            name',
+              '            options { id name }',
+              '          }',
+              '        }',
+              '      }',
+              '    }',
+              '  }',
+              '}',
+            ].join('\n');
+
+            let project;
+            try {
+              const response = await github.graphql(projectQuery, {
+                login: projectOwner,
+                number: projectNumber,
+              });
+              project = response.user.projectV2;
+            } catch (error) {
+              core.setFailed(
+                'Cannot access the Projects v2 board. Add a fine-grained repository secret named PROJECTS_TOKEN with Projects: write access for the account that owns project #' +
+                projectNumber + '. Original error: ' + error.message,
+              );
+              return;
+            }
+
+            if (!project) {
+              core.setFailed('Project #' + projectNumber + ' was not found for ' + projectOwner + '.');
+              return;
+            }
+            const statusField = project.fields.nodes.find((field) =>
+              field && field.name === 'Status' && Array.isArray(field.options)
+            );
+            const attentionOption = statusField && statusField.options.find((option) =>
+              option.name === 'Needs attention'
+            );
+            if (!statusField || !attentionOption) {
+              core.setFailed('The Status field does not contain the Needs attention option.');
+              return;
+            }
+
+            const itemsQuery = [
+              'query($projectId: ID!, $cursor: String) {',
+              '  node(id: $projectId) {',
+              '    ... on ProjectV2 {',
+              '      items(first: 100, after: $cursor) {',
+              '        nodes {',
+              '          id',
+              '          content {',
+              '            id',
+              '            ... on Issue { number repository { nameWithOwner } }',
+              '            ... on PullRequest { number repository { nameWithOwner } }',
+              '          }',
+              '        }',
+              '        pageInfo { hasNextPage endCursor }',
+              '      }',
+              '    }',
+              '  }',
+              '}',
+            ].join('\n');
+
+            const items = [];
+            let cursor = null;
+            do {
+              const page = await github.graphql(itemsQuery, {
+                projectId: project.id,
+                cursor,
+              });
+              const connection = page.node.items;
+              items.push(...connection.nodes);
+              cursor = connection.pageInfo.hasNextPage
+                ? connection.pageInfo.endCursor
+                : null;
+            } while (cursor);
+
+            const addItemMutation = [
+              'mutation($projectId: ID!, $contentId: ID!) {',
+              '  addProjectV2ItemById(input: { projectId: $projectId, contentId: $contentId }) {',
+              '    item { id }',
+              '  }',
+              '}',
+            ].join('\n');
+            const updateMutation = [
+              'mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {',
+              '  updateProjectV2ItemFieldValue(',
+              '    input: {',
+              '      projectId: $projectId',
+              '      itemId: $itemId',
+              '      fieldId: $fieldId',
+              '      value: { singleSelectOptionId: $optionId }',
+              '    }',
+              '  ) {',
+              '    projectV2Item { id }',
+              '  }',
+              '}',
+            ].join('\n');
+
+            for (const issueNumber of issueNumbers) {
+              const issueResponse = await github.rest.issues.get({
+                owner,
+                repo,
+                issue_number: issueNumber,
+              });
+              const issue = issueResponse.data;
+              if (issue.pull_request || issue.state !== 'open') {
+                continue;
+              }
+
+              let item = items.find((candidate) =>
+                candidate.content &&
+                candidate.content.id === issue.node_id
+              );
+              if (!item) {
+                try {
+                  const added = await github.graphql(addItemMutation, {
+                    projectId: project.id,
+                    contentId: issue.node_id,
+                  });
+                  item = added.addProjectV2ItemById.item;
+                  items.push({
+                    id: item.id,
+                    content: { id: issue.node_id },
+                  });
+                } catch (error) {
+                  const refreshed = await github.graphql(itemsQuery, {
+                    projectId: project.id,
+                    cursor: null,
+                  });
+                  item = refreshed.node.items.nodes.find((candidate) =>
+                    candidate.content && candidate.content.id === issue.node_id
+                  );
+                  if (!item) throw error;
+                }
+              }
+
+              await github.graphql(updateMutation, {
+                projectId: project.id,
+                itemId: item.id,
+                fieldId: statusField.id,
+                optionId: attentionOption.id,
+              });
+              core.notice(
+                sameRepository + ' #' + issue.number + ' -> Needs attention',
+              );
+            }
