@@ -485,9 +485,7 @@ fn relative_path(value: &str, max: usize) -> bool {
         && !value.chars().any(char::is_control)
 }
 fn https_reference(value: &str) -> bool {
-    value.starts_with("https://")
-        && value.len() <= 4096
-        && !value.chars().any(char::is_control)
+    value.starts_with("https://") && value.len() <= 4096 && !value.chars().any(char::is_control)
 }
 pub fn validate_operation(operation: &Operation) -> Result<(), String> {
     match operation {
@@ -544,10 +542,12 @@ pub fn validate_operation(operation: &Operation) -> Result<(), String> {
             || license.len() > 200
             || license.chars().any(char::is_control)
             || (format == "blend"
-                && (!matches!(asset_type.as_deref(), Some("OBJECT" | "COLLECTION" | "ACTION"))
-                    || name
-                        .as_ref()
-                        .map_or(true, |value| value.is_empty() || value.len() > 256)))
+                && (!matches!(
+                    asset_type.as_deref(),
+                    Some("OBJECT" | "COLLECTION" | "ACTION")
+                ) || name
+                    .as_ref()
+                    .map_or(true, |value| value.is_empty() || value.len() > 256)))
             || (format != "blend" && (asset_type.is_some() || name.is_some())) =>
         {
             return Err("Web素材の取込指定が不正です".into())

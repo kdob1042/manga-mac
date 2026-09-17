@@ -49,7 +49,11 @@ fn valid_filename(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
         && matches!(
-            value.rsplit('.').next().map(|part| part.to_ascii_lowercase()).as_deref(),
+            value
+                .rsplit('.')
+                .next()
+                .map(|part| part.to_ascii_lowercase())
+                .as_deref(),
             Some("blend" | "glb" | "gltf" | "fbx" | "obj" | "zip")
         )
 }
@@ -120,7 +124,11 @@ async fn get(url: &Url) -> Result<reqwest::Response, String> {
         .await
         .map_err(|_| message())?
         .collect();
-    if addresses.is_empty() || addresses.iter().any(|address| !public_address(address.ip())) {
+    if addresses.is_empty()
+        || addresses
+            .iter()
+            .any(|address| !public_address(address.ip()))
+    {
         return Err(message());
     }
     let address = addresses[0];
@@ -173,7 +181,10 @@ pub async fn download(root: &Path, input: DownloadRequest) -> Result<DownloadedA
         break;
     }
     let mut response = response.ok_or_else(message)?;
-    if response.content_length().is_some_and(|length| length > MAX_DOWNLOAD) {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_DOWNLOAD)
+    {
         return Err("Web素材は512MB以下にしてください".into());
     }
     let inferred = current
