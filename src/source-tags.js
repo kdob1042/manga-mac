@@ -33,3 +33,24 @@ export function tagBlockSelection(changes,rows,sceneIds,pending=[]){
  const additional=[...new Set(rows.filter(r=>r.block&&selected.has(r.block.id)).flatMap(rowSceneIds).filter(id=>!wanted.has(id)))];
  return {ids:blocks.map(b=>b.id),additional};
 }
+
+// Internal projection for the exporter; not a second publication schema.
+// Only primary references count. Context and source text never leave this function.
+export function panelSceneTags(project,panels){
+ const active=project.snapshots.find(s=>s.id===project.active);
+ const byId=new Map(project.snapshots.map(s=>[s.id,s]));
+ return panels.map(panel=>{
+  const scenes=new Map();
+  for(const ref of panel.sourceRefs??[]){
+   const source=byId.get(ref.snapshotId);
+   if(!source?.scenes.some(s=>s.id===ref.sceneId))continue;
+   if(active?.repo&&source.repo!==active.repo)throw Error('別作品の原稿参照は転送できません');
+   const latest=active?.scenes.some(s=>s.id===ref.sceneId)?active:source;
+   const tags=sceneTags(latest,ref.sceneId);
+   // Conflicting historical metadata for a deleted scene is unknown, not a union.
+   const previous=scenes.get(ref.sceneId);
+   scenes.set(ref.sceneId,{id:ref.sceneId,tags:previous&&JSON.stringify(previous.tags)!==JSON.stringify(tags)?[]:[...tags]});
+  }
+  return {panelId:panel.id,scenes:[...scenes.values()]};
+ });
+}

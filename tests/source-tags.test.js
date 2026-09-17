@@ -1,7 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {matchingScenes,tagOptions,sceneTags,tagBlockSelection} from '../src/source-tags.js';
+import {matchingScenes,tagOptions,sceneTags,tagBlockSelection,panelSceneTags} from '../src/source-tags.js';
 const snapshot={scenes:[{id:'a',tags:[' Rain ','ＲＡＩＮ','図書館']},{id:'b',tags:['雨']},{id:'c'}]};
+test('export projection uses primary provenance, active tags, deleted-scene history and no raw source',()=>{
+ const project={active:'new',snapshots:[{id:'old',repo:'x/y',scenes:[{id:'A',tags:['old'],text:'SECRET'},{id:'B',tags:['historic']}]},{id:'new',repo:'x/y',scenes:[{id:'A',tags:['new']},{id:'context',tags:['exclude']}]}]};
+ const panels=[{id:'p',sourceRefs:[{snapshotId:'old',sceneId:'A'},{snapshotId:'old',sceneId:'B'}],contextRefs:[{snapshotId:'new',sceneId:'context'}]},{id:'manual'}];
+ const before=structuredClone({project,panels});
+ assert.deepEqual(panelSceneTags(project,panels),[{panelId:'p',scenes:[{id:'A',tags:['new']},{id:'B',tags:['historic']}]},{panelId:'manual',scenes:[]}]);
+ assert.deepEqual({project,panels},before);
+ project.snapshots[0].repo='other/repo';assert.throws(()=>panelSceneTags(project,panels),/別作品/);
+});
 test('normalization is derived, stable, deduplicated and scene-local',()=>{
  const before=structuredClone(snapshot);
  assert.deepEqual(tagOptions(snapshot).map(x=>x.label),[' Rain ','図書館','雨']);
