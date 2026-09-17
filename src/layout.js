@@ -1,4 +1,5 @@
 // Shared page geometry. Clockwise convex quadrilaterals in normalized page space.
+import {validateCrop} from './image-crop.js';
 export const PAGE = { width: 1600, height: 2260 };
 const cross = (a,b,c) => (b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);
 export function validQuad(points) {
@@ -34,6 +35,10 @@ export function initialLayout(panels) {
 export function validateLayout(layout,panels) {
   if(!layout || layout.version!==1 || !Array.isArray(layout.pages) || layout.pages.length>1000) throw Error('ページ情報が不正です');
   const known=new Set(panels.map(p=>p.id)), pages=new Set(), slots=new Set(), assigned=new Set();
+  if(layout.imageCrops!==undefined) {
+    if(!layout.imageCrops || typeof layout.imageCrops!=='object' || Array.isArray(layout.imageCrops))throw Error('画像配置が不正です');
+    Object.values(layout.imageCrops).forEach(validateCrop);
+  }
   for(const page of layout.pages) {
     if(typeof page.id!=='string'||!page.id||pages.has(page.id)||!Array.isArray(page.slots)||page.slots.length>16) throw Error('ページ情報が不正です'); pages.add(page.id);
     for(const slot of page.slots) {
@@ -89,6 +94,7 @@ export function contentBox(points) {
 }
 export function assertLegacyLiveLayout(project) {
   if(!project.layout)return;
+  if(Object.keys(project.layout.imageCrops??{}).length)throw Error('Live Manga v1は画像トリミング未対応です。PNG／CBZで書き出してください');
   validateLayout(project.layout,project.panels);
   const geometry=l=>l.pages.map(p=>p.slots.map(({panelId,points})=>({panelId,points})));
   if(JSON.stringify(geometry(project.layout))!==JSON.stringify(geometry(initialLayout(project.panels))))throw Error('Live Manga v1は従来の4コマ配置だけに対応しています。自由コマ割りはPNG／CBZで書き出してください');

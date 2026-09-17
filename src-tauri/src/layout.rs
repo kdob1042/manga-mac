@@ -6,6 +6,16 @@ pub fn validate(layout: &Value, panel_ids: Option<&HashSet<&str>>) -> Result<(),
     if layout["version"].as_u64() != Some(1) {
         return Err(fail());
     }
+    if let Some(crops) = layout.get("imageCrops") {
+        for crop in crops.as_object().ok_or_else(fail)?.values() {
+            for (key, min, max) in [("zoom", 1.0, 8.0), ("x", 0.0, 1.0), ("y", 0.0, 1.0)] {
+                let n = crop[key].as_f64().ok_or_else(fail)?;
+                if !n.is_finite() || n < min || n > max {
+                    return Err(fail());
+                }
+            }
+        }
+    }
     let pages = layout["pages"].as_array().ok_or_else(fail)?;
     if pages.len() > 1000 {
         return Err(fail());
@@ -75,6 +85,13 @@ pub fn require_legacy_live_layout(project: &Value) -> Result<(), String> {
     let panels = project["panels"].as_array().ok_or_else(error)?;
     let ids = panels.iter().filter_map(|p| p["id"].as_str()).collect();
     validate(layout, Some(&ids))?;
+    if layout
+        .get("imageCrops")
+        .and_then(Value::as_object)
+        .is_some_and(|v| !v.is_empty())
+    {
+        return Err("Live Manga v1は画像トリミング未対応です。PNG/CBZで書き出してください".into());
+    }
     let pages = layout["pages"].as_array().ok_or_else(error)?;
     if pages.len() != panels.len().div_ceil(4) {
         return Err(error());
@@ -115,6 +132,21 @@ pub fn require_legacy_live_layout(project: &Value) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn crop_validation_and_live_guard() {
+        let mut l = json!({"version":1,"pages":[],"imageCrops":{"p":{"zoom":2,"x":0.5,"y":0.5}}});
+        assert!(validate(&l, None).is_ok());
+        assert!(require_legacy_live_layout(&json!({"layout":l,"panels":[]})).is_err());
+        for bad in [
+            Value::Null,
+            json!({}),
+            json!({"zoom":9,"x":0.5,"y":0.5}),
+            json!({"zoom":1,"x":-0.1,"y":0.5}),
+        ] {
+            l["imageCrops"]["p"] = bad;
+            assert!(validate(&l, None).is_err());
+        }
+    }
     #[test]
     fn legacy_live_export_rejects_shape_and_assignment_changes() {
         let x = 820.0;
