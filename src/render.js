@@ -27,18 +27,29 @@ export async function mergeRegion(before, after, rect) {
   return canvas.toDataURL('image/png');
 }
 export function lines(ctx, text, width) { return wrapText(text, value => ctx.measureText(value).width, width); }
-function drawLettering(ctx, text, box, balloon) {
-  const padding = 12;
-  let size = 24, wrapped;
-  for (; size >= 14; size--) {
+export function drawLettering(ctx, text, box, balloon, style = {}) {
+  const padding = style.padding ?? 12, lineHeight = style.lineHeight ?? 1.25;
+  const inset = style.shape === 'ellipse' ? Math.min(box.width,box.height)*.15 : 0;
+  const textBox = {x:box.x+inset,y:box.y+inset,width:box.width-inset*2,height:box.height-inset*2};
+  let size = style.fontSize ?? 24, wrapped;
+  const minimum = style.fontSize ?? 14;
+  for (; size >= minimum; size--) {
     ctx.font = `${size}px sans-serif`;
-    wrapped = lines(ctx, text, box.width - padding * 2);
-    if (wrapped.length * size * 1.25 <= box.height - padding * 2 && wrapped.every(line => ctx.measureText(line).width <= box.width - padding)) break;
+    wrapped = lines(ctx, text, textBox.width - padding * 2);
+    if (wrapped.length * size * lineHeight <= textBox.height - padding * 2 && wrapped.every(line => ctx.measureText(line).width <= textBox.width - padding)) break;
   }
-  if (size < 14) throw Error('文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください');
-  if (balloon) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(box.x, box.y, box.width, box.height, 18); ctx.fill(); ctx.stroke(); }
+  if (size < minimum) throw Error('文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください');
+  if (balloon) {
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#111'; ctx.lineWidth = 2;
+    if (style.tail) { ctx.beginPath();ctx.moveTo(box.x+box.width*.4,box.y+box.height*.5);ctx.lineTo(2+style.tail[0]*716,2+style.tail[1]*716);ctx.lineTo(box.x+box.width*.6,box.y+box.height*.5);ctx.closePath();ctx.fill();ctx.stroke(); }
+    ctx.beginPath();
+    if(style.shape==='ellipse')ctx.ellipse(box.x+box.width/2,box.y+box.height/2,box.width/2,box.height/2,0,0,Math.PI*2);
+    else if(style.shape==='rect')ctx.rect(box.x,box.y,box.width,box.height);
+    else ctx.roundRect(box.x,box.y,box.width,box.height,Math.min(18,box.width/2,box.height/2));
+    ctx.fill();ctx.stroke();
+  }
   ctx.fillStyle = '#111'; ctx.textBaseline = 'top';
-  wrapped.forEach((line, i) => ctx.fillText(line, box.x + padding, box.y + padding + i * size * 1.25));
+  wrapped.forEach((line, i) => ctx.fillText(line, textBox.x + padding, textBox.y + padding + i * size * lineHeight));
 }
 export async function pageLayers(panels, snapshots, localizations = [], locale = 'ja', layer = 'complete', page = null, draft = false, imageCrops = {}) {
   page ??= initialLayout(panels).pages[0] ?? { id: 'empty', slots: [] };
@@ -77,7 +88,7 @@ export async function pageLayers(panels, snapshots, localizations = [], locale =
       const layout = validateLettering(p, p.lettering);
       for (const box of layout.boxes) {
         const unitText = textForPanel({ ...p, unitIds: [box.unit_id] }, snapshot, localization);
-        drawLettering(ctx, unitText, { x: x + 2 + box.x * 716, y: y + 2 + box.y * 716, width: box.width * 716, height: box.height * 716 }, true);
+        drawLettering(ctx, unitText, { x: x + 2 + box.x * 716, y: y + 2 + box.y * 716, width: box.width * 716, height: box.height * 716 }, true, box);
       }
     } else drawLettering(ctx, text, { x: x + 10, y: y + 736, width: 700, height: 280 }, false);
     ctx.restore();

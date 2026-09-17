@@ -14,7 +14,6 @@ CIもこのブランチ運用に合わせる。非文書変更のPR（`feature/*
 
 文書更新、実装、共通テスト、Macビルド、実Blender接続、実機の画像品質・性能検証を別々に報告する。文書のみの変更では既存実装を変更せず、設計上の機能を実装済みと表記しない。
 
-
 ## Issue／PRの着手状態
 
 - 実装可能なIssueは status:ready、未着手の定義はDraft PRが存在しないこととする。
@@ -22,3 +21,4 @@ CIもこのブランチ運用に合わせる。非文書変更のPR（`feature/*
 - Draft PR作成後は status:in-progress、Ready for review後は status:review、devまたはmainへのマージ後は status:done になる。未マージで閉じたPRは status:blocked とする。
 - PR本文には Refs #<番号> を残し、実装完了・lint／typecheck／test／build確認後にだけReady for reviewへ変更する。
 - 作業ブランチを切っただけでは着手扱いにしない。既存のdev起点・PR経由ルールを優先する。
+

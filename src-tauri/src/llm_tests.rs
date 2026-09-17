@@ -284,3 +284,35 @@ fn layout_output_uses_validated_geometry_on_plan_connection() {
     assert!(validate_output(Purpose::Layout, &bad).is_err());
     assert!(validate_output(Purpose::Plan, &good).is_err());
 }
+
+#[tokio::test]
+async fn jev_uses_typed_evaluation_without_chat_or_images() {
+    let answer = json!({"type":"choice","choice":"crop","confidence":0.9,"probabilities":{"lettering":0.01,"crop":0.92,"layout":0.01,"direction":0.01,"region":0.01,"compound":0.01,"readonly":0.01,"unsupported":0.01,"unclear":0.01,"resolution":0,"upscale":0,"finishing":0,"video_prepare":0,"video_assign":0}});
+    let fixture = Fixture {
+        response: json!({"model":"jev-latest","answers":{"operation":answer}}).to_string(),
+        ..Default::default()
+    };
+    let mut c = connection(Provider::Jev);
+    c.endpoint = "https://api.typesafe.ai".into();
+    c.purpose = Purpose::Classify;
+    c.model = "jev-latest".into();
+    let mut r = request();
+    r.purpose = Purpose::Classify;
+    r.prompt = json!({"instruction":"3コマ目の画像を右へ","operations":["crop"]}).to_string();
+    r.images.clear();
+    let value = complete(&c, &r, fixture.clone()).await.unwrap();
+    assert_eq!(value["choice"], "crop");
+    {
+        let calls = fixture.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, "https://api.typesafe.ai/v1/systemone");
+        assert_eq!(calls[0].2["questions"]["operation"]["type"], "choice");
+        assert!(calls[0].2.get("messages").is_none());
+    }
+    r.images.push("data:image/png;base64,AAAA".into());
+    assert!(complete(&c, &r, fixture.clone()).await.is_err());
+    assert_eq!(fixture.calls.lock().unwrap().len(), 1);
+    let mut bad = value;
+    bad["confidence"] = json!(2);
+    assert!(validate_output(Purpose::Classify, &bad).is_err());
+}

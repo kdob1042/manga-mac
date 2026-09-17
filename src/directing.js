@@ -51,6 +51,8 @@ export function directionPrompt(project, panel, session, run) {
   const snapshot = project.snapshots.find(s => s.id === panel.snapshotId);
   const payload = { source: sourceForPanel(panel, snapshot), design: snapshot?.scenes.find(s => s.id === panel.sceneId)?.design,
     settings: snapshot?.settings, direction: panel.prompt, instruction: run.instruction,
+    pagePlacement: project.layout?.pages.flatMap(p=>p.slots).find(s=>s.panelId===panel.id) ?? null,
+    letteringConstraint: { unitIds: panel.unitIds, avoidBakingText: true, reserveReadableSpace: true },
     characters: panel.characterIds.map(id => { const c = project.characters.find(c => c.id === id); return { id, name: c?.name, description: c?.description }; }),
     characterBindings: (project.character_bindings ?? []).filter(b => b.shot_id === panel.shot_binding.id),
     state: { ...session.state, checkpoint: undefined, packed_sources: undefined, image: undefined },
