@@ -15,7 +15,7 @@ test('Kamiya-Kawai schema 4 contract records the independently verified source c
   assert.deepEqual(contract.compatible_manifest_schema_versions, [4]);
   assert.equal(validateSourceContract('kdob1042/Kamiya-Kawai', { schema_version: 4, settings: [{ id: 'VISUAL' }] }), contract);
   assert.throws(() => validateSourceContract('kdob1042/Kamiya-Kawai', { schema_version: 5, settings: [{ id: 'VISUAL' }] }), /未対応/);
-  assert.throws(() => validateSourceContract('owner/unknown', { schema_version: 4, settings: [] }), /未登録/);
+  assert.throws(() => validateSourceContract('owner/unknown', { schema_version: 4, settings: [] }), /ありません/);
 });
 
 test('VISUAL markdown declares repository-contained character references', () => {
@@ -49,3 +49,10 @@ test('source references are stable, replace a same-name manual reference, and ve
   assert.equal(second[0].source.snapshot_id, 'snapshot-2');
   assert.equal(contractLabel({ contract: { manifest_schema_version: 4, aligned_source_commit: '7eed2120abcd' } }), '構成schema 4対応 · 確認基準 7eed2120');
 });
+
+ test('another registered source uses the same strict schema without inheriting verification provenance',()=>{
+ const c=validateSourceContract('owner/second',{schema_version:4,settings:[{id:'VISUAL'}]});
+ assert.equal(c.repository,'owner/second');assert.equal(c.aligned_source_commit,'');
+ assert.throws(()=>validateSourceContract('owner/second',{schema_version:3,settings:[{id:'VISUAL'}]}),/未対応/);
+ assert.equal(contractLabel({contract:{manifest_schema_version:4,aligned_source_commit:''}}),'構成schema 4対応 · 共通構成仕様');
+ });

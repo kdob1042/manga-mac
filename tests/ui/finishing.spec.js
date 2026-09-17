@@ -4,6 +4,7 @@ const legacy=JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json',import
 test('reference finishing preserves crop and lettering, compares pages, persists and undoes',async({page})=>{
  await page.addInitScript(legacy=>{
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'kdob1042/Kamiya-Kawai',episode:'P01'}]};
    if(command==='load_project')return sessionStorage.getItem('finish-project')||JSON.stringify(legacy);
    if(command==='save_project'){sessionStorage.setItem('finish-project',args.data);return;}
    if(command==='backup_status')return {config:null,status:{},restored:[]};

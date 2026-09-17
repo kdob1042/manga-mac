@@ -168,6 +168,91 @@ async fn github_asset(
     }))
 }
 #[tauri::command]
+fn source_library(state: State<AppState>) -> Result<Value, String> {
+    let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
+    let id = if state.root == state.base {
+        "primary".to_string()
+    } else {
+        state
+            .root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("作品IDが不正です")?
+            .to_string()
+    };
+    let mut entries = storage::source_library::list(&state.base)?;
+    if !entries.iter().any(|e| e.id == id) {
+        let db = state.db.lock().map_err(err)?;
+        let p: Value = storage::load(&db, &state.root)?
+            .map(|s| serde_json::from_str(&s))
+            .transpose()
+            .map_err(err)?
+            .unwrap_or(Value::Null);
+        let snapshot = p["snapshots"]
+            .as_array()
+            .and_then(|ss| ss.iter().find(|s| s["id"] == p["active"]));
+        entries = storage::source_library::register(
+            &state.base,
+            storage::source_library::Entry {
+                id: id.clone(),
+                name: p["title"].as_str().unwrap_or("最初の作品").into(),
+                repo: snapshot
+                    .and_then(|s| s["repo"].as_str())
+                    .unwrap_or("kdob1042/Kamiya-Kawai")
+                    .into(),
+                episode: snapshot
+                    .and_then(|s| s["episodeId"].as_str())
+                    .unwrap_or("P01")
+                    .into(),
+            },
+        )?;
+    }
+    Ok(serde_json::json!({"entries":entries,"active":id}))
+}
+#[tauri::command]
+fn source_register(
+    name: String,
+    repo: String,
+    episode: String,
+    id: Option<String>,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
+    let existing = storage::source_library::list(&state.base)?;
+    if id
+        .as_ref()
+        .is_some_and(|id| !existing.iter().any(|e| &e.id == id))
+    {
+        return Err("未登録の作品です".into());
+    }
+    let new = id.is_none();
+    if new && existing.iter().any(|e| e.repo.eq_ignore_ascii_case(&repo)) {
+        return Err("このリポジトリは登録済みです".into());
+    }
+    let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let root = state.base.join("works").join(&id);
+    if new {
+        std::fs::create_dir_all(root.parent().ok_or("作品フォルダが不正です")?).map_err(err)?;
+        std::fs::create_dir(&root).map_err(err)?;
+        let db = rusqlite::Connection::open(root.join("manga.sqlite3")).map_err(err)?;
+        storage::initialize(&db)?;
+        blender::initialize(&db)?;
+    }
+    let entries = storage::source_library::register(
+        &state.base,
+        storage::source_library::Entry {
+            id: id.clone(),
+            name,
+            repo,
+            episode,
+        },
+    );
+    if entries.is_err() && new {
+        let _ = std::fs::remove_dir_all(&root);
+    }
+    Ok(serde_json::json!({"entries":entries?,"id":id}))
+}
+#[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
     let mut db = state.db.lock().map_err(err)?;
     storage::save(&mut db, &state.root, &data)
@@ -631,6 +716,8 @@ fn main() {
             github_get,
             github_file,
             github_asset,
+            source_library,
+            source_register,
             save_project,
             load_project,
             video_playback,

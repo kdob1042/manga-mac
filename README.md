@@ -42,7 +42,7 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 - 実際のKamiya-Kawai `schema_version: 4`に対応。`episodes[].scene_ids` の順で `scenes[].path` を、`settings[].path`から分野別の五文書を取得します。廃止済みの`design/scenes/`を要求せず、ファイル名でソートせずarchive/build/revisionsを取り込みません。
 - `source-contracts/kamiya-kawai.json`に、対応schemaと構造確認済みの原作commit／manifest blobを記録します。これは脚本内容の版ではありません。画面とSourceSnapshotでは、実際に使用する原稿commitと構造仕様の確認基準commitを分けて表示・保存します。
 - `design/character-design.md`（VISUAL）に掲載された`assets/illustrations/`配下のキャラクター基準画を同一commitから取得し、実形式・20MB上限・SHA-256を確認して原稿版の採用時に人物正本へ反映します。新版の確認だけでは現行参照を変更しません。
-- mainのSHAを一度取得し、全ファイルを同じ40桁SHAで取得。同期取得失敗は現行スナップショットに影響しません。新版取得と適用は別操作。起動時と5分おきに更新確認し、制作中は同期を保留します。
+- mainのSHAを一度取得し、全ファイルを同じ40桁SHAで取得。同期取得失敗は現行スナップショットに影響しません。新版取得と適用は別操作。更新確認は手動ボタンだけで行い、起動時・定期の自動確認はありません。
 - 原文の段落IDをLLMへ渡し、全IDの順序・一意性・完全性を検証。表示原文はスナップショットから直接取得。AI出力で台詞を上書きしません。
 - キャラの画像バイト列をSHA256で記録し、Rustでも照合してからSwiftのmoodboard入力へ渡します。入力順、人物ID、ハッシュ、モデル、seed、寸法、ステップ数をコマに記録します。見た目の一致は保証しません。
 - 画像生成は専用プロセスのMediaGenerationKit `.local` のみ。処理完了後プロセスが終了しモデルメモリを解放。Ollamaはkeep_alive: 0。
@@ -206,3 +206,11 @@ API仕様: [Gemini互換API](https://ai.google.dev/gemini-api/docs/openai)、[Cl
 書き出しにはFFmpegの`ffprobe`が必要（Macでは `/opt/homebrew/bin/ffprobe` / `/usr/local/bin/ffprobe` またはPATH）。`brew install ffmpeg`で導入後、再試行できる。自動再エンコードはせず、H.264・無音・対応比率だけを公開する。
 
 対応契約・固定commitは `vendor/live-manga/lock.json`。`node scripts/sync-live-contract.mjs`で整合チェック。元のPNG/CBZ/単独動画出力は継続する。
+
+### 複数作品の切替
+
+左側の「作品を追加」で表示名・GitHub repository・話IDを登録し、作品一覧から開きます。切替は保存後の再起動を伴います。原稿・画像・動画・Blender・履歴は作品ごとに独立し、既存作品は元の保存領域で開きます。トークンは起動中のみ保持するため再入力してください。対応する原稿構成はmanifest schema 4、VISUAL設定、assets/illustrations/配下の基準画です。
+
+### 原稿更新は手動で確認
+
+「接続・人物設定 → GitHub側の更新を確認」で、現在の作品・話だけを確認します。「更新なし」「差分あり」「確認失敗」を表示し、場面・設定・参照画像の差分概要を確認して「取り込む」で採用します。起動時・定期確認は行いません。未取込みの候補は終了時に消え、旧漫画が参照する取り込み済み原稿版は保持します。
