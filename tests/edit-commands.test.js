@@ -46,3 +46,43 @@ test('finishing/video operations validate capability and refuse mixed operations
  assert.throws(()=>validateEditPlan(p,{reason:'不正',operations:[{kind:'video_assign',panelId:'p0',args:{shotId:'invented'}}]},ctx));
  assert.throws(()=>executeLocalEdits(p,candidate(p,[{kind:'resolution',panelId:'p0',args:{}}])));
 });
+
+test('edit proposals persist without art copies in jobs; reopen after restart, reject changed art/source/references',async()=>{
+ const {saveEditProposal,loadEditProposal,resolveEditProposal}=await import('../src/edit-commands.js');
+ const p=fixture(),c=candidate(p,[{kind:'crop',panelId:'p0',args:{x:.4,y:.5,zoom:2}}]);
+ const saved=await saveEditProposal(p,c),id=saved.jobs.at(-1).id;
+ const reloaded=JSON.parse(JSON.stringify({...saved,revision:8}));
+ const reopened=await loadEditProposal(reloaded,id);assert.equal(executeLocalEdits(reloaded,reopened).layout.imageCrops.p0.zoom,2);
+ assert.equal(JSON.stringify(saved.jobs).includes('art0'),false);
+ for(const changed of [{...reloaded,active:'new'},{...reloaded,characters:[{id:'new-ref'}]},{...reloaded,panels:reloaded.panels.map(p=>({...p,image:'changed'}))}])await assert.rejects(()=>loadEditProposal(changed,id),/原稿が変わった/);
+ await assert.rejects(()=>loadEditProposal(resolveEditProposal(reloaded,id,'abandoned'),id),/候補がありません/);
+ assert.deepEqual(saved.panels,p.panels);
+});
+
+test('generation composites commit lightweight edits together then stage results; failure retains progress without replay',async()=>{
+ const {executeEditSequence,saveEditProposal,loadEditProposal}=await import('../src/edit-commands.js');
+ let p=fixture(),calls=[];
+ const operations=[{kind:'crop',panelId:'p0',args:{x:.4,y:.5,zoom:2}},{kind:'direction',panelId:'p0',args:{instruction:'寄る'}},{kind:'direction',panelId:'p1',args:{instruction:'引く'}}];
+ p=await saveEditProposal(p,candidate(p,operations));const c=await loadEditProposal(p,p.jobs.at(-1).id);
+ await assert.rejects(()=>executeEditSequence({current:()=>p,commit:async v=>{p=JSON.parse(JSON.stringify(v));},candidate:c,check:async()=>{},perform:async op=>{calls.push(op.panelId);assert.equal(p.layout.imageCrops.p0.zoom,2);if(op.panelId==='p1')throw Error('offline');}}),/2\/3/);
+ assert.deepEqual(calls,['p0','p1']);assert.equal(p.history.length,1);assert.equal(p.jobs.at(-1).status,'partial');assert.equal(p.jobs.at(-1).completed,2);
+ await assert.rejects(()=>loadEditProposal(p,c.jobId),/開始済み/);
+ assert.deepEqual(p.panels.map(p=>p.image),fixture().panels.map(p=>p.image));
+});
+test('compound invalid tail is rejected before local changes or generated calls; cancellation never starts next operation',async()=>{
+ const {executeEditSequence}=await import('../src/edit-commands.js');
+ let p=fixture(),cancel=false,calls=0;
+ const ops=[{kind:'crop',panelId:'p0',args:{x:.5,y:.5,zoom:2}},{kind:'direction',panelId:'p0',args:{instruction:'寄る'}},{kind:'direction',panelId:'p1',args:{instruction:''}}];
+ await assert.rejects(()=>executeEditSequence({current:()=>p,commit:async()=>assert.fail(),candidate:candidate(p,ops),perform:async()=>assert.fail()}));
+ ops[2].args.instruction='引く';
+ await assert.rejects(()=>executeEditSequence({current:()=>p,commit:async v=>{p=v;},candidate:candidate(p,ops),cancelled:()=>cancel,perform:async()=>{calls++;cancel=true;}}),/停止/);
+ assert.equal(calls,1);assert.equal(p.jobs.at(-1).status,'partial');
+});
+
+test('previous-target reference is derived from a completed saved operation on the displayed page',async()=>{
+ const p=fixture();p.jobs=[{kind:'edit_proposal',status:'complete',context:{pageId:p.layout.pages[0].id},plan:{operations:[{kind:'crop',panelId:'p2'}]}}];
+ const ctx=editContext(p,0,null,null);
+ const result=await planEdit(p,ctx,'さっきのコマを少し右へ',async()=>JSON.stringify({reason:'直前の対象',operations:[{kind:'crop',panelId:'p2',args:{x:.4,y:.5,zoom:1}}]}));
+ assert.deepEqual(result.context.explicitTargets,['p2']);
+ await assert.rejects(()=>planEdit(p,editContext(p,1,null,null),'さっきのコマを右へ',async()=>assert.fail()),/一つに特定/);
+});

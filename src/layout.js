@@ -52,7 +52,8 @@ export function ensureLayout(project) {
   if(!project.layout) return {...project,layout:initialLayout(project.panels),layoutHistory:[],layoutRedo:[]};
   const known=new Set(project.panels.map(p=>p.id)), old=new Set(project.layout.knownPanelIds??[]);
   const layout=structuredClone(project.layout);
-  layout.pages.forEach(page=>page.slots.forEach(slot=>{if(slot.panelId!==null&&!known.has(slot.panelId))slot.panelId=null;}));
+  // Migrate the superseded per-page lock without retaining it as persisted state.
+  layout.pages.forEach(page=>{delete page.locked;page.slots.forEach(slot=>{if(slot.panelId!==null&&!known.has(slot.panelId))slot.panelId=null;});});
   const added=project.panels.filter(p=>!old.has(p.id));
   layout.pages.push(...initialLayout(added).pages); layout.knownPanelIds=[...known];
   validateLayout(layout,project.panels);
@@ -70,9 +71,41 @@ export function layoutWarnings(layout,panels) {
   if(JSON.stringify(expected)!==JSON.stringify(assigned))warnings.push('ページ割当が原文の読書順と異なります');
   return warnings;
 }
+function assignedIds(page) { return page.slots.filter(s=>s.panelId!==null).map(s=>s.panelId); }
+// Reflow page assignment from one boundary through the end. Pages before the start are immutable.
+// Local geometry/crop edits never call this function; pagination changes do.
+export function reflowLayout(project,layout=project.layout,startPageIndex=0) {
+  validateLayout(layout,project.panels);
+  if(!Number.isInteger(startPageIndex)||startPageIndex<0||startPageIndex>=layout.pages.length)throw Error('詰め直しを開始するページが不正です');
+  const order=project.panels.map(p=>p.id), next=structuredClone(layout);
+  const output=next.pages.slice(0,startPageIndex), prefix=output.flatMap(assignedIds);
+  if(JSON.stringify(prefix)!==JSON.stringify(order.slice(0,prefix.length)))throw Error('開始ページより前の割当が原文順ではありません。前のページから詰め直してください');
+  const ids=order.slice(prefix.length);let at=0;
+  for(const page of next.pages.slice(startPageIndex)) {
+    if(at>=ids.length)break;
+    const take=Math.min(page.slots.length,ids.length-at);
+    if(!take)continue;
+    const slots=page.slots.slice(0,take).map((slot,i)=>({...slot,panelId:ids[at+i]}));
+    output.push({...page,slots});at+=take;
+  }
+  while(at<ids.length) {
+    const take=Math.min(4,ids.length-at),panelIds=ids.slice(at,at+take);
+    output.push({id:crypto.randomUUID(),slots:template(take,panelIds)});at+=take;
+  }
+  next.pages=output;next.knownPanelIds=[...order];
+  validateLayout(next,project.panels);
+  const warnings=layoutWarnings(next,project.panels);
+  if(warnings.length)throw Error(`後続の詰め直しに失敗しました: ${warnings.join(' / ')}`);
+  return next;
+}
 export function changeLayout(project,layout,label='コマ割り変更') {
   validateLayout(layout,project.panels);
-  return {...project,layout:structuredClone(layout),layoutHistory:[...(project.layoutHistory??[]),{layout:project.layout,label}].slice(-100),layoutRedo:[]};
+  let next=layout;
+  // Slot-capacity changes move a page boundary, so reflow from the first changed page.
+  // Pure geometry/crop edits keep every page assignment byte-equivalent.
+  const changed=layout.pages.findIndex((page,i)=>project.layout?.pages?.[i]?.id===page.id&&project.layout.pages[i].slots.length!==page.slots.length);
+  if(changed>=0)next=reflowLayout(project,layout,changed);
+  return {...project,layout:structuredClone(next),layoutHistory:[...(project.layoutHistory??[]),{layout:project.layout,label}].slice(-100),layoutRedo:[]};
 }
 export function undoLayout(project,redo=false) {
   const from=redo?'layoutRedo':'layoutHistory',to=redo?'layoutHistory':'layoutRedo', entry=project[from]?.at(-1);

@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {template,initialLayout,ensureLayout,validateLayout,validQuad,layoutWarnings,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
+import {template,initialLayout,ensureLayout,validateLayout,validQuad,layoutWarnings,reflowLayout,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
 import {validateProposal,adoptLayoutProposal} from '../src/layout-ai.js';
 const panels=Array.from({length:10},(_,i)=>({id:`p${i}`,unitIds:[`u${i}`],image:`image${i}`}));
 const project=()=>ensureLayout({panels,active:'source',jobs:[]});
@@ -25,9 +25,42 @@ test('unassignment retained across reload; new content gets new pages without re
  const reloaded=ensureLayout(JSON.parse(JSON.stringify(p)));assert.deepEqual(reloaded.layout,p.layout);assert.match(layoutWarnings(p.layout,panels).join(),/未割当/);
  const extended=ensureLayout({...p,panels:[...panels,{id:'new'}]});assert.deepEqual(extended.layout.pages.slice(0,3),p.layout.pages);assert.equal(extended.layout.pages[3].slots[0].panelId,'new');
 });
+test('superseded per-page locks are removed on load',()=>{
+ const p=project(),legacy=structuredClone(p);legacy.layout.pages[1].locked=true;
+ const migrated=ensureLayout(legacy);assert.equal('locked' in migrated.layout.pages[1],false);assert.deepEqual(migrated.layout.pages[1].slots,p.layout.pages[1].slots);
+});
 test('overlaps, missing/duplicate references and reordered content cannot silently export',()=>{
  const p=project(),l=structuredClone(p.layout);l.pages[0].slots[1].points=l.pages[0].slots[0].points;assert.match(layoutWarnings(l,panels).join(),/重な/);
  l.pages[0].slots[1].panelId='p0';assert.throws(()=>validateLayout(l,panels));
+});
+test('local geometry edit does not reflow or alter any page assignment',()=>{
+ const p=project(),l=structuredClone(p.layout),assignments=p.layout.pages.map(pg=>pg.slots.map(s=>s.panelId));
+ l.pages[1].slots[0].points[0][0]+=.01;const changed=changeLayout(p,l);
+ assert.deepEqual(changed.layout.pages.map(pg=>pg.slots.map(s=>s.panelId)),assignments);
+ assert.deepEqual(changed.layout.pages[0],p.layout.pages[0]);assert.notDeepEqual(changed.layout.pages[1].slots[0].points,p.layout.pages[1].slots[0].points);
+});
+test('reflow pulls and pushes panels across every following page without touching artwork or source order',()=>{
+ const p=project(),beforePanels=p.panels,beforeJobs=p.jobs;
+ const wider=structuredClone(p.layout);wider.pages[0].slots=template(5,wider.pages[0].slots.map(s=>s.panelId));
+ const pulled=reflowLayout(p,wider,0);
+ assert.deepEqual(pulled.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3','p4'],['p5','p6','p7','p8'],['p9']]);
+ assert.deepEqual(layoutWarnings(pulled,panels),[]);
+ const narrow=structuredClone(p.layout);narrow.pages[0].slots=template(3,narrow.pages[0].slots.slice(0,3).map(s=>s.panelId));
+ const pushed=reflowLayout(p,narrow,0);
+ assert.deepEqual(pushed.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2'],['p3','p4','p5','p6'],['p7','p8'],['p9']]);
+ assert.deepEqual(layoutWarnings(pushed,panels),[]);assert.equal(p.panels,beforePanels);assert.equal(p.jobs,beforeJobs);
+});
+test('reflow keeps pages before start byte-identical and continues through the suffix',()=>{
+ const p=project(),l=structuredClone(p.layout),first=structuredClone(l.pages[0]);
+ l.pages[1].slots=template(3,['p4','p5','p6']);
+ const flowed=reflowLayout(p,l,1);assert.deepEqual(flowed.pages[0],first);
+ assert.deepEqual(flowed.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3'],['p4','p5','p6'],['p7','p8'],['p9']]);
+ assert.deepEqual(layoutWarnings(flowed,panels),[]);
+});
+test('changeLayout automatically reflows only when slot capacity changes',()=>{
+ const p=project(),l=structuredClone(p.layout);l.pages[1].slots=template(3,l.pages[1].slots.slice(0,3).map(s=>s.panelId));
+ const changed=changeLayout(p,l);assert.deepEqual(changed.layout.pages[0],p.layout.pages[0]);
+ assert.deepEqual(changed.layout.pages.map(pg=>pg.slots.map(s=>s.panelId)),[['p0','p1','p2','p3'],['p4','p5','p6'],['p7','p8'],['p9']]);
 });
 test('AI candidate protects other pages, stale base and source order; rejects invalid shape',()=>{
  const p=project(),page=structuredClone(p.layout.pages[0]);page.slots[0].points[0][0]+=.03;
