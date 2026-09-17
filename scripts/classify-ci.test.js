@@ -44,8 +44,8 @@ test("frontend component changes run unit/build and UI checks", () => {
   assert.equal(result.runLive, false);
 });
 
-test("frontend logic changes skip browser and live integration checks", () => {
-  const result = classifyFiles(["src/layout.js"]);
+test("unrelated frontend logic skips browser and publication integration", () => {
+  const result = classifyFiles(["src/lettering.js"]);
   assert.equal(result.runWeb, true);
   assert.equal(result.runUi, false);
   assert.equal(result.runLive, false);
@@ -117,4 +117,15 @@ test("manual runs deliberately execute the full suite", () => {
   assert.equal(result.runBlender, true);
   assert.equal(result.runMac, true);
   assert.equal(result.runRelease, true);
+});
+
+test("publication geometry and pinned contracts require actual exporter checks", () => {
+  for (const path of ["src/layout.js", "src/render.js", "src/page-art.js", "src/image-crop.js", "vendor/live-manga/contracts/validate.mjs"]) {
+    const result=classifyFiles([path]);
+    assert.equal(result.runWeb,true,path);
+    assert.equal(result.runLive,true,path);
+    assert.equal(result.runLlm,false,path);
+    assert.equal(result.runBlender,false,path);
+  }
+  assert.equal(classifyFiles(["src-tauri/src/live_export.rs"]).runStorage,true);
 });

@@ -1,7 +1,7 @@
 import {upgradeSourceProject,sealSnapshots,migrateSourceApplication} from './source-application.js';
 import { invoke } from '@tauri-apps/api/core';
-import { migrateProject } from './revisions';
-import { restoreVideoResults } from './video-remote';
+import { migrateProject } from './revisions.js';
+import { restoreVideoResults } from './video-remote.js';
 import {withResource,holdsResource} from './execution.js';
 export const desktop = () => !!window.__TAURI_INTERNALS__;
 export async function call(command, args = {}, permit=null) {

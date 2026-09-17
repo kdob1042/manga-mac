@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultCrop,cropRect,panCrop,validateCrop} from '../src/image-crop.js';
-import {ensureLayout,changeLayout,undoLayout,validateLayout,assertLegacyLiveLayout} from '../src/layout.js';
+import {ensureLayout,changeLayout,undoLayout,validateLayout} from '../src/layout.js';
 test('cover preserves aspect and fills portrait/landscape frames, pan clamps without gaps',()=>{
  for(const [w,h] of [[768,768],[1600,900],[900,1600]])for(const box of [{x:20,y:30,width:100,height:300},{x:20,y:30,width:300,height:100}]) {
   const crop={...defaultCrop(),zoom:2},r=cropRect(w,h,box,crop);
@@ -14,7 +14,6 @@ test('crop history, reload and removal do not touch original artwork, lettering,
  const l={...p.layout,imageCrops:{p:defaultCrop()}},next=changeLayout(p,l,'crop',{pageIds:p.layout.pages.map(p=>p.id)});
  assert.equal(next.panels,p.panels);assert.equal(next.jobs,p.jobs);assert.deepEqual(ensureLayout(JSON.parse(JSON.stringify(next))).layout,l);
  assert.deepEqual(undoLayout(next).layout,p.layout);assert.deepEqual(undoLayout(undoLayout(next),true).layout,l);
- assert.throws(()=>assertLegacyLiveLayout(next),/トリミング/);assert.doesNotThrow(()=>assertLegacyLiveLayout(p));
  for(const crop of [null,{}, {zoom:NaN,x:0,y:0},{zoom:9,x:0,y:0},{zoom:1,x:-1,y:0},{zoom:1,x:0,y:Infinity}])assert.throws(()=>validateLayout({...l,imageCrops:{p:crop}},p.panels));
  assert.throws(()=>validateCrop({zoom:0,x:.5,y:.5}));
 });

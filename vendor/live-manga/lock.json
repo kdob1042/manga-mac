@@ -1,15 +1,20 @@
 {
+  "version": "2.0.0",
   "repository": "kdob1042/live-manga",
-  "version": "1.0.0",
-  "commit": "41a71b30647bfc12f2ed4a824ba92f4dfdf108b9",
+  "commit": "11fbbd26b0c3d2212ba82e915b63a518ccfc0949",
   "files": {
-    "contracts/validate.mjs": "a54ac38afecb945ea6e60810819ce8a17dadecca7426f28b691971fe43ed7e80",
-    "contracts/schema.json": "9ddc343bceb094bc3036ca9d38e6229bd8aa7ba868cca2a4dbc990ac453cf50e",
-    "contracts/types.ts": "7edcbcf14feab8e48afd5c5e654ef12984d612383d298cc6d8e1643fdb2a1614",
+    "contracts/validate.mjs": "5e32159fd5b31186368e8951b1d1bd8bfa0cbf0c0745d3553ebe0f8a06ffad89",
+    "contracts/schema.json": "e2ec8d9f07f7609636e05522b4784059495be74c9efdd05948f21d10316d02d9",
+    "contracts/types.ts": "2aa502c77714ed8db90c0df8dac715de567a89aa2018d44f6e847794d89a712b",
     "contracts/package.mjs": "4ce3c9ee8eaa7c0a27eedec688acb8db0a568e7095838d3a6aeb2b03fc698e32",
     "scripts/fixture.mjs": "4a4bba7d09cba0908e0b0a342409379de8cfd8f575650ed9e08d8090d0b8638e",
     "scripts/fixture_overlay.py": "c6740d80607fefd11f01d4bed1511aa9a2c3f2b350591acabba7b61e46434789",
     "scripts/materialize-demo.mjs": "fa07763186f173c23c173bb85bea11f7af57f264229944b708cba109389617b6",
-    "contracts/fixture-assets.json": "feabeb6683f225f957664bf1fd5392dcbbddb33268809eb63be8e72a06dcc9b8"
+    "contracts/fixture-assets.json": "feabeb6683f225f957664bf1fd5392dcbbddb33268809eb63be8e72a06dcc9b8",
+    "contracts/preview.mjs": "03b8d4d4057a0994a559fa487f0e41915ae0e81dc0849b8fa476b10e5165252a",
+    "contracts/preview.schema.json": "258c82f51192c0cab1de253133dafe3a5503d7847d23326b1630b5474ea7db84",
+    "contracts/preview-types.ts": "aca618e6151acc23886aa8098252ce171ad20ef5b66496df67ce555129555990",
+    "src/preview-worker.mjs": "5d5da5f7a4de0c42f4e05465ab6a259b0708cb55c56b613d37fb8f21dca656c4",
+    "src/http-range.mjs": "396337e891bdda3aca018d49dd23760adc42b8d73a391a7aeebc67533ba106b3"
   }
 }

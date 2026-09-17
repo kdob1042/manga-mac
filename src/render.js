@@ -4,12 +4,11 @@ import {
   validateLayout,
   layoutWarnings,
   contentBox,
-  bounds,
   PAGE,
 } from './layout.js';
-import { cropRect } from './image-crop.js';
+import { panelArtRect } from './page-art.js';
 import { wrapText, validateLettering } from './lettering';
-import { containRect } from './image-input';
+import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
 export function lines(ctx, text, width) {
@@ -91,6 +90,11 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     ),
   );
 }
+function strokeFrame(ctx,points) {
+  ctx.beginPath();
+  points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
+  ctx.closePath();ctx.strokeStyle='#111';ctx.lineWidth=4;ctx.stroke();
+}
 export async function pageLayers(
   panels,
   snapshots,
@@ -129,27 +133,14 @@ export async function pageLayers(
     ctx.closePath();
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 4;
-    if (layer !== 'art') ctx.stroke();
     ctx.clip();
     if (!p && !draft) throw Error('未割当の枠があります');
     const box = contentBox(slot.points);
     const crop = p && imageCrops[p.id];
     const image = p?.image ? await imageOf(p.image) : null;
-    if (crop && p.image && layer !== 'overlay') {
-      const im = image,
-        b = bounds(slot.points);
-      const r = cropRect(
-        im.width,
-        im.height,
-        {
-          x: b.x * PAGE.width,
-          y: b.y * PAGE.height,
-          width: b.width * PAGE.width,
-          height: b.height * PAGE.height,
-        },
-        crop,
-      );
-      ctx.drawImage(im, r.x, r.y, r.width, r.height);
+    if (image && layer !== 'overlay') {
+      const r = panelArtRect(slot.points,image.width,image.height,crop);
+      ctx.drawImage(image,r.x,r.y,r.width,r.height);
     }
     // Uniformly scale the original composition; characters and lettering never shear.
     const scale = Math.min(box.width / 720, box.height / 1030);
@@ -165,30 +156,26 @@ export async function pageLayers(
       ctx.font = '30px sans-serif';
       ctx.fillText('未割当', 30, 50);
       ctx.restore();
+      if (layer !== 'art') strokeFrame(ctx,slot.points);
       continue;
     }
     if (!p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
-    if (p.image) {
-      const fit = containRect(image.width, image.height, 716, 716);
-      if (layer !== 'overlay' && !crop)
-        ctx.drawImage(
-          image,
-          x + 2 + fit.x,
-          y + 2 + fit.y,
-          fit.width,
-          fit.height,
-        );
-    } else {
+    if (!p.image) {
       ctx.fillStyle = '#f2f0eb';
       ctx.fillRect(2, 2, 716, 716);
       ctx.fillStyle = '#777';
       ctx.font = '30px sans-serif';
       ctx.fillText('未作画', 30, 50);
     }
-    if (scale * 14 < 6)
+    if (panelHasText(p) && !(draft && p.previewLetteringPending) && scale * 14 < 6)
       throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げてください`);
     if (layer === 'art') {
       ctx.restore();
+      continue;
+    }
+    if (!panelHasText(p) || (draft && p.previewLetteringPending)) {
+      ctx.restore();
+      strokeFrame(ctx,slot.points);
       continue;
     }
     const snapshot = snapshots.find((s) => s.id === p.snapshotId);
@@ -230,18 +217,7 @@ export async function pageLayers(
       );
     ctx.restore();
     // The frame stays above the artwork, including full-bleed crops.
-    if (crop && layer === 'complete') {
-      ctx.beginPath();
-      slot.points.forEach(([x, y], i) =>
-        i
-          ? ctx.lineTo(x * PAGE.width, y * PAGE.height)
-          : ctx.moveTo(x * PAGE.width, y * PAGE.height),
-      );
-      ctx.closePath();
-      ctx.strokeStyle = '#111';
-      ctx.lineWidth = 4;
-      ctx.stroke();
-    }
+    if (layer !== 'art') strokeFrame(ctx,slot.points);
   }
   return canvas.toDataURL('image/png');
 }
@@ -264,18 +240,3 @@ export const pagePNG = (
     draft,
     imageCrops,
   );
-// Legacy Live Manga v1 geometry; non-legacy layouts are rejected before this path.
-export function panelLayout(i, width, height) {
-  const x = i % 2 === 0 ? 820 : 60,
-    y = 60 + Math.floor(i / 2) * 1080;
-  const fit = containRect(width, height, 716, 716);
-  return {
-    frame: { x, y, width: 720, height: 1030 },
-    artRect: {
-      x: x + 2 + fit.x,
-      y: y + 2 + fit.y,
-      width: fit.width,
-      height: fit.height,
-    },
-  };
-}

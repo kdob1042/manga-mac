@@ -2,6 +2,8 @@
 pub mod llm;
 #[path = "../../src-tauri/src/policy_transport.rs"]
 pub mod policy_transport;
+#[path = "../../src-tauri/src/live_preview.rs"]
+pub mod live_preview;
 #[path = "../../src-tauri/src/runway.rs"]
 pub mod runway;
 #[path = "../../src-tauri/src/storage.rs"]
