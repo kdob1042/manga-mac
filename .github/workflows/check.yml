@@ -1,7 +1,7 @@
 name: Check and build Mac app
 # Pull requests always run a cheap classifier so skipped heavy jobs report a successful conclusion.
 # Normal code-change PRs run the Linux checks.
-# Docs-only PRs, dev-to-main promotions, and main-to-dev synchronizations reuse existing validation.
+# Docs-only PRs, dev-to-main promotions, and unchanged branch synchronizations reuse existing validation.
 # A merge to dev runs macOS validation only when the pushed tree contains code changes.
 # A merge to main packages code changes for distribution.
 on:
@@ -58,10 +58,8 @@ jobs:
               set_output false "dev-to-main-promotion"
               exit 0
             fi
-            if [[ "$PR_HEAD" == "main" && "$PR_BASE" == "dev" ]]; then
-              set_output false "main-to-dev-sync"
-              exit 0
-            fi
+            # A main-to-dev sync is cheap only when its actual diff is empty or docs-only.
+            # A real main-side hotfix must still receive the full validation.
             files="$(git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA")"
           elif [[ "$EVENT_NAME" == "push" ]]; then
             if [[ -z "$BEFORE_SHA" || "$BEFORE_SHA" =~ ^0+$ ]]; then
