@@ -2,6 +2,7 @@
 mod backup_commands;
 mod llm;
 mod policy_transport;
+mod live_preview;
 mod runway;
 pub mod storage;
 mod web_asset;
@@ -191,21 +192,20 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
         let snapshot = p["snapshots"]
             .as_array()
             .and_then(|ss| ss.iter().find(|s| s["id"] == p["active"]));
-        entries = storage::source_library::register(
-            &state.base,
-            storage::source_library::Entry {
-                id: id.clone(),
-                name: p["title"].as_str().unwrap_or("最初の作品").into(),
-                repo: snapshot
-                    .and_then(|s| s["repo"].as_str())
-                    .unwrap_or("kdob1042/Kamiya-Kawai")
-                    .into(),
-                episode: snapshot
-                    .and_then(|s| s["episodeId"].as_str())
-                    .unwrap_or("P01")
-                    .into(),
-            },
-        )?;
+        if let Some(source) = snapshot.filter(|s| s["repo"].as_str().is_some()) {
+            entries = storage::source_library::register(
+                &state.base,
+                storage::source_library::Entry {
+                    id: id.clone(),
+                    name: p["title"].as_str().unwrap_or("最初の作品").into(),
+                    repo: source["repo"].as_str().unwrap().into(),
+                    episode: snapshot
+                        .and_then(|s| s["episodeId"].as_str())
+                        .unwrap_or("P01")
+                        .into(),
+                },
+            )?;
+        }
     }
     Ok(serde_json::json!({"entries":entries,"active":id}))
 }
@@ -219,10 +219,9 @@ fn source_register(
 ) -> Result<Value, String> {
     let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
     let existing = storage::source_library::list(&state.base)?;
-    if id
-        .as_ref()
-        .is_some_and(|id| !existing.iter().any(|e| &e.id == id))
-    {
+    if id.as_ref().is_some_and(|id| {
+        !existing.iter().any(|e| &e.id == id) && !(id == "primary" && state.root == state.base)
+    }) {
         return Err("未登録の作品です".into());
     }
     let new = id.is_none();
@@ -255,7 +254,7 @@ fn source_register(
 #[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
     let mut db = state.db.lock().map_err(err)?;
-    storage::save(&mut db, &state.root, &data)
+    storage::save_checked(&mut db, &state.root, &data)
 }
 #[tauri::command]
 fn load_project(state: State<AppState>) -> Result<Option<String>, String> {
@@ -279,6 +278,24 @@ fn prepare_source_patch(
         &op_id,
         &base_content_token,
         &target_snapshot_id,
+        expected,
+    )
+}
+#[tauri::command]
+fn rebase_source_patch(
+    work_id: String,
+    op_id: String,
+    base_content_token: String,
+    expected: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    let mut db = state.db.lock().map_err(err)?;
+    storage::source_patch::rebase(
+        &mut db,
+        &state.root,
+        &work_id,
+        &op_id,
+        &base_content_token,
         expected,
     )
 }
@@ -448,6 +465,11 @@ async fn llm_request(
     request: llm::Request,
     state: State<'_, AppState>,
 ) -> Result<llm::Response, String> {
+    let _local_guard = if state.connections.is_local(&request.connection_id)? {
+        Some(state.engine.lock().await)
+    } else {
+        None
+    };
     state.connections.request(request).await
 }
 fn engine_path() -> Result<PathBuf, String> {
@@ -517,10 +539,7 @@ async fn prepare_engine(state: State<'_, AppState>) -> Result<String, String> {
 }
 #[tauri::command]
 async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
-    let _guard = state
-        .engine
-        .try_lock()
-        .map_err(|_| "画像エンジンは処理中です")?;
+    let _guard = state.engine.lock().await;
     let width = request["width"].as_u64().unwrap_or(768);
     let height = request["height"].as_u64().unwrap_or(768);
     if !(256..=1024).contains(&width)
@@ -580,6 +599,27 @@ fn recover_image(job_id: String, state: State<'_, AppState>) -> Result<Value, St
 fn live_video_probe(revision_id: String, state: State<'_, AppState>) -> Result<Value, String> {
     let db = state.db.lock().map_err(err)?;
     storage::live_export::video_probe(&db, &state.root, &revision_id)
+}
+#[tauri::command]
+fn live_preview_capture(revision:u64,saved_at:String,state:State<'_,AppState>)->Result<Value,String>{
+    let db=state.db.lock().map_err(err)?;
+    storage::live_preview::capture(&db,&state.root,revision,&saved_at)
+}
+#[tauri::command]
+fn live_preview_stage(request:Value,state:State<'_,AppState>)->Result<Value,String>{
+    storage::live_preview::stage(&state.root,&request)
+}
+#[tauri::command]
+fn live_preview_video_probe(revision:String,video_revision:String,state:State<'_,AppState>)->Result<Value,String>{
+    storage::live_preview::video_probe(&state.root,&revision,&video_revision)
+}
+#[tauri::command]
+fn live_preview_cancel(revision:String)->Result<(),String>{live_preview::cancel(&revision)}
+#[tauri::command]
+async fn live_preview_send(revision:String,origin:String,token:String,base_revision:Option<String>,work_id:String,episode_id:String,state:State<'_,AppState>)->Result<Value,String>{
+    static GATE:tokio::sync::Mutex<()>=tokio::sync::Mutex::const_new(());
+    let _guard=GATE.lock().await;
+    live_preview::send(&state.root,&revision,&origin,&token,base_revision,(&work_id,&episode_id)).await
 }
 #[tauri::command]
 fn live_export(
@@ -760,6 +800,7 @@ fn main() {
             source_register,
             save_project,
             prepare_source_patch,
+            rebase_source_patch,
             commit_source_patch,
             load_project,
             video_playback,
@@ -771,6 +812,11 @@ fn main() {
             export_file,
             live_export,
             live_video_probe,
+            live_preview_capture,
+            live_preview_stage,
+            live_preview_video_probe,
+            live_preview_cancel,
+            live_preview_send,
             register_llm,
             remove_llm,
             cancel_llm,

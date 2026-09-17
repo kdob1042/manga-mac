@@ -1,0 +1,19 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {buildChangeSet} from '../src/source-diff.js';import {sourceRunGroups} from '../src/source-runs.js';
+import {prepareSourceUpdate,refreshSourceCandidate} from '../src/source-patch.js';import {proposeSourceReplan} from '../src/source-replan.js';
+import {tokenizeSnapshot} from '../src/source-refs.js';import {defaultLettering} from '../src/lettering.js';import {initialLayout} from '../src/layout.js';
+function fixture(){const snapshots=[{id:'old',scenes:Array.from({length:9},(_,i)=>({id:`S${i}`,text:`old${i}`}))},{id:'new',scenes:Array.from({length:9},(_,i)=>({id:`S${i}`,text:[0,8].includes(i)?`new${i}`:`old${i}`}))}],units=tokenizeSnapshot(snapshots[0]).map((u,i)=>({id:`u${i}`,source:u.source,requiredText:[u.source]}));const panels=units.map((u,i)=>{const p={id:`p${i}`,sourceRefs:[u.source],contextRefs:[],image:'art',characterIds:[],prompt:'art'};p.lettering=defaultLettering(p);return p;});const layout=initialLayout(panels);layout.pages=panels.map((p,i)=>({id:`page${i}`,slots:[{...layout.pages[0].slots[0],id:`slot${i}`,panelId:p.id}]}));return {workId:'w',contentToken:'base',active:'new',snapshots,sourceApplication:{version:1,units},panels,layout,characters:[],jobs:[]};}
+function selection(p){const c=buildChangeSet(p);return {workId:p.workId,changeSetId:c.id,baseContentToken:p.contentToken,targetSnapshotId:p.active,selectedBlockIds:c.blocks.map(b=>b.id),resolvedSceneIds:['S0','S8']};}
+const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
+test('resolved disjoint scenes really plan concurrently, finish inverse and rebase without regeneration or changing C',async()=>{
+ const p=fixture(),groups=sourceRunGroups(p,selection(p));assert.equal(groups.length,2);const gates=[deferred(),deferred()];let calls=0;
+ const invoke=async(command,args)=>{const id=args.expected.sourceEdits[0].oldUnitIds[0].slice(1);return {baseContentToken:args.baseContentToken,targetSnapshotId:'new',expected:args.expected,scope:{panelIds:[`p${id}`],pageIds:id==='0'?['page0','page1']:['page7','page8']}};};
+ const plans=await Promise.all(groups.map((g,i)=>prepareSourceUpdate(p,g.selection,invoke,`op${i}`)));const promises=plans.map((prepared,i)=>proposeSourceReplan(p,prepared,async prompt=>{calls++;await gates[i].promise;const input=JSON.parse(prompt);return JSON.stringify({reason:'reuse',panels:[{unitIds:input.mutableUnits.map(u=>u.id),prompt:'art',characterIds:[],reusePanelId:input.currentPanels[0].id}]});}));
+ assert.equal(calls,2);gates[1].resolve();const B=await promises[1];const afterB={...p,...B.patch,contentToken:'B'};gates[0].resolve();const A=await promises[0],rebased=await refreshSourceCandidate(afterB,A,invoke);const final={...afterB,...rebased.patch};assert.equal(calls,2);assert.equal(final.panels.length,9);assert.equal(final.sourceApplication.units[0].source.snapshotId,'new');assert.equal(final.sourceApplication.units[8].source.snapshotId,'new');assert.deepEqual(final.panels.slice(1,8),p.panels.slice(1,8));assert.deepEqual(final.layout.pages.slice(2,7),p.layout.pages.slice(2,7));
+ const changed={...afterB,active:'tag-update'};await assert.rejects(refreshSourceCandidate(changed,A,invoke),/原稿版/);await assert.rejects(refreshSourceCandidate({...afterB,workId:'other'},A,invoke),/作品/);
+});
+test('shared pages, shared primary panels, context and insertion boundaries cannot split by scene tags',()=>{
+ const p=fixture();p.layout=initialLayout(p.panels);assert.equal(sourceRunGroups(p,selection(p)).length,2);
+ p.panels[0].contextRefs=[p.panels[8].sourceRefs[0]];assert.equal(sourceRunGroups(p,selection(p)).length,1);
+ const empty=fixture();empty.panels=[];empty.layout=initialLayout([]);empty.sourceApplication.units=[];assert.equal(sourceRunGroups(empty,selection(empty)).length,1);
+});

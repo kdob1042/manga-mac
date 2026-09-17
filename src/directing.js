@@ -1,3 +1,4 @@
+import {withResource} from './execution.js';
 // Orchestration only: all 3D state is read back from Blender's existing adapter.
 import { generationSize } from './image-input.js';
 import { sourceForPanel } from './core.js';
@@ -68,7 +69,10 @@ export function abandonDirection(project, id) {
   return { ...project, directing_runs: (project.directing_runs ?? []).map(r => r.id === id && r.status !== 'complete' ? { ...r, status: 'abandoned' } : r) };
 }
 // Dependencies are injectable so cancellation, recovery and cross-shot isolation can be tested without an API.
-export async function directPanel({ current, commit, call, ask, panelId, instruction = '', cancelled = () => false, notify = () => {} }) {
+export async function directPanel(options) {
+ return withResource('blender-session',1,()=>directPanelExclusive(options),{cancelled:options.cancelled,waiting:()=>options.notify?.('Blender の演出・撮影の完了を待っています')});
+}
+async function directPanelExclusive({ current, commit, call, ask, panelId, instruction = '', cancelled = () => false, notify = () => {} }) {
   let panel = panelById(current(), panelId);
   if (!panel || panel.snapshotId !== current().active) throw Error('現在の原作のコマを選択してください');
   if (!panel.shot_binding) {

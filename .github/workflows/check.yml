@@ -213,8 +213,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      - name: Install browser for UI tests
-        if: needs.classify.outputs.run_ui == 'true'
+      - name: Install browser for UI and publication tests
+        if: needs.classify.outputs.run_ui == 'true' || needs.classify.outputs.run_live == 'true'
         run: npx playwright install --with-deps chromium
       - name: Browser UI tests
         if: needs.classify.outputs.run_ui == 'true'

@@ -3,8 +3,19 @@ import assert from 'node:assert/strict';
 import { emptyProject } from '../src/core.js';
 import { ensureLayout } from '../src/layout.js';
 import { defaultLettering } from '../src/lettering.js';
-import { prepareDraftLayout,finishDraftLettering,reviewDraft } from '../src/draft.js';
+import { prepareDraftLayout,finishDraftLettering,reviewDraft,draftPageStatus } from '../src/draft.js';
 function fixture(){return ensureLayout({...emptyProject(),active:'s',snapshots:[{id:'s',scenes:[{id:'a',text:'一。\n\n二。'}]}],panels:[0,1].map(i=>({id:`p${i}`,sceneId:'a',snapshotId:'s',unitIds:[`a:u${i}`],characterIds:[],image:`art${i}`}))});}
+test('image-only panels need artwork but not lettering',async()=>{
+ const p=ensureLayout({...emptyProject(),active:'s',snapshots:[{id:'s',scenes:[{id:'visual',text:''}]}],panels:[{id:'visual',sceneId:'visual',snapshotId:'s',unitIds:[],characterIds:[],image:'art'}]});
+ assert.equal(draftPageStatus(p,p.layout.pages[0]),'見た目を確認');
+ let calls=0;
+ await finishDraftLettering({current:()=>p,commit:async()=>assert.fail('image-only panel must not commit lettering'),cancelled:()=>false,notify:()=>{},ask:async()=>{calls++;return ''; }});
+ assert.equal(calls,0);
+ const outputs=await reviewDraft(p,async panels=>panels.map(panel=>panel.id).join(','));
+ assert.deepEqual(outputs,['visual']);
+ p.panels[0].image=null;
+ assert.equal(draftPageStatus(p,p.layout.pages[0]),'作画待ち');
+});
 test('lettering failure resumes only missing lettering, retaining rendered images and source',async()=>{
  let p=fixture(),calls=0,fail=true;
  const args={current:()=>p,commit:async next=>{p=JSON.parse(JSON.stringify(next));},cancelled:()=>false,notify:()=>{},ask:async prompt=>{calls++;const input=JSON.parse(prompt);if(calls===2&&fail)throw Error('offline');return JSON.stringify({reason:'文字量',layout:input.current});}};

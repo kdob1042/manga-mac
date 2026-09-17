@@ -125,7 +125,7 @@ export function classifyFiles(files, context = {}) {
       if (file === "src/bridge.js") {
         result.runMac = true;
       }
-      if (file.includes("live-export") || file.includes("video")) {
+      if (file.includes("live-export") || file.includes("video") || ["src/render.js", "src/page-art.js", "src/layout.js", "src/image-crop.js"].includes(file)) {
         result.runLive = true;
       }
     } else if (file.startsWith("tests/ui/")) {
@@ -160,6 +160,7 @@ export function classifyFiles(files, context = {}) {
         mark(result, "blender");
         result.runBlenderRender = true;
       } else if (file.endsWith("/live_export.rs")) {
+        mark(result, "storage");
         mark(result, "web");
         result.runLive = true;
       } else if (/(web_asset|draft|layout|lettering|runway)\.rs$/.test(file)) {
@@ -195,6 +196,10 @@ export function classifyFiles(files, context = {}) {
       file === "scripts/sync-live-contract.mjs"
     ) {
       mark(result, "web");
+      result.runLive = true;
+    } else if (file.startsWith("vendor/live-manga/")) {
+      mark(result, "web");
+      mark(result, "storage");
       result.runLive = true;
     } else if (file.startsWith("scripts/") && file.endsWith(".mjs")) {
       mark(result, "web");

@@ -38,3 +38,39 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
  await page.evaluate(()=>window.failSync=true);await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await expect(page.getByRole('status').filter({hasText:'確認失敗'})).toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(saved);
 });
+
+test('generic sources use declarations at a pinned commit across A B A, and reject unknown schema without adoption',async({page})=>{
+ await page.addInitScript(()=>{
+  window.activeRepo='example/one';window.badSchema=false;window.reads=[];
+  window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+   const repo=window.activeRepo,second=repo==='example/two';
+   if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:repo,repo,episode:'P01'}]};
+   if(command==='load_project')return localStorage.getItem(repo);
+   if(command==='save_project'){localStorage.setItem(repo,args.data);return;}
+   if(command==='source_register')return {entries:[args]};
+   if(command==='backup_status')return {config:null,status:{last_success:0},restored:[],active:'primary'};
+   if(command==='github_get')return JSON.stringify({sha:'c'.repeat(40)});
+   if(command==='github_file'){
+    if(args.repo!==repo||args.sha!=='c'.repeat(40))throw Error('Unpinned source');window.reads.push(args.path);
+    if(args.path==='manifest.json')return JSON.stringify({schema_version:window.badSchema?5:1,work:repo,episodes:[{id:'P01',scene_ids:['scene']}],scenes:[{id:'scene',path:second?'novel/b.md':'text/a.md',tags:['駅']}],references:{characters:[{name:second?'B':'A',image:second?'faces/b.png':'portraits/a.png'}]}});
+    return second?'作品Bの本文':'作品Aの本文';
+   }
+   if(command==='github_asset')return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==',hash:'d'.repeat(64)};
+   throw Error('Unexpected '+command);
+  }};
+ });
+ await page.goto('/');
+ for(const repo of ['example/one','example/two','example/one']){
+  await page.evaluate(repo=>{window.activeRepo=repo;localStorage.setItem('chosen',repo);},repo);
+  // A reload is the native workspace switch boundary; fixture storage remains keyed by repository.
+  if(repo==='example/two') await page.addInitScript(()=>{window.activeRepo=localStorage.getItem('chosen')||'example/one';});
+  await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
+  if(await page.getByRole('button',{name:'取り込む',exact:true}).count())await page.getByRole('button',{name:'取り込む',exact:true}).click();
+  const saved=await page.evaluate(repo=>JSON.parse(localStorage.getItem(repo)),repo);expect(saved.snapshots.at(-1).repo).toBe(repo);expect(saved.snapshots.at(-1).sync.source_commit).toBe('c'.repeat(40));expect(saved.snapshots.at(-1).sync.manifest_sha256).toMatch(/^[a-f0-9]{64}$/);expect(saved.snapshots.at(-1).scenes[0].tags).toEqual(['駅']);
+ }
+ await page.evaluate(()=>{window.badSchema=true;window.__TAURI_INTERNALS__.invoke=new Proxy(window.__TAURI_INTERNALS__.invoke,{apply:async(target,self,args)=>args[0]==='github_get'?JSON.stringify({sha:'e'.repeat(40)}):target(...args)});});
+ // Unknown version is reported before requesting any scene/asset and does not adopt.
+ const before=await page.evaluate(()=>localStorage.getItem('example/one'));
+ await page.evaluate(()=>{window.__TAURI_INTERNALS__.invoke=new Proxy(window.__TAURI_INTERNALS__.invoke,{apply:async(target,self,args)=>args[0]==='github_file'&&args[1].path==='manifest.json'?JSON.stringify({schema_version:5,episodes:[]}):target(...args)});});
+ await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();await expect(page.getByRole('alert').filter({hasText:'schema 5 は未対応'})).toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('example/one'))).toBe(before);
+});

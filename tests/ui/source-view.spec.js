@@ -1,4 +1,23 @@
 import {test,expect} from '@playwright/test';
+test('tag filters are scene-local, clear stale selection and reuse the existing apply entry',async({page})=>{
+ const view=await mount(page,'','first');
+ await page.evaluate(()=>{
+  window.sourceProject.snapshots[1].scenes=[{id:'A',text:'first',tags:['雨']},{id:'B',text:'second',tags:['図書館']},{id:'C',text:'third',tags:['雨']}];window.renderSource();
+ });
+ await view.getByRole('checkbox',{name:'雨',exact:true}).check();
+ await expect(view.locator('.source-change')).toHaveCount(2);
+ await view.getByRole('button',{name:'該当シーンをまとめて選択'}).click();
+ await expect(view.getByRole('status')).toContainText('2 / 3');
+ await view.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();
+ expect(await page.evaluate(()=>window.appliedSelections[0].selectedBlockIds.length)).toBe(2);
+ await view.getByRole('checkbox',{name:'図書館',exact:true}).check();
+ await view.getByLabel('タグの一致条件').selectOption('all');
+ await expect(view.locator('.source-change')).toHaveCount(0);
+ await expect(view.getByRole('status')).toContainText('0 / 3');
+ await view.getByRole('button',{name:'絞り込みを解除'}).click();
+ await expect(view.locator('.source-change')).toHaveCount(3);
+ expect(await page.evaluate(()=>window.aiRequests.length)).toBe(0);
+});
 async function mount(page,oldText='A\n\nB\n\nC',newText='A\n\nX\n\nZ\n\nB\n\nC\n\nY'){
  await page.goto('/');
  await page.evaluate(async({oldText,newText})=>{
