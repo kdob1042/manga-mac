@@ -129,3 +129,13 @@ test("publication geometry and pinned contracts require actual exporter checks",
   }
   assert.equal(classifyFiles(["src-tauri/src/live_export.rs"]).runStorage,true);
 });
+
+test("story-source contract changes run the web contract checks only", () => {
+  const result = classifyFiles(["contracts/story-source/validate.mjs", "contracts/story-source/manifest.schema.json"]);
+  assert.equal(result.runWeb, true);
+  assert.equal(result.runStorage, false);
+  assert.equal(result.runLlm, false);
+  assert.equal(result.runBlender, false);
+  assert.equal(result.runMac, false);
+  assert.equal(result.runUi, false);
+});

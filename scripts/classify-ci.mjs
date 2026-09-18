@@ -201,6 +201,8 @@ export function classifyFiles(files, context = {}) {
       mark(result, "web");
       mark(result, "storage");
       result.runLive = true;
+    } else if (file.startsWith("contracts/story-source/")) {
+      mark(result, "web");
     } else if (file.startsWith("scripts/") && file.endsWith(".mjs")) {
       mark(result, "web");
     } else {
