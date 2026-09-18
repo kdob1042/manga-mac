@@ -31,6 +31,7 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
                         "y",
                         "width",
                         "height",
+                        "kind",
                         "shape",
                         "tail",
                         "fontSize",
@@ -75,9 +76,18 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
                 }
             }
         }
-        if b.get("shape")
-            .is_some_and(|v| !["round", "rect", "ellipse"].contains(&v.as_str().unwrap_or("")))
+        if b.get("kind")
+            .is_some_and(|v| !["balloon", "thought", "narration"].contains(&v.as_str().unwrap_or("")))
+            || b.get("shape")
+                .is_some_and(|v| !["round", "rect", "ellipse"].contains(&v.as_str().unwrap_or("")))
             || b.get("locked").is_some_and(|v| !v.is_boolean())
+        {
+            return Err(fail());
+        }
+        let kind = b.get("kind").and_then(Value::as_str).unwrap_or("balloon");
+        if (kind == "narration"
+            && b.get("shape").is_some_and(|v| v.as_str() != Some("rect")))
+            || (kind != "balloon" && b.get("tail").is_some_and(|v| !v.is_null()))
         {
             return Err(fail());
         }
@@ -110,6 +120,26 @@ mod tests {
         ] {
             let mut invalid = v.clone();
             invalid["boxes"][0][key] = value;
+            assert!(validate(&invalid, None).is_err());
+        }
+    }
+    #[test]
+    fn validates_mixed_lettering_kinds_and_legacy_defaults() {
+        let v = json!({"mode":"balloons","boxes":[
+            {"id":"letter:u1","unit_id":"u1","x":0.1,"y":0.1,"width":0.3,"height":0.2,"kind":"balloon"},
+            {"id":"letter:u2","unit_id":"u2","x":0.1,"y":0.4,"width":0.3,"height":0.2,"kind":"thought","tail":null},
+            {"id":"letter:u3","unit_id":"u3","x":0.1,"y":0.7,"width":0.3,"height":0.2,"kind":"narration","shape":"rect"}
+        ]});
+        assert!(validate(&v, Some(&vec!["u1", "u2", "u3"])).is_ok());
+        for (index, patch) in [
+            (0, json!({"kind":"unknown"})),
+            (1, json!({"tail":[0.5,0.5]})),
+            (2, json!({"shape":"ellipse"})),
+        ] {
+            let mut invalid = v.clone();
+            for (key, value) in patch.as_object().unwrap() {
+                invalid["boxes"][index][key] = value.clone();
+            }
             assert!(validate(&invalid, None).is_err());
         }
     }
