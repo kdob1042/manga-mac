@@ -21,7 +21,9 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
   const padding = style.padding ?? 12,
     lineHeight = style.lineHeight ?? 1.25;
   const inset =
-    shape === 'ellipse' ? Math.min(box.width, box.height) * 0.15 : 0;
+    kind === 'balloon' && shape === 'ellipse'
+      ? Math.min(box.width, box.height) * 0.15
+      : 0;
   const textBox = {
     x: box.x + inset,
     y: box.y + inset,
