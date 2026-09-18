@@ -113,13 +113,19 @@ LLMが`ready`等の完了を返したこと自体は、Blender操作の完了証
 
 CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用しない。[B1] 参照解決にはファイル・datablockと版を使う。名称変更等のID補助が必要ならBlender側の小さなcustom propertyで保持し、アプリ独自素材モデルへ拡張しない。解決不能なら要再対応付けとし、似た名前の別素材へ自動差し替えしない。
 
-原稿インターフェース（#124）は `source-protocol.js` を正本とする汎用schema。リポジトリ名から仕様を引かず、同一commitの `manifest.json` を検証して内部SourceModelへ正規化する。作品固有JSON・整合基準commitは同梱しない。schema 1と既存schema 4は `episodes[].scene_ids`、`scenes[].id/path`、任意の `settings[].id/path` を持つ。人物参照は `references.characters: [{name: "人物A", image: "portraits/a.png", description: "任意の説明"}]` で自己記述する。設定ID・画像ディレクトリ・alt命名は任意。宣言がないschema 4だけ、任意の設定Markdown内の旧キャラクター基準画captionを互換adapterで読む。構造化宣言があれば空配列でも優先する。
+原稿インターフェース（#143）の形式正本は `contracts/story-source/` の `story-source/v1` 契約とする。原稿リポジトリの入口は `source/manifest.json` で、リポジトリ名や作品名から仕様を推測しない。manifestは `work.title`、入れ子の `episodes[].scenes[]`、`settings[]`、`characters[]` を持ち、読書順と話への所属は配列順を正本にする。場面の現在位置は配列から `P1-3` のように表示し、`id`は位置・タイトル・本文の変更後も維持する固定IDとする。
 
-場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値は変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
+本文パスは `source/` 相対で明示し、共通規則の `manuscript/p01/p01-03.md` へ解決する。配列順と現在の連番パスが一致しないmanifest、IDの重複・再利用、危険なパス、未登録・欠損ファイルを検査で拒否する。設定は `settings/`、人物基準画像は指定する場合に `assets/` に置き、人物はファイル名やMarkdownのalt文言から推測せず、人物IDと指定した画像パスで宣言する。設定・人物がない作品も `settings: []`、`characters: []` で表現する。
+
+`contracts/story-source/validate.mjs` は形式・ID・パス・タグ・本文見出し・宣言ファイルの過不足を機械検査し、本文の文字列を正規化・生成しない。`paths.mjs` は安全な参照と連番パスを、`structure.mjs` は話・場面の追加・移動・削除・再採番計画を提供する。構造計画は固定IDと本文ファイルの対応を保ったまま、衝突しない一時退避を含む移動計画を返す。削除済みIDの台帳は呼出し側から検査へ渡し、再利用を拒否する。
+
+このIssueでは共通契約を追加した段階であり、既存 `source-protocol.js` のschema 1/4 adapterと同期経路はまだ接続しない。後続の原稿移行・静的閲覧・単一形式取り込みで、同じ固定版契約を利用して切り替える。
+
+場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値を変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
 
 原稿画面のタグ検索（#131）は表示値を保持したまま、検索キーだけNFKC・前後空白除去・小文字化し、最初の表示値を残して重複除去する。ANDは同一scene内、ORはscene単位で判定し、原稿順を保持する。条件変更で生成や転送は実行しない。一括選択は既存差分block/groupへ解決し、他sceneへの拡張は対象を示して確認する。実行中groupは選択しない。既存sourceSelectionで開始時のsnapshot/contentTokenとblock IDを検査する。タグ未定義の原稿は既存操作を維持する。閲覧用投影・転送の通し受入は#130/#135とlive-manga#22で扱い、本検索UIだけでは転送完了にしない。
 
-schema 5の最小読書順台帳はscene/settingsの解決宣言を欠くため未対応と明示する。原稿側の固有ディレクトリ走査をアプリへ転載しない。原稿側で自己記述するschema 1を提供すれば作品追加のコード変更は不要。現行原稿側の宣言提供と通し確認は #136 に残す（原稿repoは本変更で編集しない）。
+旧schema 1/4は現在のアプリ同期経路が持つ互換入力であり、新規原稿の正本形式ではない。schema 5の最小読書順台帳はscene/settingsの解決宣言を欠くため、現行経路では未対応と明示する。原稿側の固有ディレクトリ走査をアプリへ転載せず、現行原稿を `story-source/v1` へ移行し、同一manifestから確認サイトと漫画アプリへ接続する作業を #136 と後続Issueで行う。
 
 「二人を近づける」という編集意図や撮影記録として数値を保存してよいが、それを編集可能な第二の3D正本として使わない。座標の表示キャッシュはBlenderから再取得可能とし、Blenderで変更した結果を古いキャッシュで上書きしない。
 
