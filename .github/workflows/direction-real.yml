@@ -1,0 +1,142 @@
+name: Real LLM and Blender acceptance
+on:
+  push:
+    branches: [issue/46-work-4]
+    paths:
+      - '.github/workflows/direction-real.yml'
+      - 'scripts/install-direction-ollama.sh'
+      - 'tests/direction/**'
+      - 'tests/llm/src/bin/direction_bridge.rs'
+      - 'src/directing.js'
+      - 'src/shots.js'
+      - 'src-tauri/src/llm.rs'
+      - 'src-tauri/src/blender.rs'
+      - 'src-tauri/src/policy_transport.rs'
+      - 'blender/**'
+      - 'helper/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: real-direction-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  real-direction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DIRECTION_MODEL: qwen2.5:3b-instruct-q4_K_M
+      OLLAMA_HOST: 127.0.0.1:11435
+      OLLAMA_NUM_PARALLEL: 1
+      OLLAMA_MAX_LOADED_MODELS: 1
+      OLLAMA_CONTEXT_LENGTH: 8192
+      OLLAMA_NO_CLOUD: 1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+      - name: Prepare paths and verified engines
+        run: |
+          mkdir -p "$RUNNER_TEMP/blender" direction-results
+          echo "DIRECTION_RESULTS=$GITHUB_WORKSPACE/direction-results" >> "$GITHUB_ENV"
+          echo "DIRECTION_FIXTURES=$RUNNER_TEMP/direction-fixtures" >> "$GITHUB_ENV"
+          sh scripts/install-direction-ollama.sh "$RUNNER_TEMP/ollama"
+          cd "$RUNNER_TEMP/blender"
+          curl --fail --location --proto '=https' -O https://download.blender.org/release/Blender4.5/blender-4.5.13-linux-x64.tar.xz
+          curl --fail --location --proto '=https' -O https://download.blender.org/release/Blender4.5/blender-4.5.13.sha256
+          sha256sum --check --ignore-missing blender-4.5.13.sha256
+          tar -xf blender-4.5.13-linux-x64.tar.xz
+          echo "BLENDER_BIN=$RUNNER_TEMP/blender/blender-4.5.13-linux-x64/blender" >> "$GITHUB_ENV"
+      - name: Load real local model and record identity
+        run: |
+          ollama serve > direction-results/ollama.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:11435/api/version > direction-results/ollama-version.json; then break; fi
+            sleep 1
+          done
+          curl --fail --silent http://127.0.0.1:11435/api/version
+          python3 tests/direction/record_ollama.py > direction-results/recorder.log 2>&1 &
+          ollama pull "$DIRECTION_MODEL"
+          curl --fail --silent http://127.0.0.1:11435/api/tags > direction-results/model-identity.json
+      - run: npm ci
+      - name: Build production adapters and public synthetic scene
+        run: |
+          cargo build --locked --manifest-path tests/llm/Cargo.toml --bin direction_bridge
+          "$BLENDER_BIN" --background --factory-startup --disable-autoexec --python-exit-code 1 --python tests/direction/fixture.py
+      - name: Real inference to production directing loop to Blender
+        run: node tests/direction/real.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Real-direction-review
+          path: direction-results/
+          if-no-files-found: error
+          retention-days: 21
+
+  mac-image-capability:
+    runs-on: macos-26
+    timeout-minutes: 5
+    steps:
+      - name: Probe actual Metal device and memory
+        run: |
+          mkdir -p capability-results
+          cat > "$RUNNER_TEMP/probe.swift" <<'SWIFT'
+          import Foundation
+          import Metal
+          let device = MTLCreateSystemDefaultDevice()
+          let result: [String: Any] = [
+            "os": ProcessInfo.processInfo.operatingSystemVersionString,
+            "physical_memory_bytes": ProcessInfo.processInfo.physicalMemory,
+            "metal_available": device != nil,
+            "device": device?.name ?? "none",
+            "recommended_working_set_bytes": device?.recommendedMaxWorkingSetSize ?? 0,
+            "image_inference": "not_run"
+          ]
+          let data = try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys])
+          print(String(data: data, encoding: .utf8)!)
+          SWIFT
+          swift "$RUNNER_TEMP/probe.swift" > capability-results/mac-metal.json
+          cat capability-results/mac-metal.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Mac-image-capability
+          path: capability-results/
+          retention-days: 21
+
+  mac-image-smoke:
+    if: ${{ always() && !cancelled() && needs.mac-image-capability.result == 'success' }}
+    needs: [real-direction, mac-image-capability]
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: Real-direction-review
+          path: direction-results
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: Mac-image-capability
+          path: capability-results
+      - name: Identify native compiler cache
+        id: native-cache
+        run: echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: helper/.build
+          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Build production image helper
+        run: swift build -c release --package-path helper
+      - name: Real captured image to local FLUX at 256 pixels
+        run: python3 tests/direction/image_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Real-image-review
+          path: image-results/
+          if-no-files-found: warn
+          retention-days: 21
