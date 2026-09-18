@@ -36,30 +36,48 @@ export function defaultLettering(panel) {
   const count = panel.unitIds.length;
   return { mode: 'caption', boxes: panel.unitIds.map((id, i) => ({ id: `letter:${id}`, unit_id: id, x: 0.55, y: 0.03 + i * 0.9 / Math.max(1, count), width: 0.42, height: Math.min(0.28, 0.85 / Math.max(1, count)) })) };
 }
+export function isCustomLetteringBox(box) {
+  return box && box.unit_id === undefined && box.sourceRefs === undefined;
+}
+
 export function validateLettering(panel, layout) {
-  if (!layout || !['caption', 'balloons'].includes(layout.mode) || !Array.isArray(layout.boxes) || (!panel.sourceRefs && layout.boxes.length !== panel.unitIds.length)) throw Error('文字配置が不正です');
+  const sourceRefsMode = Array.isArray(panel?.sourceRefs);
+  const unitIds = Array.isArray(panel?.unitIds) ? panel.unitIds : [];
+  if (!layout || !['caption', 'balloons'].includes(layout.mode) || !Array.isArray(layout.boxes) || (!sourceRefsMode && layout.boxes.filter(box => !isCustomLetteringBox(box)).length !== unitIds.length)) throw Error('文字配置が不正です');
   if (Object.keys(layout).some(k=>!['mode','boxes'].includes(k))) throw Error('文字配置の未対応項目です');
   const seen = new Set();
   for (const box of layout.boxes) {
-    if ((!panel.sourceRefs&&!panel.unitIds.includes(box.unit_id)) || (panel.sourceRefs&&(!box.id||!Array.isArray(box.sourceRefs))) || seen.has(panel.sourceRefs?box.id:box.unit_id) || [box.x, box.y, box.width, box.height].some(n => !Number.isFinite(n)) || box.x < 0 || box.y < 0 || box.width < .08 || box.height < .06 || box.x + box.width > 1.00001 || box.y + box.height > 1.00001) throw Error('文字枠がコマ外、または原文の対応が不正です');
-    if (!panel.sourceRefs && box.id !== undefined && box.id !== `letter:${box.unit_id}`) throw Error('文字枠IDは原文参照から変更できません');
-    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
+    if (!box || typeof box !== 'object') throw Error('文字枠が不正です');
+    const custom = isCustomLetteringBox(box);
+    if (custom) {
+      if (typeof box.id !== 'string' || !box.id.startsWith('custom:')) throw Error('追加文字枠IDが不正です');
+      if (typeof box.text !== 'string' || !box.text.trim() || box.text.length > 4000) throw Error('追加文字枠の本文が不正です');
+    } else if (box.text !== undefined) throw Error('原文文字枠の本文は変更できません');
+    if (!custom && ((sourceRefsMode && (!box.id || !Array.isArray(box.sourceRefs))) || (!sourceRefsMode && !unitIds.includes(box.unit_id)))) throw Error('文字枠が不正、または原文の対応がありません');
+    if (!custom && !sourceRefsMode && box.id !== undefined && box.id !== `letter:${box.unit_id}`) throw Error('文字枠IDは原文参照から変更できません');
+    const key = custom ? `custom:${box.id}` : sourceRefsMode ? `ref:${box.id}` : `unit:${box.unit_id}`;
+    if (seen.has(key) || [box.x, box.y, box.width, box.height].some(n => !Number.isFinite(n)) || box.x < 0 || box.y < 0 || box.width < .08 || box.height < .06 || box.x + box.width > 1.00001 || box.y + box.height > 1.00001) throw Error('文字枠がコマ外、または原文の対応が不正です');
+    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','text','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
     if (box.kind !== undefined && !LETTERING_KINDS.includes(box.kind)) throw Error('未対応の文字枠種別です');
     if (box.shape !== undefined && !['round','rect','ellipse'].includes(box.shape)) throw Error('未対応の吹き出し形状です');
     for (const [key,min,max] of [['fontSize',14,72],['lineHeight',1,2],['padding',0,40]]) if (box[key] !== undefined && (!Number.isFinite(box[key]) || box[key]<min || box[key]>max)) throw Error('文字スタイルの範囲が不正です');
     if (box.locked !== undefined && typeof box.locked !== 'boolean') throw Error('固定状態が不正です');
     if (box.tail !== undefined && box.tail !== null && (!Array.isArray(box.tail) || box.tail.length !== 2 || box.tail.some(n=>!Number.isFinite(n)||n<0||n>1))) throw Error('しっぽがコマ外です');
-    seen.add(panel.sourceRefs?box.id:box.unit_id);
+    seen.add(key);
   }
-  if (!panel.sourceRefs && layout.boxes.some((b, i) => b.unit_id !== panel.unitIds[i])) throw Error('台詞の順序は変更できません');
+  if (!sourceRefsMode) {
+    const sourceOrder = layout.boxes.filter(box => !isCustomLetteringBox(box)).map(box => box.unit_id);
+    if (JSON.stringify(sourceOrder) !== JSON.stringify(unitIds)) throw Error('台詞の順序は変更できません');
+  }
   return layout;
 }
+
 export function setLettering(project, panelId, layout) {
   const panel = project.panels.find(p => p.id === panelId);
   if (!panel) throw Error('コマが見つかりません');
   validateLettering(panel, layout);
   if(panel.sourceRefs){
-    const identity=boxes=>boxes.map(b=>({id:b.id,sourceRefs:b.sourceRefs}));
+    const identity=boxes=>boxes.filter(b=>!isCustomLetteringBox(b)).map(b=>({id:b.id,sourceRefs:b.sourceRefs}));
     if(JSON.stringify(identity(layout.boxes))!==JSON.stringify(identity((panel.lettering??defaultLettering(panel)).boxes)))throw Error('文字配置だけの編集で原文対応は変更できません');
   }
   const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout) } : p);
