@@ -47,6 +47,12 @@ node samples/opening-preview/run.mjs /private/path/input.json /private/path/new-
 
 生成済みで描画だけが失敗した場合は `node samples/opening-preview/run.mjs --render /private/path/new-output` で描画を再開できます。モデルは再実行しません。生成前にChromiumの起動を確認し、各画像生成は15分を上限とします。
 
+## 本番公開との関係
+
+本番公開は、この出力を `live-manga` の `scripts/publish.mjs` に渡します。`--apply` を付けたときだけ、専用R2 S3資格情報で `releases/<releaseId>/` の不変アセットを検証付きで保存し、最後に `catalog.json` のcurrentを条件付きで更新します。読者は `/?release=<releaseId>` から読みます。GitHub ActionsやGitHubリポジトリは本番データの保存先ではありません。
+
+今回の確認は本番公開にせず、同じ `prepareBrowserPreview` で作ったpreviewパッケージを、アプリの `transferPreview` と同じ契約で非公開Workerの `/previews/<work>/<episode>/transfers/<revision>` へ送ります。転送先だけが異なり、生成物の構造・ハッシュ検証・不足アセット再開・commit確認は本番側と同じ考え方です。`send.mjs` はこのPreview契約を呼ぶためのActions/CLI用入口です。本番R2の資格情報でPreviewへ送ることはしません。
+
 ## Preview転送
 
 転送先は非本番Previewです。対象の作品・話に限定したwriter keyを環境変数 `PREVIEW_WRITE_KEY` に安全に設定します。Cloudflare Accessがある場合は、正規に発行されたservice tokenの `CF_ACCESS_CLIENT_ID` と `CF_ACCESS_CLIENT_SECRET` も必要です。認証情報を引数、入力JSON、リポジトリへ書かないでください。
