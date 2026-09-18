@@ -1,4 +1,6 @@
 import { safePath } from './core.js';
+import { FORMAT as STORY_SOURCE_FORMAT } from '../contracts/story-source/paths.mjs';
+import { manifestToSourceModel } from '../contracts/story-source/validate.mjs';
 
 const text = (value, label) => { if (typeof value !== 'string' || !value.trim()) throw Error(`${label}が不正です`); return value; };
 const records = (items, label) => {
@@ -10,6 +12,8 @@ const imagePath = path => { safePath(path); if (!/\.(?:png|jpe?g|webp)$/i.test(p
 
 // Repository identity is runtime data, never a protocol selector.
 export function normalizeSourceManifest(manifest) {
+  if (manifest?.format === STORY_SOURCE_FORMAT) return normalizeStorySourceManifest(manifest);
+  if (manifest?.format !== undefined) throw Error(`原稿形式 ${manifest.format || '不明'} は未対応です`);
   if (!manifest || ![1,4].includes(manifest.schema_version)) throw Error(`原稿schema ${manifest?.schema_version ?? '不明'} は未対応です`);
   const scenes = records(manifest.scenes, '場面').map(scene => {
     safePath(scene.path); if(scene.design_path) safePath(scene.design_path);
@@ -33,6 +37,53 @@ export function normalizeSourceManifest(manifest) {
     });
   }
   return {version:1,schema_version:manifest.schema_version,episodes,scenes,settings,references};
+}
+
+/**
+ * Convert the canonical nested story-source/v1 manifest to the SourceModel
+ * shape consumed by the existing sync and production code. The raw manifest
+ * remains in the snapshot; this adapter only creates a read-side projection.
+ */
+function normalizeStorySourceManifest(manifest) {
+  const model = manifestToSourceModel(manifest);
+  const episodes = model.episodes.map(episode => ({
+    id: episode.id,
+    title: episode.title,
+    scene_ids: episode.scenes.map(scene => scene.id),
+  }));
+  const scenes = model.scenes.map(scene => ({
+    id: scene.id,
+    path: scene.path,
+    ...(scene.tags === undefined ? {} : {tags:[...scene.tags]}),
+    episodeId: scene.episodeId,
+    episodeTitle: scene.episodeTitle,
+  }));
+  const settings = model.settings.map(setting => ({id: setting.id, path: setting.path}));
+  const characters = model.characters.map(character => ({
+    id: character.id,
+    name: character.name,
+    ...(character.image === undefined ? {} : {image: character.image}),
+    ...(character.description === undefined ? {} : {description: character.description}),
+  }));
+  const references = characters.filter(character => character.image).map(character => ({
+    id: character.id,
+    characterId: character.id,
+    name: character.name,
+    path: character.image,
+    alt: character.description || character.name,
+    ...(character.description ? {description: character.description} : {}),
+  }));
+  return {
+    version: 1,
+    format: STORY_SOURCE_FORMAT,
+    schema_version: STORY_SOURCE_FORMAT,
+    work: {...model.work},
+    episodes,
+    scenes,
+    settings,
+    characters,
+    references,
+  };
 }
 
 export function resolveRepositoryPath(basePath, relativePath) {
@@ -61,19 +112,26 @@ export function referenceDeclarations(model, settings) {
 export function mergeSourceReferences(characters, references, repo, snapshotId) {
   const next = characters.map(character => ({ ...character }));
   for (const reference of references) {
-    const sourceId = `${repo}:${reference.path}`;
+    const characterId = reference.characterId ?? reference.id ?? null;
+    const sourceId = `${repo}:${characterId ?? reference.path}`;
     let index = next.findIndex(character => character.source?.id === sourceId);
-    if (index < 0) index = next.findIndex(character => character.name === reference.name && !character.source);
+    if (index < 0) index = next.findIndex(character => character.source?.repo === repo && character.source?.path === reference.path);
+    if (index < 0) {
+      const candidates = next.filter(character => character.name === reference.name && !character.source);
+      if (candidates.length > 1) throw Error(`人物「${reference.name}」の正本候補が複数あるため自動対応付けできません`);
+      if (candidates.length === 1) index = next.indexOf(candidates[0]);
+    }
     const previous = index >= 0 ? next[index] : null;
+    const description = reference.description || reference.alt || reference.name;
     const character = {
       ...(previous ?? {}),
       id: previous?.id ?? `source:${sourceId}`,
       name: reference.name,
-      description: previous?.description || `原作リポジトリの${reference.alt}`,
+      description: previous?.source ? (description || previous.description) : (previous?.description || `原作リポジトリの${description}`),
       image: reference.image,
       hash: reference.hash,
       version: previous ? (previous.hash === reference.hash ? previous.version : (previous.version ?? 1) + 1) : 1,
-      source: { id: sourceId, repo, path: reference.path, snapshot_id: snapshotId },
+      source: { id: sourceId, repo, path: reference.path, ...(characterId ? {character_id: characterId} : {}), snapshot_id: snapshotId },
     };
     if (index >= 0) next[index] = character;
     else next.push(character);
@@ -83,5 +141,7 @@ export function mergeSourceReferences(characters, references, repo, snapshotId) 
 
 export function protocolLabel(snapshot) {
   const protocol=snapshot?.protocol ?? snapshot?.contract;
-  return protocol ? `原稿schema ${protocol.manifest_schema_version} · 取得版 ${snapshot.sha?.slice(0,8) ?? '未記録'}` : '原稿仕様未記録';
+  if (!protocol) return '原稿仕様未記録';
+  const version = protocol.format ?? protocol.manifest_schema_version;
+  return `原稿${version} · 取得版 ${snapshot.sha?.slice(0,8) ?? '未記録'}`;
 }

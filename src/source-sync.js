@@ -8,7 +8,24 @@ export function sourceSummary(previous, next) {
   const scenes=changes(previous?.scenes,next.scenes,x=>x.id,x=>JSON.stringify([x.path,x.text,x.design]));
   for(const scene of next.scenes??[])if(previous?.scenes?.some(s=>s.id===scene.id)&&JSON.stringify(sceneTags(previous,scene.id))!==JSON.stringify(sceneTags(next,scene.id)))scenes.push(`タグ変更: ${scene.id}`);
   const settings=changes(previous?.settings,next.settings,x=>x.id,x=>JSON.stringify([x.path,x.text]));
-  const references=changes(previous?.references,next.references,x=>x.path,x=>JSON.stringify([x.hash,x.name]));
+  const beforeReferences=referenceEntries(previous),afterReferences=referenceEntries(next);
+  const references=changes(beforeReferences,afterReferences,referenceKey,x=>JSON.stringify([x.path,x.hash,x.name,x.description,x.characterId]));
   const structure=JSON.stringify(previous?.manifest)!==JSON.stringify(next.manifest);
   return {scenes,settings,references,structure,changed:!previous||structure||!!(scenes.length+settings.length+references.length)};
+}
+
+function referenceEntries(snapshot) {
+  if (!Array.isArray(snapshot?.characters)) return snapshot?.references ?? [];
+  const references = new Map((snapshot.references ?? []).map(reference => [reference.characterId ?? reference.id ?? reference.path, reference]));
+  return snapshot.characters.map(character => ({
+    ...character,
+    characterId: character.id,
+    path: character.image ?? `person:${character.id}`,
+    hash: references.get(character.id)?.hash ?? null,
+    description: character.description ?? '',
+  }));
+}
+
+function referenceKey(reference) {
+  return reference.characterId ?? reference.id ?? reference.path;
 }

@@ -5,30 +5,74 @@ import { call } from './bridge.js';
 import { askLLM } from './llm.js';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core.js';
 import { referenceDeclarations, normalizeSourceManifest } from './source-protocol.js';
-export async function syncSource(repo, token, episodeId, previous) {
+
+const STORY_SOURCE_FORMAT = 'story-source/v1';
+
+async function readManifest(repo, sha, token, invokeCall = call) {
+  try {
+    return {path: 'manifest.json', text: await invokeCall('github_file', { repo, path: 'manifest.json', sha, token })};
+  } catch (rootError) {
+    // The common contract describes paths relative to an optional source/
+    // root. Keep the legacy root entrypoint first for existing repositories,
+    // then accept the canonical source/manifest.json layout.
+    try {
+      return {path: 'source/manifest.json', text: await invokeCall('github_file', { repo, path: 'source/manifest.json', sha, token })};
+    } catch {
+      throw rootError;
+    }
+  }
+}
+
+function sourcePath(root, path) {
+  const safe = safePath(path);
+  return root ? safePath(`${root}/${safe}`) : safe;
+}
+
+function assertStorySourceHeading(value, path) {
+  if (typeof value !== 'string') throw Error(`${path}の本文が文字列ではありません`);
+  const firstLine = value.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0];
+  if (!/^#[ \t]+\S.*$/.test(firstLine)) throw Error(`${path}の先頭にlevel-one見出しが必要です`);
+}
+
+async function sha256(value) {
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export async function syncSource(repo, token, episodeId, previous, invokeCall = call) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
-  const commit = await call('github_get', { repo, path: 'commits/main', token });
+  const commit = await invokeCall('github_get', { repo, path: 'commits/main', token });
   const sha = JSON.parse(commit).sha;
   if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo && Array.isArray(previous.references)
     && previous.protocol?.version === 1) return previous;
-  const read = path => call('github_file', { repo, path: safePath(path), sha, token });
-  const manifestText = await read('manifest.json');
+  const manifestFile = await readManifest(repo, sha, token, invokeCall);
+  const manifestText = manifestFile.text;
   const manifest = JSON.parse(manifestText);
   const model = normalizeSourceManifest(manifest);
+  const sourceRoot = manifestFile.path === 'source/manifest.json' ? 'source' : '';
+  const read = path => invokeCall('github_file', { repo, path: sourcePath(sourceRoot, path), sha, token });
   const selected = orderedScenes(model, episodeId);
   const scenes = [];
-  for (const s of selected) scenes.push({ ...s, text: await read(s.path), design: s.design_path ? await read(s.design_path) : '' });
+  for (const s of selected) {
+    const text = await read(s.path);
+    if (model.format === STORY_SOURCE_FORMAT) assertStorySourceHeading(text, s.path);
+    scenes.push({ ...s, text, design: s.design_path ? await read(s.design_path) : '' });
+  }
   const settings = [];
-  for (const s of model.settings) settings.push({ ...s, text: await read(s.path) });
+  for (const s of model.settings) {
+    const text = await read(s.path);
+    if (model.format === STORY_SOURCE_FORMAT) assertStorySourceHeading(text, s.path);
+    settings.push({ ...s, text });
+  }
   const references = [];
   for (const declaration of referenceDeclarations(model, settings)) {
-      const asset = await call('github_asset', { repo, path: declaration.path, sha, token });
+      const asset = await invokeCall('github_asset', { repo, path: sourcePath(sourceRoot, declaration.path), sha, token });
       references.push({ ...declaration, ...asset });
   }
   return {
     id: `${repo}@${sha}:${episodeId}`, repo, sha, episodeId, manifest, scenes, settings, references,
-    protocol: {version: 1, manifest_schema_version: manifest.schema_version},
-    sync: {source_commit: sha, manifest_sha256: Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(manifestText))), b=>b.toString(16).padStart(2,'0')).join(''), at: new Date().toISOString()},
+    ...(model.characters ? {characters: model.characters} : {}),
+    protocol: {version: 1, ...(model.format ? {format: model.format} : {}), manifest_schema_version: manifest.schema_version ?? model.schema_version},
+    sync: {source_commit: sha, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
     at: new Date().toISOString(),
   };
 }
