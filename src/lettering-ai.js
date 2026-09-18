@@ -29,7 +29,7 @@ async function proposeReferencedLettering(project,panel,instruction,ask,visual){
  const result=JSON.parse(await ask(JSON.stringify({
   task:'漫画の文字配置だけを提案。既存のbox IDを全て同じ順序で一度ずつ残す。本文の追加・省略・変更・分割はしない。既存の追加文字枠はid・本文・全フィールドを保持する。固定した枠は表示方法と全ての値を保持する。座標0〜1、文字サイズ14〜72。重要領域を避け、入りきらなければcaption。原稿の範囲は返さない。',
   instruction,mode:current.mode,current:{mode:current.mode,boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>box)},
-  boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>({...box,text:textForRefs(sourceRefs,project.snapshots)})),
+  boxes:current.boxes.map(box=>isCustomLetteringBox(box)?structuredClone(box):(({sourceRefs,unit_id,...rest})=>({...rest,text:textForRefs(sourceRefs,project.snapshots)}))(box)),
   regions:visual?letteringRegions(project,panel.id,visual):null,
  }),referencedLetteringSchema));
  if(typeof result.reason!=='string'||!result.layout||!Array.isArray(result.layout.boxes))throw Error('文字配置の応答が不正です');
