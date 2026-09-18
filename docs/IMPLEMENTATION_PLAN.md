@@ -119,7 +119,9 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 `contracts/story-source/validate.mjs` は形式・ID・パス・タグ・本文見出し・宣言ファイルの過不足を機械検査し、本文の文字列を正規化・生成しない。`paths.mjs` は安全な参照と連番パスを、`structure.mjs` は話・場面の追加・移動・削除・再採番計画を提供する。構造計画は固定IDと本文ファイルの対応を保ったまま、衝突しない一時退避を含む移動計画を返す。削除済みIDの台帳は呼出し側から検査へ渡し、再利用を拒否する。
 
-このIssueでは共通契約を追加した段階であり、既存 `source-protocol.js` のschema 1/4 adapterと同期経路はまだ接続しない。後続の原稿移行・静的閲覧・単一形式取り込みで、同じ固定版契約を利用して切り替える。
+共通契約の形式正本は `contracts/story-source/` に置き、manga-macの `source-protocol.js` はこのvalidatorを読み取り時に利用する。story-source/v1は同一commitのmanifest・本文・設定・人物画像を取得する単一正本で、旧schema 1/4は既存snapshotを保持する読み取りadapterとして残す。人物は固定IDを優先し、旧形式でIDがない場合の名前対応付けが複数候補になるときは推測せず失敗する。
+
+同期入口はmanifestを手動確認したときだけ読み取り、未対応形式・危険なpath・見出し不整合・宣言画像の取得失敗では現在のsnapshot、漫画、保存データを変更しない。manifestの差分はscene・setting・人物ID/path・画像hashとして表示し、commitだけの変更は「更新なし」とする。`source/manifest.json` と既存rootの `manifest.json` の両方を読み取り可能にするが、manifest内のpathは常にsource相対の正本として保持し、repositoryや作品名から構造を推測しない。
 
 場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値を変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
 
