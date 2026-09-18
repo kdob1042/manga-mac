@@ -7,7 +7,7 @@ import {
   PAGE,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
-import { wrapText, validateLettering } from './lettering';
+import { wrapText, validateLettering, letteringKind } from './lettering';
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
@@ -16,9 +16,12 @@ export function lines(ctx, text, width) {
 }
 export function drawLettering(ctx, text, box, balloon, style = {}) {
   const padding = style.padding ?? 12,
-    lineHeight = style.lineHeight ?? 1.25;
+    lineHeight = style.lineHeight ?? 1.25,
+    kind = letteringKind(style);
   const inset =
-    style.shape === 'ellipse' ? Math.min(box.width, box.height) * 0.15 : 0;
+    kind === 'balloon' && style.shape === 'ellipse'
+      ? Math.min(box.width, box.height) * 0.15
+      : 0;
   const textBox = {
     x: box.x + inset,
     y: box.y + inset,
@@ -43,11 +46,11 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     throw Error(
       '文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください',
     );
-  if (balloon) {
+  if (balloon && kind !== 'plain') {
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 2;
-    if (style.tail) {
+    if (kind === 'balloon' && style.tail) {
       ctx.beginPath();
       ctx.moveTo(box.x + box.width * 0.4, box.y + box.height * 0.5);
       ctx.lineTo(2 + style.tail[0] * 716, 2 + style.tail[1] * 716);
@@ -57,7 +60,9 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
       ctx.stroke();
     }
     ctx.beginPath();
-    if (style.shape === 'ellipse')
+    if (kind === 'narration' || style.shape === 'rect')
+      ctx.rect(box.x, box.y, box.width, box.height);
+    else if (style.shape === 'ellipse')
       ctx.ellipse(
         box.x + box.width / 2,
         box.y + box.height / 2,
@@ -67,8 +72,6 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
         0,
         Math.PI * 2,
       );
-    else if (style.shape === 'rect')
-      ctx.rect(box.x, box.y, box.width, box.height);
     else
       ctx.roundRect(
         box.x,

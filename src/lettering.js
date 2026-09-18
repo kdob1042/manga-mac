@@ -22,6 +22,15 @@ export function wrapText(text, measure, width) {
   }
   return lines;
 }
+export const LETTERING_KINDS = ['balloon', 'narration', 'plain'];
+
+export function letteringKind(box) {
+  if (box?.kind && LETTERING_KINDS.includes(box.kind)) return box.kind;
+  if (box?.tail) return 'balloon';
+  if (box?.shape === 'rect') return 'narration';
+  return 'balloon';
+}
+
 export function defaultLettering(panel) {
   if(panel.sourceRefs)return {mode:'caption',boxes:panel.sourceRefs.map((ref,i)=>({id:`box:${panel.id}:${i}`,sourceRefs:[ref],x:.55,y:.03+i*.9/Math.max(1,panel.sourceRefs.length),width:.42,height:Math.min(.28,.85/Math.max(1,panel.sourceRefs.length))}))};
   const count = panel.unitIds.length;
@@ -34,7 +43,8 @@ export function validateLettering(panel, layout) {
   for (const box of layout.boxes) {
     if ((!panel.sourceRefs&&!panel.unitIds.includes(box.unit_id)) || (panel.sourceRefs&&(!box.id||!Array.isArray(box.sourceRefs))) || seen.has(panel.sourceRefs?box.id:box.unit_id) || [box.x, box.y, box.width, box.height].some(n => !Number.isFinite(n)) || box.x < 0 || box.y < 0 || box.width < .08 || box.height < .06 || box.x + box.width > 1.00001 || box.y + box.height > 1.00001) throw Error('文字枠がコマ外、または原文の対応が不正です');
     if (!panel.sourceRefs && box.id !== undefined && box.id !== `letter:${box.unit_id}`) throw Error('文字枠IDは原文参照から変更できません');
-    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','x','y','width','height','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
+    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
+    if (box.kind !== undefined && !LETTERING_KINDS.includes(box.kind)) throw Error('未対応の文字枠種別です');
     if (box.shape !== undefined && !['round','rect','ellipse'].includes(box.shape)) throw Error('未対応の吹き出し形状です');
     for (const [key,min,max] of [['fontSize',14,72],['lineHeight',1,2],['padding',0,40]]) if (box[key] !== undefined && (!Number.isFinite(box[key]) || box[key]<min || box[key]>max)) throw Error('文字スタイルの範囲が不正です');
     if (box.locked !== undefined && typeof box.locked !== 'boolean') throw Error('固定状態が不正です');
