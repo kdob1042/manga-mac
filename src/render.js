@@ -7,7 +7,7 @@ import {
   PAGE,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
-import { wrapText, validateLettering, letteringKind } from './lettering';
+import { wrapText, validateLettering, letteringKind, isCustomLetteringBox } from './lettering';
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
@@ -181,6 +181,8 @@ export async function pageLayers(
       strokeFrame(ctx,slot.points);
       continue;
     }
+    const layout = p.lettering?.mode === 'balloons' ? validateLettering(p, p.lettering) : null;
+    const needsSource = layout ? layout.boxes.some(box => !isCustomLetteringBox(box)) : true;
     const snapshot = snapshots.find((s) => s.id === p.snapshotId);
     const localization =
       locale === 'en'
@@ -188,16 +190,23 @@ export async function pageLayers(
             (item) => item.locale === 'en' && item.snapshot_id === p.snapshotId,
           )
         : null;
-    if (locale === 'en' && !p.sourceRefs && !localization)
+    if (needsSource && locale === 'en' && !p.sourceRefs && !localization)
       throw Error('現在の原作に対応する英訳がありません');
-    if (!p.sourceRefs && !resolveText.has(snapshot))
+    if (needsSource && !p.sourceRefs && !resolveText.has(snapshot))
       resolveText.set(snapshot, createTextResolver(snapshot, localization));
-    const textForUnits = resolveText.get(snapshot);
-    const text = p.sourceRefs?textForRefs(p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??p.sourceRefs,snapshots,locale==='en'?localizations:null):textForUnits(p.unitIds);
-    if (p.lettering?.mode === 'balloons') {
-      const layout = validateLettering(p, p.lettering);
+    const textForUnits = needsSource && !p.sourceRefs ? resolveText.get(snapshot) : null;
+    const text = layout
+      ? null
+      : p.sourceRefs
+        ? textForRefs(p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??p.sourceRefs,snapshots,locale==='en'?localizations:null)
+        : textForUnits(p.unitIds);
+    if (layout) {
       for (const box of layout.boxes) {
-        const unitText = box.sourceRefs?textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null):textForUnits([box.unit_id]);
+        const unitText = isCustomLetteringBox(box)
+          ? box.text
+          : box.sourceRefs
+            ? textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null)
+            : textForUnits([box.unit_id]);
         drawLettering(
           ctx,
           unitText,
