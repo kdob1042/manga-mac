@@ -32,3 +32,15 @@ test('narration frames are valid in-panel lettering with an explicit kind', () =
  assert.equal(letteringKind(layout.boxes[1]), 'balloon');
  assert.throws(() => validateLettering(panel, {...layout,boxes:[{...layout.boxes[0],kind:'unknown'},layout.boxes[1]]}), /未対応/);
 });
+test('custom narration frames can be created, edited, and removed without changing source order', () => {
+ const panel = { id:'p',unitIds:['u1','u2'],image:'unchanged',snapshotId:'source' };
+ const layout = defaultLettering(panel);
+ layout.mode = 'balloons';
+ layout.boxes.push({id:'custom:p:1',text:'場面転換',kind:'narration',shape:'rect',tail:null,x:.12,y:.2,width:.32,height:.16});
+ assert.doesNotThrow(() => validateLettering(panel, layout));
+ const project={panels:[panel],history:[],snapshots:[{id:'source'}]};
+ const next=setLettering(project,'p',layout);
+ assert.equal(next.panels[0].lettering.boxes.at(-1).text,'場面転換');
+ assert.throws(() => validateLettering(panel,{...layout,boxes:layout.boxes.map((b,i)=>i===2?{...b,text:''}:b)}), /追加文字枠/);
+ assert.throws(() => validateLettering(panel,{...layout,boxes:layout.boxes.map((b,i)=>i===2?{...b,id:'extra'}:b)}), /追加文字枠ID/);
+});
