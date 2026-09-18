@@ -19,7 +19,8 @@ permissions:
   contents: read
 concurrency:
   group: real-direction-${{ github.event.pull_request.number || github.ref_name }}
-  cancel-in-progress: true
+  # Preserve costly real-model evidence when a corrective commit is queued.
+  cancel-in-progress: false
 jobs:
   real-direction:
     runs-on: ubuntu-latest

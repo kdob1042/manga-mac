@@ -59,16 +59,21 @@ try {
   const baselineState=await call('blender_status',{sessionId:base.session_id});
   const baseline=await call('blender_execute',{request:{session_id:base.session_id,request_id:crypto.randomUUID(),expected_revision:baselineState.revision,operation:{kind:'capture',width:256,height:256}}});
   await writeFile(root+'/baseline-capture.png',Buffer.from(baseline.preview.split(',')[1],'base64'));
+  const failures=[];
   for (let i=0;i<4;i++) {
+    try {
     const response = await direct(`p${i}`);
     // Preserve actual output even when semantic assertions fail; image inference is a separate check.
     await writeFile(`${root}/panel-${i}.png`,Buffer.from(response.preview.split(',')[1],'base64'));
     assert.equal(response.state.state.lens,[45,55,65,75][i]);
     console.log(`Panel ${i}: actual capture verified`);
+    report.checks.push(`panel ${i}: requested lens and actual capture`);
+    } catch(e) { failures.push(`panel ${i}: ${e.message}`); }
   }
   assert.equal(new Set(project.panels.map(p=>p.shot_binding.session_id)).size,4);
-  assert.equal(new Set(project.captures.map(c=>c.image.hash)).size,4);
-  report.checks.push('four independent shots: requested lens and distinct real renders');
+  assert.equal(new Set(project.captures.map(c=>c.image.hash)).size,project.captures.length);
+  report.failures=failures;
+  if (!project.panels[0].capture_revision) throw Error('Natural revision prerequisite failed: panel 0 has no capture');
   const before = structuredClone(project);
   await stop(); start(); await connect();
   project = JSON.parse(await readFile(root+'/project.json','utf8'));
@@ -77,6 +82,7 @@ try {
   assert.notEqual(revised.state.image.hash,before.captures[0].image.hash);
   assert.deepEqual(project.panels.slice(1),before.panels.slice(1));
   for (const p of before.panels.slice(1)) {
+    if (!p.capture_revision) continue;
     const s = await call('blender_status',{sessionId:p.shot_binding.session_id});
     const old = before.captures.find(c=>c.id===p.capture_revision);
     assert.equal(s.state.checkpoint.hash,old.checkpoint.hash);
@@ -89,7 +95,8 @@ try {
   assert.equal(project.captures.length,captures);
   assert.equal(sha(await readFile(fixture)),original);
   report.checks.push('missing asset blocked without capture; source file unchanged');
-  report.status = 'pass';
+  report.status = failures.length ? 'fail' : 'pass';
+  if(failures.length)process.exitCode=1;
 } catch(e) {report.status='fail';report.error=e.stack;process.exitCode=1;}
 finally {
   report.llm_calls=calls;
