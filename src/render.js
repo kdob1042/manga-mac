@@ -7,7 +7,7 @@ import {
   PAGE,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
-import { wrapText, validateLettering } from './lettering';
+import { wrapText, validateLettering } from './lettering.js';
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
