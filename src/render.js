@@ -198,7 +198,7 @@ export async function pageLayers(
     const text = layout
       ? null
       : p.sourceRefs
-        ? textForRefs(p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??p.sourceRefs,snapshots,locale==='en'?localizations:null)
+        ? textForRefs((p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??[]).length?p.lettering.boxes.flatMap(b=>b.sourceRefs??[]):p.sourceRefs,snapshots,locale==='en'?localizations:null)
         : textForUnits(p.unitIds);
     if (layout) {
       for (const box of layout.boxes) {
