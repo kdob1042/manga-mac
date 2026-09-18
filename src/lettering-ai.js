@@ -2,12 +2,12 @@ import {textForRefs} from './source-refs.js';
 import {letteringRegions,checkVisualEdit} from './visual-regions.js';
 import { defaultLettering, validateLettering } from './lettering.js';
 import { sourceForPanel } from './core.js';
-export const letteringSchema={type:'object',properties:{reason:{type:'string'},layout:{type:'object',properties:{mode:{type:'string',enum:['balloons','caption']},boxes:{type:'array',items:{type:'object',properties:{id:{type:'string'},unit_id:{type:'string'},x:{type:'number'},y:{type:'number'},width:{type:'number'},height:{type:'number'},shape:{type:'string',enum:['round','rect','ellipse']},fontSize:{type:'number'},lineHeight:{type:'number'},padding:{type:'number'},locked:{type:'boolean'},tail:{anyOf:[{type:'null'},{type:'array',minItems:2,maxItems:2,items:{type:'number'}}]}},required:['unit_id','x','y','width','height'],additionalProperties:false}}},required:['mode','boxes'],additionalProperties:false}},required:['reason','layout'],additionalProperties:false};
+export const letteringSchema={type:'object',properties:{reason:{type:'string'},layout:{type:'object',properties:{mode:{type:'string',enum:['balloons','caption']},boxes:{type:'array',items:{type:'object',properties:{id:{type:'string'},unit_id:{type:'string'},x:{type:'number'},y:{type:'number'},width:{type:'number'},height:{type:'number'},kind:{type:'string',enum:['balloon','thought','narration']},shape:{type:'string',enum:['round','rect','ellipse']},fontSize:{type:'number'},lineHeight:{type:'number'},padding:{type:'number'},locked:{type:'boolean'},tail:{anyOf:[{type:'null'},{type:'array',minItems:2,maxItems:2,items:{type:'number'}}]}},required:['unit_id','x','y','width','height'],additionalProperties:false}}},required:['mode','boxes'],additionalProperties:false}},required:['reason','layout'],additionalProperties:false};
 export async function proposeLettering(project,panel,instruction,ask,visual=null) {
   if(panel.sourceRefs)return proposeReferencedLettering(project,panel,instruction,ask,visual);
   const current=panel.lettering??defaultLettering(panel);
   const snapshot=project.snapshots.find(s=>s.id===panel.snapshotId);
-  const prompt=JSON.stringify({task:'原文を変更せず漫画の文字を配置。全unit_idを既存順で一度ずつ残す。固定した枠は全フィールドを保持。通常はballoons。座標は0〜1、文字サイズ14〜72。regionsがある場合は画像から認識したavoid矩形（文字枠と同じ座標）を避ける。なければ画像内の位置は不明とし、文字量と読書順から配置する。重なりを避け、入りきらなければcaption。',instruction,current,regions:visual?letteringRegions(project,panel.id,visual):null,units:panel.unitIds.map(id=>({id,text:sourceForPanel({...panel,unitIds:[id]},snapshot)}))});
+  const prompt=JSON.stringify({task:'原文を変更せず漫画の文字を配置。全unit_idを既存順で一度ずつ残す。固定した枠は全フィールドを保持。通常はballoonsで、文字枠ごとにkindをballoon・thought・narrationから選ぶ。kindを省略した既存枠はballoon扱い。balloonは吹き出し、thoughtは枠・塗り・しっぽなしの心中描写、narrationはしっぽなしの白い四角枠にする。narrationのshapeはrectにする。座標は0〜1、文字サイズ14〜72。regionsがある場合は画像から認識したavoid矩形（文字枠と同じ座標）を避ける。なければ画像内の位置は不明とし、文字量と読書順から配置する。重なりを避け、入りきらなければcaption。',instruction,current,regions:visual?letteringRegions(project,panel.id,visual):null,units:panel.unitIds.map(id=>({id,text:sourceForPanel({...panel,unitIds:[id]},snapshot)}))});
   const result=JSON.parse(await ask(prompt,letteringSchema));
   if(typeof result.reason!=='string')throw Error('文字配置の理由がありません');
   validateLettering(panel,result.layout);
@@ -27,7 +27,7 @@ async function proposeReferencedLettering(project,panel,instruction,ask,visual){
  const current=panel.lettering??defaultLettering(panel);
  validateLettering(panel,current);
  const result=JSON.parse(await ask(JSON.stringify({
-  task:'漫画の文字配置だけを提案。既存のbox IDを全て同じ順序で一度ずつ残す。本文の追加・省略・変更・分割はしない。固定した枠は表示方法と全ての値を保持する。座標0〜1、文字サイズ14〜72。重要領域を避け、入りきらなければcaption。原稿の範囲は返さない。',
+  task:'漫画の文字配置だけを提案。既存のbox IDを全て同じ順序で一度ずつ残す。本文の追加・省略・変更・分割はしない。固定した枠は表示方法と全ての値を保持する。kindはballoon・thought・narrationから選び、thoughtは枠・塗り・しっぽなし、narrationはしっぽなしの四角枠にする。narrationのshapeはrectにする。座標0〜1、文字サイズ14〜72。重要領域を避け、入りきらなければcaption。原稿の範囲は返さない。',
   instruction,mode:current.mode,current:{mode:current.mode,boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>box)},
   boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>({...box,text:textForRefs(sourceRefs,project.snapshots)})),
   regions:visual?letteringRegions(project,panel.id,visual):null,
