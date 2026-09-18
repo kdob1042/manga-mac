@@ -53,12 +53,6 @@ export const directionSchema = { type: 'object', anyOf: [
   resultSchema(['action'], { anyOf: operationSchemas }),
   resultSchema(['ready','blocked'], { type: 'null' }),
 ] };
-// A known, unmet goal cannot be completed. Keep blocked available so the model
-// can report missing prerequisites instead of being forced to invent an action.
-const unmetGoalSchema = { type: 'object', anyOf: [
-  resultSchema(['action'], { anyOf: operationSchemas }),
-  resultSchema(['blocked'], { type: 'null' }),
-] };
 const lensGoal = text => {
   const matches = [];
   const patterns = [
@@ -189,8 +183,7 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
       s = await inspect();
       if (run.steps.filter(x => x.operation.kind !== 'catalog').length >= MAX_DIRECTION_STEPS) throw Error('演出の操作上限に達しました。撮影状態を確認し、必要なら新しい指示でやり直してください');
       notify(`${panelId} の構図・演技を設計中`);
-      const schema = completionMismatch(directionGoal(check(), run.instruction), s) ? unmetGoalSchema : directionSchema;
-      const result = validateDirection(await ask(directionPrompt(current(), check(), s, run), schema), s, run.catalog);
+      const result = validateDirection(await ask(directionPrompt(current(), check(), s, run), directionSchema), s, run.catalog);
       check();
       if (cancelled()) break;
       if (result.status === 'blocked') { await save({ status: 'blocked', message: result.reason }); throw Error(result.reason); }

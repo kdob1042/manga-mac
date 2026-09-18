@@ -1,19 +1,7 @@
 name: Real LLM and Blender acceptance
 on:
-  push:
-    branches: [issue/46-work-4]
-    paths:
-      - '.github/workflows/direction-real.yml'
-      - 'scripts/install-direction-ollama.sh'
-      - 'tests/direction/**'
-      - 'tests/llm/src/bin/direction_bridge.rs'
-      - 'src/directing.js'
-      - 'src/shots.js'
-      - 'src-tauri/src/llm.rs'
-      - 'src-tauri/src/blender.rs'
-      - 'src-tauri/src/policy_transport.rs'
-      - 'blender/**'
-      - 'helper/**'
+  # Real-model validation is explicitly requested; routine corrective commits
+  # must not keep downloading models and running inference automatically.
   workflow_dispatch:
 permissions:
   contents: read

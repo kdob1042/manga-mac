@@ -49,18 +49,6 @@ test('four panels automatically fork, direct, capture and retain independent sou
   assert.equal(f.current().snapshots[0].scenes[0].text,'A\n\nB\n\nC\n\nD');
   assert.equal(state.state.lens,35);
 });
-test('real-model schema permits completion only after the numeric goal is read back', async()=>{
-  const f=await fixture();
-  f.current().panels[0].prompt='焦点距離を75mmに変更';
-  let step=0;
-  await directPanel({...f,panelId:'p0',ask:async(_prompt,schema)=>{
-    const statuses=schema.anyOf.flatMap(branch=>branch.properties.status.enum);
-    assert.ok(statuses.includes('blocked'));
-    assert.equal(statuses.includes('ready'),step>0);
-    return step++ ? ready : action({kind:'camera',lens:75});
-  }});
-  assert.equal(f.current().captures.length,1);
-});
 test('lost response resumes by reading native completion without repeating camera operation', async()=>{
   const f = await fixture(); f.lose();
   await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>action({kind:'camera',lens:70})}),/lost/);

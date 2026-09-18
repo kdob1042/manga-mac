@@ -60,6 +60,7 @@ try {
   const baseline=await call('blender_execute',{request:{session_id:base.session_id,request_id:crypto.randomUUID(),expected_revision:baselineState.revision,operation:{kind:'capture',width:256,height:256}}});
   await writeFile(root+'/baseline-capture.png',Buffer.from(baseline.preview.split(',')[1],'base64'));
   const failures=[];
+  report.failures=failures;
   for (let i=0;i<4;i++) {
     try {
     const response = await direct(`p${i}`);
@@ -68,11 +69,11 @@ try {
     assert.equal(response.state.state.lens,[45,55,65,75][i]);
     console.log(`Panel ${i}: actual capture verified`);
     report.checks.push(`panel ${i}: requested lens and actual capture`);
-    } catch(e) { failures.push(`panel ${i}: ${e.message}`); }
+    } catch(e) { failures.push(`panel ${i}: ${e.message}`); console.error(failures.at(-1)); }
   }
   assert.equal(new Set(project.panels.map(p=>p.shot_binding.session_id)).size,4);
-  assert.equal(new Set(project.captures.map(c=>c.image.hash)).size,project.captures.length);
-  report.failures=failures;
+  const capturesSoFar=project.captures??[];
+  assert.equal(new Set(capturesSoFar.map(c=>c.image.hash)).size,capturesSoFar.length);
   if (!project.panels[0].capture_revision) throw Error('Natural revision prerequisite failed: panel 0 has no capture');
   const before = structuredClone(project);
   await stop(); start(); await connect();
