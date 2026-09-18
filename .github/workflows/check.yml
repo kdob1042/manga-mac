@@ -283,10 +283,9 @@ jobs:
         run: command -v ffprobe || brew install ffmpeg
       - name: Native regression and static checks
         run: |
-          npm run icons
-          npm run build
           cargo test --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --all-targets -- -D warnings
+      # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon validation app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -336,10 +335,7 @@ jobs:
         with:
           path: helper/.build
           key: ${{ steps.native-restore.outputs.cache-primary-key }}
-      - name: Prepare release bundle
-        run: |
-          npm run icons
-          npm run build
+      # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon release app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
