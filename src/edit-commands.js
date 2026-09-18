@@ -1,5 +1,5 @@
 import {checkVisualEdit,regionForEdit,letteringRegions} from './visual-regions.js';
-import { defaultLettering, validateLettering, setLettering } from './lettering.js';
+import { defaultLettering, validateLettering, setLettering, isCustomLetteringBox } from './lettering.js';
 import { validateLayout, layoutWarnings, changeLayout, pagePanels } from './layout.js';
 import { validateCrop } from './image-crop.js';
 import { digest } from './revisions.js';
@@ -73,7 +73,7 @@ export function validateEditPlan(project, plan, context) {
       validateLettering(p, op.args);
       const previous = p.lettering ?? defaultLettering(p);
       if (previous.boxes.some(b=>b.locked) && previous.mode!==op.args.mode) throw Error('固定した文字配置の表示方法は変更できません');
-      for (const b of previous.boxes) if (b.locked && JSON.stringify(b) !== JSON.stringify(op.args.boxes.find(x => p.sourceRefs ? x.id === b.id : x.unit_id === b.unit_id))) throw Error('固定した吹き出しは変更できません');
+      for (const b of previous.boxes) { const match = x => p.sourceRefs || isCustomLetteringBox(b) ? x.id === b.id : x.unit_id === b.unit_id; if (b.locked && JSON.stringify(b) !== JSON.stringify(op.args.boxes.find(match))) throw Error('固定した吹き出しは変更できません'); }
       preview = setLettering(preview,p.id,op.args);
     } else if (op.kind === 'crop') {
       if (!p.image || !exact(op.args,['x','y','zoom'])) throw Error('画像配置の対象・引数が不正です');

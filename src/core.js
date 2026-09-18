@@ -19,6 +19,7 @@ export function sourceUnits(sceneId, text) {
   });
 }
 export function panelHasText(panel) {
+  if (panel?.lettering?.mode === 'balloons' && panel.lettering.boxes?.some(box => typeof box.text === 'string' && box.text.trim())) return true;
   if (Array.isArray(panel?.sourceRefs)) return panel.sourceRefs.length > 0;
   return Array.isArray(panel?.unitIds) && panel.unitIds.length > 0;
 }
