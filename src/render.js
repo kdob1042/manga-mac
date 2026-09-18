@@ -15,10 +15,13 @@ export function lines(ctx, text, width) {
   return wrapText(text, (value) => ctx.measureText(value).width, width);
 }
 export function drawLettering(ctx, text, box, balloon, style = {}) {
+  const kind = style.kind ?? (balloon ? 'balloon' : 'caption');
+  const framed = kind === 'balloon' || kind === 'narration';
+  const shape = kind === 'narration' ? 'rect' : style.shape;
   const padding = style.padding ?? 12,
     lineHeight = style.lineHeight ?? 1.25;
   const inset =
-    style.shape === 'ellipse' ? Math.min(box.width, box.height) * 0.15 : 0;
+    shape === 'ellipse' ? Math.min(box.width, box.height) * 0.15 : 0;
   const textBox = {
     x: box.x + inset,
     y: box.y + inset,
@@ -29,7 +32,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     wrapped;
   const minimum = style.fontSize ?? 14;
   for (; size >= minimum; size--) {
-    ctx.font = `${size}px sans-serif`;
+    ctx.font = size + 'px sans-serif';
     wrapped = lines(ctx, text, textBox.width - padding * 2);
     if (
       wrapped.length * size * lineHeight <= textBox.height - padding * 2 &&
@@ -43,11 +46,11 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     throw Error(
       '文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください',
     );
-  if (balloon) {
+  if (framed) {
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 2;
-    if (style.tail) {
+    if (kind === 'balloon' && style.tail) {
       ctx.beginPath();
       ctx.moveTo(box.x + box.width * 0.4, box.y + box.height * 0.5);
       ctx.lineTo(2 + style.tail[0] * 716, 2 + style.tail[1] * 716);
@@ -57,7 +60,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
       ctx.stroke();
     }
     ctx.beginPath();
-    if (style.shape === 'ellipse')
+    if (shape === 'ellipse')
       ctx.ellipse(
         box.x + box.width / 2,
         box.y + box.height / 2,
@@ -67,7 +70,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
         0,
         Math.PI * 2,
       );
-    else if (style.shape === 'rect')
+    else if (shape === 'rect')
       ctx.rect(box.x, box.y, box.width, box.height);
     else
       ctx.roundRect(
