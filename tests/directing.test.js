@@ -127,3 +127,57 @@ test('one semantic correction never repeats a native operation and a second repe
   assert.equal(g.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
   assert.equal(g.current().captures?.length??0,0);
 });
+
+test('a natural-language revision cannot complete on ready without a real change', async()=>{
+  const f=await fixture(); let calls=0;
+  const before=structuredClone(f.current());
+  await assert.rejects(directPanel({...f,panelId:'p0',instruction:'もっと寄って',ask:async()=>{calls++;return ready;}}), /変更を確認できません/);
+  assert.equal(calls,2);
+  assert.equal(f.current().captures?.length??0,0);
+  assert.deepEqual(f.current().panels.slice(1),before.panels.slice(1));
+  assert.deepEqual(f.current().snapshots,before.snapshots);
+  assert.match(f.current().directing_runs[0].message,/詳細調整/);
+});
+
+test('revision-only success metadata cannot disguise a camera operation that did not apply', async()=>{
+  const f=await fixture();
+  const call=async(command,args)=>{
+    if(command==='blender_execute' && args.request.operation.kind==='camera') {
+      const result=await f.call(command,args);
+      f.sessions.get(args.request.session_id).state.state.lens=35;
+      return result;
+    }
+    return f.call(command,args);
+  };
+  await assert.rejects(directPanel({...f,call,panelId:'p0',instruction:'もっと寄って',ask:async()=>action({kind:'camera',lens:70})}),/読戻し/);
+  assert.equal(f.current().captures?.length??0,0);
+  assert.equal(f.current().directing_runs[0].steps.at(-1).status,'pending');
+  // Resume must verify the saved operation, not silently accept its completed job.
+  await assert.rejects(directPanel({...f,call,panelId:'p0',ask:async()=>ready}),/読戻し/);
+  assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
+});
+
+test('a corrected natural-language revision captures only after live state changes', async()=>{
+  const f=await fixture(); let calls=0;
+  await directPanel({...f,panelId:'p0',instruction:'少し引いて',ask:async()=>{
+    calls++;
+    return calls===2?action({kind:'camera',lens:28}):ready;
+  }});
+  assert.equal(calls,3);
+  assert.equal(f.current().captures.length,1);
+});
+
+test('an original numeric direction cannot certify a new relative revision', async()=>{
+  const f=await fixture();
+  f.current().panels[0].prompt='レンズを35mmにする';
+  await assert.rejects(directPanel({...f,panelId:'p0',instruction:'もっと寄って',ask:async()=>ready}),/変更を確認できません/);
+  assert.equal(f.current().captures?.length??0,0);
+});
+
+test('a no-op camera job does not count as a change and cannot pass after resume', async()=>{
+  const f=await fixture(); let calls=0;
+  await assert.rejects(directPanel({...f,panelId:'p0',instruction:'もっと寄って',ask:async()=>++calls===1?action({kind:'camera',lens:35}):ready}),/変更を確認できません/);
+  assert.equal(f.current().captures?.length??0,0);
+  await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>ready}),/変更を確認できません/);
+  assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
+});
