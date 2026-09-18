@@ -2,6 +2,10 @@ import {textForRefs} from './source-refs.js';
 import {letteringRegions,checkVisualEdit} from './visual-regions.js';
 import { defaultLettering, validateLettering } from './lettering.js';
 import { sourceForPanel } from './core.js';
+function sameLetteringBox(a, b) {
+ const left={...a,kind:a.kind??'balloon'},right={...b,kind:b.kind??'balloon'};
+ return JSON.stringify(left)===JSON.stringify(right);
+}
 export const letteringSchema={type:'object',properties:{reason:{type:'string'},layout:{type:'object',properties:{mode:{type:'string',enum:['balloons','caption']},boxes:{type:'array',items:{type:'object',properties:{id:{type:'string'},unit_id:{type:'string'},x:{type:'number'},y:{type:'number'},width:{type:'number'},height:{type:'number'},kind:{type:'string',enum:['balloon','thought','narration']},shape:{type:'string',enum:['round','rect','ellipse']},fontSize:{type:'number'},lineHeight:{type:'number'},padding:{type:'number'},locked:{type:'boolean'},tail:{anyOf:[{type:'null'},{type:'array',minItems:2,maxItems:2,items:{type:'number'}}]}},required:['unit_id','x','y','width','height'],additionalProperties:false}}},required:['mode','boxes'],additionalProperties:false}},required:['reason','layout'],additionalProperties:false};
 export async function proposeLettering(project,panel,instruction,ask,visual=null) {
   if(panel.sourceRefs)return proposeReferencedLettering(project,panel,instruction,ask,visual);
@@ -13,7 +17,7 @@ export async function proposeLettering(project,panel,instruction,ask,visual=null
   validateLettering(panel,result.layout);
   if(current.boxes.some(b=>b.locked)&&current.mode!==result.layout.mode)throw Error('固定した文字配置の表示方法は変更できません');
   checkVisualEdit(project,{kind:'lettering',panelId:panel.id,args:result.layout},visual);
-  for(const b of current.boxes)if(b.locked && JSON.stringify(b)!==JSON.stringify(result.layout.boxes.find(x=>x.unit_id===b.unit_id)))throw Error('固定した文字枠を変更する案は採用できません');
+  for(const b of current.boxes)if(b.locked && !sameLetteringBox(b,result.layout.boxes.find(x=>x.unit_id===b.unit_id)))throw Error('固定した文字枠を変更する案は採用できません');
   return result.layout;
 }
 
@@ -40,7 +44,7 @@ async function proposeReferencedLettering(project,panel,instruction,ask,visual){
  });
  const layout={...result.layout,boxes};validateLettering(panel,layout);
  if(current.boxes.some(b=>b.locked)&&current.mode!==layout.mode)throw Error('固定した文字配置の表示方法は変更できません');
- for(const [i,b] of current.boxes.entries())if(b.locked&&JSON.stringify(b)!==JSON.stringify({...b,...boxes[i]}))throw Error('固定した文字枠を変更する案は採用できません');
+ for(const [i,b] of current.boxes.entries())if(b.locked&&!sameLetteringBox(b,boxes[i]))throw Error('固定した文字枠を変更する案は採用できません');
  checkVisualEdit(project,{kind:'lettering',panelId:panel.id,args:layout},visual);
  return layout;
 }
