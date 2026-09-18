@@ -58,3 +58,13 @@ node samples/opening-preview/send.mjs /private/path/new-output https://dev-live-
 最後の引数は初回だけ `null`、既存previewを更新するときは確認済みのbase revisionです。失敗時は同じ出力先・origin・baseで再実行します。固定revisionと検証済みの不足アセットだけを使い、受信側のcommit確認後に `sent.json` を保存します。認証リダイレクトは追跡しません。
 
 転送成功と閲覧成功は別です。`sent.json` のviewer URLを認証済みブラウザで開き、ページ表示を確認してください。本sampleは認証設定を変更しません。作品リポジトリにActionsを追加する必要はありません。
+
+## 一時的にActionsのMacを使う場合
+
+`.github/workflows/opening-sample.yml` は同じ本番helperとsampleをMac runnerで実行します。非公開入力は `input.cms`（CMS EnvelopedData / AES-256）として暗号化し、復号用秘密鍵だけを `MANGA_SAMPLE_DECRYPT_KEY` に設定します。入力tarには `input.json` と参照先の原文・画像を含め、通常ファイルだけを格納します。鍵はコード・ログ・artifactへ保存しません。
+
+復号キーと対になる公開証明書 `recipient.pem` で結果も暗号化します。ジョブ失敗時も途中のcheckpointと診断ログを `encrypted-opening-result` artifactとして14日保存します。回収後は手元の秘密鍵で `openssl cms -decrypt -binary -inform DER -in opening-result.cms -inkey key.pem -out result.tar` として開けます。秘密鍵の回収可能な保管を確認してから実行してください。
+
+転送には `MANGA_PREVIEW_WRITE_KEY`、Access service tokenを利用する場合は `MANGA_CF_ACCESS_CLIENT_ID` / `MANGA_CF_ACCESS_CLIENT_SECRET` を使用します。既存の広範なGitHub管理トークンを作品取得へ流用しません。入力は暗号化bundleだけから読みます。未設定なら転送は失敗として止まり、生成結果は暗号化保存します。
+
+workflowは明示dispatch、または作業ブランチ `issue/46-work-4` の `run-request.txt` を更新したときだけ実行します。暗号化入力・公開証明書・秘密鍵の設定を確認した後に開始します。通常のコード修正で画像生成を繰り返しません。初回previewのbaseは `null` 固定です。既存previewの更新・再送は回収した出力に対して上記send CLIで行い、再生成しません。
