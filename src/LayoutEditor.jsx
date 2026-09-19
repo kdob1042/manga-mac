@@ -81,7 +81,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   }
   return <section className="layout-editor" aria-label="コマ割り編集">
     <div className="toolbar"><strong>コマ割り編集</strong><button disabled={busy||!project.layoutHistory?.length} onClick={()=>run('枠を戻す',()=>commit(undoLayout(current.current)))}>枠をUndo</button><button disabled={busy||!project.layoutRedo?.length} onClick={()=>run('枠をやり直す',()=>commit(undoLayout(current.current,true)))}>枠をRedo</button><button disabled={busy} onClick={()=>run('ページ追加',async()=>{const p=current.current,at=p.layout.pages.length?pageIndex+1:0;await commitSplices(p,[layoutSplice(p,at,0,[{id:crypto.randomUUID(),slots:template(count)}])],'ページ追加');setPage(at);})}>ページ追加</button><button disabled={busy||!page} onClick={()=>run('ページ削除',async()=>{const p=current.current;await commitSplices(p,[layoutSplice(p,pageIndex,1,[])],'ページ削除');setPage(Math.max(0,pageIndex-1));})}>このページを外す</button></div>
-    <p>コマを選び、四隅をドラッグして変形。枠内をドラッグすると全体を移動します。Escで取消。絵や本文は変更しません。はみ出し部分にはこのコマの絵（背景を含む）が隣の上に乗ります。枠線はホーム枠です。</p>
+    <p>コマを選び、四隅をドラッグして変形。枠内をドラッグすると全体を移動します。Escで取消。絵や本文は変更しません。枠破りでは、従来のコマ割りを描いたうえに、ホーム枠の外へ出る作画だけが隣の上に乗ります。破線ははみ出し範囲です。</p>
     <div className="toolbar"><button aria-pressed={!imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(false);}}>枠を編集</button><button aria-pressed={imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(true);}}>画像トリミング</button></div>
     {imageMode && <div className="crop-controls"><p>枠を選択してトリミングを有効にすると、画像だけをドラッグできます。元画像・セリフ・吹き出しは変更しません。通常の作画画面は原本表示です。</p>
       {slot?.panelId && <><button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(defaultCrop())}>{crop?'画像を中央・等倍に戻す':'このコマを全面表示にする'}</button>

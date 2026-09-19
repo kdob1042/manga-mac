@@ -95,21 +95,25 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     ),
   );
 }
+function addQuad(ctx,points) {
+  points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
+  ctx.closePath();
+}
 function strokeFrame(ctx,points) {
   ctx.beginPath();
-  points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
-  ctx.closePath();ctx.strokeStyle='#111';ctx.lineWidth=4;ctx.stroke();
+  addQuad(ctx,points);
+  ctx.strokeStyle='#111';ctx.lineWidth=4;ctx.stroke();
 }
 function clipQuad(ctx,points) {
   ctx.beginPath();
-  points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
-  ctx.closePath();
+  addQuad(ctx,points);
   ctx.clip();
 }
-function strokeHome(ctx,slot,layer,hasOverflow) {
-  if (hasOverflow) {
-    if (layer === 'art' || layer === 'complete') strokeFrame(ctx,slot.points);
-  } else if (layer !== 'art') strokeFrame(ctx,slot.points);
+function clipOverflowExtension(ctx,slot) {
+  ctx.beginPath();
+  addQuad(ctx,slot.overflow.points);
+  addQuad(ctx,slot.points);
+  ctx.clip('evenodd');
 }
 function drawArt(ctx,slot,image,crop,layer) {
   if (image && layer !== 'overlay') {
@@ -212,7 +216,6 @@ export async function pageLayers(
     ctx.fillRect(0, 0, 1600, 2260);
   }
   const resolveText = new Map();
-  const hasOverflow = page.slots.some((s) => s.overflow);
   const prepared = [];
   for (const slot of page.slots) {
     const p = panels.find((p) => p.id === slot.panelId);
@@ -237,7 +240,7 @@ export async function pageLayers(
       ctx.fillText('未割当', 30, 50);
       ctx.restore();
       ctx.restore();
-      strokeHome(ctx,slot,layer,hasOverflow);
+      if (layer !== 'art') strokeFrame(ctx,slot.points);
       continue;
     }
     if (!p.image) {
@@ -252,24 +255,14 @@ export async function pageLayers(
     }
     if (layer !== 'art') await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
-    strokeHome(ctx,slot,layer,hasOverflow);
+    if (layer !== 'art') strokeFrame(ctx,slot.points);
   }
   if (layer !== 'overlay') {
     for (const {slot} of overflowDrawOrder(page)) {
       const row = prepared.find((item) => item.slot.id === slot.id);
       ctx.save();
-      clipQuad(ctx,slot.overflow.points);
+      clipOverflowExtension(ctx,slot);
       drawArt(ctx,slot,row.image,row.crop,layer);
-      ctx.restore();
-    }
-  }
-  if (layer === 'complete') {
-    for (const {slot} of overflowDrawOrder(page)) {
-      const row = prepared.find((item) => item.slot.id === slot.id);
-      if (!row.p) continue;
-      ctx.save();
-      clipQuad(ctx,slot.points);
-      await drawSlotLettering(ctx,row.p,slot,snapshots,localizations,locale,draft,resolveText);
       ctx.restore();
     }
   }

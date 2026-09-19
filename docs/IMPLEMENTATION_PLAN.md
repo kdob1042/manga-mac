@@ -459,9 +459,9 @@ AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す�
 
 `overflow.points` も `validQuad`。ホーム枠の4頂点はすべて overflow に含まれる。`z` は 0〜15、省略時 0。未知キーは拒否。テンプレート・新規ページは overflow を付けない。
 
-作画配置は `artPoints(slot) = overflow.points ?? points` の `panelArtRect`。文字の `contentBox` はホーム枠。描画は (1) 全コマをホームで clip して作画・文字・枠 (2) overflow を z・読書順で clip して作画のみ（隣と自分の枠の上に乗る） (3) complete だけ自分の文字をホーム clip で描き直す。ページに overflow が1つでもあるとき、枠線は art/complete に描き overlay には描かない（Live で overlay の枠がはみ出しを消さないため）。不透明作画は背景を含めて覆う。アルファがあれば `drawImage` のまま。切り抜き・マスク欄は持たない。
+作画配置は `artPoints(slot) = overflow.points ?? points` の `panelArtRect`（ホーム枠の窓と、枠外へ続く絵を同じ一枚に揃える）。文字の `contentBox` はホーム枠。描画は (1) 従来どおり全コマをホームで clip して作画・文字・枠 (2) ホーム枠の外（overflow ∖ home）だけを z・読書順で clip し、はみ出した作画を最前面に載せる。ホーム内は従来のコマ割りを塗り直さない。overlay の枠線は従来どおりホームに描き、はみ出しはホームの外なので消えない。不透明ピクセルはそのはみ出し領域で隣を覆う。アルファがあれば `drawImage` のまま。切り抜き・マスク欄は持たない。
 
-他コマの文字矩形と overflow が重なれば警告し、完成 PNG/CBZ を拒否する。自分の文字はパス3で手前に残す。
+他コマの文字矩形と overflow が重なれば警告し、完成 PNG/CBZ を拒否する。自分の文字はホーム内の従来描画のまま残す。
 
 Live の `clip` / `frame` / 各コマ `artRect` はホーム枠のまま。はみ出しは `pagePNG` 系のページ画像にだけ焼く。contracts と Rust clip 検証は変えない。コマ動画の再生領域はホーム枠。
 
