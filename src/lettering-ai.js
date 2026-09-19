@@ -1,6 +1,6 @@
 import {textForRefs} from './source-refs.js';
 import {letteringRegions,checkVisualEdit} from './visual-regions.js';
-import { defaultLettering, validateLettering, letteringKind, isCustomLetteringBox } from './lettering.js';
+import { defaultLettering, validateLettering, isCustomLetteringBox } from './lettering.js';
 import { sourceForPanel } from './core.js';
 
 function sameLetteringBox(a, b) {

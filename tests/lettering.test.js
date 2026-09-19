@@ -75,3 +75,16 @@ test('thought lettering is borderless and narration lettering is rectangular', (
  assert.equal(narration.calls.includes('roundRect'), false);
  assert.equal(narration.calls.includes('moveTo'), false);
 });
+test('thought, narration, and balloon can coexist in one panel', () => {
+ const panel = { id:'p',unitIds:['u1','u2'],image:'unchanged',snapshotId:'source' };
+ const layout = defaultLettering(panel);
+ layout.mode = 'balloons';
+ layout.boxes[0] = {...layout.boxes[0],kind:'thought',shape:'rect',tail:null,x:.08,y:.12,width:.34,height:.18};
+ layout.boxes[1] = {...layout.boxes[1],kind:'balloon',shape:'round',tail:[.82,.78],x:.52,y:.5,width:.38,height:.22};
+ layout.boxes.push({id:'custom:p:1',text:'場所',kind:'narration',shape:'rect',tail:null,x:.28,y:.78,width:.44,height:.12});
+ assert.doesNotThrow(() => validateLettering(panel, layout));
+ assert.deepEqual(layout.boxes.slice(0,2).map(letteringKind), ['thought','balloon']);
+ assert.equal(letteringKind(layout.boxes[2]), 'narration');
+ assert.throws(() => validateLettering(panel, {...layout,boxes:layout.boxes.map((b,i)=>i===0?{...b,tail:[.5,.5]}:b)}), /しっぽ/);
+});
+
