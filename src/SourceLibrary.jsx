@@ -1,10 +1,10 @@
 import React, {useState} from 'react';
 import {call} from './bridge';
-import {availableStoryWorks} from './story-library.js';
+import {availableStoryWorks, DEFAULT_STORY_LIBRARY_REPO} from './story-library.js';
 
 export default function SourceLibrary({
   library, setLibrary, busy, run, commit, current,
-  repo, catalog, selectedWorkId, selectedEpisodeId, selectedSceneId,
+  catalog, selectedWorkId, selectedEpisodeId, selectedSceneId,
   onRefreshCatalog, onSelectWork, onSelectEpisode, onSelectScene,
 }) {
   const [adding,setAdding]=useState(false),[name,setName]=useState(''),[newRepo,setNewRepo]=useState(''),[newEpisode,setNewEpisode]=useState('P01');
@@ -24,8 +24,8 @@ export default function SourceLibrary({
     </section>
     <section aria-label="原稿ライブラリ">
       <h3>原稿ライブラリ</h3>
-      <p>接続先: <code>{repo || '未設定'}</code>{catalog ? ` · catalog @ ${catalog.sha.slice(0,8)}` : ''}</p>
-      <button disabled={busy||!repo.trim()} onClick={()=>run('原稿一覧を更新中',onRefreshCatalog)}>一覧を更新</button>
+      <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · catalog @ ${catalog.sha.slice(0,8)}` : ''}</p>
+      <button disabled={busy} onClick={()=>run('原稿一覧を更新中',onRefreshCatalog)}>一覧を更新</button>
       {!catalog&&<small>「制作の準備」でGitHubリポジトリと読み取り専用トークンを設定してから更新します。</small>}
       {!!catalog&&<label>作品を選ぶ
         <select aria-label="原稿ライブラリの作品" disabled={busy} value={selectedWorkId||''} onChange={e=>run('作品を読み込み中',()=>onSelectWork(e.target.value))}>
