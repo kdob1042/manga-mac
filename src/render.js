@@ -48,7 +48,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     throw Error(
       '文字が枠に収まりません。文字枠を広げるか、コマ計画を細分化してください',
     );
-  if (balloon && kind !== 'plain') {
+  if (balloon && (kind === 'balloon' || kind === 'narration')) {
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#111';
     ctx.lineWidth = 2;

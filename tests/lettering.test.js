@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { wrapText, defaultLettering, setLettering, validateLettering, letteringKind } from '../src/lettering.js';
+import { drawLettering } from '../src/render.js';
 test('Japanese line wrapping keeps punctuation off the start and opening brackets off the end', () => {
  const lines = wrapText('あいう「えお」、かき。', s => [...s].length, 4);
  assert.equal(lines.join(''), 'あいう「えお」、かき。');
@@ -43,4 +44,34 @@ test('custom narration frames can be created, edited, and removed without changi
  assert.equal(next.panels[0].lettering.boxes.at(-1).text,'場面転換');
  assert.throws(() => validateLettering(panel,{...layout,boxes:layout.boxes.map((b,i)=>i===2?{...b,text:''}:b)}), /追加文字枠/);
  assert.throws(() => validateLettering(panel,{...layout,boxes:layout.boxes.map((b,i)=>i===2?{...b,id:'extra'}:b)}), /追加文字枠ID/);
+});
+
+function drawingContext() {
+ const calls = [];
+ return {
+  calls,
+  measureText: value => ({ width: [...value].length * 8 }),
+  beginPath: () => calls.push('beginPath'),
+  moveTo: () => calls.push('moveTo'),
+  lineTo: () => calls.push('lineTo'),
+  closePath: () => calls.push('closePath'),
+  fill: () => calls.push('fill'),
+  stroke: () => calls.push('stroke'),
+  rect: () => calls.push('rect'),
+  roundRect: () => calls.push('roundRect'),
+  ellipse: () => calls.push('ellipse'),
+  fillText: () => calls.push('fillText'),
+ };
+}
+test('thought lettering is borderless and narration lettering is rectangular', () => {
+ const thought = drawingContext();
+ drawLettering(thought, '心中', {x:0,y:0,width:100,height:60}, true, {kind:'thought',fontSize:20,padding:4});
+ assert.deepEqual(thought.calls, ['fillText']);
+ const narration = drawingContext();
+ drawLettering(narration, 'ナレーション', {x:0,y:0,width:160,height:60}, true, {kind:'narration',fontSize:20,padding:4});
+ assert.ok(narration.calls.includes('rect'));
+ assert.ok(narration.calls.includes('fill'));
+ assert.ok(narration.calls.includes('stroke'));
+ assert.equal(narration.calls.includes('roundRect'), false);
+ assert.equal(narration.calls.includes('moveTo'), false);
 });

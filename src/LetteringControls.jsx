@@ -16,11 +16,12 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
   const change=patch=>setLayout({...layout,boxes:layout.boxes.map((b,i)=>i===index?{...b,...patch}:b)});
   const custom=isCustomLetteringBox(box);
   const kind=letteringKind(box);
-  const kindLabel={balloon:'吹き出し',narration:'ナレーション枠',plain:'枠なしテキスト'}[kind];
+  const kindLabel={balloon:'吹き出し',thought:'心中描写',narration:'ナレーション枠',plain:'心中描写'}[kind];
 
   function changeKind(nextKind) {
     if (!box) return;
     if (nextKind === 'narration') return change({kind:'narration',shape:'rect',tail:null});
+    if (nextKind === 'thought') return change({kind:'thought',shape:'rect',tail:null});
     if (nextKind === 'plain') return change({kind:'plain',shape:'rect',tail:null});
     return change({kind:'balloon',shape:box.shape === 'ellipse' || box.shape === 'rect' ? box.shape : 'round'});
   }
@@ -99,7 +100,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
       {problem&&<p role="alert">{problem}</p>}
       <label>文字枠<select value={index} onChange={e=>setIndex(Number(e.target.value))}>{layout.boxes.map((b,i)=><option key={b.id??b.unit_id} value={i}>{i+1} · {isCustomLetteringBox(b)?'追加枠':b.unit_id}</option>)}</select></label>
       {box&&<>
-        <label>枠の種類<select aria-label="枠の種類" disabled={box.locked} value={kind} onChange={e=>changeKind(e.target.value)}><option value="balloon">吹き出し</option><option value="narration">ナレーション枠</option><option value="plain">枠なしテキスト</option></select></label>
+        <label>枠の種類<select aria-label="枠の種類" disabled={box.locked} value={kind} onChange={e=>changeKind(e.target.value)}><option value="balloon">吹き出し</option><option value="narration">ナレーション枠</option><option value="thought">心中描写（枠なし）</option></select></label>
         {custom&&<label>文字内容<textarea aria-label="文字内容" rows="3" disabled={box.locked} value={box.text} onChange={e=>change({text:e.target.value})}/></label>}
         {kind==='narration'&&<small>ナレーション枠はコマ内の任意位置へ配置できます。下部固定ではありません。</small>}
         {[['x','横位置',0,1,.01],['y','縦位置',0,1,.01],['width','幅',.08,1,.01],['height','高さ',.06,1,.01],['fontSize','文字サイズ',14,72,1],['lineHeight','行間',1,2,.05],['padding','余白',0,40,1]].map(([key,label,min,max,step])=><label key={key}>{label}<input aria-label={label} disabled={box.locked} type="number" min={min} max={max} step={step} value={box[key]??({fontSize:24,lineHeight:1.25,padding:12}[key])} onChange={e=>change({[key]:Number(e.target.value)})}/></label>)}
