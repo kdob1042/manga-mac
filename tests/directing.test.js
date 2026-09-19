@@ -171,3 +171,13 @@ test('a no-op camera job does not count as a change and cannot pass after resume
   assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
 });
 
+test('a 75mm lens goal is exact even when the model only says ready', async()=> {
+  const f=await fixture();
+  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離を75mmに設定。他は変更しない。既に75mmなら撮影可能。';
+  let calls=0;
+  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
+  assert.equal(calls,1);
+  const sessionId=f.current().panels[0].shot_binding.session_id;
+  assert.equal(f.sessions.get(sessionId).state.state.lens,75);
+  assert.equal(f.current().captures.length,1);
+});
