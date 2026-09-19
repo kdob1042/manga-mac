@@ -408,3 +408,9 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - 固定MIT上流からviewport取得だけ再利用。外部送信・任意Pythonの経路は同梱しない。
 - Mac native build、Blender GUI未保存変更/evaluated state/実viewport/実camera画像: **not_run**（この実行環境にBlender/Macなし）。fixtureや構文成功で実機受入にしない。
 - 実機では同じGUIで選択/frame/lens/constraintを変更→summary/objectで確認、viewport/cameraを別々に取得。file load/undo/redo後の旧epoch拒否、別instance/file接続拒否を確認する。
+
+### Live C（#178）
+
+`node --test tests/live-blender.test.js`: 6件pass。readyのみの未変更完了を拒否、対象詳細→実操作→再観測、推論中の手動変更による未送信計画失効、旧enum外のconstraint操作検証、観測ループ上限、epoch不一致を検証。これらは注入した接続の契約試験であり、実Blender/実モデル試験ではない。
+
+liveのreadyは構造確認の提案として扱い、任意自然言語の見た目を自己申告で合格にしない。人の確認へ戻し、旧撮影で自動作画を進めない。ライブ書込みはobject詳細のIDと版を要求し、既存constraint influence・camera lens・静的transformだけを許可する。未対応operatorをRNAの存在だけで許可しない。

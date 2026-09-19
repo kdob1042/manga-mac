@@ -86,5 +86,10 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         c.check(&result)?;
         return Ok(result);
     }
+    if matches!(action, "act" | "resume") {
+        let result = c.tool(if action == "act" {"live_act"} else {"live_resume"}, input).await?;
+        c.check(&result)?;
+        return Ok(result);
+    }
     Err("Unsupported live action".into())
 }

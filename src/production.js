@@ -92,7 +92,7 @@ export async function produceDraft({
       productionMode === 'blender' &&
       (!panel.capture_revision || activeDirection(current(), id))
     )
-      await stagePanel(id);
+      { const staged = await stagePanel(id); if(staged?.live) throw Error("live編集結果を詳細調整で確認し、候補保存・採用してから続行してください"); }
     if (cancelled()) break;
     setBusy(`${id} を作画中`);
     p = current();

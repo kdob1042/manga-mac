@@ -1,3 +1,4 @@
+import { liveCall } from './live-blender';
 import React, { useEffect, useState } from 'react';
 import { call, desktop } from './bridge';
 import { previousCaptureUsers, usageLabel } from './asset-usage';
@@ -38,6 +39,13 @@ export default function ShotControls({ project, current, commit, panels, chosen,
   const selectedScene = session?.state?.scenes?.find(s => s.name === scene);
   return <section className="shot-controls" aria-label="Blenderショット">
     <h3>Blenderで構図・撮影</h3>
+    {!isVideo && chosen && <><button disabled={busy} onClick={()=>run('live対象を確認中',async()=>{
+      const state=await liveCall(call,current.current,'observe',{scope:'summary'});
+      await commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:Object.fromEntries(['instance','epoch','file','scene','view_layer'].map(k=>[k,state[k]]))}:p)});
+    })}>このコマを接続中のlive状態へ割り当てる</button>
+    {chosen.live_binding && <><p>LIVE: {chosen.live_binding.file||'未保存'} ／ {chosen.live_binding.scene}</p><button disabled={busy} onClick={()=>run('headlessへ切替中',()=>commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:null}:p)}))}>保存ファイルからのheadlessへ戻す</button></>}
+    {(project.live_directing_runs??[]).filter(r=>r.panel_id===chosen.id).slice(-1).map(r=><div key={r.id}><p>{r.status}：{r.message}</p>{r.preview&&<img className="shot-preview" src={r.preview} alt={r.image_kind}/>}</div>)}</>}
+
     {!isVideo && <button disabled={busy || !desktop() || !panels.some(p => !p.shot_binding)} onClick={() => run('ページのショットを準備中', attach)}>このページのショットを作る</button>}
     {unresolved.map(batch => <div key={batch.id}><span>未確定ショット {batch.id.slice(0, 8)}</span><button disabled={busy} onClick={() => run('既存ショットを確認中', async () => {
       const sessions = await Promise.all(batch.bindings.map(b => call('blender_status', { sessionId: b.id })));

@@ -536,3 +536,5 @@ GUIを明示接続するliveと保存checkpointから実行するheadlessを併�
 HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。
 
 Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
+
+Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当は旧typed/headlessの互換経路を維持。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。

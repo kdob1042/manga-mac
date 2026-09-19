@@ -3,6 +3,7 @@ No remote services, telemetry, arbitrary Python, file loading or process exit.
 """
 import bpy
 from .observation import observe, fingerprint
+from .operations import apply
 import json
 import secrets
 import uuid
@@ -22,6 +23,7 @@ QUEUE = queue.Queue(maxsize=8)
 CLIENT = None
 CONTROL = "manual"
 FINGERPRINT = None
+REQUESTS = set()
 
 
 def identity():
@@ -54,7 +56,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release", "live_observe"]
+    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act"]
 
 
 def invoke_tool(name, args):
@@ -74,6 +76,25 @@ def invoke_tool(name, args):
         return identity()
     if args.get("client") != CLIENT or CLIENT is None:
         raise ValueError("session mismatch: reconnect explicitly")
+    if name in ("live_resume", "live_act"):
+        current = identity()
+        expected = args.get("expected", {})
+        for key in ("instance", "epoch", "revision", "file", "scene", "view_layer"):
+            if current[key] != expected.get(key):
+                raise ValueError("stale_observation: observe again")
+        if name == "live_resume":
+            CONTROL = "ai"
+            return identity()
+        if CONTROL != "ai":
+            raise ValueError("manual_control: automatic write disabled")
+        request = args.get("request_id")
+        if not isinstance(request, str) or len(request) != 36 or request in REQUESTS:
+            raise ValueError("execution_unknown: request already submitted or invalid")
+        if len(REQUESTS) >= 10000:
+            raise ValueError("session request limit: restart explicitly")
+        REQUESTS.add(request)
+        result = apply(args.get("operation", {}))
+        return {**result, **identity()}
     if name == "live_observe":
         before = identity()
         result = observe(args)
