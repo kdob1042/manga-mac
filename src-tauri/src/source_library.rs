@@ -2,13 +2,40 @@
 use super::backup;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {
     pub id: String,
     pub name: String,
     pub repo: String,
     pub episode: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_root: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_commit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scene: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+}
+fn valid_identifier(value: &str) -> bool {
+    let mut chars = value.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphanumeric())
+        && value.len() <= 128
+        && chars.all(|c| c.is_ascii_alphanumeric() || "_:-".contains(c))
+}
+fn valid_path(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 400
+        && !value.starts_with('/')
+        && !value.contains(['\\', '?', '#', '%'])
+        && value
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 fn valid(entry: &Entry) -> Result<(), String> {
     let parts: Vec<_> = entry.repo.split('/').collect();
@@ -26,8 +53,35 @@ fn valid(entry: &Entry) -> Result<(), String> {
         })
         || entry.episode.is_empty()
         || entry.episode.len() > 100
+        || entry
+            .work_id
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
+        || entry
+            .work_root
+            .as_deref()
+            .is_some_and(|value| !valid_path(value) || !value.starts_with("works/"))
+        || entry.manifest_path.as_deref().is_some_and(|value| {
+            !valid_path(value)
+                || entry
+                    .work_root
+                    .as_deref()
+                    .is_some_and(|root| !value.starts_with(&format!("{root}/")))
+        })
+        || entry
+            .catalog_commit
+            .as_deref()
+            .is_some_and(|value| value.len() != 40 || !value.bytes().all(|b| b.is_ascii_hexdigit()))
+        || entry
+            .scene
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
+        || entry
+            .format
+            .as_deref()
+            .is_some_and(|value| value.is_empty() || value.len() > 200)
     {
-        return Err("作品名・owner/repository・話IDを確認してください".into());
+        return Err("作品名・owner/repository・話ID・作品rootを確認してください".into());
     }
     Ok(())
 }
@@ -53,6 +107,9 @@ pub fn register(base: &Path, entry: Entry) -> Result<Vec<Entry>, String> {
     if let Some(old) = entries.iter_mut().find(|e| e.id == entry.id) {
         if !old.repo.eq_ignore_ascii_case(&entry.repo) {
             return Err("既存作品の原稿元は変更できません。作品を追加してください".into());
+        }
+        if old.work_id.is_some() && old.work_id != entry.work_id {
+            return Err("既存作品のworkIdは変更できません。作品を追加してください".into());
         }
         *old = entry;
     } else {
@@ -92,6 +149,7 @@ mod tests {
                 name: "B".into(),
                 repo: "owner/b".into(),
                 episode: "P02".into(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -138,6 +196,7 @@ mod tests {
                 name: "work".into(),
                 repo: "owner/work".into(),
                 episode: "P01".into(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -164,6 +223,7 @@ mod tests {
             name: "A".into(),
             repo: "owner/a".into(),
             episode: "P01".into(),
+            ..Default::default()
         };
         register(&base, a.clone()).unwrap();
         let b = Entry {
@@ -171,6 +231,7 @@ mod tests {
             name: "B".into(),
             repo: "owner/b".into(),
             episode: "P02".into(),
+            ..Default::default()
         };
         register(&base, b.clone()).unwrap();
         let before = std::fs::read(base.join("source-library.json")).unwrap();

@@ -43,20 +43,40 @@ import { recoverImageResult } from './image-recovery';
 import { beginJob, finishJob, adoptCandidate, abandonJob } from './revisions';
 import { createEnglishLocalization, currentEnglishLocalization, textForPanel } from './localization';
 import { protocolLabel, mergeSourceReferences } from './source-protocol';
+import { fetchStoryLibrary, fetchStoryLibraryWork, findLibraryWork, DEFAULT_STORY_LIBRARY_REPO } from './story-library.js';
 
 function App() {
-  const [library,setLibrary]=useState(null);
+  const [library,setLibrary]=useState(null), [libraryCatalog,setLibraryCatalog]=useState(null), [selectedWorkId,setSelectedWorkId]=useState(''), [selectedSceneId,setSelectedSceneId]=useState('');
   const [jev,setJev]=useState(null),[editCandidate,setEditCandidate]=useState(null),[autoApply,setAutoApply]=useState(false);
   const [requestedShot, setRequestedShot] = useState(null);
   const [layoutMode,setLayoutMode] = useState(false);
   const [productionMode, setProductionMode] = useState('blender');
   const [medium, setMedium] = useState('manga');
   const [project, setProject] = useState(emptyProject), [ready, setReady] = useState(false), [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [settings, setSettings] = useState(false), [pagePreview, setPagePreview] = useState(null);
-  const [repo, setRepo] = useState(''), [token, setToken] = useState(''), [episode, setEpisode] = useState('P01'), [model, setModel] = useState(() => defaultConnection());
+  const [repo, setRepo] = useState(DEFAULT_STORY_LIBRARY_REPO), [token, setToken] = useState(''), [episode, setEpisode] = useState('P01'), [model, setModel] = useState(() => defaultConnection());
   const [page, setPage] = useState(0), [selected, setSelected] = useState(null), [instruction, setInstruction] = useState(''), [pending, setPending] = useState(null), [rect, setRect] = useState(null), [name, setName] = useState(''), [description, setDescription] = useState('');
   useBackupSchedule(ready, !!busy);
   const current = useRef(project), cancel = useRef(false), drag = useRef(null), lock = useRef(false);
-  useEffect(() => { loadProject().then(async p => { if (p) { current.current = p; setProject(p); const s = p.snapshots.find(s => s.id === p.active); if (s?.repo) setRepo(s.repo); } if(desktop()) { const lib=await call('source_library'); setLibrary(lib); const entry=lib.entries.find(e=>e.id===lib.active); if(entry){setRepo(entry.repo);setEpisode(entry.episode);} } setReady(true); }).catch(e => setError(`保存作品を読み込めません: ${e.message}`)); }, []);
+  useEffect(() => { loadProject().then(async p => {
+    const loaded = p ?? emptyProject();
+    current.current = loaded; setProject(loaded);
+    const s = loaded.snapshots.find(item => item.id === loaded.active);
+    if (s?.repo) setRepo(s.repo);
+    if (desktop()) {
+      const lib=await call('source_library'); setLibrary(lib);
+      const entry=lib.entries.find(e=>e.id===lib.active);
+      if(entry){
+        setRepo(entry.repo); setEpisode(entry.episode);
+        setSelectedWorkId(entry.work_id ?? loaded.workId ?? s?.workId ?? '');
+        setSelectedSceneId(entry.scene ?? loaded.sourceSelection?.sceneId ?? s?.selectedSceneId ?? '');
+      } else if (loaded.workId) {
+        setSelectedWorkId(loaded.workId); setSelectedSceneId(loaded.sourceSelection?.sceneId ?? s?.selectedSceneId ?? '');
+      }
+    } else if (loaded.workId) {
+      setSelectedWorkId(loaded.workId); setSelectedSceneId(loaded.sourceSelection?.sceneId ?? s?.selectedSceneId ?? '');
+    }
+    setReady(true);
+  }).catch(e => setError(`保存作品を読み込めません: ${e.message}`)); }, []);
   const writer=useRef(null);if(!writer.current)writer.current=createProjectWriter({current:()=>current.current,save:saveProject,accept:p=>{current.current=p;setProject(p);setPagePreview(null);}});
   function commit(p) { return writer.current.commit(p); }
   async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
@@ -81,23 +101,107 @@ function App() {
     await commit({ ...current.current, output_locale: locale });
     if (locale === 'en' && !currentEnglishLocalization(current.current, snapshot)) setNotice('英訳が未作成です。「英訳を作る」を実行してください。');
   }
+  async function refreshLibraryCatalog() {
+    const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, token, call);
+    const entry = library?.entries.find(item => item.id === library.active);
+    const workId = entry?.work_id ?? current.current.workId ?? '';
+    if (workId) {
+      const detail = await fetchStoryLibraryWork(loaded, workId, token, call);
+      setLibraryCatalog({...loaded,...detail});
+      setSelectedWorkId(workId);
+      setEpisode(entry?.episode ?? detail.outline[0]?.id ?? 'P01');
+      setSelectedSceneId(entry?.scene ?? detail.outline[0]?.scenes[0]?.id ?? '');
+    } else {
+      setLibraryCatalog(loaded);
+    }
+    setNotice(`原稿一覧を更新しました（${loaded.catalog.works.length}作品、@${loaded.sha.slice(0,8)}）。作品を選択してください。`);
+  }
+  async function persistLibrarySelection(work, detail, episodeId, sceneId, id) {
+    const result=await call('source_register',{
+      name:work.title, repo:libraryCatalog.repo, episode:episodeId, id,
+      workId:work.id, workRoot:work.root, manifestPath:detail.manifestPath,
+      catalogCommit:libraryCatalog.sha, scene:sceneId, format:work.manuscriptFormat,
+    });
+    setLibrary(previous=>previous ? {...previous,entries:result.entries,active:result.id} : previous);
+    return result;
+  }
+  async function selectLibraryWork(workId) {
+    if (!libraryCatalog) throw Error('先に原稿一覧を更新してください');
+    const detail=await fetchStoryLibraryWork(libraryCatalog,workId,token,call);
+    const work=detail.work;
+    if (!work.formats.includes('manga')) throw Error('選択作品は漫画制作対象ではありません');
+    const first=detail.outline[0], firstScene=detail.outline[0]?.scenes[0];
+    if (!first || !firstScene) throw Error('選択作品に話・シーンがありません');
+    const entry=library?.entries.find(item=>item.id===library.active);
+    const sameWork=entry?.work_id===work.id && entry?.repo===libraryCatalog.repo;
+    const existingWorkEntry=library?.entries.find(item=>item.work_id===work.id && item.repo===libraryCatalog.repo);
+    const hasContent=['snapshots','panels','artworks','characters','style_references','history','jobs','localizations','captures','videoShots','videoRevisions','videoHistory'].some(key=>Array.isArray(current.current[key])&&current.current[key].length>0)||current.current.layout?.pages?.length>0;
+    const canReuseEmptyEntry=!!entry&&!entry.work_id&&entry.repo?.toLowerCase()===libraryCatalog.repo.toLowerCase()&&!hasContent;
+    const workspaceId=sameWork ? entry.id : (existingWorkEntry?.id ?? (canReuseEmptyEntry ? entry.id : null));
+    const result=await persistLibrarySelection(work,detail,first.id,firstScene.id,workspaceId);
+    setLibraryCatalog({...libraryCatalog,...detail}); setSelectedWorkId(work.id); setEpisode(first.id); setSelectedSceneId(firstScene.id);
+    if (result.id !== library?.active) { await call('backup_open',{workspace:result.id}); return; }
+    await commit({...current.current,workId:work.id,sourceSelection:{workId:work.id,episodeId:first.id,sceneId:firstScene.id}});
+  }
+  async function selectLibraryEpisode(episodeId) {
+    const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
+    const item=detail?.outline?.find(episodeItem=>episodeItem.id===episodeId);
+    const scene=item?.scenes[0];
+    if (!work||!detail?.manifestPath||!item||!scene) throw Error('話の選択対象が不正です');
+    const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
+    if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
+    await persistLibrarySelection(work,detail,episodeId,scene.id,entry.id);
+    setEpisode(episodeId); setSelectedSceneId(scene.id);
+    await commit({...current.current,workId:work.id,sourceSelection:{workId:work.id,episodeId,sceneId:scene.id}});
+  }
+  async function selectLibraryScene(sceneId) {
+    const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
+    const item=detail?.outline?.find(episodeItem=>episodeItem.id===episode);
+    if (!work||!detail?.manifestPath||!item?.scenes.some(scene=>scene.id===sceneId)) throw Error('シーンの選択対象が不正です');
+    const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
+    if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
+    await persistLibrarySelection(work,detail,episode,sceneId,entry.id);
+    setSelectedSceneId(sceneId);
+    await commit({...current.current,workId:work.id,sourceSelection:{workId:work.id,episodeId:episode,sceneId}});
+  }
   async function checkSync() {
     setPending(null);
     try {
-      if(library) { const entry=library.entries.find(e=>e.id===library.active) ?? {id:library.active,name:current.current.title,repo}; const saved=await call('source_register',{...entry,episode}); setLibrary({...library,entries:saved.entries}); }
-      const next=await syncSource(repo,token,episode,snapshot);
+      const entry=library?.entries.find(item=>item.id===library.active);
+      if(library && entry) {
+        const registration={
+          name:entry.name, repo:entry.repo, episode, id:entry.id,
+          ...(entry.work_id ? {
+            workId:entry.work_id, workRoot:entry.work_root, manifestPath:entry.manifest_path,
+            catalogCommit:libraryCatalog?.sha ?? entry.catalog_commit, scene:selectedSceneId || entry.scene, format:entry.format,
+          } : {}),
+        };
+        const saved=await call('source_register',registration); setLibrary({...library,entries:saved.entries});
+      }
+      const libraryOptions=entry?.work_id ? {
+        commit:libraryCatalog?.sha ?? entry.catalog_commit,
+        workId:entry.work_id, workRoot:entry.work_root, sourceRoot:entry.work_root, manifestPath:entry.manifest_path,
+        sceneId:selectedSceneId || entry.scene, format:entry.format,
+      } : {};
+      const next=await syncSource(repo,token,episode,snapshot,call,libraryOptions);
       if(next.id===snapshot?.id || !sourceSummary(snapshot,next).changed) setNotice('更新なし');
       else { setPending(next); setNotice('差分あり'); }
     } catch(e) { setNotice('確認失敗'); throw e; }
   }
   async function applySync() {
-    if(!pending || pending.repo!==repo || pending.episodeId!==episode) throw Error('対象が変わりました。GitHub側の更新を確認してください');
+    if(!pending || pending.repo!==repo || pending.episodeId!==episode || (pending.workId && pending.workId!==selectedWorkId)) throw Error('対象が変わりました。GitHub側の更新を確認してください');
     const p = preserveDraft(current.current);
     const affected = snapshot ? affectedScenes(snapshot, pending) : [];
-    const characters = mergeSourceReferences(p.characters, pending.references, pending.repo, pending.id);
+    const sourceScope = pending.workId ? `${pending.repo}#${pending.workId}` : pending.repo;
+    const characters = mergeSourceReferences(p.characters, pending.references, pending.repo, pending.id, sourceScope);
     const title = typeof pending.manifest?.work === 'string' ? pending.manifest.work : pending.manifest?.work?.title;
     if (typeof title !== 'string' || !title.trim()) throw Error('原稿の作品タイトルが不正です');
-    await commit({ ...p, title, snapshots: p.snapshots.some(s => s.id === pending.id) ? p.snapshots : [...p.snapshots, pending], active: pending.id, characters });
+    await commit({
+      ...p, title, snapshots: p.snapshots.some(s => s.id === pending.id) ? p.snapshots : [...p.snapshots, pending],
+      active: pending.id,
+      characters,
+      ...(pending.workId ? {workId:pending.workId,sourceSelection:{workId:pending.workId,episodeId:pending.episodeId,sceneId:pending.selectedSceneId ?? selectedSceneId}} : {}),
+    });
     setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
@@ -190,7 +294,7 @@ function App() {
   }
   function point(e) { const box = e.currentTarget.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)), Math.max(0, Math.min(1, (e.clientY - box.top) / box.height))]; }
   return <div className="app"><header><div className="brand">M<span>↗</span></div><div><strong>Manga Mac</strong><small>原作から、漫画へ。</small></div><div className="spacer"/><span className="local">● {model.provider === 'ollama' ? 'Ollama接続' : '外部LLM接続'}</span><button disabled={!!busy || !ready} onClick={() => setSettings(!settings)}>接続・人物設定</button><button disabled={!!busy || !project.panels.length || !desktop()} onClick={() => run('Live Mangaを書き出し中', async () => { const result = await exportLiveManga(structuredClone(current.current)); setNotice(`Live Manga ${result.releaseId} · ${result.path} · 検証済み`); })}>Live Mangaを書き出す</button><button disabled={!!busy || !project.panels.length} onClick={() => run('書き出し中', async () => download(await exportCBZ(project), `manga-${project.output_locale}.cbz`))}>CBZを書き出す ↗</button></header>
-    <div className="workspace"><aside><div className="aside-title">作品</div>{library&&<SourceLibrary library={library} setLibrary={setLibrary} busy={!!busy||!ready} run={run} commit={commit} current={current}/>}<h2>{project.title}</h2><p className="muted">{snapshot ? `原稿 ${snapshot.sha.slice(0, 8)}` : '原作未接続'} · {project.panels.length} コマ</p>{snapshot && <p className="muted source-contract">{protocolLabel(snapshot)}</p>}<label className="production-mode">制作方法<select aria-label="制作方法" disabled={!!busy} value={productionMode} onChange={e => setProductionMode(e.target.value)}><option value="blender">Blenderで演出・作画</option><option value="direct">画像AIで直接作画</option></select></label><DraftControls key={project.active} project={project} current={current} commit={commit} run={run} busy={!!busy||!desktop()} onSwitch={()=>{setPage(0);setSelected(null);setRect(null);setEditCandidate(null);}} onProduce={produce}/><ContentReplan project={project} current={current} commit={commit} run={run} busy={!!busy} model={model}/><div className="aside-title pages-label">ページ <span>{layout.pages.length}</span></div>{Array.from({ length: layout.pages.length }, (_, i) => <button className={`thumbnail ${page === i ? 'active' : ''}`} key={i} onClick={() => { setPage(i); setPagePreview(null); setSelected(null); setRect(null); }}><div className="mini-grid">{pagePanels(project,layout.pages[i]).map(p => <div key={p.id}>{p.image ? <img src={p.image}/> : <span>未作画</span>}</div>)}</div><span>PAGE {String(i + 1).padStart(2, '0')} · {draftPageStatus(project,layout.pages[i])}</span></button>)}<div className="aside-bottom">本文と参照はそのままに。<br/>演出と作画を、この場所で。</div></aside>
+    <div className="workspace"><aside><div className="aside-title">作品</div>{library&&<SourceLibrary library={library} setLibrary={setLibrary} busy={!!busy||!ready} run={run} commit={commit} current={current} repo={repo} catalog={libraryCatalog} selectedWorkId={selectedWorkId} selectedEpisodeId={episode} selectedSceneId={selectedSceneId} onRefreshCatalog={refreshLibraryCatalog} onSelectWork={selectLibraryWork} onSelectEpisode={selectLibraryEpisode} onSelectScene={selectLibraryScene}/>}<h2>{project.title}</h2><p className="muted">{snapshot ? `原稿 ${snapshot.sha.slice(0, 8)}` : '原作未接続'} · {project.panels.length} コマ</p>{snapshot && <p className="muted source-contract">{protocolLabel(snapshot)}</p>}<label className="production-mode">制作方法<select aria-label="制作方法" disabled={!!busy} value={productionMode} onChange={e => setProductionMode(e.target.value)}><option value="blender">Blenderで演出・作画</option><option value="direct">画像AIで直接作画</option></select></label><DraftControls key={project.active} project={project} current={current} commit={commit} run={run} busy={!!busy||!desktop()} onSwitch={()=>{setPage(0);setSelected(null);setRect(null);setEditCandidate(null);}} onProduce={produce}/><ContentReplan project={project} current={current} commit={commit} run={run} busy={!!busy} model={model}/><div className="aside-title pages-label">ページ <span>{layout.pages.length}</span></div>{Array.from({ length: layout.pages.length }, (_, i) => <button className={`thumbnail ${page === i ? 'active' : ''}`} key={i} onClick={() => { setPage(i); setPagePreview(null); setSelected(null); setRect(null); }}><div className="mini-grid">{pagePanels(project,layout.pages[i]).map(p => <div key={p.id}>{p.image ? <img src={p.image}/> : <span>未作画</span>}</div>)}</div><span>PAGE {String(i + 1).padStart(2, '0')} · {draftPageStatus(project,layout.pages[i])}</span></button>)}<div className="aside-bottom">本文と参照はそのままに。<br/>演出と作画を、この場所で。</div></aside>
     <main><div className="toolbar" aria-label="制作する媒体"><button aria-pressed={medium === 'manga'} disabled={!!busy} onClick={() => setMedium('manga')}>漫画</button><button aria-pressed={medium === 'video'} disabled={!!busy} onClick={() => setMedium('video')}>動画</button></div><div hidden={medium !== 'video'}>{busy && <div role="status" className="message progress">{busy}</div>}{error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}<VideoWorkspace project={project} current={current} commit={commit} run={run} busy={!!busy} notify={setNotice} model={model} requestedShot={requestedShot}/></div><div hidden={medium !== 'manga'}><div className="toolbar"><span>{project.panels.length ? `PAGE ${String(page + 1).padStart(2, '0')}` : '制作をはじめましょう'}</span><div className="spacer"/><label className="output-language">作品言語<select aria-label="作品言語" value={project.output_locale} disabled={!!busy || !ready} onChange={e => run('作品言語を変更', () => selectOutputLocale(e.target.value))}><option value="ja">日本語（原文）</option><option value="en">English</option></select></label>{project.output_locale === 'en' && <button disabled={!!busy || !snapshot} onClick={() => run(english ? '英訳を更新中' : '英訳を作成中', translateEnglish)}>{english ? '英訳を更新' : '英訳を作る'}</button>}<button disabled={!!busy || !project.history.length} onClick={() => run('元に戻す', async () => { await commit(undoEdit(current.current)); })}>↶ 元に戻す</button><button disabled={!!busy || !project.editRedo?.length} onClick={()=>run('やり直す',()=>commit(undoEdit(current.current,true)))}>↷ やり直す</button><button disabled={!!busy || !panels.length} onClick={() => run('PNGを書き出し', async () => { const data = await pagePNG(panels, project.snapshots, project.localizations, project.output_locale, pageData, false, project.layout.imageCrops); await download(new Blob([Uint8Array.from(atob(data.split(',')[1]), c => c.charCodeAt(0))], { type: 'image/png' }), `page-${page + 1}-${project.output_locale}.png`); })}>PNG</button></div>
     {panels.length > 0 && <div className="toolbar"><button disabled={!!busy} onClick={() => run('ページを確認中', async () => setPagePreview(await pagePNG(panels, project.snapshots, project.localizations, project.output_locale, pageData, false, project.layout.imageCrops)))}>書き出しと同じページを確認</button>{pagePreview && <button onClick={() => setPagePreview(null)}>確認を閉じる</button>}</div>}
     {project.panels.length > 0 && <div className="toolbar"><button aria-pressed={layoutMode} disabled={!!busy} onClick={()=>{setLayoutMode(!layoutMode);setRect(null);}}>コマ割り編集</button><span>{layoutMode?'四隅・全体のドラッグ':'作画・局所修正'}</span></div>}

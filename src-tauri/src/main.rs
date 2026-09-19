@@ -203,6 +203,18 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
                         .and_then(|s| s["episodeId"].as_str())
                         .unwrap_or("P01")
                         .into(),
+                    work_id: source["workId"]
+                        .as_str()
+                        .map(String::from)
+                        .or_else(|| source["library"]["workId"].as_str().map(String::from)),
+                    work_root: source["library"]["root"].as_str().map(String::from),
+                    manifest_path: source["library"]["manifest_path"]
+                        .as_str()
+                        .map(String::from),
+                    catalog_commit: source["library"]["commit"].as_str().map(String::from),
+                    scene: source["selectedSceneId"].as_str().map(String::from),
+                    format: source["protocol"]["format"].as_str().map(String::from),
+                    ..Default::default()
                 },
             )?;
         }
@@ -215,6 +227,12 @@ fn source_register(
     repo: String,
     episode: String,
     id: Option<String>,
+    work_id: Option<String>,
+    work_root: Option<String>,
+    manifest_path: Option<String>,
+    catalog_commit: Option<String>,
+    scene: Option<String>,
+    format: Option<String>,
     state: State<AppState>,
 ) -> Result<Value, String> {
     let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
@@ -225,8 +243,12 @@ fn source_register(
         return Err("未登録の作品です".into());
     }
     let new = id.is_none();
-    if new && existing.iter().any(|e| e.repo.eq_ignore_ascii_case(&repo)) {
-        return Err("このリポジトリは登録済みです".into());
+    if new
+        && existing
+            .iter()
+            .any(|e| e.repo.eq_ignore_ascii_case(&repo) && e.work_id.as_ref() == work_id.as_ref())
+    {
+        return Err("このリポジトリ・作品は登録済みです".into());
     }
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let root = state.base.join("works").join(&id);
@@ -244,6 +266,12 @@ fn source_register(
             name,
             repo,
             episode,
+            work_id,
+            work_root,
+            manifest_path,
+            catalog_commit,
+            scene,
+            format,
         },
     );
     if entries.is_err() && new {

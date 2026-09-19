@@ -1,6 +1,7 @@
 import { safePath } from './core.js';
 import { FORMAT as STORY_SOURCE_FORMAT } from '../contracts/story-source/paths.mjs';
 import { manifestToSourceModel } from '../contracts/story-source/validate.mjs';
+import { INVESTOR_LIFE_SOURCE_FORMAT, STABLE_ID } from '../contracts/story-library/ids.mjs';
 
 const text = (value, label) => { if (typeof value !== 'string' || !value.trim()) throw Error(`${label}が不正です`); return value; };
 const records = (items, label) => {
@@ -13,6 +14,7 @@ const imagePath = path => { safePath(path); if (!/\.(?:png|jpe?g|webp)$/i.test(p
 // Repository identity is runtime data, never a protocol selector.
 export function normalizeSourceManifest(manifest) {
   if (manifest?.format === STORY_SOURCE_FORMAT) return normalizeStorySourceManifest(manifest);
+  if (manifest?.format === INVESTOR_LIFE_SOURCE_FORMAT) return normalizeInvestorLifeManifest(manifest);
   if (manifest?.format !== undefined) throw Error(`原稿形式 ${manifest.format || '不明'} は未対応です`);
   if (!manifest || ![1,4].includes(manifest.schema_version)) throw Error(`原稿schema ${manifest?.schema_version ?? '不明'} は未対応です`);
   const scenes = records(manifest.scenes, '場面').map(scene => {
@@ -44,6 +46,42 @@ export function normalizeSourceManifest(manifest) {
  * shape consumed by the existing sync and production code. The raw manifest
  * remains in the snapshot; this adapter only creates a read-side projection.
  */
+
+function normalizeInvestorLifeManifest(manifest) {
+  if (!manifest || typeof manifest !== 'object' || !manifest.work || !Array.isArray(manifest.chapters)) {
+    throw Error('investor-life-source/v1のmanifestが不正です');
+  }
+  const episodes = [], scenes = [], used = new Set();
+  for (const chapter of manifest.chapters) {
+    if (!chapter || typeof chapter !== 'object' || typeof chapter.id !== 'string' || !STABLE_ID.test(chapter.id) || typeof chapter.title !== 'string' || !Array.isArray(chapter.episodes)) {
+      throw Error('investor-life-source/v1の章が不正です');
+    }
+    for (const episode of chapter.episodes) {
+      if (!episode || typeof episode !== 'object' || typeof episode.id !== 'string' || typeof episode.title !== 'string' || typeof episode.path !== 'string') {
+        throw Error('investor-life-source/v1の話が不正です');
+      }
+      if (!STABLE_ID.test(episode.id)) throw Error('investor-life-source/v1の話IDが不正です');
+      if (used.has(episode.id)) throw Error('investor-life-source/v1の話IDが重複しています');
+      safePath(episode.path);
+      used.add(episode.id);
+      episodes.push({id: episode.id, title: episode.title, scene_ids: [episode.id], chapterId: chapter.id, chapterTitle: chapter.title});
+      scenes.push({id: episode.id, path: episode.path, episodeId: episode.id, episodeTitle: episode.title, chapterId: chapter.id, chapterTitle: chapter.title});
+    }
+  }
+  const settings = records(manifest.settings ?? [], '設定').map(setting => ({id: setting.id, path: safePath(setting.path)}));
+  return {
+    version: 1,
+    format: INVESTOR_LIFE_SOURCE_FORMAT,
+    schema_version: INVESTOR_LIFE_SOURCE_FORMAT,
+    work: {...manifest.work},
+    episodes,
+    scenes,
+    settings,
+    characters: [],
+    references: [],
+  };
+}
+
 function normalizeStorySourceManifest(manifest) {
   const model = manifestToSourceModel(manifest);
   const episodes = model.episodes.map(episode => ({
@@ -109,13 +147,16 @@ export function referenceDeclarations(model, settings) {
   return references;
 }
 
-export function mergeSourceReferences(characters, references, repo, snapshotId) {
+export function mergeSourceReferences(characters, references, repo, snapshotId, scope = repo) {
   const next = characters.map(character => ({ ...character }));
   for (const reference of references) {
     const characterId = reference.characterId ?? reference.id ?? null;
-    const sourceId = `${repo}:${characterId ?? reference.path}`;
+    const sourceId = `${scope}:${characterId ?? reference.path}`;
     let index = next.findIndex(character => character.source?.id === sourceId);
-    if (index < 0) index = next.findIndex(character => character.source?.repo === repo && character.source?.path === reference.path);
+    if (index < 0) index = next.findIndex(character => {
+      const sourceScope = character.source?.scope ?? character.source?.repo;
+      return sourceScope === scope && character.source?.repo === repo && character.source?.path === reference.path;
+    });
     if (index < 0) {
       const candidates = next.filter(character => character.name === reference.name && !character.source);
       if (candidates.length > 1) throw Error(`人物「${reference.name}」の正本候補が複数あるため自動対応付けできません`);
@@ -131,7 +172,7 @@ export function mergeSourceReferences(characters, references, repo, snapshotId) 
       image: reference.image,
       hash: reference.hash,
       version: previous ? (previous.hash === reference.hash ? previous.version : (previous.version ?? 1) + 1) : 1,
-      source: { id: sourceId, repo, path: reference.path, ...(characterId ? {character_id: characterId} : {}), snapshot_id: snapshotId },
+      source: { id: sourceId, repo, path: reference.path, ...(characterId ? {character_id: characterId} : {}), ...(scope === repo ? {} : {scope}), snapshot_id: snapshotId },
     };
     if (index >= 0) next[index] = character;
     else next.push(character);

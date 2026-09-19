@@ -8,15 +8,17 @@ import { referenceDeclarations, normalizeSourceManifest } from './source-protoco
 
 const STORY_SOURCE_FORMAT = 'story-source/v1';
 
-async function readManifest(repo, sha, token, invokeCall = call) {
+async function readManifest(repo, sha, token, invokeCall = call, explicitPath = '') {
+  if (explicitPath) {
+    const path = safePath(explicitPath);
+    return {path, text: await invokeCall('github_file', {repo, path, sha, token})};
+  }
   try {
-    return {path: 'manifest.json', text: await invokeCall('github_file', { repo, path: 'manifest.json', sha, token })};
+    return {path: 'manifest.json', text: await invokeCall('github_file', {repo, path: 'manifest.json', sha, token})};
   } catch (rootError) {
-    // The common contract describes paths relative to an optional source/
-    // root. Keep the legacy root entrypoint first for existing repositories,
-    // then accept the canonical source/manifest.json layout.
+    // Existing repositories may expose the canonical entrypoint below source/.
     try {
-      return {path: 'source/manifest.json', text: await invokeCall('github_file', { repo, path: 'source/manifest.json', sha, token })};
+      return {path: 'source/manifest.json', text: await invokeCall('github_file', {repo, path: 'source/manifest.json', sha, token})};
     } catch {
       throw rootError;
     }
@@ -26,6 +28,18 @@ async function readManifest(repo, sha, token, invokeCall = call) {
 function sourcePath(root, path) {
   const safe = safePath(path);
   return root ? safePath(`${root}/${safe}`) : safe;
+}
+
+function dirname(path) {
+  const parts = path.split('/');
+  parts.pop();
+  return parts.join('/');
+}
+
+function assertInside(root, path) {
+  if (!root) return;
+  const safeRoot = safePath(root);
+  if (path !== safeRoot && !path.startsWith(`${safeRoot}/`)) throw Error('作品rootの外側を参照しています');
 }
 
 function assertStorySourceHeading(value, path) {
@@ -38,43 +52,62 @@ async function sha256(value) {
   return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))), b => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function syncSource(repo, token, episodeId, previous, invokeCall = call) {
+export async function syncSource(repo, token, episodeId, previous, invokeCall = call, options = {}) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
-  const commit = await invokeCall('github_get', { repo, path: 'commits/main', token });
-  const sha = JSON.parse(commit).sha;
-  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo && Array.isArray(previous.references)
-    && previous.protocol?.version === 1) return previous;
-  const manifestFile = await readManifest(repo, sha, token, invokeCall);
+  const library = options.library ?? null;
+  const pinnedSha = options.commit ?? library?.sha ?? null;
+  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: 'commits/main', token})).sha;
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw Error('取得commitが不正です');
+  const workId = options.workId ?? library?.workId ?? null;
+  const manifestPath = options.manifestPath ?? library?.manifestPath ?? '';
+  const sourceRootOption = options.sourceRoot ?? library?.sourceRoot ?? '';
+  if (workId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(workId)) throw Error('作品IDが不正です');
+  if (options.sceneId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(options.sceneId)) throw Error('シーンIDが不正です');
+  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo
+    && (previous.workId ?? null) === workId && (!manifestPath || previous.sync?.manifest_path === manifestPath)
+    && (previous.selectedSceneId ?? null) === (options.sceneId ?? null)
+    && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
+  const manifestFile = await readManifest(repo, sha, token, invokeCall, manifestPath);
   const manifestText = manifestFile.text;
   const manifest = JSON.parse(manifestText);
   const model = normalizeSourceManifest(manifest);
-  const sourceRoot = manifestFile.path === 'source/manifest.json' ? 'source' : '';
-  const read = path => invokeCall('github_file', { repo, path: sourcePath(sourceRoot, path), sha, token });
-  const selected = orderedScenes(model, episodeId);
+  const sourceRoot = sourceRootOption || dirname(manifestFile.path);
+  assertInside(options.workRoot ?? library?.root ?? '', manifestFile.path);
+  assertInside(options.workRoot ?? library?.root ?? '', sourceRoot);
+  const read = path => invokeCall('github_file', {repo, path: sourcePath(sourceRoot, path), sha, token});
+  const ordered = orderedScenes(model, episodeId);
+  const selected = options.sceneId ? ordered.filter(scene => scene.id === options.sceneId) : ordered;
+  if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは話に存在しません');
   const scenes = [];
   for (const s of selected) {
     const text = await read(s.path);
-    if (model.format === STORY_SOURCE_FORMAT) assertStorySourceHeading(text, s.path);
+    if (model.format === 'story-source/v1') assertStorySourceHeading(text, s.path);
     scenes.push({ ...s, text, design: s.design_path ? await read(s.design_path) : '' });
   }
   const settings = [];
   for (const s of model.settings) {
     const text = await read(s.path);
-    if (model.format === STORY_SOURCE_FORMAT) assertStorySourceHeading(text, s.path);
+    if (model.format === 'story-source/v1') assertStorySourceHeading(text, s.path);
     settings.push({ ...s, text });
   }
   const references = [];
   for (const declaration of referenceDeclarations(model, settings)) {
-      const asset = await invokeCall('github_asset', { repo, path: sourcePath(sourceRoot, declaration.path), sha, token });
-      references.push({ ...declaration, ...asset });
+    const asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
+    references.push({ ...declaration, ...asset });
   }
-  return {
-    id: `${repo}@${sha}:${episodeId}`, repo, sha, episodeId, manifest, scenes, settings, references,
+  const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
+  const snapshot = {
+    id: workId ? `${repo}@${sha}:${workId}:${episodeId}${sceneSuffix}` : `${repo}@${sha}:${episodeId}${sceneSuffix}`,
+    repo, sha, episodeId, manifest, scenes, settings, references,
+    ...(workId ? {workId} : {}),
+    ...(options.sceneId ? {selectedSceneId: options.sceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),
     protocol: {version: 1, ...(model.format ? {format: model.format} : {}), manifest_schema_version: manifest.schema_version ?? model.schema_version},
     sync: {source_commit: sha, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
+    ...(workId ? {library: {repository: repo, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
+  return snapshot;
 }
 export async function planScene(scene, snapshot, characters, model, ask = askLLM) {
   const units = sourceUnits(scene.id, scene.text);
