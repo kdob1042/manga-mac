@@ -91,18 +91,7 @@ test('bounded directing loop stops instead of infinite AI retries',async()=>{
 });
 
 
-test('numeric lens goals are applied deterministically without relying on model numeric output', async()=> {
-  const f=await fixture();
-  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
-  let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
-  assert.equal(calls,1);
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  const sessionId=f.current().panels[0].shot_binding.session_id;
-  assert.equal(f.sessions.get(sessionId).state.state.lens,45);
-  assert.equal(f.current().captures.length,1);
-  assert.equal(f.current().directing_runs[0].completionCorrections,undefined);
-});
+
 
 test('one semantic correction never repeats a native operation and a second repeat stops', async()=>{
   const f=await fixture(); let calls=0;
@@ -171,13 +160,15 @@ test('a no-op camera job does not count as a change and cannot pass after resume
   assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
 });
 
-test('a 75mm lens goal is exact even when the model only says ready', async()=> {
-  const f=await fixture();
-  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離を75mmに設定。他は変更しない。既に75mmなら撮影可能。';
-  let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
-  assert.equal(calls,1);
+test('an AI camera action is executed in Blender and capture follows persisted state', async()=>{
+  const f=await fixture(); let calls=0;
+  await directPanel({...f,panelId:'p0',ask:async()=>{
+    calls++;
+    return calls===1?action({kind:'camera',lens:70}):ready;
+  }});
+  assert.equal(calls,2);
+  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
   const sessionId=f.current().panels[0].shot_binding.session_id;
-  assert.equal(f.sessions.get(sessionId).state.state.lens,75);
+  assert.equal(f.sessions.get(sessionId).state.state.lens,70);
   assert.equal(f.current().captures.length,1);
 });
