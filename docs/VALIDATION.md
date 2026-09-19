@@ -417,7 +417,22 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 
 ### Live D / 統合（#179）
 
-- Node全体: **213/213 pass**（live専用9件を含む）。AI応答待ちの引継ぎで未送信操作を破棄し、旧撮影へ進まずlive pauseを返す。候補採用で対象コマ以外・原文・旧作画を保持し、Undo用の旧panelsを残す。
+- Node全体: **214/214 pass**（live専用10件を含む）。AI応答待ちの引継ぎで未送信操作を破棄し、旧撮影へ進まずlive pauseを返す。候補採用で対象コマ以外・原文・旧作画を保持し、Undo用の旧panelsを残す。
 - Python全モジュール構文検査: pass。Web build: pass。
 - Rust live接続の入力・対象照合テストを既存`tests/llm`へ追加。ローカルRust toolchainなしのため**not_run**。GitHub CIの判定はPR参照。
 - Mac GUI、AI→手修正→再開、実constraint influence変更、実pack/copy→候補撮影→採用→Undo、実モデルの状態に応じた手順選択: **not_run**。実装・契約試験と区別し、#176〜#179は受入確認までopenを維持。
+
+### Live Blender 実GUI検証の確定結果
+
+2026-09-19、[GitHub Actions run 35474952384](https://github.com/kdob1042/manga-mac/actions/runs/35474952384) / commit `007f9c1c310f4508197308e45af7f674504908eb`でLinux GUI（Xvfb、Blender 4.5.13）の実MCP試験を実施し、下記をpassとした。上記の初期not_run記録のうちLinux GUI/Rust分を更新する。
+
+- 認証拒否、未保存のlens/frame変更取得、evaluated world取得。
+- 古い観測版による書込み拒否、実在constraint influence変更と読戻し。
+- 手動引継ぎ中のAI書込み拒否。
+- viewport screenshotとcamera render両方のPNG取得。出力を目視確認し、空画像でないことと両者が異なる視点であることを確認。
+- pack/save copyによる新規blend取得。元GUIの未保存file状態を保持。
+- 既存headless実撮影/再読込/IPC、Rust契約・clippy、storage、Web/UIも成功。
+
+成果物は同runの`Blender-candidate-review`、`blender-results/live-acceptance.json`と両PNG。初回の30秒でcamera renderがタイムアウトしたため、MCP要求を180秒（native 185秒）に制限付きで拡張した。応答不明時の自動再送は行わない。
+
+その後、人物のrename/複製時の明示再割当を追加し、Node **214件pass**、Web build passを確認。Macアプリ本体のnativeビルド・GUI往復、実モデルの自然言語判断、Mac上での候補採用/Undo通し受入と24GB性能は引き続きnot_run。Linuxの合格でMac実機合格へ置き換えない。

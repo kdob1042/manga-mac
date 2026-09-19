@@ -1,5 +1,5 @@
 import { recordLiveCandidate, adoptLiveCandidate } from './live-candidates';
-import { liveCall, handoffLive, verifyLiveMappings, assertLiveTarget } from './live-blender';
+import { liveCall, handoffLive, verifyLiveMappings, assertLiveTarget, createLiveBinding } from './live-blender';
 import React, { useEffect, useState } from 'react';
 import { call, desktop } from './bridge';
 import { previousCaptureUsers, usageLabel } from './asset-usage';
@@ -44,7 +44,7 @@ export default function ShotControls({ project, current, commit, panels, chosen,
     <h3>Blenderで構図・撮影</h3>
     {!isVideo && chosen && <><button disabled={busy} onClick={()=>run('live対象を確認中',async()=>{
       const state=await liveCall(call,current.current,'observe',{scope:'summary'});
-      await commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:{...Object.fromEntries(['instance','epoch','file','scene','view_layer'].map(k=>[k,state[k]])),objects:state.objects}}:p)});
+      await commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:createLiveBinding(current.current,p,state)}:p)});
     })}>このコマを接続中のlive状態へ割り当てる</button>
     {chosen.live_binding && <>
       <button onClick={async()=>{try {await handoffLive(call,current.current);setLiveMessage('再開待ち：同じBlender GUIを手動または外部Computer Useで編集できます。実行済み操作は残り、未送信計画は破棄しました。');}catch(e){setLiveMessage(e.message);}}}>手動・Computer Useへ渡す（AI書込み停止）</button>

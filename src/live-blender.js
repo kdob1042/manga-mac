@@ -104,12 +104,23 @@ export async function handoffLive(call,project) {
   invalidateLivePlans(project); // Synchronous: any awaiting model response becomes unusable now.
   return liveCall(call,project,'handoff');
 }
+export function createLiveBinding(project,panel,observation) {
+  const objects=observation.objects??[];
+  const character_objects=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id).map(b=>{
+    const mapped=panel.live_binding?.character_objects?.find(o=>o.character_id===b.character_id);
+    const prior=panel.live_binding?.objects?.find(o=>mapped?o.id===mapped.object_id:o.name===b.object_name);
+    const sameEpoch=panel.live_binding?.epoch===observation.epoch;
+    const object=(sameEpoch&&prior?objects.find(o=>o.id===prior.id):null)??objects.find(o=>o.name===b.object_name);
+    if(!object)throw Error('target_unknown: 人物の対応先が見つかりません。対応付けを確認してください');
+    return {character_id:b.character_id,object_name:object.name,object_id:object.id};
+  });
+  return {...Object.fromEntries(['instance','epoch','file','scene','view_layer'].map(k=>[k,observation[k]])),objects,character_objects};
+}
 export function verifyLiveMappings(project,panel,observation) {
-  const old=panel.live_binding?.objects??[];
   const actual=observation.objects??[];
-  const relevant=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id);
+  const relevant=panel.live_binding?.character_objects??(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id).map(b=>({...b,object_id:panel.live_binding?.objects?.find(o=>o.name===b.object_name)?.id}));
   for(const b of relevant) {
-    const previous=old.find(o=>o.name===b.object_name), next=actual.find(o=>o.id===previous?.id);
-    if(!previous||!next||next.name!==b.object_name)throw Error('target_unknown: 人物対応が変わりました。名前・複製・削除を確認し、人物を対応付け直してください');
+    const next=actual.find(o=>o.id===b.object_id);
+    if(!next||next.name!==b.object_name)throw Error('target_unknown: 人物対応が変わりました。名前・複製・削除を確認し、live対象を再割当してください');
   }
 }

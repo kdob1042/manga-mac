@@ -3,7 +3,7 @@ export async function recordLiveCandidate(project,panelId,response,basePanel) {
   const panel=project.panels.find(p=>p.id===panelId);
   if(!panel||JSON.stringify(panel)!==JSON.stringify(basePanel)) throw Error('候補保存中に対象コマが変わりました。保存された撮影を確認してください');
   const binding={id:response.session_id,session_id:response.session_id,source_revision:panel.snapshotId,origin_hash:response.state?.checkpoint?.hash};
-  const mapped=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id);
+  const mapped=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id).map(b=>{const live=panel.live_binding?.character_objects?.find(x=>x.character_id===b.character_id);return live?{...b,object_name:live.object_name,asset_ref:{...b.asset_ref,object:live.object_name}}:b;});
   const scene=response.state?.scenes?.find(s=>s.name===response.state?.state?.scene);
   if(mapped.some(b=>!scene?.objects.includes(b.object_name)))throw Error('人物対応が候補のSceneにありません。対応付けを確認してください');
   const character_bindings=[...(project.character_bindings??[]),...mapped.map(b=>({...b,shot_id:binding.id,asset_ref:{...b.asset_ref,blend_hash:binding.origin_hash}}))];

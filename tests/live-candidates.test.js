@@ -19,3 +19,15 @@ test('handoff during model request discards the unsent action and returns live p
  await waiting;await handoffLive(call,p);release({action:'act',reason:'obsolete',scope:'summary',object:'',operation:{kind:'camera',object:'C',object_id:'1',value:50}});
  assert.deepEqual(await running,{live:true,status:'paused'});assert.equal(writes,0);
 });
+
+test('renamed live character requires explicit reassignment, then keeps its identity',async()=>{
+ const {createLiveBinding,verifyLiveMappings}=await import('../src/live-blender.js');
+ const panel={shot_binding:{id:'shot'},live_binding:{epoch:'e',objects:[{id:'1',name:'Old'}]}};
+ const p={character_bindings:[{shot_id:'shot',character_id:'hero',object_name:'Old'}]};
+ const observation={epoch:'e',objects:[{id:'1',name:'New'},{id:'2',name:'New.001'}]};
+ assert.throws(()=>verifyLiveMappings(p,panel,observation),/target_unknown/);
+ panel.live_binding=createLiveBinding(p,panel,observation);
+ assert.equal(panel.live_binding.character_objects[0].object_name,'New');
+ assert.doesNotThrow(()=>verifyLiveMappings(p,panel,observation));
+ assert.throws(()=>verifyLiveMappings(p,panel,{...observation,objects:[{id:'2',name:'New'}]}),/target_unknown/);
+});
