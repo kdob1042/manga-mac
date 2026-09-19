@@ -401,3 +401,10 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - Vite production build成功。初期JSは535.84 kB → 437.31 kB、gzipは171.84 kB → 140.21 kB。JSZip 97.15 kBをCBZ要求時へ遅延。Mac起動時間／推論性能の実測ではない。
 - crop画像のページ描画で同一画像を二度読み込む処理を一回へ統合。ページ内の原文索引を再利用し、割当チェックの反復includesをSetへ変更。
 - Macビルド、実Blender接続、実機画像品質・性能は今回未実施。既存のbridge／canvas-imageへの静的・動的import混在によるVite警告は残る。
+
+## Live Blender A/B（#176/#177）
+
+- Web bundle: pass（2026-09-19）。Python syntax: pass。
+- 固定MIT上流からviewport取得だけ再利用。外部送信・任意Pythonの経路は同梱しない。
+- Mac native build、Blender GUI未保存変更/evaluated state/実viewport/実camera画像: **not_run**（この実行環境にBlender/Macなし）。fixtureや構文成功で実機受入にしない。
+- 実機では同じGUIで選択/frame/lens/constraintを変更→summary/objectで確認、viewport/cameraを別々に取得。file load/undo/redo後の旧epoch拒否、別instance/file接続拒否を確認する。

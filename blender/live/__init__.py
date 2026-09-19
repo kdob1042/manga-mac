@@ -2,6 +2,7 @@
 No remote services, telemetry, arbitrary Python, file loading or process exit.
 """
 import bpy
+from .observation import observe, fingerprint
 import json
 import secrets
 import uuid
@@ -20,9 +21,15 @@ REVISION = 0
 QUEUE = queue.Queue(maxsize=8)
 CLIENT = None
 CONTROL = "manual"
+FINGERPRINT = None
 
 
 def identity():
+    global FINGERPRINT
+    current = fingerprint()
+    if current != FINGERPRINT:
+        FINGERPRINT = current
+        invalidate()
     c = bpy.context
     return {"instance": INSTANCE, "epoch": EPOCH, "revision": REVISION,
             "file": bpy.data.filepath, "scene": c.scene.name,
@@ -47,7 +54,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release"]
+    return ["live_identity", "live_claim", "live_release", "live_observe"]
 
 
 def invoke_tool(name, args):
@@ -67,6 +74,13 @@ def invoke_tool(name, args):
         return identity()
     if args.get("client") != CLIENT or CLIENT is None:
         raise ValueError("session mismatch: reconnect explicitly")
+    if name == "live_observe":
+        before = identity()
+        result = observe(args)
+        after = identity()
+        if before["epoch"] != after["epoch"]:
+            raise ValueError("stale_observation")
+        return {**result, **after}
     if name == "live_release":
         CLIENT = None
         CONTROL = "manual"

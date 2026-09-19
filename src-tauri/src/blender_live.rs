@@ -81,5 +81,10 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
     let now = c.tool("live_identity", json!({})).await?;
     c.check(&now)?;
     if action == "status" { return Ok(now); }
+    if action == "observe" {
+        let result = c.tool("live_observe", input).await?;
+        c.check(&result)?;
+        return Ok(result);
+    }
     Err("Unsupported live action".into())
 }

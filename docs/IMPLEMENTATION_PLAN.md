@@ -534,3 +534,5 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 GUIを明示接続するliveと保存checkpointから実行するheadlessを併設する。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
 
 HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。
+
+Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
