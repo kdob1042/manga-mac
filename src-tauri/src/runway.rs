@@ -263,7 +263,7 @@ fn reserve(
         || shot["duration"] != job["manifest"]["duration"]
         || shot["startImage"]["hash"] != job["manifest"]["providerInputs"][0]["hash"]
         || shot["startImage"]["id"] != job["manifest"]["providerInputs"][0]["id"]
-        || {
+        || !({
             let pair = shot["transition"].is_object();
             if pair {
                 let transition = &shot["transition"];
@@ -292,7 +292,7 @@ fn reserve(
                         .as_array()
                         .is_some_and(|inputs| inputs.len() == 1)
             }
-        }
+        })
     {
         return Err("制作要求の基準版が変更されています".into());
     }
@@ -723,12 +723,7 @@ mod tests {
     }
     fn transition_fixture() -> (Value, String, String) {
         let (mut manifest, start) = fixture();
-        let legacy: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap();
-        let end = legacy["history"][0]["panels"][0]["image"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let end = start.clone();
         let bytes = STANDARD.decode(end.split_once(',').unwrap().1).unwrap();
         let hash = format!("{:x}", Sha256::digest(&bytes));
         manifest["connection"] =
