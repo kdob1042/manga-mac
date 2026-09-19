@@ -74,6 +74,15 @@ test('whole-work AI can paginate four plus six without losing any source IDs',()
  const c=validateProposal(p,{reason:'会話は6コマ、導入は4コマ',pages},p.layout.pages.map(p=>p.id));assert.deepEqual(c.layout.pages.map(p=>p.slots.length),[4,6]);
  pages[1].slots.pop();assert.throws(()=>validateProposal(p,{reason:'欠落',pages},p.layout.pages.map(p=>p.id)),/読書順/);
 });
+test('optional overflow is validated and omitted from templates',()=>{
+ const p=project();
+ assert.equal(template(4).every(s=>!s.overflow),true);
+ const l=structuredClone(p.layout);
+ l.pages[0].slots[0].overflow={points:structuredClone(l.pages[0].slots[0].points)};
+ assert.equal(validateLayout(l,panels),l);
+ l.pages[0].slots[0].overflow={points:[[-0.1,0],[1,0],[1,1],[0,1]]};
+ assert.throws(()=>validateLayout(l,panels),/はみ出し領域はページ内/);
+});
 test('publication placement preserves legacy geometry and shares free-layout crop transforms',async()=>{
  const {frameRect,panelArtRect}=await import('../src/page-art.js');
  const slots=template(4,panels.slice(0,4).map(p=>p.id));

@@ -5,6 +5,8 @@ import {
   layoutWarnings,
   contentBox,
   PAGE,
+  artPoints,
+  overflowDrawOrder,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
 import { wrapText, validateLettering, letteringKind, isCustomLetteringBox } from './lettering';
@@ -98,6 +100,93 @@ function strokeFrame(ctx,points) {
   points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
   ctx.closePath();ctx.strokeStyle='#111';ctx.lineWidth=4;ctx.stroke();
 }
+function clipQuad(ctx,points) {
+  ctx.beginPath();
+  points.forEach(([x,y],i)=>i?ctx.lineTo(x*PAGE.width,y*PAGE.height):ctx.moveTo(x*PAGE.width,y*PAGE.height));
+  ctx.closePath();
+  ctx.clip();
+}
+function strokeHome(ctx,slot,layer,hasOverflow) {
+  if (hasOverflow) {
+    if (layer === 'art' || layer === 'complete') strokeFrame(ctx,slot.points);
+  } else if (layer !== 'art') strokeFrame(ctx,slot.points);
+}
+function drawArt(ctx,slot,image,crop,layer) {
+  if (image && layer !== 'overlay') {
+    const r = panelArtRect(artPoints(slot),image.width,image.height,crop);
+    ctx.drawImage(image,r.x,r.y,r.width,r.height);
+  }
+}
+function enterComposition(ctx,slot) {
+  const box = contentBox(slot.points);
+  const scale = Math.min(box.width / 720, box.height / 1030);
+  ctx.translate(
+    box.x + (box.width - 720 * scale) / 2,
+    box.y + (box.height - 1030 * scale) / 2,
+  );
+  ctx.scale(scale, scale);
+  return scale;
+}
+async function drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText) {
+  const box = contentBox(slot.points);
+  const scale = Math.min(box.width / 720, box.height / 1030);
+  if (panelHasText(p) && !(draft && p.previewLetteringPending) && scale * 14 < 6)
+    throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げてください`);
+  if (!panelHasText(p) || (draft && p.previewLetteringPending)) return;
+  ctx.save();
+  try {
+  enterComposition(ctx,slot);
+  const x = 0, y = 0;
+  const layout = p.lettering?.mode === 'balloons' ? validateLettering(p, p.lettering) : null;
+  const needsSource = layout ? layout.boxes.some(box => !isCustomLetteringBox(box)) : true;
+  const snapshot = snapshots.find((s) => s.id === p.snapshotId);
+  const localization =
+    locale === 'en'
+      ? localizations.find(
+          (item) => item.locale === 'en' && item.snapshot_id === p.snapshotId,
+        )
+      : null;
+  if (needsSource && locale === 'en' && !p.sourceRefs && !localization)
+    throw Error('現在の原作に対応する英訳がありません');
+  if (needsSource && !p.sourceRefs && !resolveText.has(snapshot))
+    resolveText.set(snapshot, createTextResolver(snapshot, localization));
+  const textForUnits = needsSource && !p.sourceRefs ? resolveText.get(snapshot) : null;
+  const text = layout
+    ? null
+    : p.sourceRefs
+      ? textForRefs((p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??[]).length?p.lettering.boxes.flatMap(b=>b.sourceRefs??[]):p.sourceRefs,snapshots,locale==='en'?localizations:null)
+      : textForUnits(p.unitIds);
+  if (layout) {
+    for (const box of layout.boxes) {
+      const unitText = isCustomLetteringBox(box)
+        ? box.text
+        : box.sourceRefs
+          ? textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null)
+          : textForUnits([box.unit_id]);
+      drawLettering(
+        ctx,
+        unitText,
+        {
+          x: x + 2 + box.x * 716,
+          y: y + 2 + box.y * 716,
+          width: box.width * 716,
+          height: box.height * 716,
+        },
+        true,
+        box,
+      );
+    }
+  } else
+    drawLettering(
+      ctx,
+      text,
+      { x: x + 10, y: y + 736, width: 700, height: 280 },
+      false,
+    );
+  } finally {
+    ctx.restore();
+  }
+}
 export async function pageLayers(
   panels,
   snapshots,
@@ -122,114 +211,67 @@ export async function pageLayers(
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, 1600, 2260);
   }
-  // Request-scoped indexes: no global cache retains artwork or stale source text.
   const resolveText = new Map();
+  const hasOverflow = page.slots.some((s) => s.overflow);
+  const prepared = [];
   for (const slot of page.slots) {
     const p = panels.find((p) => p.id === slot.panelId);
-    ctx.save();
-    ctx.beginPath();
-    slot.points.forEach(([x, y], i) =>
-      i
-        ? ctx.lineTo(x * PAGE.width, y * PAGE.height)
-        : ctx.moveTo(x * PAGE.width, y * PAGE.height),
-    );
-    ctx.closePath();
-    ctx.strokeStyle = '#111';
-    ctx.lineWidth = 4;
-    ctx.clip();
     if (!p && !draft) throw Error('未割当の枠があります');
-    const box = contentBox(slot.points);
-    const crop = p && imageCrops[p.id];
-    const image = p?.image ? await imageOf(p.image) : null;
-    if (image && layer !== 'overlay') {
-      const r = panelArtRect(slot.points,image.width,image.height,crop);
-      ctx.drawImage(image,r.x,r.y,r.width,r.height);
-    }
-    // Uniformly scale the original composition; characters and lettering never shear.
-    const scale = Math.min(box.width / 720, box.height / 1030);
-    const x = 0,
-      y = 0;
-    ctx.translate(
-      box.x + (box.width - 720 * scale) / 2,
-      box.y + (box.height - 1030 * scale) / 2,
-    );
-    ctx.scale(scale, scale);
+    if (p && !p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
+    prepared.push({
+      slot,
+      p,
+      image: p?.image ? await imageOf(p.image) : null,
+      crop: p && imageCrops[p.id],
+    });
+  }
+  for (const {slot,p,image,crop} of prepared) {
+    ctx.save();
+    clipQuad(ctx,slot.points);
+    drawArt(ctx,slot,image,crop,layer);
     if (!p) {
+      ctx.save();
+      enterComposition(ctx,slot);
       ctx.fillStyle = '#777';
       ctx.font = '30px sans-serif';
       ctx.fillText('未割当', 30, 50);
       ctx.restore();
-      if (layer !== 'art') strokeFrame(ctx,slot.points);
+      ctx.restore();
+      strokeHome(ctx,slot,layer,hasOverflow);
       continue;
     }
-    if (!p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
     if (!p.image) {
+      ctx.save();
+      enterComposition(ctx,slot);
       ctx.fillStyle = '#f2f0eb';
       ctx.fillRect(2, 2, 716, 716);
       ctx.fillStyle = '#777';
       ctx.font = '30px sans-serif';
       ctx.fillText('未作画', 30, 50);
-    }
-    if (panelHasText(p) && !(draft && p.previewLetteringPending) && scale * 14 < 6)
-      throw Error(`コマ ${p.id} の文字が小さすぎます。枠を広げてください`);
-    if (layer === 'art') {
       ctx.restore();
-      continue;
     }
-    if (!panelHasText(p) || (draft && p.previewLetteringPending)) {
-      ctx.restore();
-      strokeFrame(ctx,slot.points);
-      continue;
-    }
-    const layout = p.lettering?.mode === 'balloons' ? validateLettering(p, p.lettering) : null;
-    const needsSource = layout ? layout.boxes.some(box => !isCustomLetteringBox(box)) : true;
-    const snapshot = snapshots.find((s) => s.id === p.snapshotId);
-    const localization =
-      locale === 'en'
-        ? localizations.find(
-            (item) => item.locale === 'en' && item.snapshot_id === p.snapshotId,
-          )
-        : null;
-    if (needsSource && locale === 'en' && !p.sourceRefs && !localization)
-      throw Error('現在の原作に対応する英訳がありません');
-    if (needsSource && !p.sourceRefs && !resolveText.has(snapshot))
-      resolveText.set(snapshot, createTextResolver(snapshot, localization));
-    const textForUnits = needsSource && !p.sourceRefs ? resolveText.get(snapshot) : null;
-    const text = layout
-      ? null
-      : p.sourceRefs
-        ? textForRefs((p.lettering?.boxes?.flatMap(b=>b.sourceRefs??[])??[]).length?p.lettering.boxes.flatMap(b=>b.sourceRefs??[]):p.sourceRefs,snapshots,locale==='en'?localizations:null)
-        : textForUnits(p.unitIds);
-    if (layout) {
-      for (const box of layout.boxes) {
-        const unitText = isCustomLetteringBox(box)
-          ? box.text
-          : box.sourceRefs
-            ? textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null)
-            : textForUnits([box.unit_id]);
-        drawLettering(
-          ctx,
-          unitText,
-          {
-            x: x + 2 + box.x * 716,
-            y: y + 2 + box.y * 716,
-            width: box.width * 716,
-            height: box.height * 716,
-          },
-          true,
-          box,
-        );
-      }
-    } else
-      drawLettering(
-        ctx,
-        text,
-        { x: x + 10, y: y + 736, width: 700, height: 280 },
-        false,
-      );
+    if (layer !== 'art') await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
-    // The frame stays above the artwork, including full-bleed crops.
-    if (layer !== 'art') strokeFrame(ctx,slot.points);
+    strokeHome(ctx,slot,layer,hasOverflow);
+  }
+  if (layer !== 'overlay') {
+    for (const {slot} of overflowDrawOrder(page)) {
+      const row = prepared.find((item) => item.slot.id === slot.id);
+      ctx.save();
+      clipQuad(ctx,slot.overflow.points);
+      drawArt(ctx,slot,row.image,row.crop,layer);
+      ctx.restore();
+    }
+  }
+  if (layer === 'complete') {
+    for (const {slot} of overflowDrawOrder(page)) {
+      const row = prepared.find((item) => item.slot.id === slot.id);
+      if (!row.p) continue;
+      ctx.save();
+      clipQuad(ctx,slot.points);
+      await drawSlotLettering(ctx,row.p,slot,snapshots,localizations,locale,draft,resolveText);
+      ctx.restore();
+    }
   }
   return canvas.toDataURL('image/png');
 }
