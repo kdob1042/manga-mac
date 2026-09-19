@@ -135,8 +135,9 @@ function App() {
     const entry=library?.entries.find(item=>item.id===library.active);
     const sameWork=entry?.work_id===work.id && entry?.repo===libraryCatalog.repo;
     const existingWorkEntry=library?.entries.find(item=>item.work_id===work.id && item.repo===libraryCatalog.repo);
-    const hasContent=!!(current.current.snapshots?.length||current.current.panels?.length||current.current.jobs?.length);
-    const workspaceId=sameWork ? entry.id : (existingWorkEntry?.id ?? (!hasContent && entry && !entry.work_id ? entry.id : null));
+    const hasContent=['snapshots','panels','artworks','characters','style_references','history','jobs','localizations','captures','videoShots','videoRevisions','videoHistory'].some(key=>Array.isArray(current.current[key])&&current.current[key].length>0)||current.current.layout?.pages?.length>0;
+    const canReuseEmptyEntry=!!entry&&!entry.work_id&&entry.repo?.toLowerCase()===libraryCatalog.repo.toLowerCase()&&!hasContent;
+    const workspaceId=sameWork ? entry.id : (existingWorkEntry?.id ?? (canReuseEmptyEntry ? entry.id : null));
     const result=await persistLibrarySelection(work,detail,first.id,firstScene.id,workspaceId);
     setLibraryCatalog({...libraryCatalog,...detail}); setSelectedWorkId(work.id); setEpisode(first.id); setSelectedSceneId(firstScene.id);
     if (result.id !== library?.active) { await call('backup_open',{workspace:result.id}); return; }
