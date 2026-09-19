@@ -115,7 +115,10 @@ pub fn validate_working_file(file: &str, roots: &[&std::path::Path]) -> Result<(
     for root in roots {
         let root = std::fs::canonicalize(root).map_err(|_| "Storage root could not be verified")?;
         if path.starts_with(root) {
-            return Err("採用版を保護するため、作業用コピーをアプリ保存領域の外へ保存して接続してください".into());
+            return Err(
+                "採用版を保護するため、作業用コピーをアプリ保存領域の外へ保存して接続してください"
+                    .into(),
+            );
         }
     }
     Ok(())
