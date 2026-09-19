@@ -69,3 +69,32 @@ test('library sync pins catalog, manifest, body and assets to the supplied commi
  assert.deepEqual(calls.filter(call=>call.command==='github_get'),[]);
  assert.deepEqual(calls.filter(call=>call.command==='github_file').map(call=>call.args.path),['works/investor-life/source/manifest.json','works/investor-life/manuscript/p01/p01-01.md','works/investor-life/settings/world.md']);
 });
+
+test('library scene selection reads one scene and keys the snapshot by scene',async()=>{
+ const sha='f'.repeat(40);
+ const manifest={format:'story-source/v1',work:{title:'作品'},episodes:[{id:'P01',title:'第一話',scenes:[
+  {id:'P01-01',path:'manuscript/p01/first.md'},
+  {id:'P01-02',path:'manuscript/p01/second.md'}
+ ]}],settings:[],characters:[]};
+ const paths=[];
+ const invoke=async(command,args)=>{
+  if(command==='github_file'){
+   paths.push(args.path);
+   const files={
+    'works/work/source/manifest.json':JSON.stringify(manifest),
+    'works/work/manuscript/p01/first.md':'# 第一場面\n\n本文1',
+    'works/work/manuscript/p01/second.md':'# 第二場面\n\n本文2'
+   };
+   if(!(args.path in files)) throw Error('unexpected file '+args.path);
+   return files[args.path];
+  }
+  throw Error('unexpected command '+command);
+ };
+ const snapshot=await syncSource('owner/story','token','P01',null,invoke,{
+  commit:sha,workId:'work',workRoot:'works/work',sourceRoot:'works/work',
+  manifestPath:'works/work/source/manifest.json',sceneId:'P01-02'
+ });
+ assert.deepEqual(snapshot.scenes.map(scene=>scene.id),['P01-02']);
+ assert.match(snapshot.id,/P01-02$/);
+ assert.deepEqual(paths,['works/work/source/manifest.json','works/work/manuscript/p01/second.md']);
+});

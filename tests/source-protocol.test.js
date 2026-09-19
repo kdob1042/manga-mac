@@ -47,3 +47,10 @@ test('investor-life adapter preserves chapter, episode and scene IDs without rew
  assert.equal(model.format,'investor-life-source/v1');assert.deepEqual(model.episodes[0].scene_ids,['C01-E01']);assert.equal(model.scenes[0].id,'C01-E01');assert.equal(model.scenes[0].episodeId,'C01-E01');assert.deepEqual(raw,raw);
  assert.throws(()=>normalizeSourceManifest({...raw,chapters:[{...raw.chapters[0],episodes:[{...raw.chapters[0].episodes[0],id:'../bad'}]}]}),/話ID/);
 });
+
+test('same repository work scopes keep same character IDs isolated',()=>{
+ const first=mergeSourceReferences([],[{id:'yu',characterId:'yu',name:'人物A',path:'assets/yu.png',image:'data:a',hash:'one'}],'owner/story','v1','owner/story#work-a');
+ const second=mergeSourceReferences(first,[{id:'yu',characterId:'yu',name:'人物A',path:'assets/yu.png',image:'data:b',hash:'two'}],'owner/story','v2','owner/story#work-b');
+ assert.equal(second.length,2);
+ assert.deepEqual(second.map(item=>item.source.scope),['owner/story#work-a','owner/story#work-b']);
+});
