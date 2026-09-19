@@ -8,6 +8,7 @@ pub mod storage;
 mod web_asset;
 
 mod blender;
+mod blender_live;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -22,6 +23,7 @@ struct AppState {
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
+    live_blender: blender_live::Live,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -850,6 +852,62 @@ async fn blender_recover(
         action,
     )
 }
+#[tauri::command]
+async fn blender_live(
+    action: String,
+    input: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    if action == "connect" {
+        let file = input["file"].as_str().ok_or("Missing Blender file")?;
+        blender_live::validate_working_file(file, &[&state.base, &state.root])?;
+    }
+    blender_live::command(&state.live_blender, &action, input).await
+}
+#[tauri::command]
+async fn blender_live_candidate(
+    input: Value,
+    binary: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _engine = state.engine.lock().await;
+    let result = blender_live::command(&state.live_blender, "candidate", input).await?;
+    let bytes = STANDARD
+        .decode(result["blend"].as_str().ok_or("Missing candidate")?)
+        .map_err(err)?;
+    if bytes.len() > 64 * 1024 * 1024
+        || !bytes.starts_with(b"BLENDER")
+        || format!("{:x}", Sha256::digest(&bytes)) != result["sha256"].as_str().unwrap_or("")
+    {
+        return Err("Invalid live candidate".into());
+    }
+    let parent = state.root.join("live-candidates");
+    std::fs::create_dir_all(&parent).map_err(err)?;
+    let folder = parent.join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir(&folder).map_err(err)?;
+    let path = folder.join("source.blend");
+    std::fs::write(&path, bytes).map_err(err)?;
+    let registered = {
+        let db = state.db.lock().map_err(err)?;
+        blender::register(
+            &db,
+            blender::Registration {
+                binary,
+                library_root: folder.to_string_lossy().into(),
+                source: path.to_string_lossy().into(),
+            },
+        )?
+    };
+    let request: blender::Request = serde_json::from_value(serde_json::json!({
+        "session_id":registered["session_id"], "request_id":uuid::Uuid::new_v4().to_string(),
+        "expected_revision":0, "operation":{"kind":"capture","width":768,"height":768}
+    }))
+    .map_err(err)?;
+    // Reuse existing dependency pinning, immutable checkpoint, capture and recovery contracts.
+    // This is rendering the new exported copy, not a substitute for live GUI observation.
+    let captured = blender::execute(&state.db, &state.root, request).await?;
+    Ok(captured)
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -872,6 +930,7 @@ fn main() {
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
+                live_blender: blender_live::Live::default(),
             });
             Ok(())
         })
@@ -884,6 +943,8 @@ fn main() {
             backup_commands::backup_restore,
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
+            blender_live,
+            blender_live_candidate,
             blender_fork,
             blender_capture,
             blender_register,

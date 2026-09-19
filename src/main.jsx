@@ -217,7 +217,8 @@ function App() {
   }
   async function directChosen() {
     if (!chosen) throw Error('コマを選択してください');
-    await stagePanel(chosen.id, instruction.trim());
+    const result = await stagePanel(chosen.id, instruction.trim());
+    if (result?.live) { setNotice('live編集結果を詳細調整で確認し、候補として保存してください'); return; }
     if (!cancel.current) await drawChosen(chosen.id);
     setInstruction('');
   }

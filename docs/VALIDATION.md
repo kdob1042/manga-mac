@@ -401,3 +401,40 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - Vite production build成功。初期JSは535.84 kB → 437.31 kB、gzipは171.84 kB → 140.21 kB。JSZip 97.15 kBをCBZ要求時へ遅延。Mac起動時間／推論性能の実測ではない。
 - crop画像のページ描画で同一画像を二度読み込む処理を一回へ統合。ページ内の原文索引を再利用し、割当チェックの反復includesをSetへ変更。
 - Macビルド、実Blender接続、実機画像品質・性能は今回未実施。既存のbridge／canvas-imageへの静的・動的import混在によるVite警告は残る。
+
+## Live Blender A/B（#176/#177）
+
+- Web bundle: pass（2026-09-19）。Python syntax: pass。
+- 固定MIT上流からviewport取得だけ再利用。外部送信・任意Pythonの経路は同梱しない。
+- Mac native build、Blender GUI未保存変更/evaluated state/実viewport/実camera画像: **not_run**（この実行環境にBlender/Macなし）。fixtureや構文成功で実機受入にしない。
+- 実機では同じGUIで選択/frame/lens/constraintを変更→summary/objectで確認、viewport/cameraを別々に取得。file load/undo/redo後の旧epoch拒否、別instance/file接続拒否を確認する。
+
+### Live C（#178）
+
+`node --test tests/live-blender.test.js`: 6件pass。readyのみの未変更完了を拒否、対象詳細→実操作→再観測、推論中の手動変更による未送信計画失効、旧enum外のconstraint操作検証、観測ループ上限、epoch不一致を検証。これらは注入した接続の契約試験であり、実Blender/実モデル試験ではない。
+
+liveのreadyは構造確認の提案として扱い、任意自然言語の見た目を自己申告で合格にしない。人の確認へ戻し、旧撮影で自動作画を進めない。ライブ書込みはobject詳細のIDと版を要求し、既存constraint influence・camera lens・静的transformだけを許可する。未対応operatorをRNAの存在だけで許可しない。
+
+### Live D / 統合（#179）
+
+- Node全体: **214/214 pass**（live専用10件を含む）。AI応答待ちの引継ぎで未送信操作を破棄し、旧撮影へ進まずlive pauseを返す。候補採用で対象コマ以外・原文・旧作画を保持し、Undo用の旧panelsを残す。
+- Python全モジュール構文検査: pass。Web build: pass。
+- Rust live接続の入力・対象照合テストを既存`tests/llm`へ追加。ローカルRust toolchainなしのため**not_run**。GitHub CIの判定はPR参照。
+- Mac GUI、AI→手修正→再開、実constraint influence変更、実pack/copy→候補撮影→採用→Undo、実モデルの状態に応じた手順選択: **not_run**。実装・契約試験と区別し、#176〜#179は受入確認までopenを維持。
+
+### Live Blender 実GUI検証の確定結果
+
+2026-09-19、[GitHub Actions run 35474952384](https://github.com/kdob1042/manga-mac/actions/runs/35474952384) / commit `007f9c1c310f4508197308e45af7f674504908eb`でLinux GUI（Xvfb、Blender 4.5.13）の実MCP試験を実施し、下記をpassとした。上記の初期not_run記録のうちLinux GUI/Rust分を更新する。
+
+- 認証拒否、未保存のlens/frame変更取得、evaluated world取得。
+- 古い観測版による書込み拒否、実在constraint influence変更と読戻し。
+- 手動引継ぎ中のAI書込み拒否。
+- viewport screenshotとcamera render両方のPNG取得。出力を目視確認し、空画像でないことと両者が異なる視点であることを確認。
+- pack/save copyによる新規blend取得。元GUIの未保存file状態を保持。
+- 既存headless実撮影/再読込/IPC、Rust契約・clippy、storage、Web/UIも成功。
+
+成果物は同runの`Blender-candidate-review`、`blender-results/live-acceptance.json`と両PNG。初回の30秒でcamera renderがタイムアウトしたため、MCP要求を180秒（native 185秒）に制限付きで拡張した。応答不明時の自動再送は行わない。
+
+その後、人物のrename/複製時の明示再割当を追加し、Node **214件pass**、Web build passを確認。Macアプリ本体のnativeビルド・GUI往復、実モデルの自然言語判断、Mac上での候補採用/Undo通し受入と24GB性能は引き続きnot_run。Linuxの合格でMac実機合格へ置き換えない。
+
+未実施のMac実機受入は #184（接続）、#185（観測）、#186（実LLM判断）、#187（制御交代と候補採用）へ移管。親計画 #175 は継続する。追加回帰試験として管理領域とsymlink経由のcheckpoint接続拒否、および実GUIでpending要求中のサーバー停止が2秒未満で戻ることを検査する。最新の実行結果はPR #183のActionsを参照。

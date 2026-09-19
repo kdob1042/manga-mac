@@ -528,3 +528,17 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 既存`pagePNG`と共有する`panelArtRect/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
 
 新規出力はv2契約による自由四角形・可変コマ数・非破壊cropと無音H.264。PNGと配信画像は同じページ・画像配置を使い、文字と枠は動画の上に重ねる。Rustは公開形状と保存済みlayoutの頂点・割当順を照合する。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
+
+### Live Blender（#175、A: #176）
+
+GUIを明示接続するliveと保存checkpointから実行するheadlessを併設する。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
+
+HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。アプリ管理領域内のfile（symlink解決後を含む）へのlive接続は拒否し、外部の作業用copyを要求する。接続サーバー停止はGUIのpendingリクエストを待たず、旧サーバーからの未実行要求は再起動後も失効する。
+
+Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
+
+Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当は旧typed/headlessの互換経路を維持。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
+
+Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明示。引継ぎ時にアプリ内の計画世代を即失効し、Blender側もmanualへ移行・観測版を更新する。再開は新規runで再観測し、名前/ID/人物対応不明なら停止。外部Computer Use providerは同梱しない。
+
+候補保存は明示操作でBlender標準pack_all/save_as_mainfile(copy=True)を使い、64MiB以下の新規copyをnativeのUUIDディレクトリへ保存する。既存headlessアダプタでそのcopyの依存検証・撮影を行い、新session/ShotBinding/CaptureRevisionとして記録する。この候補撮影はGUIの観測受入の代替ではない。採用前は既存panel pointerを変更せず、採用時に基準版検査と漫画側Undo履歴を残す。採用済みcheckpoint・原文・他コマ・旧作画/動画は保持する。大きなblend、非Object mode、未対応依存は理由を示して停止する。

@@ -148,6 +148,11 @@ jobs:
       - name: Actual Blender camera render and save/reopen
         if: needs.classify.outputs.run_blender_render == 'true'
         run: python blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
+      - name: Actual GUI live MCP and manual handoff
+        if: needs.classify.outputs.run_blender_render == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb xauth libegl1 libgl1
+          xvfb-run -a python blender/test_live_gui.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
       - name: Validate committed Blender test lock
         run: |
           cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
