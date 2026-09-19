@@ -40,7 +40,65 @@ fn update(
     storage::update_remote_job(&mut connection, id, f)
 }
 
+fn frame_bytes(
+    input: &Value,
+    image: &str,
+    ratio: &str,
+    label: &str,
+) -> Result<(Vec<u8>, u64, u64), String> {
+    let (prefix, encoded) = image
+        .split_once(',')
+        .ok_or_else(|| format!("{}が不正です", label))?;
+    if prefix != "data:image/png;base64" || image.len() > 5_000_000 {
+        return Err(format!("{}の形式・サイズが未対応です", label));
+    }
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| format!("{}が不正です", label))?;
+    if bytes.len() < 24 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") || &bytes[12..16] != b"IHDR" {
+        return Err(format!("{}のPNG寸法を確認できません", label));
+    }
+    let width = u32::from_be_bytes(bytes[16..20].try_into().map_err(|_| failure())?) as u64;
+    let height = u32::from_be_bytes(bytes[20..24].try_into().map_err(|_| failure())?) as u64;
+    let (w, h) = ratio.split_once(':').ok_or_else(failure)?;
+    let w = w.parse::<u64>().map_err(|_| failure())?;
+    let h = h.parse::<u64>().map_err(|_| failure())?;
+    if width == 0
+        || height == 0
+        || width > 8192
+        || height > 8192
+        || width * 2 < height
+        || width > height * 2
+        || width * h != height * w
+    {
+        return Err(format!(
+            "{}と出力の縦横比を合わせてください。自動切り抜きは行いません",
+            label
+        ));
+    }
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    if input["hash"].as_str() != Some(hash.as_str())
+        || input["size"].as_u64() != Some(bytes.len() as u64)
+        || input["width"].as_u64().is_some_and(|value| value != width)
+        || input["height"]
+            .as_u64()
+            .is_some_and(|value| value != height)
+        || bytes.len() > 5_000_000
+    {
+        return Err(format!("{}の実入力が一致しません", label));
+    }
+    Ok((bytes, width, height))
+}
+
 pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
+    payload_with_frames(manifest, image, None)
+}
+
+pub fn payload_with_frames(
+    manifest: &Value,
+    start_image: &str,
+    end_image: Option<&str>,
+) -> Result<Value, String> {
     let allowed = [
         "version",
         "scope",
@@ -53,6 +111,7 @@ pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
         "ratio",
         "connection",
         "base_revision",
+        "transition",
     ];
     if !manifest
         .as_object()
@@ -70,6 +129,8 @@ pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
         "media_type",
         "mime",
         "size",
+        "width",
+        "height",
         "transform",
     ];
     if inputs.iter().any(|i| {
@@ -78,14 +139,7 @@ pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
     }) {
         return Err("未対応の画像制御です".into());
     }
-    if inputs.len() != 1
-        || inputs[0]["role"] != "start_frame"
-        || inputs[0]["media_type"] != "image"
-        || inputs[0]["transform"] != json!({"kind":"identity"})
-        || manifest["connection"]["provider"] != "runway"
-        || manifest["connection"]["model"] != "gen4.5"
-        || manifest["duration"] != 5
-    {
+    if manifest["duration"] != 5 {
         return Err("未対応の動画入力です".into());
     }
     let prompt = manifest["prompt"].as_str().ok_or("Missing prompt")?;
@@ -99,57 +153,59 @@ pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
     {
         return Err("未対応の動画指示・寸法です".into());
     }
-    let (prefix, encoded) = image.split_once(',').ok_or("Invalid start image")?;
-    if ![
-        "data:image/png;base64",
-        "data:image/jpeg;base64",
-        "data:image/webp;base64",
-    ]
-    .contains(&prefix)
-        || image.len() > 5_000_000
-    {
-        return Err("開始画像の形式・サイズが未対応です".into());
-    }
-    let bytes = STANDARD
-        .decode(encoded)
-        .map_err(|_| "Invalid start image")?;
-    if prefix != "data:image/png;base64" || bytes.len() < 24 || &bytes[12..16] != b"IHDR" {
-        return Err("初期動画入力はPNGの作画・撮影画像に対応しています".into());
-    }
-    let width = u32::from_be_bytes(bytes[16..20].try_into().map_err(|_| failure())?) as u64;
-    let height = u32::from_be_bytes(bytes[20..24].try_into().map_err(|_| failure())?) as u64;
-    let (w, h) = ratio.split_once(':').ok_or_else(failure)?;
-    let w = w.parse::<u64>().map_err(|_| failure())?;
-    let h = h.parse::<u64>().map_err(|_| failure())?;
-    if width == 0
-        || height == 0
-        || width > 8192
-        || height > 8192
-        || width * 2 < height
-        || width > height * 2
-        || width * h != height * w
-    {
-        return Err("画像と出力の縦横比を合わせてください。自動切り抜きは行いません".into());
-    }
-    let image_type = match prefix {
-        "data:image/png;base64" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
-        "data:image/jpeg;base64" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
-        "data:image/webp;base64" => {
-            bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(&b"WEBP"[..])
+    if inputs.len() == 1 {
+        if end_image.is_some()
+            || inputs[0]["role"] != "start_frame"
+            || inputs[0]["media_type"] != "image"
+            || inputs[0]["transform"] != json!({"kind":"identity"})
+            || manifest["connection"]["provider"] != "runway"
+            || manifest["connection"]["model"] != "gen4.5"
+        {
+            return Err("未対応の動画入力です".into());
         }
-        _ => false,
-    };
-    let hash = format!("{:x}", Sha256::digest(&bytes));
-    if !image_type
-        || bytes.len() > 5_000_000
-        || inputs[0]["hash"].as_str() != Some(hash.as_str())
-        || inputs[0]["size"].as_u64() != Some(bytes.len() as u64)
-    {
-        return Err("開始画像の実入力が一致しません".into());
+        let (_, _, _) = frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
+        return Ok(json!({
+            "model":"gen4.5",
+            "promptImage":start_image,
+            "promptText":prompt,
+            "ratio":ratio,
+            "duration":5,
+            "outputFormat":"mp4"
+        }));
     }
-    Ok(
-        json!({"model":"gen4.5","promptImage":image,"promptText":prompt,"ratio":ratio,"duration":5,"outputFormat":"mp4"}),
-    )
+    if inputs.len() != 2
+        || end_image.is_none()
+        || inputs[0]["role"] != "start_frame"
+        || inputs[1]["role"] != "end_frame"
+        || inputs.iter().any(|input| {
+            input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
+        })
+        || manifest["connection"]["provider"] != "fixture"
+        || manifest["connection"]["model"] != "end-frame-v1"
+    {
+        return Err(
+            "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
+        );
+    }
+    let (_, start_width, start_height) = frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
+    let end = end_image.ok_or_else(failure)?;
+    let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+    if start_width != end_width || start_height != end_height {
+        return Err(
+            "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
+        );
+    }
+    // Fixture-only contract for tests and future adapter work. Current Runway is
+    // deliberately rejected above because its official API has no end-frame field.
+    Ok(json!({
+        "model":"end-frame-v1",
+        "promptImage":start_image,
+        "lastFrame":end,
+        "promptText":prompt,
+        "ratio":ratio,
+        "duration":5,
+        "outputFormat":"mp4"
+    }))
 }
 
 fn reserve(
@@ -207,6 +263,36 @@ fn reserve(
         || shot["duration"] != job["manifest"]["duration"]
         || shot["startImage"]["hash"] != job["manifest"]["providerInputs"][0]["hash"]
         || shot["startImage"]["id"] != job["manifest"]["providerInputs"][0]["id"]
+        || {
+            let pair = shot["transition"].is_object();
+            if pair {
+                let transition = &shot["transition"];
+                let manifest_transition = &job["manifest"]["transition"];
+                shot["endImage"]["kind"] == "artwork"
+                    && shot["endImage"]["id"] == job["manifest"]["providerInputs"][1]["id"]
+                    && shot["endImage"]["hash"] == job["manifest"]["providerInputs"][1]["hash"]
+                    && manifest_transition["pageId"] == transition["pageId"]
+                    && manifest_transition["fromPanelId"] == transition["fromPanelId"]
+                    && manifest_transition["toPanelId"] == transition["toPanelId"]
+                    && manifest_transition["fromIndex"] == transition["fromIndex"]
+                    && manifest_transition["toIndex"] == transition["toIndex"]
+                    && manifest_transition["fromArtworkRevisionId"]
+                        == transition["fromArtworkRevisionId"]
+                    && manifest_transition["fromArtworkHash"] == transition["fromArtworkHash"]
+                    && manifest_transition["toArtworkRevisionId"]
+                        == transition["toArtworkRevisionId"]
+                    && manifest_transition["toArtworkHash"] == transition["toArtworkHash"]
+                    && job["manifest"]["providerInputs"]
+                        .as_array()
+                        .is_some_and(|inputs| inputs.len() == 2)
+            } else {
+                shot["endImage"].is_null()
+                    && job["manifest"]["transition"].is_null()
+                    && job["manifest"]["providerInputs"]
+                        .as_array()
+                        .is_some_and(|inputs| inputs.len() == 1)
+            }
+        }
     {
         return Err("制作要求の基準版が変更されています".into());
     }
@@ -277,13 +363,14 @@ pub async fn submit(
     id: &str,
     connection_id: &str,
     connection: &VideoConnection,
-    image: &str,
+    start_image: &str,
+    end_image: Option<&str>,
 ) -> Result<Value, String> {
     let manifest = {
         let db = db.lock().map_err(|_| failure())?;
         job(&storage::raw_project(&db)?, id)?["manifest"].clone()
     };
-    let body = payload(&manifest, image)?;
+    let body = payload_with_frames(&manifest, start_image, end_image)?;
     let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/image_to_video")).map_err(|_| failure())?;
     let client = PolicyTransport::external_client(&url).await?;
     // This commit precedes every possible POST. Failure/cancellation never clears it.
@@ -634,6 +721,44 @@ mod tests {
         let manifest = json!({"connection":{"id":"c","provider":"runway","model":"gen4.5"},"duration":5,"ratio":"960:960","prompt":"Slow push","source":{"unitIds":["u"],"sceneId":"s","snapshotId":"source","commit":"sha"},"characterIds":[],"providerInputs":[{"id":"a","hash":hash,"size":bytes.len(),"role":"start_frame","media_type":"image","transform":{"kind":"identity"}}]});
         (manifest, image)
     }
+    fn transition_fixture() -> (Value, String, String) {
+        let (mut manifest, start) = fixture();
+        let legacy: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/legacy-v1.json")).unwrap();
+        let end = legacy["history"][0]["panels"][0]["image"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        let bytes = STANDARD.decode(end.split_once(',').unwrap().1).unwrap();
+        let hash = format!("{:x}", Sha256::digest(&bytes));
+        manifest["connection"] =
+            json!({"id":"fixture","provider":"fixture","model":"end-frame-v1"});
+        manifest["providerInputs"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({
+                "id":"b",
+                "hash":hash,
+                "size":bytes.len(),
+                "role":"end_frame",
+                "media_type":"image",
+                "transform":{"kind":"identity"}
+            }));
+        let start_hash = manifest["providerInputs"][0]["hash"].clone();
+        manifest["transition"] = json!({
+            "pageId":"page",
+            "fromPanelId":"a",
+            "toPanelId":"b",
+            "fromIndex":0,
+            "toIndex":1,
+            "fromArtworkRevisionId":"a",
+            "fromArtworkHash":start_hash,
+            "toArtworkRevisionId":"b",
+            "toArtworkHash":hash
+        });
+        (manifest, start, end)
+    }
+
     #[test]
     fn provider_body_uses_actual_bytes_and_rejects_unavailable_controls() {
         let (manifest, image) = fixture();
@@ -656,6 +781,76 @@ mod tests {
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
     }
+    #[test]
+    fn provider_body_preserves_start_end_bytes_and_rejects_runway_fallback() {
+        let (manifest, start, end) = transition_fixture();
+        let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
+        assert_eq!(body["promptImage"], start);
+        assert_eq!(body["lastFrame"], end);
+        assert_eq!(body["model"], "end-frame-v1");
+        assert_eq!(manifest["providerInputs"][0]["role"], "start_frame");
+        assert_eq!(manifest["providerInputs"][1]["role"], "end_frame");
+        let mut unsupported = manifest.clone();
+        unsupported["connection"] = json!({"id":"c","provider":"runway","model":"gen4.5"});
+        assert!(payload_with_frames(&unsupported, &start, Some(&end)).is_err());
+    }
+
+    #[tokio::test]
+    async fn transition_http_fixture_receives_start_and_end_bytes_in_order() {
+        let (manifest, start, end) = transition_fixture();
+        let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
+        let expected = body.clone();
+        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = server.local_addr().unwrap();
+        let worker = std::thread::spawn(move || {
+            let (mut socket, _) = server.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut headers = Vec::new();
+            let mut byte = [0_u8; 1];
+            while !headers.ends_with(b"\r\n\r\n") {
+                socket.read_exact(&mut byte).unwrap();
+                headers.push(byte[0]);
+            }
+            let text = String::from_utf8(headers).unwrap().to_lowercase();
+            assert!(text.starts_with("post /v1/image_to_video "));
+            assert!(text.contains("authorization: bearer fixture-secret"));
+            let size: usize = text
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .unwrap()
+                .parse()
+                .unwrap();
+            let mut bytes = vec![0; size];
+            socket.read_exact(&mut bytes).unwrap();
+            assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
+            let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
+            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap();
+        let connection = VideoConnection {
+            credential: "fixture-secret".into(),
+            max_credits: 60,
+        };
+        let response = request(
+            &client,
+            reqwest::Method::POST,
+            reqwest::Url::parse(&format!("http://{address}/v1/image_to_video")).unwrap(),
+            &connection,
+        )
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+        assert!(json_response(response).await.unwrap()["id"].is_string());
+        worker.join().unwrap();
+    }
+
     #[test]
     fn reservation_is_durable_and_non_replayable_with_no_budget_reset() {
         let (manifest, _) = fixture();
