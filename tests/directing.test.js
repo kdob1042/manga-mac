@@ -91,28 +91,17 @@ test('bounded directing loop stops instead of infinite AI retries',async()=>{
 });
 
 
-test('rejects premature ready until the explicit lens goal matches live state', async()=>{
+test('numeric lens goals are applied deterministically without relying on model numeric output', async()=> {
   const f=await fixture();
   f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
   let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>{
-    calls++;
-    if(calls===1) return ready;
-    if(calls===2) return action({kind:'camera',lens:45});
-    return ready;
-  }});
-  assert.equal(calls,3);
+  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
+  assert.equal(calls,1);
   assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
+  const sessionId=f.current().panels[0].shot_binding.session_id;
+  assert.equal(f.sessions.get(sessionId).state.state.lens,45);
   assert.equal(f.current().captures.length,1);
-  assert.equal(f.current().directing_runs[0].completionCorrections,1);
-
-  const g=await fixture();
-  g.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
-  await assert.rejects(
-    directPanel({...g,panelId:'p0',ask:async()=>ready}),
-    /完了を報告しましたが、現在状態が目標と一致しません/
-  );
-  assert.equal(g.current().captures?.length??0,0);
+  assert.equal(f.current().directing_runs[0].completionCorrections,undefined);
 });
 
 test('one semantic correction never repeats a native operation and a second repeat stops', async()=>{
@@ -182,14 +171,3 @@ test('a no-op camera job does not count as a change and cannot pass after resume
   assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
 });
 
-
-test('numeric lens goals are applied deterministically before asking the model', async()=> {
-  const f=await fixture();
-  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
-  let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
-  assert.equal(calls,1);
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  assert.equal(f.sessions.get('p0').state.state.lens,45);
-  assert.equal(f.current().captures.length,1);
-});
