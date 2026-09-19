@@ -173,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             event, expired, reply = threading.Event(), threading.Event(), {}
             QUEUE.put_nowait((body, event, reply, expired))
-            if not event.wait(30):
+            if not event.wait(180):
                 expired.set()
                 raise ValueError("execution_unknown: reobserve, do not resend")
             response = {"jsonrpc": "2.0", "id": body["id"], **reply}
@@ -188,7 +188,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def setup(self):
         super().setup()
-        self.connection.settimeout(35)
+        self.connection.settimeout(185)
 
 
 def stop():

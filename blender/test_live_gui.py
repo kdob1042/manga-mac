@@ -65,7 +65,7 @@ def main():
                     request = urllib.request.Request(f'http://127.0.0.1:{port}/mcp',
                         data=json.dumps({'jsonrpc':'2.0','id':str(uuid.uuid4()),'method':method,'params':params or {}}).encode(),
                         headers={'Authorization':'Bearer '+(token if token is not None else credentials['token']),'Content-Type':'application/json'})
-                    with urllib.request.urlopen(request, timeout=40) as response:
+                    with urllib.request.urlopen(request, timeout=190) as response:
                         data=json.load(response)
                     if 'error' in data: raise RuntimeError(data['error']['message'])
                     return data['result']
@@ -101,6 +101,7 @@ def main():
                 except RuntimeError as e: assert 'manual_control' in str(e)
                 else: raise AssertionError('manual write accepted')
                 for kind in ('viewport','camera'):
+                    print('Observing live image:', kind, flush=True)
                     image=tool('live_observe',scope=kind)
                     assert image['image_kind']==kind
                     data=base64.b64decode(image['image'].split(',',1)[1])
@@ -113,6 +114,8 @@ def main():
                 (out/'live-acceptance.json').write_text(json.dumps({'platform':'Linux GUI under Xvfb','status':'pass','checks':['auth','unsaved manual state','evaluated state','stale rejection','constraint write','handoff blocks write','viewport','camera','immutable copy']},indent=2))
                 print('Live GUI/MCP acceptance: PASS')
             finally:
+                log.flush()
+                print((out/'live-gui.log').read_text(errors='replace')[-8000:], flush=True)
                 process.terminate()
                 try: process.wait(timeout=10)
                 except subprocess.TimeoutExpired: process.kill(); process.wait()

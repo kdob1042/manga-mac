@@ -24,7 +24,7 @@ impl Connection {
         let client = reqwest::Client::builder()
             .no_proxy()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(35))
+            .timeout(Duration::from_secs(185))
             .build()
             .map_err(|e| e.to_string())?;
         let response = client

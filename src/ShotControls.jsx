@@ -20,7 +20,7 @@ export default function ShotControls({ project, current, commit, panels, chosen,
     return s;
   }
   const refresh = async () => display(await call('blender_status', { sessionId: chosen.shot_binding.session_id }));
-  useEffect(() => { setSession(null); setPreview(null); setCharacter(''); setObject(''); setRig(''); setPose(''); setPoseFrame(1); }, [chosen?.id]);
+  useEffect(() => { setLivePreview(null); setLiveMessage(''); setSession(null); setPreview(null); setCharacter(''); setObject(''); setRig(''); setPose(''); setPoseFrame(1); }, [chosen?.id]);
   const isVideo = scopeType === 'videoSource', targetLabel = isVideo ? '動画用撮影' : 'コマ';
   const unresolved = project.shot_batches?.filter(b => b.status === 'unknown' && (b.scope_type ?? 'panel') === scopeType) ?? [];
   async function attach() {
@@ -63,7 +63,7 @@ export default function ShotControls({ project, current, commit, panels, chosen,
       })}>見た目を確認し、新しい候補版へ保存</button>
       {(project.live_candidates??[]).filter(c=>c.panel_id===chosen.id).map(c=><div key={c.id}><span>候補 {c.id.slice(-8)}</span><button disabled={busy} onClick={()=>run('候補を表示中',async()=>{const capture=current.current.captures.find(x=>x.id===c.capture_revision);setLivePreview(await call('blender_capture',{sessionId:capture.session_id,requestId:capture.request_id}));})}>候補を表示</button><button disabled={busy} onClick={()=>run('live候補を採用中',()=>commit(adoptLiveCandidate(current.current,c.id)))}>この候補を採用</button></div>)}
       <p>LIVE: {chosen.live_binding.file||'未保存'} ／ {chosen.live_binding.scene}</p><button disabled={busy} onClick={()=>run('headlessへ切替中',()=>commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:null}:p)}))}>保存ファイルからのheadlessへ戻す</button></>}
-    {(project.live_directing_runs??[]).filter(r=>r.panel_id===chosen.id).slice(-1).map(r=><div key={r.id}><p>{r.status}：{r.message}</p>{r.preview&&<img className="shot-preview" src={r.preview} alt={r.image_kind}/>}</div>)}</>}
+    {(project.live_directing_runs??[]).filter(r=>r.panel_id===chosen.id).slice(-1).map(r=><div key={r.id}><p>{({running:'AI操作中',paused:'再開待ち',confirm:'確認待ち',blocked:'停止（要確認）'})[r.status]??r.status}：{r.message}</p>{r.preview&&<img className="shot-preview" src={r.preview} alt={r.image_kind}/>}</div>)}</>}
 
     {!isVideo && <button disabled={busy || !desktop() || !panels.some(p => !p.shot_binding)} onClick={() => run('ページのショットを準備中', attach)}>このページのショットを作る</button>}
     {unresolved.map(batch => <div key={batch.id}><span>未確定ショット {batch.id.slice(0, 8)}</span><button disabled={busy} onClick={() => run('既存ショットを確認中', async () => {
