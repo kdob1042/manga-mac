@@ -216,13 +216,14 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
                     catalog_commit: source["library"]["commit"].as_str().map(String::from),
                     scene: source["selectedSceneId"].as_str().map(String::from),
                     format: source["protocol"]["format"].as_str().map(String::from),
-                    ..Default::default()
                 },
             )?;
         }
     }
     Ok(serde_json::json!({"entries":entries,"active":id}))
 }
+// Keep the existing named Tauri IPC arguments compatible with saved clients.
+#[expect(clippy::too_many_arguments)]
 #[tauri::command]
 fn source_register(
     name: String,

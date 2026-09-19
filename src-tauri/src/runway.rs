@@ -90,6 +90,7 @@ fn frame_bytes(
     Ok((bytes, width, height))
 }
 
+#[cfg(test)]
 pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
     payload_with_frames(manifest, image, None)
 }
