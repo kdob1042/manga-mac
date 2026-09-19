@@ -181,3 +181,15 @@ test('a no-op camera job does not count as a change and cannot pass after resume
   await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>ready}),/変更を確認できません/);
   assert.equal(f.calls.filter(c=>c.args?.request?.operation.kind==='camera').length,1);
 });
+
+
+test('numeric lens goals are applied deterministically before asking the model', async()=> {
+  const f=await fixture();
+  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
+  let calls=0;
+  await directPanel({...f,panelId:'p0',ask:async()=>{calls++;return ready;}});
+  assert.equal(calls,1);
+  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
+  assert.equal(f.sessions.get('p0').state.state.lens,45);
+  assert.equal(f.current().captures.length,1);
+});
