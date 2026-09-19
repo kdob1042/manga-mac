@@ -858,6 +858,10 @@ async fn blender_live(
     input: Value,
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
+    if action == "connect" {
+        let file = input["file"].as_str().ok_or("Missing Blender file")?;
+        blender_live::validate_working_file(file, &[&state.base, &state.root])?;
+    }
     blender_live::command(&state.live_blender, &action, input).await
 }
 #[tauri::command]

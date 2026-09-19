@@ -10,7 +10,7 @@ import secrets
 import uuid
 import queue
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from bpy.app.handlers import persistent
 
 bl_info = {"name": "Manga Mac Live", "author": "Manga Mac contributors", "version": (1, 0, 0), "blender": (4, 5, 0), "category": "Interface"}
@@ -136,11 +136,13 @@ def dispatch(body):
 
 def pump():
     try:
-        body, event, reply, expired = QUEUE.get_nowait()
+        body, event, reply, expired, server = QUEUE.get_nowait()
     except queue.Empty:
         return .05
     if not expired.is_set():
         try:
+            if server is not SERVER:
+                raise ValueError("session ended; reconnect explicitly")
             reply["result"] = dispatch(body)
         except Exception as exc:
             reply["error"] = {"code": -32000, "message": str(exc)}
@@ -172,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             event, expired, reply = threading.Event(), threading.Event(), {}
-            QUEUE.put_nowait((body, event, reply, expired))
+            QUEUE.put_nowait((body, event, reply, expired, self.server))
             if not event.wait(180):
                 expired.set()
                 raise ValueError("execution_unknown: reobserve, do not resend")
@@ -215,7 +217,7 @@ class LIVE_OT_start(bpy.types.Operator):
         TOKEN = secrets.token_hex(32)
         INSTANCE, EPOCH = str(uuid.uuid4()), str(uuid.uuid4())
         try:
-            SERVER = HTTPServer(("127.0.0.1", context.window_manager.manga_live_port), Handler)
+            SERVER = ThreadingHTTPServer(("127.0.0.1", context.window_manager.manga_live_port), Handler)
         except OSError as exc:
             self.report({'ERROR'}, str(exc))
             return {'CANCELLED'}

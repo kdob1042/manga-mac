@@ -106,6 +106,21 @@ impl Connection {
         Ok(())
     }
 }
+/// GUI editing must use a working copy outside immutable application storage.
+pub fn validate_working_file(file: &str, roots: &[&std::path::Path]) -> Result<(), String> {
+    if file.is_empty() {
+        return Ok(());
+    }
+    let path = std::fs::canonicalize(file).map_err(|_| "Blender file could not be verified")?;
+    for root in roots {
+        let root = std::fs::canonicalize(root).map_err(|_| "Storage root could not be verified")?;
+        if path.starts_with(root) {
+            return Err("採用版を保護するため、作業用コピーをアプリ保存領域の外へ保存して接続してください".into());
+        }
+    }
+    Ok(())
+}
+
 pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, String> {
     let mut slot = live.0.lock().await;
     if action == "disconnect" {
@@ -202,6 +217,26 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn managed_files_require_an_external_working_copy() {
+        let dir = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        let managed = dir.join("managed");
+        std::fs::create_dir_all(&managed).unwrap();
+        let checkpoint = managed.join("checkpoint.blend");
+        let working = dir.join("working.blend");
+        std::fs::write(&checkpoint, b"test").unwrap();
+        std::fs::write(&working, b"test").unwrap();
+        assert!(validate_working_file("", &[&managed]).is_ok());
+        assert!(validate_working_file(working.to_str().unwrap(), &[&managed]).is_ok());
+        assert!(validate_working_file(checkpoint.to_str().unwrap(), &[&managed]).is_err());
+        #[cfg(unix)]
+        {
+            let alias = dir.join("alias.blend");
+            std::os::unix::fs::symlink(&checkpoint, &alias).unwrap();
+            assert!(validate_working_file(alias.to_str().unwrap(), &[&managed]).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[tokio::test]
     async fn invalid_port_and_token_are_rejected_before_network() {
         let live = Live::default();

@@ -13,7 +13,7 @@ import uuid
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOTSTRAP = '''
-import bpy, sys, json, os
+import bpy, sys, json, os, time, threading, urllib.request
 from pathlib import Path
 sys.path.insert(0, ROOT)
 from blender import live
@@ -29,6 +29,30 @@ Path(CONFIG).write_text(json.dumps({'token':live.TOKEN,'instance':live.INSTANCE}
 os.chmod(CONFIG, 0o600)
 def manual_edit():
     marker = Path(MARKER)
+    stop_marker = Path(MARKER + '.stop')
+    if stop_marker.exists():
+        bpy.app.timers.unregister(live.pump)
+        token = live.TOKEN
+        def pending_request():
+            request = urllib.request.Request(f'http://127.0.0.1:{PORT}/mcp',
+                data=json.dumps({'jsonrpc':'2.0','id':'pending','method':'ping'}).encode(),
+                headers={'Authorization':'Bearer '+token})
+            try:
+                urllib.request.urlopen(request, timeout=5).close()
+            except Exception:
+                pass
+        threading.Thread(target=pending_request, daemon=True).start()
+        deadline = time.monotonic() + 3
+        while live.QUEUE.empty() and time.monotonic() < deadline:
+            time.sleep(.01)
+        assert not live.QUEUE.empty(), 'fixture request never queued'
+        started = time.monotonic()
+        live.stop()
+        assert time.monotonic() - started < 2, 'stop blocked GUI on pending request'
+        # A request queued by the old authenticated session must not run later.
+        live.pump()
+        Path(MARKER + '.stopped').touch()
+        return None
     if marker.exists():
         bpy.context.scene.camera.data.lens = 42
         bpy.context.scene.frame_set(7)
@@ -111,7 +135,12 @@ def main():
                 assert base64.b64decode(saved['blend']).startswith(b'BLENDER')
                 assert tool('live_identity')['file']=='' # save copy never changed active file
                 tool('live_release')
-                (out/'live-acceptance.json').write_text(json.dumps({'platform':'Linux GUI under Xvfb','status':'pass','checks':['auth','unsaved manual state','evaluated state','stale rejection','constraint write','handoff blocks write','viewport','camera','immutable copy']},indent=2))
+                Path(str(marker)+'.stop').touch()
+                for _ in range(80):
+                    if Path(str(marker)+'.stopped').exists(): break
+                    time.sleep(.1)
+                assert Path(str(marker)+'.stopped').exists(), 'GUI stop/revocation failed'
+                (out/'live-acceptance.json').write_text(json.dumps({'platform':'Linux GUI under Xvfb','status':'pass','checks':['auth','unsaved manual state','evaluated state','stale rejection','constraint write','handoff blocks write','viewport','camera','immutable copy','pending request stop']},indent=2))
                 print('Live GUI/MCP acceptance: PASS')
             finally:
                 log.flush()
