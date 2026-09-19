@@ -8,6 +8,7 @@ pub mod storage;
 mod web_asset;
 
 mod blender;
+mod blender_live;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -22,6 +23,7 @@ struct AppState {
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
+    live_blender: blender_live::Live,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -850,6 +852,10 @@ async fn blender_recover(
         action,
     )
 }
+#[tauri::command]
+async fn blender_live(action: String, input: Value, state: State<'_, AppState>) -> Result<Value, String> {
+    blender_live::command(&state.live_blender, &action, input).await
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -872,6 +878,7 @@ fn main() {
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
+                live_blender: blender_live::Live::default(),
             });
             Ok(())
         })
@@ -884,6 +891,7 @@ fn main() {
             backup_commands::backup_restore,
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
+            blender_live,
             blender_fork,
             blender_capture,
             blender_register,

@@ -528,3 +528,9 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 既存`pagePNG`と共有する`panelArtRect/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
 
 新規出力はv2契約による自由四角形・可変コマ数・非破壊cropと無音H.264。PNGと配信画像は同じページ・画像配置を使い、文字と枠は動画の上に重ねる。Rustは公開形状と保存済みlayoutの頂点・割当順を照合する。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
+
+### Live Blender（#175、A: #176）
+
+GUIを明示接続するliveと保存checkpointから実行するheadlessを併設する。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
+
+HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。
