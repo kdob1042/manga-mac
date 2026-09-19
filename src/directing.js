@@ -65,15 +65,23 @@ const lensGoal = text => {
   return matches.at(-1) ?? null;
 };
 export function directionGoal(panel, instruction = '') {
-  const lens = lensGoal(String(panel?.prompt ?? '') + '\n' + String(instruction ?? ''));
+  // A revision replaces the original direction as the current goal. In particular,
+  // an old numeric lens must not certify a new relative request such as "closer".
+  const lens = lensGoal(instruction.trim() ? instruction : String(panel?.prompt ?? ''));
   return lens === null ? null : { lens };
 }
-function completionMismatch(goal, session) {
-  if (!goal) return null;
-  if (goal.lens !== undefined && session.state?.state?.lens !== goal.lens) {
-    return { field: 'lens', expected: goal.lens, actual: session.state.state.lens };
+// Compare observable scene values, never checkpoint hashes, job counters or revisions.
+const sceneEvidence = session => JSON.stringify({
+  shot: session.state?.state,
+  objects: session.state?.objects,
+  assets: session.state?.assets,
+  scenes: session.state?.scenes,
+});
+const adjustmentHelp = '詳細調整で対象・構図と保存状態を確認し、前の演出を取り下げてから対象を指定した指示で再実行してください。';
+function verifyCameraReadback(operation, session) {
+  if (operation.kind === 'camera' && (!Number.isFinite(session.state?.state?.lens) || Math.abs(session.state.state.lens - operation.lens) > 1e-4)) {
+    throw Error('カメラ操作の保存状態の読戻しが要求と一致しません。' + adjustmentHelp);
   }
-  return null;
 }
 export function directionPrompt(project, panel, session, run) {
   const snapshot = project.snapshots.find(s => s.id === panel.snapshotId);
@@ -118,7 +126,7 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
   if (!run) {
     const state = await call('blender_status', { sessionId });
     run = { id: crypto.randomUUID(), panel_id: panelId, session_id: sessionId, source: current().active, input: identity(panel), instruction,
-      revision: state.revision, status: 'running', steps: [], catalog: [], phase: 'catalog', capture_size: generationSize(current().captures?.find(c => c.id === panel.capture_revision)?.settings?.resolution ?? (panel.generation ? [panel.generation.width, panel.generation.height] : undefined)) };
+      revision: state.revision, initialEvidence: sceneEvidence(state), status: 'running', steps: [], catalog: [], phase: 'catalog', capture_size: generationSize(current().captures?.find(c => c.id === panel.capture_revision)?.settings?.resolution ?? (panel.generation ? [panel.generation.width, panel.generation.height] : undefined)) };
     await commit({ ...current(), directing_runs: [...(current().directing_runs ?? []), run] });
   }
   const save = async patch => {
@@ -137,6 +145,7 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
     if (pending) {
       const job = s.jobs?.find(j => j.id === pending.id);
       if (job?.status !== 'complete' || s.revision !== pending.revision + 1) throw Error('前回のBlender要求を確認してください。詳細調整で保存結果を解決するまで再送しません');
+      verifyCameraReadback(pending.operation, s);
       await save({ revision: s.revision, steps: run.steps.map(x => x.id === pending.id ? { ...x, status: 'complete' } : x), ...(pending.operation.kind === 'catalog' ? { catalog: s.state.library_assets ?? [], phase: 'direct' } : {}) });
     }
     if (s.revision !== run.revision || s.jobs?.some(j => ['running','unknown','candidate'].includes(j.status))) throw Error('Blenderの基準版・未確定要求を詳細調整で確認してください');
@@ -149,6 +158,13 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
     await save({ steps: [...run.steps, step] });
     const result = await call('blender_execute', { request: { session_id: sessionId, request_id: step.id, expected_revision: s.revision, operation } });
     if (result.session_id !== sessionId || result.revision !== s.revision + 1) throw Error('Blender応答の対象・版が一致しません');
+    if (operation.kind === 'camera') {
+      // Read the persisted session, not only the execute response. Leave the step
+      // pending on mismatch so resume verifies it without sending the operation twice.
+      const persisted = await call('blender_status', { sessionId });
+      if (persisted.session_id !== sessionId || persisted.revision !== result.revision) throw Error('カメラ操作の保存状態の読戻しで対象・版が一致しません。' + adjustmentHelp);
+      verifyCameraReadback(operation, persisted);
+    }
     await save({ revision: result.revision, steps: run.steps.map(x => x.id === step.id ? { ...x, status: 'complete' } : x), ...(operation.kind === 'catalog' ? { catalog: result.state.library_assets ?? [], phase: 'direct' } : {}) });
     return result;
   };
@@ -165,18 +181,13 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
       if (cancelled()) break;
       if (result.status === 'blocked') { await save({ status: 'blocked', message: result.reason }); throw Error(result.reason); }
       if (result.status === 'ready') {
-        const mismatch = completionMismatch(directionGoal(check(), run.instruction), s);
-        if (mismatch) {
-          if (run.completionCorrections) {
-            throw Error('演出AIが完了を報告しましたが、現在状態が目標と一致しません（' + mismatch.field + ': ' + mismatch.actual + ' !== ' + mismatch.expected + '）');
-          }
-          await save({
-            completionCorrections: (run.completionCorrections ?? 0) + 1,
-            feedback: {
-              rejectedCompletion: mismatch,
-              message: 'Ready was rejected: live Blender ' + mismatch.field + ' is ' + mismatch.actual + ', but the target is ' + mismatch.expected + '. Return the required action or report a real blocker.',
-            },
-          });
+        if (run.instruction.trim() && !directionGoal(check(), run.instruction) &&
+            (!run.initialEvidence || sceneEvidence(s) === run.initialEvidence)) {
+          if (run.completionCorrections) throw Error('演出AIが完了を報告しましたが、指示に対応する変更を確認できません。' + adjustmentHelp);
+          await save({ completionCorrections: 1, feedback: {
+            rejectedCompletion: { field: 'scene', reason: 'no observable change from the saved baseline' },
+            message: 'Ready was rejected: no scene change is verified for this revision. Return the required operation or explain the blocker. A job/revision increment alone is not a change.',
+          } });
           continue;
         }
         await save({ phase: 'capture', message: result.reason });
