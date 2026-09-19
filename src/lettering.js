@@ -22,9 +22,10 @@ export function wrapText(text, measure, width) {
   }
   return lines;
 }
-export const LETTERING_KINDS = ['balloon', 'narration', 'plain'];
+export const LETTERING_KINDS = ['balloon', 'thought', 'narration', 'plain'];
 
 export function letteringKind(box) {
+  if (box?.kind === 'plain') return 'thought';
   if (box?.kind && LETTERING_KINDS.includes(box.kind)) return box.kind;
   if (box?.tail) return 'balloon';
   if (box?.shape === 'rect') return 'narration';
@@ -60,6 +61,8 @@ export function validateLettering(panel, layout) {
     if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','text','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
     if (box.kind !== undefined && !LETTERING_KINDS.includes(box.kind)) throw Error('未対応の文字枠種別です');
     if (box.shape !== undefined && !['round','rect','ellipse'].includes(box.shape)) throw Error('未対応の吹き出し形状です');
+    if (box.kind === 'narration' && box.shape !== undefined && box.shape !== 'rect') throw Error('ナレーションの形状は四角形です');
+    if ((box.kind === 'thought' || box.kind === 'narration') && box.tail !== undefined && box.tail !== null) throw Error('心中描写・ナレーションにはしっぽを付けられません');
     for (const [key,min,max] of [['fontSize',14,72],['lineHeight',1,2],['padding',0,40]]) if (box[key] !== undefined && (!Number.isFinite(box[key]) || box[key]<min || box[key]>max)) throw Error('文字スタイルの範囲が不正です');
     if (box.locked !== undefined && typeof box.locked !== 'boolean') throw Error('固定状態が不正です');
     if (box.tail !== undefined && box.tail !== null && (!Array.isArray(box.tail) || box.tail.length !== 2 || box.tail.some(n=>!Number.isFinite(n)||n<0||n>1))) throw Error('しっぽがコマ外です');
