@@ -83,13 +83,6 @@ function verifyCameraReadback(operation, session) {
     throw Error('カメラ操作の保存状態の読戻しが要求と一致しません。' + adjustmentHelp);
   }
 }
-function completionMismatch(goal, session) {
-  if (!goal) return null;
-  if (goal.lens !== undefined && session.state?.state?.lens !== goal.lens) {
-    return { field: 'lens', expected: goal.lens, actual: session.state.state.lens };
-  }
-  return null;
-}
 export function directionPrompt(project, panel, session, run) {
   const snapshot = project.snapshots.find(s => s.id === panel.snapshotId);
   const payload = { source: sourceForPanel(panel, snapshot), design: snapshot?.scenes.find(s => s.id === panel.sceneId)?.design,
@@ -181,15 +174,6 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
     if (run.phase === 'catalog') { await execute({ kind: 'catalog' }); }
     while (!cancelled() && run.phase === 'direct') {
       s = await inspect();
-      // Exact numeric lens goals are deterministic application commands. The model
-      // may still plan other aspects, but it must not be the authority for a
-      // user-specified numeric camera target.
-      const goal = directionGoal(check(), run.instruction);
-      if (goal?.lens !== undefined && s.state?.state?.lens !== goal.lens) {
-        notify(panelId + ' の焦点距離を指定値へ設定中');
-        await execute({ kind: 'camera', lens: goal.lens });
-        continue;
-      }
       if (run.steps.filter(x => x.operation.kind !== 'catalog').length >= MAX_DIRECTION_STEPS) throw Error('演出の操作上限に達しました。撮影状態を確認し、必要なら新しい指示でやり直してください');
       notify(`${panelId} の構図・演技を設計中`);
       const result = validateDirection(await ask(directionPrompt(current(), check(), s, run), directionSchema), s, run.catalog);
@@ -204,20 +188,6 @@ async function directPanelExclusive({ current, commit, call, ask, panelId, instr
             rejectedCompletion: { field: 'scene', reason: 'no observable change from the saved baseline' },
             message: 'Ready was rejected: no scene change is verified for this revision. Return the required operation or explain the blocker. A job/revision increment alone is not a change.',
           } });
-          continue;
-        }
-        const mismatch = completionMismatch(directionGoal(check(), run.instruction), s);
-        if (mismatch) {
-          if (run.completionCorrections) {
-            throw Error('演出AIが完了を報告しましたが、現在状態が目標と一致しません（' + mismatch.field + ': ' + mismatch.actual + ' !== ' + mismatch.expected + '）。' + adjustmentHelp);
-          }
-          await save({
-            completionCorrections: (run.completionCorrections ?? 0) + 1,
-            feedback: {
-              rejectedCompletion: mismatch,
-              message: 'Ready was rejected: live Blender ' + mismatch.field + ' is ' + mismatch.actual + ', but the target is ' + mismatch.expected + '. Return the required action or report a real blocker.',
-            },
-          });
           continue;
         }
         await save({ phase: 'capture', message: result.reason });
