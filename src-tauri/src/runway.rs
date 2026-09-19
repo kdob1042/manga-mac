@@ -40,7 +40,7 @@ fn update(
     storage::update_remote_job(&mut connection, id, f)
 }
 
-fn frame_bytes(
+pub(crate) fn frame_bytes(
     input: &Value,
     image: &str,
     ratio: &str,
@@ -235,6 +235,24 @@ fn reserve(
     if spent.saturating_add(CREDITS) > budget {
         return Err("作品の動画予算上限です。接続設定を確認してください".into());
     }
+    validate_pending_job(project, job, connection_id)?;
+    Ok(json!({"status":"unknown","reserved_credits":CREDITS,"submitted_at":now()}))
+}
+
+// Shared version/retry boundary for native video adapters, independent of billing.
+pub(crate) fn validate_pending_job(
+    project: &Value,
+    job: &Value,
+    connection_id: &str,
+) -> Result<(), String> {
+    if job.get("remote").is_some()
+        || job["status"] != "running"
+        || job["manifest"]["connection"]["id"] != connection_id
+        || job["scope"]["type"] != "videoShot"
+    {
+        return Err("送信済み・未確定要求は再実行できません".into());
+    }
+    let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     let shot = project["videoShots"]
         .as_array()
         .ok_or("Missing video shots")?
@@ -318,7 +336,7 @@ fn reserve(
     }) {
         return Err("先に未確定要求を確認してください".into());
     }
-    Ok(json!({"status":"unknown","reserved_credits":CREDITS,"submitted_at":now()}))
+    Ok(())
 }
 
 async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {

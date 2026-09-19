@@ -8,12 +8,27 @@ import { createVideoShot, videoManifest, beginVideoJob, videoJobIsCurrent, resol
 
 const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 const connection = { id: 'test-only', provider: 'runway', model: 'gen4.5' };
+const localConnection = { id: 'local-test', provider: 'ltx-mlx', model: 'ltx-2.5' };
 async function fixture() {
   const p = await migrateProject(legacy), panel = p.panels[0], artwork = p.artworks.find(a => a.id === panel.artwork_revision);
   return createVideoShot(p, { snapshotId: panel.snapshotId, sceneId: panel.sceneId, unitIds: panel.unitIds,
     characterIds: panel.characterIds, startImage: { kind: 'artwork', id: artwork.id, hash: artwork.hash },
     prompt: 'A slow camera push. No sound.', duration: 5, ratio: '960:960' });
 }
+
+test('local MLX uses pinned start image and local cost; provider dimensions do not silently change', async () => {
+  const p = await fixture(), shot = p.videoShots[0];
+  await assert.rejects(videoManifest(p, shot, localConnection), /512/);
+  shot.ratio = '512:512';
+  const started = await beginVideoJob(p, shot.id, localConnection);
+  assert.equal(started.job.cost.kind, 'local');
+  assert.equal(started.job.manifest.connection.provider, 'ltx-mlx');
+  assert.equal(started.job.manifest.providerInputs[0].hash, shot.startImage.hash);
+  assert.equal(await videoJobIsCurrent(started.project, started.job), true);
+  await assert.rejects(videoManifest(p, shot, connection), /Runway/);
+  await assert.rejects(beginVideoJob(started.project, shot.id, localConnection), /未確定/);
+  assert.deepEqual(started.project.panels, p.panels);
+});
 
 test('MV-01 v1/v2/v3 file roundtrip preserves manga and video; restart never resubmits', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'manga-video-'));

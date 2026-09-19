@@ -7,6 +7,10 @@ test('empty project opens video preparation without native credentials or a gene
   await page.goto('/');
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await expect(page.getByRole('heading', { name: '動画ショット' })).toBeVisible();
+  await page.getByLabel('動画の生成先').selectOption('ltx-mlx');
+  await expect(page.getByLabel('ltx-2-mlx実行ファイル')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'ローカル接続を登録する' })).toBeDisabled();
+  await expect(page.getByText(/24GBでの実生成は未検証/)).toBeVisible();
   await expect(page.getByText('接続・人物設定から原作を取得してください。')).toBeVisible();
   expect(errors).toEqual([]);
 });
