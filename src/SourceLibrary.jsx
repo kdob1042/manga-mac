@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
 import {call} from './bridge';
+import {availableStoryWorks} from './story-library.js';
 
 export default function SourceLibrary({
   library, setLibrary, busy, run, commit, current,
@@ -7,7 +8,7 @@ export default function SourceLibrary({
   onRefreshCatalog, onSelectWork, onSelectEpisode, onSelectScene,
 }) {
   const [adding,setAdding]=useState(false),[name,setName]=useState(''),[newRepo,setNewRepo]=useState(''),[newEpisode,setNewEpisode]=useState('P01');
-  const works=catalog?.catalog?.works ?? [];
+  const works=catalog?.catalog ? availableStoryWorks(catalog.catalog, 'manga') : [];
   const outline=catalog?.outline ?? [];
   const selectedEpisode=outline.find(item=>item.id===selectedEpisodeId);
   async function open(id) { await commit(current.current); await call('backup_open',{workspace:id}); }

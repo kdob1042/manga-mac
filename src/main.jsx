@@ -43,7 +43,7 @@ import { recoverImageResult } from './image-recovery';
 import { beginJob, finishJob, adoptCandidate, abandonJob } from './revisions';
 import { createEnglishLocalization, currentEnglishLocalization, textForPanel } from './localization';
 import { protocolLabel, mergeSourceReferences } from './source-protocol';
-import { fetchStoryLibrary, fetchStoryLibraryWork, findLibraryWork } from './story-library.js';
+import { fetchStoryLibrary, fetchStoryLibraryWork, findLibraryWork, DEFAULT_STORY_LIBRARY_REPO } from './story-library.js';
 
 function App() {
   const [library,setLibrary]=useState(null), [libraryCatalog,setLibraryCatalog]=useState(null), [selectedWorkId,setSelectedWorkId]=useState(''), [selectedSceneId,setSelectedSceneId]=useState('');
@@ -53,7 +53,7 @@ function App() {
   const [productionMode, setProductionMode] = useState('blender');
   const [medium, setMedium] = useState('manga');
   const [project, setProject] = useState(emptyProject), [ready, setReady] = useState(false), [busy, setBusy] = useState(''), [error, setError] = useState(''), [notice, setNotice] = useState(''), [settings, setSettings] = useState(false), [pagePreview, setPagePreview] = useState(null);
-  const [repo, setRepo] = useState(''), [token, setToken] = useState(''), [episode, setEpisode] = useState('P01'), [model, setModel] = useState(() => defaultConnection());
+  const [repo, setRepo] = useState(DEFAULT_STORY_LIBRARY_REPO), [token, setToken] = useState(''), [episode, setEpisode] = useState('P01'), [model, setModel] = useState(() => defaultConnection());
   const [page, setPage] = useState(0), [selected, setSelected] = useState(null), [instruction, setInstruction] = useState(''), [pending, setPending] = useState(null), [rect, setRect] = useState(null), [name, setName] = useState(''), [description, setDescription] = useState('');
   useBackupSchedule(ready, !!busy);
   const current = useRef(project), cancel = useRef(false), drag = useRef(null), lock = useRef(false);
@@ -102,8 +102,8 @@ function App() {
     if (locale === 'en' && !currentEnglishLocalization(current.current, snapshot)) setNotice('英訳が未作成です。「英訳を作る」を実行してください。');
   }
   async function refreshLibraryCatalog() {
-    if (!repo.trim()) throw Error('先に原稿ライブラリのowner/repositoryを設定してください');
-    const loaded = await fetchStoryLibrary(repo.trim(), token, call);
+    if (repo.trim() !== DEFAULT_STORY_LIBRARY_REPO) throw Error(`原稿ライブラリの接続先は${DEFAULT_STORY_LIBRARY_REPO}に固定されています`);
+    const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, token, call);
     const entry = library?.entries.find(item => item.id === library.active);
     const workId = entry?.work_id ?? current.current.workId ?? '';
     if (workId) {
@@ -129,7 +129,9 @@ function App() {
   async function selectLibraryWork(workId) {
     if (!libraryCatalog) throw Error('先に原稿一覧を更新してください');
     const detail=await fetchStoryLibraryWork(libraryCatalog,workId,token,call);
-    const work=detail.work, first=detail.outline[0], firstScene=first?.scenes[0];
+    const work=detail.work;
+    if (!work.formats.includes('manga')) throw Error('選択作品は漫画制作対象ではありません');
+    const first=detail.outline[0], firstScene=detail.outline[0]?.scenes[0];
     if (!first || !firstScene) throw Error('選択作品に話・シーンがありません');
     const entry=library?.entries.find(item=>item.id===library.active);
     const sameWork=entry?.work_id===work.id && entry?.repo===libraryCatalog.repo;
@@ -190,7 +192,8 @@ function App() {
     if(!pending || pending.repo!==repo || pending.episodeId!==episode || (pending.workId && pending.workId!==selectedWorkId)) throw Error('対象が変わりました。GitHub側の更新を確認してください');
     const p = preserveDraft(current.current);
     const affected = snapshot ? affectedScenes(snapshot, pending) : [];
-    const characters = mergeSourceReferences(p.characters, pending.references, pending.repo, pending.id);
+    const sourceScope = pending.workId ? `${pending.repo}#${pending.workId}` : pending.repo;
+    const characters = mergeSourceReferences(p.characters, pending.references, pending.repo, pending.id, sourceScope);
     const title = typeof pending.manifest?.work === 'string' ? pending.manifest.work : pending.manifest?.work?.title;
     if (typeof title !== 'string' || !title.trim()) throw Error('原稿の作品タイトルが不正です');
     await commit({

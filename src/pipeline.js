@@ -62,8 +62,10 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   const manifestPath = options.manifestPath ?? library?.manifestPath ?? '';
   const sourceRootOption = options.sourceRoot ?? library?.sourceRoot ?? '';
   if (workId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(workId)) throw Error('作品IDが不正です');
+  if (options.sceneId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(options.sceneId)) throw Error('シーンIDが不正です');
   if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo
     && (previous.workId ?? null) === workId && (!manifestPath || previous.sync?.manifest_path === manifestPath)
+    && (previous.selectedSceneId ?? null) === (options.sceneId ?? null)
     && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
   const manifestFile = await readManifest(repo, sha, token, invokeCall, manifestPath);
   const manifestText = manifestFile.text;
@@ -73,7 +75,9 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   assertInside(options.workRoot ?? library?.root ?? '', manifestFile.path);
   assertInside(options.workRoot ?? library?.root ?? '', sourceRoot);
   const read = path => invokeCall('github_file', {repo, path: sourcePath(sourceRoot, path), sha, token});
-  const selected = orderedScenes(model, episodeId);
+  const ordered = orderedScenes(model, episodeId);
+  const selected = options.sceneId ? ordered.filter(scene => scene.id === options.sceneId) : ordered;
+  if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは話に存在しません');
   const scenes = [];
   for (const s of selected) {
     const text = await read(s.path);
@@ -91,8 +95,9 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     const asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
     references.push({ ...declaration, ...asset });
   }
+  const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
   const snapshot = {
-    id: workId ? `${repo}@${sha}:${workId}:${episodeId}` : `${repo}@${sha}:${episodeId}`,
+    id: workId ? `${repo}@${sha}:${workId}:${episodeId}${sceneSuffix}` : `${repo}@${sha}:${episodeId}${sceneSuffix}`,
     repo, sha, episodeId, manifest, scenes, settings, references,
     ...(workId ? {workId} : {}),
     ...(options.sceneId ? {selectedSceneId: options.sceneId} : {}),

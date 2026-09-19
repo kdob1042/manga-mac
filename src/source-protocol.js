@@ -147,13 +147,16 @@ export function referenceDeclarations(model, settings) {
   return references;
 }
 
-export function mergeSourceReferences(characters, references, repo, snapshotId) {
+export function mergeSourceReferences(characters, references, repo, snapshotId, scope = repo) {
   const next = characters.map(character => ({ ...character }));
   for (const reference of references) {
     const characterId = reference.characterId ?? reference.id ?? null;
-    const sourceId = `${repo}:${characterId ?? reference.path}`;
+    const sourceId = `${scope}:${characterId ?? reference.path}`;
     let index = next.findIndex(character => character.source?.id === sourceId);
-    if (index < 0) index = next.findIndex(character => character.source?.repo === repo && character.source?.path === reference.path);
+    if (index < 0) index = next.findIndex(character => {
+      const sourceScope = character.source?.scope ?? character.source?.repo;
+      return sourceScope === scope && character.source?.repo === repo && character.source?.path === reference.path;
+    });
     if (index < 0) {
       const candidates = next.filter(character => character.name === reference.name && !character.source);
       if (candidates.length > 1) throw Error(`人物「${reference.name}」の正本候補が複数あるため自動対応付けできません`);
@@ -169,7 +172,7 @@ export function mergeSourceReferences(characters, references, repo, snapshotId) 
       image: reference.image,
       hash: reference.hash,
       version: previous ? (previous.hash === reference.hash ? previous.version : (previous.version ?? 1) + 1) : 1,
-      source: { id: sourceId, repo, path: reference.path, ...(characterId ? {character_id: characterId} : {}), snapshot_id: snapshotId },
+      source: { id: sourceId, repo, path: reference.path, ...(characterId ? {character_id: characterId} : {}), ...(scope === repo ? {} : {scope}), snapshot_id: snapshotId },
     };
     if (index >= 0) next[index] = character;
     else next.push(character);
