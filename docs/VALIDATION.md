@@ -414,3 +414,10 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 `node --test tests/live-blender.test.js`: 6件pass。readyのみの未変更完了を拒否、対象詳細→実操作→再観測、推論中の手動変更による未送信計画失効、旧enum外のconstraint操作検証、観測ループ上限、epoch不一致を検証。これらは注入した接続の契約試験であり、実Blender/実モデル試験ではない。
 
 liveのreadyは構造確認の提案として扱い、任意自然言語の見た目を自己申告で合格にしない。人の確認へ戻し、旧撮影で自動作画を進めない。ライブ書込みはobject詳細のIDと版を要求し、既存constraint influence・camera lens・静的transformだけを許可する。未対応operatorをRNAの存在だけで許可しない。
+
+### Live D / 統合（#179）
+
+- Node全体: **213/213 pass**（live専用9件を含む）。AI応答待ちの引継ぎで未送信操作を破棄し、旧撮影へ進まずlive pauseを返す。候補採用で対象コマ以外・原文・旧作画を保持し、Undo用の旧panelsを残す。
+- Python全モジュール構文検査: pass。Web build: pass。
+- Rust live接続の入力・対象照合テストを既存`tests/llm`へ追加。ローカルRust toolchainなしのため**not_run**。GitHub CIの判定はPR参照。
+- Mac GUI、AI→手修正→再開、実constraint influence変更、実pack/copy→候補撮影→採用→Undo、実モデルの状態に応じた手順選択: **not_run**。実装・契約試験と区別し、#176〜#179は受入確認までopenを維持。

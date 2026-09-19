@@ -538,3 +538,7 @@ HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、
 Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
 
 Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当は旧typed/headlessの互換経路を維持。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
+
+Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明示。引継ぎ時にアプリ内の計画世代を即失効し、Blender側もmanualへ移行・観測版を更新する。再開は新規runで再観測し、名前/ID/人物対応不明なら停止。外部Computer Use providerは同梱しない。
+
+候補保存は明示操作でBlender標準pack_all/save_as_mainfile(copy=True)を使い、64MiB以下の新規copyをnativeのUUIDディレクトリへ保存する。既存headlessアダプタでそのcopyの依存検証・撮影を行い、新session/ShotBinding/CaptureRevisionとして記録する。この候補撮影はGUIの観測受入の代替ではない。採用前は既存panel pointerを変更せず、採用時に基準版検査と漫画側Undo履歴を残す。採用済みcheckpoint・原文・他コマ・旧作画/動画は保持する。大きなblend、非Object mode、未対応依存は理由を示して停止する。

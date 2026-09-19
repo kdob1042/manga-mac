@@ -4,6 +4,7 @@ No remote services, telemetry, arbitrary Python, file loading or process exit.
 import bpy
 from .observation import observe, fingerprint
 from .operations import apply
+from .candidate import export_copy
 import json
 import secrets
 import uuid
@@ -56,7 +57,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act"]
+    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate"]
 
 
 def invoke_tool(name, args):
@@ -76,12 +77,20 @@ def invoke_tool(name, args):
         return identity()
     if args.get("client") != CLIENT or CLIENT is None:
         raise ValueError("session mismatch: reconnect explicitly")
-    if name in ("live_resume", "live_act"):
+    if name == "live_handoff":
+        CONTROL = "manual"
+        invalidate()  # Invalidate every queued/unsent plan before handing control away.
+        return identity()
+    if name in ("live_resume", "live_act", "live_candidate"):
         current = identity()
         expected = args.get("expected", {})
         for key in ("instance", "epoch", "revision", "file", "scene", "view_layer"):
             if current[key] != expected.get(key):
                 raise ValueError("stale_observation: observe again")
+        if name == "live_candidate":
+            if CONTROL != "manual":
+                raise ValueError("handoff before candidate save")
+            return {**export_copy(), **identity()}
         if name == "live_resume":
             CONTROL = "ai"
             return identity()

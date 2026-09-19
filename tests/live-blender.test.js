@@ -40,3 +40,7 @@ test('infinite observations stop at 12 and classify model problem',async()=>{
 test('epoch/instance mismatch never resolves by similar name',()=>{
  assert.throws(()=>assertLiveTarget(target,{...target,epoch:'new'}),/target_unknown/);assert.equal(failureKind(Error('execution_unknown: lost')),'execution_unknown');
 });
+
+test('cancel is a live pause, never a headless capture result',async()=>{
+ const f=fixture([],{cancel:()=>true});assert.deepEqual(await f.run(),{live:true,status:'paused'});assert.equal(f.requests.length,0);
+});

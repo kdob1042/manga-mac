@@ -1,10 +1,13 @@
-import { liveCall } from './live-blender';
+import { recordLiveCandidate, adoptLiveCandidate } from './live-candidates';
+import { liveCall, handoffLive, verifyLiveMappings, assertLiveTarget } from './live-blender';
 import React, { useEffect, useState } from 'react';
 import { call, desktop } from './bridge';
 import { previousCaptureUsers, usageLabel } from './asset-usage';
 import { planShots, attachShots, bindCharacter, recordCapture } from './shots';
 
 export default function ShotControls({ project, current, commit, panels, chosen, busy, run, scopeType = 'panel', captureSize }) {
+  const [liveMessage, setLiveMessage] = useState(''), [livePreview, setLivePreview] = useState(null);
+  const [liveBinary, setLiveBinary] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [session, setSession] = useState(null), [preview, setPreview] = useState(null);
   const [scene, setScene] = useState(''), [camera, setCamera] = useState(''), [frame, setFrame] = useState(1), [lens, setLens] = useState(50);
   const [width, setWidth] = useState(768), [height, setHeight] = useState(768);
@@ -41,9 +44,25 @@ export default function ShotControls({ project, current, commit, panels, chosen,
     <h3>Blenderで構図・撮影</h3>
     {!isVideo && chosen && <><button disabled={busy} onClick={()=>run('live対象を確認中',async()=>{
       const state=await liveCall(call,current.current,'observe',{scope:'summary'});
-      await commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:Object.fromEntries(['instance','epoch','file','scene','view_layer'].map(k=>[k,state[k]]))}:p)});
+      await commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:{...Object.fromEntries(['instance','epoch','file','scene','view_layer'].map(k=>[k,state[k]])),objects:state.objects}}:p)});
     })}>このコマを接続中のlive状態へ割り当てる</button>
-    {chosen.live_binding && <><p>LIVE: {chosen.live_binding.file||'未保存'} ／ {chosen.live_binding.scene}</p><button disabled={busy} onClick={()=>run('headlessへ切替中',()=>commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:null}:p)}))}>保存ファイルからのheadlessへ戻す</button></>}
+    {chosen.live_binding && <>
+      <button onClick={async()=>{try {await handoffLive(call,current.current);setLiveMessage('再開待ち：同じBlender GUIを手動または外部Computer Useで編集できます。実行済み操作は残り、未送信計画は破棄しました。');}catch(e){setLiveMessage(e.message);}}}>手動・Computer Useへ渡す（AI書込み停止）</button>
+      <button disabled={busy} onClick={()=>run('live状態を再観測中',async()=>{
+        const s=await liveCall(call,current.current,'observe',{scope:'summary'});assertLiveTarget(chosen.live_binding,s);verifyLiveMappings(current.current,chosen,s);
+        setLivePreview(await liveCall(call,current.current,'observe',{scope:'camera'}));setLiveMessage('再観測済み。自然言語の演出指示から新しい計画で再開できます。');
+      })}>再観測して再開準備</button>
+      <p>{liveMessage}</p>{livePreview&&<img className="shot-preview" src={livePreview.image??livePreview.preview} alt="live candidate camera"/>}
+      <label>候補撮影用Blender実行ファイル<input value={liveBinary} onChange={e=>setLiveBinary(e.target.value)}/></label>
+      <button disabled={busy} onClick={()=>run('live編集を新しい候補へ保存中',async()=>{
+        const base=current.current.panels.find(p=>p.id===chosen.id);
+        await handoffLive(call,current.current);
+        const observed=await liveCall(call,current.current,'observe',{scope:'summary'});assertLiveTarget(base.live_binding,observed);verifyLiveMappings(current.current,base,observed);
+        const result=await call('blender_live_candidate',{input:{work:JSON.stringify([current.current.workId??'',current.current.snapshots?.find(s=>s.id===current.current.active)?.repo??'',current.current.active]),expected:observed},binary:liveBinary});
+        await commit(await recordLiveCandidate(current.current,chosen.id,result,base));setLivePreview(result);setLiveMessage('新しい候補として保存しました。旧採用版は保持しています。');
+      })}>見た目を確認し、新しい候補版へ保存</button>
+      {(project.live_candidates??[]).filter(c=>c.panel_id===chosen.id).map(c=><div key={c.id}><span>候補 {c.id.slice(-8)}</span><button disabled={busy} onClick={()=>run('候補を表示中',async()=>{const capture=current.current.captures.find(x=>x.id===c.capture_revision);setLivePreview(await call('blender_capture',{sessionId:capture.session_id,requestId:capture.request_id}));})}>候補を表示</button><button disabled={busy} onClick={()=>run('live候補を採用中',()=>commit(adoptLiveCandidate(current.current,c.id)))}>この候補を採用</button></div>)}
+      <p>LIVE: {chosen.live_binding.file||'未保存'} ／ {chosen.live_binding.scene}</p><button disabled={busy} onClick={()=>run('headlessへ切替中',()=>commit({...current.current,panels:current.current.panels.map(p=>p.id===chosen.id?{...p,live_binding:null}:p)}))}>保存ファイルからのheadlessへ戻す</button></>}
     {(project.live_directing_runs??[]).filter(r=>r.panel_id===chosen.id).slice(-1).map(r=><div key={r.id}><p>{r.status}：{r.message}</p>{r.preview&&<img className="shot-preview" src={r.preview} alt={r.image_kind}/>}</div>)}</>}
 
     {!isVideo && <button disabled={busy || !desktop() || !panels.some(p => !p.shot_binding)} onClick={() => run('ページのショットを準備中', attach)}>このページのショットを作る</button>}

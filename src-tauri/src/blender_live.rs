@@ -37,6 +37,16 @@ impl Connection {
         if body["id"] != id || !body["error"].is_null() { return Err(format!("MCP: {}", body["error"]["message"])); }
         Ok(body["result"].clone())
     }
+    async fn initialized(&self) -> Result<(), String> {
+        let client = reqwest::Client::builder().no_proxy().redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(5)).build().map_err(|e|e.to_string())?;
+        let response = client.post(format!("http://127.0.0.1:{}/mcp", self.port)).bearer_auth(&self.token)
+            .header("MCP-Protocol-Version", "2025-03-26")
+            .json(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .send().await.map_err(|_|"MCP initialization failed")?;
+        if !response.status().is_success() { return Err("MCP initialization rejected".into()); }
+        Ok(())
+    }
     pub async fn tool(&self, name: &str, mut args: Value) -> Result<Value, String> {
         args["client"] = json!(self.client);
         let r = self.rpc("tools/call", json!({"name":name,"arguments":args})).await?;
@@ -64,6 +74,7 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         let mut c = Connection { port, token, client: uuid::Uuid::new_v4().to_string(), work: field(&input,"work")?.into(), target: Value::Null };
         let init = c.rpc("initialize", json!({"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"manga-mac","version":"1.0.0"}})).await?;
         if init["serverInfo"]["name"] != "manga-mac-live" || init["serverInfo"]["version"] != "1.0.0" { return Err("未対応のliveアドオンです".into()); }
+        c.initialized().await?;
         let list = c.rpc("tools/list", json!({})).await?;
         if !list["tools"].as_array().is_some_and(|a| a.iter().any(|t| t["name"] == "live_identity")) { return Err("Missing live tool".into()); }
         let target = c.tool("live_identity", json!({})).await?;
@@ -86,10 +97,32 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         c.check(&result)?;
         return Ok(result);
     }
-    if matches!(action, "act" | "resume") {
-        let result = c.tool(if action == "act" {"live_act"} else {"live_resume"}, input).await?;
+    if matches!(action, "act" | "resume" | "handoff" | "candidate") {
+        let result = c.tool(match action { "act"=>"live_act", "resume"=>"live_resume", "handoff"=>"live_handoff", _=>"live_candidate" }, input).await?;
         c.check(&result)?;
         return Ok(result);
     }
     Err("Unsupported live action".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn invalid_port_and_token_are_rejected_before_network() {
+        let live = Live::default();
+        for input in [json!({"port":0}),json!({"port":65536}),json!({"port":9877,"token":"short"})] {
+            assert!(command(&live,"connect",input).await.is_err());
+            assert!(live.0.lock().await.is_none());
+        }
+    }
+    #[test]
+    fn reconnect_target_never_follows_new_file_or_epoch() {
+        let target=json!({"instance":"i","epoch":"e","file":"a.blend","scene":"S","view_layer":"V"});
+        let c=Connection {port:9877,token:String::new(),client:String::new(),work:"w".into(),target:target.clone()};
+        assert!(c.check(&target).is_ok());
+        for key in ["instance","epoch","file","scene","view_layer"] {
+            let mut changed=target.clone();changed[key]=json!("other");assert!(c.check(&changed).is_err());
+        }
+    }
 }
