@@ -96,5 +96,5 @@ test('library scene selection reads one scene and keys the snapshot by scene',as
  });
  assert.deepEqual(snapshot.scenes.map(scene=>scene.id),['P01-02']);
  assert.match(snapshot.id,/P01-02$/);
- assert.deepEqual(paths,['works/work/source/manifest.json','works/work/manuscript/p01/second.md']);
+ assert.deepEqual(paths,['works/work/source/manifest.json','works/work/manuscript/p01/p01-02.md']);
 });
