@@ -102,7 +102,6 @@ function App() {
     if (locale === 'en' && !currentEnglishLocalization(current.current, snapshot)) setNotice('英訳が未作成です。「英訳を作る」を実行してください。');
   }
   async function refreshLibraryCatalog() {
-    if (repo.trim() !== DEFAULT_STORY_LIBRARY_REPO) throw Error(`原稿ライブラリの接続先は${DEFAULT_STORY_LIBRARY_REPO}に固定されています`);
     const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, token, call);
     const entry = library?.entries.find(item => item.id === library.active);
     const workId = entry?.work_id ?? current.current.workId ?? '';
