@@ -73,8 +73,8 @@ test('library sync pins catalog, manifest, body and assets to the supplied commi
 test('library scene selection reads one scene and keys the snapshot by scene',async()=>{
  const sha='f'.repeat(40);
  const manifest={format:'story-source/v1',work:{title:'作品'},episodes:[{id:'P01',title:'第一話',scenes:[
-  {id:'P01-01',path:'manuscript/p01/first.md'},
-  {id:'P01-02',path:'manuscript/p01/second.md'}
+  {id:'P01-01',path:'manuscript/p01/p01-01.md'},
+  {id:'P01-02',path:'manuscript/p01/p01-02.md'}
  ]}],settings:[],characters:[]};
  const paths=[];
  const invoke=async(command,args)=>{
@@ -82,8 +82,8 @@ test('library scene selection reads one scene and keys the snapshot by scene',as
    paths.push(args.path);
    const files={
     'works/work/source/manifest.json':JSON.stringify(manifest),
-    'works/work/manuscript/p01/first.md':'# 第一場面\n\n本文1',
-    'works/work/manuscript/p01/second.md':'# 第二場面\n\n本文2'
+    'works/work/manuscript/p01/p01-01.md':'# 第一場面\n\n本文1',
+    'works/work/manuscript/p01/p01-02.md':'# 第二場面\n\n本文2'
    };
    if(!(args.path in files)) throw Error('unexpected file '+args.path);
    return files[args.path];
