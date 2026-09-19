@@ -208,7 +208,9 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
                         .map(String::from)
                         .or_else(|| source["library"]["workId"].as_str().map(String::from)),
                     work_root: source["library"]["root"].as_str().map(String::from),
-                    manifest_path: source["library"]["manifest_path"].as_str().map(String::from),
+                    manifest_path: source["library"]["manifest_path"]
+                        .as_str()
+                        .map(String::from),
                     catalog_commit: source["library"]["commit"].as_str().map(String::from),
                     scene: source["selectedSceneId"].as_str().map(String::from),
                     format: source["protocol"]["format"].as_str().map(String::from),
@@ -242,9 +244,9 @@ fn source_register(
     }
     let new = id.is_none();
     if new
-        && existing.iter().any(|e| {
-            e.repo.eq_ignore_ascii_case(&repo) && e.work_id.as_ref() == work_id.as_ref()
-        })
+        && existing
+            .iter()
+            .any(|e| e.repo.eq_ignore_ascii_case(&repo) && e.work_id.as_ref() == work_id.as_ref())
     {
         return Err("このリポジトリ・作品は登録済みです".into());
     }

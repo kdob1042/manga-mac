@@ -33,7 +33,9 @@ fn valid_path(value: &str) -> bool {
         && value.len() <= 400
         && !value.starts_with('/')
         && !value.contains(['\\', '?', '#', '%'])
-        && value.split('/').all(|part| !part.is_empty() && part != "." && part != "..")
+        && value
+            .split('/')
+            .all(|part| !part.is_empty() && part != "." && part != "..")
 }
 fn valid(entry: &Entry) -> Result<(), String> {
     let parts: Vec<_> = entry.repo.split('/').collect();
@@ -51,7 +53,10 @@ fn valid(entry: &Entry) -> Result<(), String> {
         })
         || entry.episode.is_empty()
         || entry.episode.len() > 100
-        || entry.work_id.as_deref().is_some_and(|value| !valid_identifier(value))
+        || entry
+            .work_id
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
         || entry
             .work_root
             .as_deref()
@@ -63,10 +68,14 @@ fn valid(entry: &Entry) -> Result<(), String> {
                     .as_deref()
                     .is_some_and(|root| !value.starts_with(&format!("{root}/")))
         })
-        || entry.catalog_commit.as_deref().is_some_and(|value| {
-            value.len() != 40 || !value.bytes().all(|b| b.is_ascii_hexdigit())
-        })
-        || entry.scene.as_deref().is_some_and(|value| !valid_identifier(value))
+        || entry
+            .catalog_commit
+            .as_deref()
+            .is_some_and(|value| value.len() != 40 || !value.bytes().all(|b| b.is_ascii_hexdigit()))
+        || entry
+            .scene
+            .as_deref()
+            .is_some_and(|value| !valid_identifier(value))
         || entry
             .format
             .as_deref()
@@ -214,6 +223,7 @@ mod tests {
             name: "A".into(),
             repo: "owner/a".into(),
             episode: "P01".into(),
+            ..Default::default()
         };
         register(&base, a.clone()).unwrap();
         let b = Entry {
@@ -221,6 +231,7 @@ mod tests {
             name: "B".into(),
             repo: "owner/b".into(),
             episode: "P02".into(),
+            ..Default::default()
         };
         register(&base, b.clone()).unwrap();
         let before = std::fs::read(base.join("source-library.json")).unwrap();

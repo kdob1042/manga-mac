@@ -3,11 +3,11 @@
   "repository": "kdob1042/story-library",
   "commit": "01195d99ec07cdec875dcce6b7bab58be9563c73",
   "files": [
-    "contracts/library/ids.mjs",
-    "contracts/library/errors.mjs",
-    "contracts/library/paths.mjs",
-    "contracts/library/catalog.mjs",
-    "contracts/library/catalog.schema.json",
-    "contracts/library/source-map.mjs"
+    "contracts/story-library/ids.mjs",
+    "contracts/story-library/errors.mjs",
+    "contracts/story-library/paths.mjs",
+    "contracts/story-library/catalog.mjs",
+    "contracts/story-library/catalog.schema.json",
+    "contracts/story-library/source-map.mjs"
   ]
 }
