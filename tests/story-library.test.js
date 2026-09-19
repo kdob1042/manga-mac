@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchStoryLibrary,fetchStoryLibraryWork,libraryManifestLocation,manifestOutline,validateLibraryCatalog} from '../src/story-library.js';
+import {availableStoryWorks,fetchStoryLibrary,fetchStoryLibraryWork,libraryManifestLocation,manifestOutline,validateLibraryCatalog} from '../src/story-library.js';
 
 const sha='a'.repeat(40);
 const catalog={format:'story-library/v1',authorityUntil:'M8',works:[
@@ -42,4 +42,9 @@ test('fetches catalog, source-map and selected manifest at one immutable commit'
 test('outline supports the canonical nested episode shape',()=> {
  const outline=manifestOutline({format:'story-source/v1',episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'},{id:'P01-02',path:'manuscript/p01/p01-02.md'}]}],settings:[],characters:[],work:{title:'作品'}});
  assert.deepEqual(outline[0].scenes.map(scene=>scene.id),['P01-01','P01-02']);
+});
+
+test('catalog work selection only exposes manga works to the production app',()=> {
+ assert.deepEqual(availableStoryWorks(catalog,'manga').map(work=>work.id),['work-a']);
+ assert.deepEqual(availableStoryWorks(catalog,'novel').map(work=>work.id),['work-b']);
 });
