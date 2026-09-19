@@ -26,7 +26,7 @@ export default function SourceLibrary({
       <h3>原稿ライブラリ</h3>
       <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · catalog @ ${catalog.sha.slice(0,8)}` : ''}</p>
       <button disabled={busy} onClick={()=>run('原稿一覧を更新中',onRefreshCatalog)}>一覧を更新</button>
-      {!catalog&&<small>「制作の準備」でGitHubリポジトリと読み取り専用トークンを設定してから更新します。</small>}
+      {!catalog&&<small>「制作の準備」で読み取り専用トークンを設定してから更新します。接続先は固定です。</small>}
       {!!catalog&&<label>作品を選ぶ
         <select aria-label="原稿ライブラリの作品" disabled={busy} value={selectedWorkId||''} onChange={e=>run('作品を読み込み中',()=>onSelectWork(e.target.value))}>
           <option value="" disabled>作品を選択</option>
@@ -46,7 +46,7 @@ export default function SourceLibrary({
       {!!catalog?.work&&<small>本文・設定・人物基準画像は、catalogと同じ取得commitに固定して「GitHub側の更新を確認」から読み込みます。</small>}
     </section>
     <section aria-label="旧形式の作品登録">
-      <button disabled={busy} onClick={()=>setAdding(!adding)}>旧形式の作品を追加</button>
+      <button disabled={busy} onClick={()=>setAdding(!adding)}>作品を追加</button>
       {adding&&<div>
         <label>作品表示名<input value={name} onChange={e=>setName(e.target.value)}/></label>
         <label>追加するGitHubリポジトリ<input value={newRepo} onChange={e=>setNewRepo(e.target.value)} placeholder="owner/repository"/></label>
