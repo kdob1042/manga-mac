@@ -1,5 +1,5 @@
 import { initialLayout, validateLayout, layoutWarnings, PAGE } from './layout.js';
-import { frameRect, panelArtRect } from './page-art.js';
+import { livePanelGeometry } from './page-art.js';
 import { validate, VERSION } from '../vendor/live-manga/contracts/validate.mjs';
 import { pageLayers } from './render.js';
 import { imageOf } from './canvas-image.js';
@@ -22,8 +22,8 @@ export async function prepareLiveManga(project, probeVideo) {
   for(const [name,layer] of [['art','art'],['overlay','overlay'],['fallback','complete']])page[name]=await image(await pageLayers(panels,project.snapshots,project.localizations,project.output_locale,layer,layoutPage,false,layout.imageCrops??{}));
   for(const [i,p] of panels.entries()) {
    const im=await imageOf(p.image),snapshot=project.snapshots.find(s=>s.id===p.snapshotId),localization=project.output_locale==='en'?project.localizations.find(l=>l.snapshot_id===p.snapshotId&&l.locale==='en'):null;
-   // Publication clip/frame/artRect stay on the home frame; overflow is baked into page rasters only.
-   const panel={id:p.id,frame:frameRect(layoutPage.slots[i].points),clip:layoutPage.slots[i].points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]),artRect:panelArtRect(layoutPage.slots[i].points,im.width,im.height,layout.imageCrops?.[p.id]),poster:await image(p.image),text:panelHasText(p)?textForPanel(p,p.sourceRefs?project.snapshots:snapshot,p.sourceRefs&&project.output_locale==='en'?project.localizations:localization):''};
+   const {frame,clip,artRect}=livePanelGeometry(layoutPage.slots[i],im.width,im.height,layout.imageCrops?.[p.id]);
+   const panel={id:p.id,frame,clip,artRect,poster:await image(p.image),text:panelHasText(p)?textForPanel(p,p.sourceRefs?project.snapshots:snapshot,p.sourceRefs&&project.output_locale==='en'?project.localizations:localization):''};
    const status=await motionStatus(project,p);if(status.state==='stale')throw Error(`コマ ${pageIndex+1}ページ・${i+1}: ${status.message}。動画の変更または割当解除が必要です`);
    if(status.revision) {
     const v=status.revision,meta=await probeVideo(v.id),a={id:v.artifact.hash,path:`assets/${v.artifact.hash}.mp4`,sha256:v.artifact.hash,mime:'video/mp4',bytes:v.artifact.size,...meta};

@@ -1,5 +1,5 @@
 import { validateLayout, PAGE } from './layout.js';
-import { frameRect, panelArtRect } from './page-art.js';
+import { livePanelGeometry } from './page-art.js';
 import { panelHasText } from './core.js';
 import { panelSceneTags } from './source-tags.js';
 import { textForPanel } from './localization.js';
@@ -48,8 +48,8 @@ export async function preparePreview(captured, { image, layers, placeholder, pro
       const snapshot = project.snapshots.find(s => s.id === p.snapshotId);
       const localization = project.output_locale === 'en' ? project.localizations?.find(l => l.snapshot_id === p.snapshotId && l.locale === 'en') : null;
       const text = lettering === 'none' ? '' : textForPanel(p,p.sourceRefs ? project.snapshots : snapshot,p.sourceRefs && project.output_locale === 'en' ? project.localizations : localization);
-      // Publication clip/frame/artRect stay on the home frame; overflow is baked into page rasters only.
-      const panel = {id:p.id,frame:frameRect(slot.points),clip:slot.points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]),artRect:panelArtRect(slot.points,poster.width,poster.height,layout.imageCrops?.[p.id]),poster:poster.id,text};
+      const {frame,clip,artRect}=livePanelGeometry(slot,poster.width,poster.height,layout.imageCrops?.[p.id]);
+      const panel = {id:p.id,frame,clip,artRect,poster:poster.id,text};
       const status = await motionStatus(project,p);
       let motion = status.state === 'stale' ? 'stale' : 'none';
       if (status.revision && art === 'ready') {

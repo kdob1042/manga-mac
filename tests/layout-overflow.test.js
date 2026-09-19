@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {template,ensureLayout,validateLayout,layoutWarnings,changeLayout,undoLayout,artPoints,overflowDrawOrder,assertLegacyLiveLayout,PAGE} from '../src/layout.js';
+import {livePanelGeometry,panelArtRect} from '../src/page-art.js';
 import {layoutSchema} from '../src/layout-ai.js';
 import {requiredScale} from '../src/upscale.js';
 import {preparePreview} from '../src/live-preview.js';
@@ -92,10 +93,18 @@ test('live preview clip stays on the home frame when overflow is set',async()=>{
  p.workId='work';p.revision=1;p.title='overflow';p.snapshots=[{id:'s',repo:'t/s',episodeId:'ep',scenes:[{id:'a',text:'原稿',tags:[]}]}];
  p.panels=p.panels.map((panel,i)=>({...panel,sourceRefs:[],image:i?'art':null,snapshotId:'s',sceneId:'a'}));
  p.layout.pages[0].slots[0].overflow={points:[[0,0],[1,0],[1,1],[0,1]]};
- const home=p.layout.pages[0].slots[0].points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]);
+ const slot=p.layout.pages[0].slots[0];
+ const home=slot.points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]);
+ const expected=livePanelGeometry(slot,720,720);
+ const homeOnly=panelArtRect(slot.points,720,720);
  const {preview}=await preparePreview({project:p,revision:'r',savedAt:'2026-09-19T00:00:00.000Z'},{
   image:async data=>{const id=sha(data),page=data.startsWith('layer');return {id,sha256:id,path:`assets/${id}.png`,mime:'image/png',bytes:Buffer.byteLength(data),width:page?1600:720,height:page?2260:720};},
   placeholder:async()=>'placeholder',layers:async(_panels,_project,layer)=>'layer:'+layer,probeVideo:async()=>{throw Error('pending');},
  });
- assert.deepEqual(preview.manifest.pages[0].panels[0].clip,home);
+ const live=preview.manifest.pages[0].panels[0];
+ assert.deepEqual(live.clip,home);
+ assert.deepEqual(live.frame,expected.frame);
+ assert.deepEqual(live.artRect,expected.artRect);
+ assert.notDeepEqual(live.artRect,homeOnly);
+ assert.ok(live.artRect.x<=live.frame.x&&live.artRect.y<=live.frame.y&&live.artRect.x+live.artRect.width>=live.frame.x+live.frame.width&&live.artRect.y+live.artRect.height>=live.frame.y+live.frame.height);
 });

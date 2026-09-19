@@ -88,7 +88,10 @@ test('overflowing figure sits on top while neighbor panels stay visible',async({
    },
    placeholder:async()=>'ph',layers:async(_a,_b,layer)=>'layer:'+layer,probeVideo:async()=>{throw Error('pending');},
   });
-  return {onFigure:pixel(...onFigure),besideFigure:pixel(...besideFigure),outsideOverflow:pixel(...outsideOverflow),warnings:layoutWarnings(p.layout,p.panels),clip:preview.preview.manifest.pages[0].panels[0].clip,home,onFigureAt:onFigure,besideAt:besideFigure};
+  const {livePanelGeometry,panelArtRect}=await import('/src/page-art.js');
+  const live=preview.preview.manifest.pages[0].panels[0];
+  const expected=livePanelGeometry(pg.slots[0],720,720);
+  return {onFigure:pixel(...onFigure),besideFigure:pixel(...besideFigure),outsideOverflow:pixel(...outsideOverflow),warnings:layoutWarnings(p.layout,p.panels),clip:live.clip,home,artRect:live.artRect,expectedArtRect:expected.artRect,homeOnlyArtRect:panelArtRect(pg.slots[0].points,720,720),frame:live.frame,onFigureAt:onFigure,besideAt:besideFigure};
  },legacy);
  expect(sample.warnings).toEqual([]);
  expect(sample.onFigure[0]).toBeGreaterThan(200);
@@ -98,6 +101,12 @@ test('overflowing figure sits on top while neighbor panels stay visible',async({
  expect(sample.outsideOverflow[2]).toBeGreaterThan(200);
  expect(sample.outsideOverflow[0]).toBeLessThan(80);
  expect(sample.clip).toEqual(sample.home);
+ expect(sample.artRect).toEqual(sample.expectedArtRect);
+ expect(sample.artRect).not.toEqual(sample.homeOnlyArtRect);
+ expect(sample.artRect.x).toBeLessThanOrEqual(sample.frame.x);
+ expect(sample.artRect.y).toBeLessThanOrEqual(sample.frame.y);
+ expect(sample.artRect.x+sample.artRect.width).toBeGreaterThanOrEqual(sample.frame.x+sample.frame.width);
+ expect(sample.artRect.y+sample.artRect.height).toBeGreaterThanOrEqual(sample.frame.y+sample.frame.height);
 });
 test('lettering overlap rejects finished PNG and CBZ but draft still renders',async({page})=>{
  await page.goto('/');

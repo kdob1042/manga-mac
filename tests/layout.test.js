@@ -84,7 +84,7 @@ test('optional overflow is validated and omitted from templates',()=>{
  assert.throws(()=>validateLayout(l,panels),/はみ出し領域はページ内/);
 });
 test('publication placement covers the frame by default and shares free-layout crop transforms',async()=>{
- const {frameRect,panelArtRect}=await import('../src/page-art.js');
+ const {frameRect,panelArtRect,livePanelGeometry}=await import('../src/page-art.js');
  const {defaultCrop,containCrop}=await import('../src/image-crop.js');
  const slots=template(4,panels.slice(0,4).map(p=>p.id));
  const f0=frameRect(slots[0].points),base=panelArtRect(slots[0].points,512,512);
@@ -92,6 +92,12 @@ test('publication placement covers the frame by default and shares free-layout c
  assert.ok(base.x<=f0.x&&base.y<=f0.y&&base.x+base.width>=f0.x+f0.width&&base.y+base.height>=f0.y+f0.height);
  assert.equal(base.width/base.height,1);
  assert.deepEqual(panelArtRect(slots[0].points,512,512,containCrop()),{x:822,y:62,width:716,height:716});
+ const live=livePanelGeometry(slots[0],512,512);
+ assert.deepEqual(live.frame,f0);
+ assert.deepEqual(live.clip,slots[0].points.map(([x,y])=>[x*1600,y*2260]));
+ assert.deepEqual(live.artRect,base);
+ const contained=livePanelGeometry(slots[0],512,512,containCrop());
+ assert.deepEqual(contained.artRect,{x:822,y:62,width:716,height:716});
  slots[0].points[0][0]+=.04;
  const f=frameRect(slots[0].points),r=panelArtRect(slots[0].points,512,512,{zoom:2,x:.75,y:.25});
  assert.ok(r.x<f.x&&r.y<f.y&&r.x+r.width>=f.x+f.width&&r.y+r.height>=f.y+f.height);
