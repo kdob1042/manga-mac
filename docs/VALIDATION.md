@@ -436,3 +436,5 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 成果物は同runの`Blender-candidate-review`、`blender-results/live-acceptance.json`と両PNG。初回の30秒でcamera renderがタイムアウトしたため、MCP要求を180秒（native 185秒）に制限付きで拡張した。応答不明時の自動再送は行わない。
 
 その後、人物のrename/複製時の明示再割当を追加し、Node **214件pass**、Web build passを確認。Macアプリ本体のnativeビルド・GUI往復、実モデルの自然言語判断、Mac上での候補採用/Undo通し受入と24GB性能は引き続きnot_run。Linuxの合格でMac実機合格へ置き換えない。
+
+未実施のMac実機受入は #184（接続）、#185（観測）、#186（実LLM判断）、#187（制御交代と候補採用）へ移管。親計画 #175 は継続する。追加回帰試験として管理領域とsymlink経由のcheckpoint接続拒否、および実GUIでpending要求中のサーバー停止が2秒未満で戻ることを検査する。最新の実行結果はPR #183のActionsを参照。

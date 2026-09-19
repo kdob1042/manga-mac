@@ -213,7 +213,7 @@ FFmpeg/ffprobeが必要。Homebrew利用環境では `brew install ffmpeg`。ア
 ## 開いているBlenderへのlive接続（#176）
 
 1. リポジトリrootで `python3 scripts/package-live-addon.py` を実行し、生成された `dist/manga_mac_live.zip` をBlender 4.5の Preferences → Add-ons → Install from Diskで導入・有効化する。
-2. 対象の編集用blendを自分で開く。3D ViewのNパネル → Manga Live → Start local connection。採用済みcheckpointそのものを編集用に開かない。
+2. 対象の編集用blendを自分で開く。3D ViewのNパネル → Manga Live → Start local connection。採用済みcheckpointそのものを編集用に開かない。アプリ保存領域の外へ作業用コピーを保存して開く（管理領域内のファイルとそのsymlinkへの接続は拒否される）。
 3. アプリ設定 → 開いているBlenderへlive接続。Blender表示のinstance/token、file（未保存なら空）、Scene/View Layerを入力して接続する。外部hostの入力欄はなく127.0.0.1限定。
 4. 疎通確認でfile/scene/cameraを確認。切断後もBlenderと未保存変更はそのまま残る。再接続は切断→対象を再確認→token再入力。別file読込やundo/redo後は再接続が必要。
 
