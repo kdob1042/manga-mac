@@ -9,7 +9,7 @@ import {
   overflowDrawOrder,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
-import { wrapText, validateLettering, letteringKind, isCustomLetteringBox } from './lettering';
+import { wrapText, validateLettering, letteringKind, isCustomLetteringBox } from './lettering.js';
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
