@@ -57,9 +57,10 @@ function normalizeInvestorLifeManifest(manifest) {
       throw Error('investor-life-source/v1の章が不正です');
     }
     for (const episode of chapter.episodes) {
-      if (!episode || typeof episode !== 'object' || typeof episode.id !== 'string' || !STABLE_ID.test(episode.id) || typeof episode.title !== 'string' || typeof episode.path !== 'string') {
+      if (!episode || typeof episode !== 'object' || typeof episode.id !== 'string' || typeof episode.title !== 'string' || typeof episode.path !== 'string') {
         throw Error('investor-life-source/v1の話が不正です');
       }
+      if (!STABLE_ID.test(episode.id)) throw Error('investor-life-source/v1の話IDが不正です');
       if (used.has(episode.id)) throw Error('investor-life-source/v1の話IDが重複しています');
       safePath(episode.path);
       used.add(episode.id);
