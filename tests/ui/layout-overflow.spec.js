@@ -60,7 +60,7 @@ test('overflow art covers the neighbor home while live clip stays on the overflo
   const {template,pagePanels,PAGE,layoutWarnings}=await import('/src/layout.js');
   p.layout.pages=[{id:'one',slots:template(2,['red','blue'])}];
   const baseline=await (await import('/src/render.js')).pagePNG(pagePanels(p,p.layout.pages[0]),p.snapshots,[], 'ja',p.layout.pages[0],false);
-  p.layout.pages[0].slots[0].overflow={points:[[0.20,0.02],[0.98,0.02],[0.98,0.50],[0.20,0.50]]};
+  p.layout.pages[0].slots[0].overflow={points:[[0.20,0.02],[0.98,0.02],[0.98,0.98],[0.20,0.98]]};
   await saveProject(p);
   p=await loadProject();
   const {pagePNG}=await import('/src/render.js');
@@ -70,8 +70,8 @@ test('overflow art covers the neighbor home while live clip stays on the overflo
   const img=new Image();img.src=data;await img.decode();
   const c=document.createElement('canvas');c.width=PAGE.width;c.height=PAGE.height;c.getContext('2d').drawImage(img,0,0);
   const pixel=(x,y)=>Array.from(c.getContext('2d').getImageData(x|0,y|0,1,1).data);
-  const covered=pixel(0.35*PAGE.width,0.25*PAGE.height);
-  const uncovered=pixel(0.10*PAGE.width,0.25*PAGE.height);
+  const covered=pixel(0.35*PAGE.width,0.40*PAGE.height);
+  const uncovered=pixel(0.10*PAGE.width,0.40*PAGE.height);
   const home=pg.slots[0].points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]);
   p.workId='work';p.title=p.title||'overflow';
   const preview=await preparePreview({project:p,revision:'abcd',savedAt:'2026-09-19T00:00:00.000Z'},{
