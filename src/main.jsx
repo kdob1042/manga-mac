@@ -132,9 +132,10 @@ function App() {
     const work=detail.work, first=detail.outline[0], firstScene=first?.scenes[0];
     if (!first || !firstScene) throw Error('選択作品に話・シーンがありません');
     const entry=library?.entries.find(item=>item.id===library.active);
-    const sameWork=entry?.work_id===work.id;
+    const sameWork=entry?.work_id===work.id && entry?.repo===libraryCatalog.repo;
+    const existingWorkEntry=library?.entries.find(item=>item.work_id===work.id && item.repo===libraryCatalog.repo);
     const hasContent=!!(current.current.snapshots?.length||current.current.panels?.length||current.current.jobs?.length);
-    const workspaceId=sameWork ? entry.id : (!hasContent && entry && !entry.work_id ? entry.id : null);
+    const workspaceId=sameWork ? entry.id : (existingWorkEntry?.id ?? (!hasContent && entry && !entry.work_id ? entry.id : null));
     const result=await persistLibrarySelection(work,detail,first.id,firstScene.id,workspaceId);
     setLibraryCatalog({...libraryCatalog,...detail}); setSelectedWorkId(work.id); setEpisode(first.id); setSelectedSceneId(firstScene.id);
     if (result.id !== library?.active) { await call('backup_open',{workspace:result.id}); return; }
@@ -177,7 +178,7 @@ function App() {
       }
       const libraryOptions=entry?.work_id ? {
         commit:libraryCatalog?.sha ?? entry.catalog_commit,
-        workId:entry.work_id, workRoot:entry.work_root, manifestPath:entry.manifest_path,
+        workId:entry.work_id, workRoot:entry.work_root, sourceRoot:entry.work_root, manifestPath:entry.manifest_path,
         sceneId:selectedSceneId || entry.scene, format:entry.format,
       } : {};
       const next=await syncSource(repo,token,episode,snapshot,call,libraryOptions);

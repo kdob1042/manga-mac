@@ -7,7 +7,6 @@ export default function SourceLibrary({
   onRefreshCatalog, onSelectWork, onSelectEpisode, onSelectScene,
 }) {
   const [adding,setAdding]=useState(false),[name,setName]=useState(''),[newRepo,setNewRepo]=useState(''),[newEpisode,setNewEpisode]=useState('P01');
-  const activeEntry=library.entries.find(entry=>entry.id===library.active);
   const works=catalog?.catalog?.works ?? [];
   const outline=catalog?.outline ?? [];
   const selectedEpisode=outline.find(item=>item.id===selectedEpisodeId);
@@ -35,7 +34,7 @@ export default function SourceLibrary({
       </label>}
       {!!catalog?.work&&<label>話を選ぶ
         <select aria-label="原稿ライブラリの話" disabled={busy} value={selectedEpisodeId||''} onChange={e=>run('話を選択中',()=>onSelectEpisode(e.target.value))}>
-          {outline.map(item=><option key={item.id} value={item.id}>{item.chapterTitle ? `${item.chapterTitle} / ${item.title}` : item.title} · ${item.id}</option>)}
+          {outline.map(item=><option key={item.id} value={item.id}>{item.chapterTitle ? `${item.chapterTitle} / ${item.title}` : item.title} · {item.id}</option>)}
         </select>
       </label>}
       {!!selectedEpisode&&<label>シーンを選ぶ

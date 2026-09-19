@@ -140,7 +140,7 @@ mod tests {
                 name: "B".into(),
                 repo: "owner/b".into(),
                 episode: "P02".into(),
-                ..Default::default(),
+                ..Default::default()
             },
         )
         .unwrap();
@@ -187,7 +187,7 @@ mod tests {
                 name: "work".into(),
                 repo: "owner/work".into(),
                 episode: "P01".into(),
-                ..Default::default(),
+                ..Default::default()
             },
         )
         .unwrap();

@@ -40,6 +40,6 @@ test('fetches catalog, source-map and selected manifest at one immutable commit'
 });
 
 test('outline supports the canonical nested episode shape',()=> {
- const outline=manifestOutline({format:'story-source/v1',episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01'},{id:'P01-02'}]}],settings:[],characters:[],work:{title:'作品'}});
+ const outline=manifestOutline({format:'story-source/v1',episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'},{id:'P01-02',path:'manuscript/p01/p01-02.md'}]}],settings:[],characters:[],work:{title:'作品'}});
  assert.deepEqual(outline[0].scenes.map(scene=>scene.id),['P01-01','P01-02']);
 });
