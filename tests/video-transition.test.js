@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { migrateProject } from '../src/revisions.js';
+import { migrateProject, imageHash } from '../src/revisions.js';
 import { template } from '../src/layout.js';
 import { videoManifest, beginVideoJob, videoJobIsCurrent } from '../src/video.js';
 import { adjacentPanelPairs, createAdjacentVideoShot, createSelectedAdjacentVideoShots } from '../src/video-transition.js';
@@ -14,8 +14,11 @@ async function pairFixture() {
   const project = await migrateProject(legacy);
   const from = project.panels[0];
   const sourceArtwork = project.artworks.find(artwork => artwork.id === from.artwork_revision);
-  const to = { ...structuredClone(from), id: 's:p1', artwork_revision: 'fixture:artwork:p1' };
-  const toArtwork = { ...structuredClone(sourceArtwork), id: to.artwork_revision, panel: structuredClone(to) };
+  // Two distinct square artwork bytes, plus the legacy character reference image.
+  // Keeping dimensions equal exercises the real A/B byte ordering without a crop.
+  const alternateImage = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+  const to = { ...structuredClone(from), id: 's:p1', image: alternateImage, artwork_revision: 'fixture:artwork:p1' };
+  const toArtwork = { ...structuredClone(sourceArtwork), id: to.artwork_revision, hash: await imageHash(alternateImage), panel: structuredClone(to) };
   return {
     ...project,
     panels: [from, to],
@@ -49,6 +52,7 @@ test('A→B manifest preserves adopted artwork identities, dimensions and ordere
   assert.equal(request.manifest.providerInputs[1].id, shot.transition.toArtworkRevisionId);
   assert.equal(request.manifest.providerInputs[0].hash, shot.transition.fromArtworkHash);
   assert.equal(request.manifest.providerInputs[1].hash, shot.transition.toArtworkHash);
+  assert.notEqual(request.manifest.providerInputs[0].hash, request.manifest.providerInputs[1].hash);
   assert.equal(request.manifest.source.from.panelId, shot.transition.fromPanelId);
   assert.equal(request.manifest.source.to.panelId, shot.transition.toPanelId);
   const started = await beginVideoJob(withShot, shot.id, fixtureConnection);
