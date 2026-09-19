@@ -58,8 +58,7 @@ test('overflowing figure sits on top while neighbor panels stay visible',async({
   fixture.history=[];fixture.jobs=[];
   await saveProject(fixture);
   let p=await loadProject();
-  const {template,pagePanels,PAGE,layoutWarnings,artPoints}=await import('/src/layout.js');
-  const {panelArtRect}=await import('/src/page-art.js');
+  const {template,pagePanels,PAGE,layoutWarnings}=await import('/src/layout.js');
   p.layout.pages=[{id:'one',slots:template(2,['red','blue'])}];
   p.layout.pages[0].slots[0].overflow={points:[[0.20,0.02],[0.98,0.02],[0.98,0.98],[0.20,0.98]]};
   await saveProject(p);
@@ -71,9 +70,12 @@ test('overflowing figure sits on top while neighbor panels stay visible',async({
   const img=new Image();img.src=data;await img.decode();
   const c=document.createElement('canvas');c.width=PAGE.width;c.height=PAGE.height;c.getContext('2d').drawImage(img,0,0);
   const pixel=(x,y)=>Array.from(c.getContext('2d').getImageData(x|0,y|0,1,1).data);
-  const art=panelArtRect(artPoints(pg.slots[0]),768,768);
-  const onFigure=[art.x+art.width*0.22,art.y+art.height*0.5];
-  const besideFigure=[art.x+art.width*0.05,art.y+art.height*0.5];
+  const homeLeft=Math.min(...pg.slots[0].points.map(p=>p[0]))*PAGE.width;
+  const overflowLeft=Math.min(...pg.slots[0].overflow.points.map(p=>p[0]))*PAGE.width;
+  const overflowTop=Math.min(...pg.slots[0].overflow.points.map(p=>p[1]))*PAGE.height;
+  const midX=overflowLeft+(homeLeft-overflowLeft)*0.35;
+  const onFigure=[midX,PAGE.height*0.5];
+  const besideFigure=[midX,overflowTop+PAGE.height*0.04];
   const outsideOverflow=[0.10*PAGE.width,0.40*PAGE.height];
   const home=pg.slots[0].points.map(([x,y])=>[x*PAGE.width,y*PAGE.height]);
   p.workId='work';p.title=p.title||'overflow';

@@ -1,5 +1,5 @@
 import {containRect} from './image-input.js';
-import {cropRect} from './image-crop.js';
+import {coverCrop,cropRect} from './image-crop.js';
 import {artPoints,bounds,contentBox,PAGE,inside} from './layout.js';
 
 export const visualSchema={type:'object',properties:{uncertain:{type:'boolean'},reason:{type:'string'},regions:{type:'array',maxItems:32,items:{type:'object',properties:{panelId:{type:'string'},purpose:{type:'string',enum:['edit','avoid','subject']},label:{type:'string'},rect:{type:'array',minItems:4,maxItems:4,items:{type:'number'}}},required:['panelId','purpose','label','rect'],additionalProperties:false}}},required:['uncertain','reason','regions'],additionalProperties:false};
@@ -21,10 +21,11 @@ function geometry(project,id,size) {
   const letterScale=Math.min(home.width/720,home.height/1030);
   const letters={x:home.x+(home.width-720*letterScale)/2+2*letterScale,y:home.y+(home.height-1030*letterScale)/2+2*letterScale,width:716*letterScale,height:716*letterScale};
   const crop=project.layout.imageCrops?.[id],b=bounds(artPoints(slot));
+  const cover=coverCrop(crop);
   const artScale=Math.min(art.width/720,art.height/1030);
   const artBox={x:art.x+(art.width-720*artScale)/2+2*artScale,y:art.y+(art.height-1030*artScale)/2+2*artScale,width:716*artScale,height:716*artScale};
   const fitted=containRect(size.width,size.height,artBox.width,artBox.height);
-  const image=crop?cropRect(size.width,size.height,{x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},crop):{...fitted,x:artBox.x+fitted.x,y:artBox.y+fitted.y};
+  const image=cover?cropRect(size.width,size.height,{x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},cover):{...fitted,x:artBox.x+fitted.x,y:artBox.y+fitted.y};
   return {letters,image,slot};
 }
 export function letteringRegions(project,id,visual) {

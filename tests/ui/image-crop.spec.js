@@ -8,7 +8,7 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
  await page.getByRole('button',{name:'画像トリミング',exact:true}).click();
  const slot=page.getByTestId('layout-slot-0');
- await slot.click({position:{x:60,y:45}});await page.getByRole('button',{name:'このコマを全面表示にする'}).click();
+ await slot.click({position:{x:60,y:45}});await page.getByRole('button',{name:'画像を中央・等倍に戻す'}).click();
  const load=()=>page.evaluate(async()=>await (await import('/src/bridge.js')).loadProject());
  const p=await load(),id=p.panels[0].id;expect(p.layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5});
  await slot.click({position:{x:60,y:45}});await page.getByLabel('画像の拡大率',{exact:true}).selectOption('2');
@@ -27,5 +27,9 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  const png=await pagePNG(panels,p.snapshots,[],'ja',pg,false,p.layout.imageCrops);
  return {sameText:before===after,png:png.split(',')[1],cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer()))};});
  expect(result.sameText).toBe(true);const zip=await JSZip.loadAsync(result.cbz);expect(await zip.file('001.png').async('base64')).toBe(result.png);
+ await page.getByRole('button',{name:'画像全体を枠内に収める'}).click();
+ await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5,fit:'contain'});
+ await page.getByRole('button',{name:'このコマを全面表示にする'}).click();
+ await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5});
  await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await page.screenshot({path:'test-results/image-crop.png',fullPage:true});
 });

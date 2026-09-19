@@ -1,6 +1,6 @@
 import React, {useEffect,useRef,useState} from 'react';
 import {template,validQuad,changeLayout,undoLayout,layoutWarnings,pagePanels,bounds,PAGE,layoutSplice,applyLayoutSplices,reflowLayoutInterval,artPoints,inside} from './layout.js';
-import {defaultCrop,cropRect,panCrop} from './image-crop.js';
+import {defaultCrop,containCrop,coverCrop,cropRect,panCrop} from './image-crop.js';
 import { imageOf } from './canvas-image.js';
 import { pagePNG } from './render.js';
 import {proposeLayout,adoptLayoutProposal,layoutBase} from './layout-ai.js';
@@ -29,12 +29,13 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   }
   function containsHome(home,overflow){return home.every(p=>inside(p,overflow));}
   function start(e,slot,{vertex=null,overflow=false}={}){if(busy||e.button!==0)return;e.preventDefault();e.stopPropagation();setActive(slot.id);
-    if(imageMode && (!project.layout.imageCrops?.[slot.panelId] || !dimensions[slot.panelId]))return;
+    if(imageMode && (!slot.panelId || !dimensions[slot.panelId]))return;
     gesture.current={pointer:e.pointerId,start:position(e),slot:structuredClone(slot),vertex,overflow,base:project.layout,imageMode};e.currentTarget.setPointerCapture(e.pointerId);}
   function move(e){const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;const at=position(e);
-    if(g.imageMode){const points=artPoints(g.slot),b=bounds(points),box={x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},crop=g.base.imageCrops[g.slot.panelId];
+    if(g.imageMode){const points=artPoints(g.slot),b=bounds(points),box={x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},crop=coverCrop(g.base.imageCrops?.[g.slot.panelId]);
+      if(!crop)return;
       const r=cropRect(...dimensions[g.slot.panelId],box,crop),next=structuredClone(g.base);
-      next.imageCrops[g.slot.panelId]=panCrop(crop,r,box,(at[0]-g.start[0])*PAGE.width,(at[1]-g.start[1])*PAGE.height);
+      next.imageCrops??={};next.imageCrops[g.slot.panelId]=panCrop(crop,r,box,(at[0]-g.start[0])*PAGE.width,(at[1]-g.start[1])*PAGE.height);
       draftRef.current=next;setDraft(next);return;}
     const next=structuredClone(g.base),target=next.pages[pageIndex].slots.find(s=>s.id===g.slot.id);
     if(g.overflow){
@@ -62,7 +63,8 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   }
   const warnings=layout?layoutWarnings(layout,project.panels):[];
   const slot=page?.slots.find(s=>s.id===active);
-  const crop=slot && layout.imageCrops?.[slot.panelId];
+  const stored=slot && layout.imageCrops?.[slot.panelId];
+  const crop=coverCrop(stored);
   function setCrop(value){update(l=>{l.imageCrops??={};if(value)l.imageCrops[slot.panelId]=value;else delete l.imageCrops[slot.panelId];},'画像配置を保存');}
   async function propose(){
     const frozen=structuredClone(current.current),base=layoutBase(frozen),scope=whole?frozen.layout.pages.map(p=>p.id):frozen.layout.pages.slice(pageIndex,pageIndex+rangeLength).map(p=>p.id);
@@ -83,9 +85,10 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     <div className="toolbar"><strong>コマ割り編集</strong><button disabled={busy||!project.layoutHistory?.length} onClick={()=>run('枠を戻す',()=>commit(undoLayout(current.current)))}>枠をUndo</button><button disabled={busy||!project.layoutRedo?.length} onClick={()=>run('枠をやり直す',()=>commit(undoLayout(current.current,true)))}>枠をRedo</button><button disabled={busy} onClick={()=>run('ページ追加',async()=>{const p=current.current,at=p.layout.pages.length?pageIndex+1:0;await commitSplices(p,[layoutSplice(p,at,0,[{id:crypto.randomUUID(),slots:template(count)}])],'ページ追加');setPage(at);})}>ページ追加</button><button disabled={busy||!page} onClick={()=>run('ページ削除',async()=>{const p=current.current;await commitSplices(p,[layoutSplice(p,pageIndex,1,[])],'ページ削除');setPage(Math.max(0,pageIndex-1));})}>このページを外す</button></div>
     <p>コマを選び、四隅をドラッグして変形。枠内をドラッグすると全体を移動します。Escで取消。絵や本文は変更しません。枠破りでは、従来のコマ割りを描いたうえに、ホーム枠の外へ出る作画だけが隣の上に乗ります。破線ははみ出し範囲です。</p>
     <div className="toolbar"><button aria-pressed={!imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(false);}}>枠を編集</button><button aria-pressed={imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(true);}}>画像トリミング</button></div>
-    {imageMode && <div className="crop-controls"><p>枠を選択してトリミングを有効にすると、画像だけをドラッグできます。元画像・セリフ・吹き出しは変更しません。通常の作画画面は原本表示です。</p>
-      {slot?.panelId && <><button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(defaultCrop())}>{crop?'画像を中央・等倍に戻す':'このコマを全面表示にする'}</button>
-      {crop && <><label>画像の拡大率<select aria-label="画像の拡大率" disabled={busy} value={crop.zoom} onChange={e=>setCrop({...crop,zoom:Number(e.target.value)})}>{[1,1.25,1.5,2,3,4,6,8].map(n=><option key={n} value={n}>{n}倍</option>)}</select></label><button disabled={busy} onClick={()=>setCrop(null)}>従来の全体表示に戻す</button></>}</>}
+    {imageMode && <div className="crop-controls"><p>既定はコマ形状でマスクした全面表示です。枠を選ぶと画像をドラッグできます。元画像・セリフ・吹き出しは変更しません。通常の作画画面は原本表示です。</p>
+      {slot?.panelId && <><button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(defaultCrop())}>画像を中央・等倍に戻す</button>
+      {crop && <label>画像の拡大率<select aria-label="画像の拡大率" disabled={busy} value={crop.zoom} onChange={e=>setCrop({zoom:Number(e.target.value),x:crop.x,y:crop.y})}>{[1,1.25,1.5,2,3,4,6,8].map(n=><option key={n} value={n}>{n}倍</option>)}</select></label>}
+      <button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(crop?containCrop():defaultCrop())}>{crop?'画像全体を枠内に収める':'このコマを全面表示にする'}</button></>}
     </div>}
     <div className="toolbar"><label>対象ページ数<input aria-label="対象ページ数" type="number" min="1" max={Math.max(1,project.layout.pages.length-pageIndex)} value={rangeLength} onChange={e=>setRangeCount(Math.max(1,Math.floor(Number(e.target.value)||1)))}/></label><label>枠数<select aria-label="枠数" value={count} onChange={e=>setCount(Number(e.target.value))}>{Array.from({length:16},(_,i)=><option key={i} value={i+1}>{i+1}コマ</option>)}</select></label><button disabled={busy||!page} onClick={()=>run('このページを詰め直す',()=>{const p=current.current;return commitSplices(p,[reflowLayoutInterval(p,pageIndex,rangeLength,count,crypto.randomUUID())],'このページを詰め直す');})}>テンプレートを適用</button><label>表示倍率<input aria-label="表示倍率" type="range" min="50" max="160" value={zoom} onChange={e=>setZoom(Number(e.target.value))}/>{zoom}%</label></div>
     <small>テンプレートはこのページから選択した区間のコマだけを詰め直します。入りきらない場合は直後にページを追加し、前後の既存ページは保持します。枠の追加では本文を分割しません。読書順は枠番号順です。</small>
