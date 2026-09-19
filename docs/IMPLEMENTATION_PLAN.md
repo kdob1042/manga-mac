@@ -463,7 +463,7 @@ AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す�
 
 他コマの文字矩形と overflow が重なれば警告し、完成 PNG/CBZ を拒否する。自分の文字はホーム内の従来描画のまま残す。
 
-Live の `clip` / `frame` / 各コマ `artRect` はホーム枠のまま。はみ出しは `pagePNG` 系のページ画像にだけ焼く。contracts と Rust clip 検証は変えない。コマ動画の再生領域はホーム枠。
+Live の `clip` / `frame` / 各コマ `artRect` はホーム枠のまま。はみ出しは `pagePNG` 系のページ画像にだけ焼く。contracts と Rust clip 検証は変えない。コマ動画の再生は live-manga ビューワーが `clip` でマスクし、`artRect` を静止画と同じ cover 配置で載せる。制作アプリは再生UIを持たない。拡大表示で動画全体を見せるのもビューワー側。
 
 操作はコマ割り編集の「枠破り」トグルと overflow 四隅。ホーム全体移動は overflow も同じ平行移動。ポインター中は下書き、pointerup で既存 `changeLayout`。生成・Blender・動画は呼ばない。AI は overflow を省略してよい。
 
