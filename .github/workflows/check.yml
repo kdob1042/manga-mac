@@ -281,6 +281,9 @@ jobs:
           key: ${{ steps.native-restore.outputs.cache-primary-key }}
       - name: Install media probe
         run: command -v ffprobe || brew install ffmpeg
+      # The Tauri context macro reads generated icons during native compilation.
+      - name: Prepare native icons
+        run: npm run icons
       - name: Native regression and static checks
         run: |
           cargo test --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
