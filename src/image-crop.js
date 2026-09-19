@@ -1,9 +1,14 @@
 // Non-destructive placement; source pixels and lettering are never changed.
 export const defaultCrop = () => ({zoom:1,x:0.5,y:0.5});
+export const containCrop = () => ({...defaultCrop(),fit:'contain'});
 export function validateCrop(crop) {
   if (!crop || !Number.isFinite(crop.zoom) || crop.zoom < 1 || crop.zoom > 8 ||
-      ![crop.x,crop.y].every(n=>Number.isFinite(n)&&n>=0&&n<=1)) throw Error('画像配置が不正です');
+      ![crop.x,crop.y].every(n=>Number.isFinite(n)&&n>=0&&n<=1) ||
+      (crop.fit!==undefined&&crop.fit!=='contain')) throw Error('画像配置が不正です');
   return crop;
+}
+export function coverCrop(crop) {
+  return crop?.fit==='contain'?null:crop??defaultCrop();
 }
 export function cropRect(width,height,box,crop) {
   validateCrop(crop);
