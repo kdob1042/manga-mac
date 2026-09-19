@@ -386,24 +386,12 @@ async fn register_video(
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
     state.connections.remove_video(&connection_id)
 }
-fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
-    let db = state.db.lock().map_err(err)?;
-    let project: Value =
-        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
-            .map_err(err)?;
-    let job = project["jobs"]
-        .as_array()
-        .ok_or("Missing jobs")?
-        .iter()
-        .find(|j| j["id"].as_str() == Some(job_id))
-        .ok_or("Missing job")?;
-    let shot = project["videoShots"]
-        .as_array()
-        .ok_or("Missing shots")?
-        .iter()
-        .find(|s| s["id"] == job["scope"]["id"])
-        .ok_or("Missing shot")?;
-    let reference = &shot["startImage"];
+fn resolve_video_image(
+    project: &Value,
+    db: &rusqlite::Connection,
+    root: &std::path::Path,
+    reference: &Value,
+) -> Result<String, String> {
     match reference["kind"].as_str() {
         Some("artwork") => {
             let artwork = project["artworks"]
@@ -411,7 +399,7 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 .ok_or("Missing artwork")?
                 .iter()
                 .find(|a| a["id"] == reference["id"] && a["hash"] == reference["hash"])
-                .ok_or("作画版がありません")?;
+                .ok_or("採用作画版がありません")?;
             artwork["panel"]["image"]
                 .as_str()
                 .map(str::to_owned)
@@ -429,8 +417,8 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 })
                 .ok_or("固定撮影版がありません")?;
             let response = blender::capture(
-                &db,
-                &state.root,
+                db,
+                root,
                 c["session_id"].as_str().ok_or("Missing session")?,
                 c["request_id"].as_str().ok_or("Missing request")?,
             )?;
@@ -442,8 +430,39 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 .map(str::to_owned)
                 .ok_or("撮影画像がありません".into())
         }
-        _ => Err("開始画像の形式が未対応です".into()),
+        _ => Err("動画画像の形式が未対応です".into()),
     }
+}
+
+fn video_input_images(state: &AppState, job_id: &str) -> Result<(String, Option<String>), String> {
+    let db = state.db.lock().map_err(err)?;
+    let project: Value =
+        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
+            .map_err(err)?;
+    let job = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .find(|j| j["id"].as_str() == Some(job_id))
+        .ok_or("Missing job")?;
+    let shot = project["videoShots"]
+        .as_array()
+        .ok_or("Missing shots")?
+        .iter()
+        .find(|s| s["id"] == job["scope"]["id"])
+        .ok_or("Missing shot")?;
+    let start = resolve_video_image(&project, &db, &state.root, &shot["startImage"])?;
+    let end = if shot["endImage"].is_object() {
+        Some(resolve_video_image(
+            &project,
+            &db,
+            &state.root,
+            &shot["endImage"],
+        )?)
+    } else {
+        None
+    };
+    Ok((start, end))
 }
 #[tauri::command]
 async fn video_submit(
@@ -453,8 +472,16 @@ async fn video_submit(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
-    let image = video_start_image(&state, &job_id)?;
-    runway::submit(&state.db, &job_id, &connection_id, &connection, &image).await
+    let (start_image, end_image) = video_input_images(&state, &job_id)?;
+    runway::submit(
+        &state.db,
+        &job_id,
+        &connection_id,
+        &connection,
+        &start_image,
+        end_image.as_deref(),
+    )
+    .await
 }
 #[tauri::command]
 async fn video_task(

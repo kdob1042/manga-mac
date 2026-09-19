@@ -77,17 +77,16 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
             }
         }
         if b.get("kind").is_some_and(|v| {
-            !["balloon", "thought", "narration", "plain"]
-                .contains(&v.as_str().unwrap_or(""))
-        }) || b.get("shape")
+            !["balloon", "thought", "narration", "plain"].contains(&v.as_str().unwrap_or(""))
+        }) || b
+            .get("shape")
             .is_some_and(|v| !["round", "rect", "ellipse"].contains(&v.as_str().unwrap_or("")))
             || b.get("locked").is_some_and(|v| !v.is_boolean())
         {
             return Err(fail());
         }
         let kind = b.get("kind").and_then(Value::as_str).unwrap_or("balloon");
-        if (kind == "narration"
-            && b.get("shape").is_some_and(|v| v.as_str() != Some("rect")))
+        if (kind == "narration" && b.get("shape").is_some_and(|v| v.as_str() != Some("rect")))
             || ((kind == "thought" || kind == "narration")
                 && b.get("tail").is_some_and(|v| !v.is_null()))
         {
@@ -143,5 +142,4 @@ mod tests {
         invalid["boxes"][0]["kind"] = json!("unknown");
         assert!(validate(&invalid, None).is_err());
     }
-
 }
