@@ -220,7 +220,7 @@ API仕様: [Gemini互換API](https://ai.google.dev/gemini-api/docs/openai)、[Cl
 
 ### 複数作品の切替
 
-左側の「作品を追加」で表示名・GitHub repository・話IDを登録し、作品一覧から開きます。切替は保存後の再起動を伴います。原稿・画像・動画・Blender・履歴は作品ごとに独立し、既存作品は元の保存領域で開きます。トークンは起動中のみ保持するため再入力してください。**現在のアプリ同期入口はstory-source/v1を単一正本として読み取り、manifest schema 1/4を旧作品用の互換形式として読み取ります。**
+左側の「原稿ライブラリ → 一覧を更新」で接続先の`library.json`を一度取得し、「作品→話→シーン」を選びます。catalog・manifest・本文・設定・人物基準画像は同じ取得commitに固定し、更新確認と制作への適用は別操作です。選択した作品は`workId`と作品rootを保持し、同じGitHub repo内でも画像・履歴・ジョブ・SQLiteを作品ごとに分離します。切替は保存後の再起動を伴います。トークンは起動中のみ保持するため再入力してください。旧単一作品repoの接続も維持し、**story-source/v1とinvestor-life-source/v1、manifest schema 1/4をread adapterとして読み取ります。**
 
 ### ページの編集範囲
 
