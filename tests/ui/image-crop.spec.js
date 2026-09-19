@@ -32,6 +32,7 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  await slot.click({position:{x:60,y:45}});
  await page.getByRole('button',{name:'画像全体を枠内に収める'}).click();
  await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5,fit:'contain'});
+ await slot.click({position:{x:60,y:45}});
  await page.getByRole('button',{name:'このコマを全面表示にする'}).click();
  await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5});
  await page.screenshot({path:'test-results/image-crop.png',fullPage:true});
