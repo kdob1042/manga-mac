@@ -14,7 +14,7 @@ export function restoreVideoResults(project) {
     const status = ({ PENDING: 'submitted', THROTTLED: 'submitted', RUNNING: 'submitted', SUCCEEDED: 'output_pending', FAILED: 'failed', CANCELLED: 'cancelled', cancel_requested: 'cancel_requested', unknown: 'unknown' })[remote.status];
     if (!status) throw Error('未対応の動画サービス状態です');
     next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status,
-      cost: { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
+      cost: remote.provider === 'ltx-mlx' ? { kind: 'local', amount: null, currency: null } : { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
   }
   return next;
 }

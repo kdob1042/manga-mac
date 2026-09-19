@@ -2,6 +2,7 @@
 mod backup_commands;
 mod live_preview;
 mod llm;
+mod local_video;
 mod policy_transport;
 mod runway;
 pub mod storage;
@@ -22,6 +23,7 @@ struct AppState {
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
+    local_video: Mutex<Option<(String, local_video::Registration)>>,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -465,6 +467,58 @@ fn video_input_images(state: &AppState, job_id: &str) -> Result<(String, Option<
     Ok((start, end))
 }
 #[tauri::command]
+fn register_local_video(
+    input: local_video::Registration,
+    state: State<AppState>,
+) -> Result<String, String> {
+    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        return Err("LTX-2.5 MLXはApple Silicon Mac専用です".into());
+    }
+    let config = local_video::validate_config(input)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    *state.local_video.lock().map_err(err)? = Some((id.clone(), config));
+    Ok(id)
+}
+#[tauri::command]
+fn remove_local_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    let mut slot = state.local_video.lock().map_err(err)?;
+    if slot.as_ref().is_some_and(|(id, _)| id == &connection_id) {
+        *slot = None;
+    }
+    Ok(())
+}
+#[tauri::command]
+async fn local_video_submit(
+    job_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _video = state.video.try_lock().map_err(|_| "動画処理中です")?;
+    let _engine = state
+        .engine
+        .try_lock()
+        .map_err(|_| "他のAI・Blender処理中です")?;
+    let config = state
+        .local_video
+        .lock()
+        .map_err(err)?
+        .as_ref()
+        .filter(|(id, _)| id == &connection_id)
+        .map(|(_, config)| config.clone())
+        .ok_or("ローカル動画接続を登録してください")?;
+    let (image, end) = video_input_images(&state, &job_id)?;
+    local_video::submit(
+        &state.db,
+        &state.root,
+        &job_id,
+        &connection_id,
+        &config,
+        &image,
+        end.as_deref(),
+    )
+    .await
+}
+#[tauri::command]
 async fn video_submit(
     job_id: String,
     connection_id: String,
@@ -872,6 +926,7 @@ fn main() {
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
+                local_video: Mutex::new(None),
             });
             Ok(())
         })
@@ -907,6 +962,9 @@ fn main() {
             register_video,
             remove_video,
             video_submit,
+            register_local_video,
+            remove_local_video,
+            local_video_submit,
             video_task,
             export_file,
             live_export,

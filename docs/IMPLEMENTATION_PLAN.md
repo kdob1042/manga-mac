@@ -384,6 +384,16 @@ V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、�
 
 再生は[Tauri asset protocol](https://v2.tauri.app/reference/config/#assetprotocolconfig)を利用し、初期scopeは空。DBに記録されたrevision IDから正規ファイル/hashを照合して、その一ファイルのみallow_fileする。任意パス・フォルダの公開は行わない。MP4書出しはRust側でファイルcopyと再hashを行い、画像用base64 exportを経由しない。JSONバックアップには動画本体がないため、mediaディレクトリを含む作品フォルダ全体を保管する。
 
+### V-L: LTX-2.5 MLXローカル接続（#166）
+
+推論エンジンは再実装せず、ユーザーが事前導入した[dgrauet/ltx-2-mlx](https://github.com/dgrauet/ltx-2-mlx/tree/3d08a953957fbc4269093d4da2f88db5bc12f86b)のCLIを一回実行する。Apple Silicon限定・明示選択。CLI/モデル/FFmpegの絶対パスと利用許可をメモリ内登録し、モデル自動取得・API自動fallbackは行わない。q4 packを推奨するが、重みの量子化形式・24GB適合を登録時に実証したとは扱わない。モデル一式と利用条件の確認は事前準備とする。
+
+初期presetは`generate --distilled --low-ram`、512:512/512:320/320:512、121フレーム、24fps、seed 42固定。開始画像のbytes/hash/同一縦横比を共通境界で検査し、終端画像や未知制御は拒否する。終端画像対応は今回の受入対象外（ユーザー合意）。FFmpegで5秒・H.264/yuv420p・無音化し、既存ffprobeでcodec/音声なし/指定寸法/尺を確認してから既存不変mediaへ保存する。画像の中央cropや異比率への自動変換は追加しない。
+
+既存engine/video mutex、jobs/manifest、videoRevisions/videoHistory、再生/書出し/採用を共有する。プロセス起動前にjob.remoteへprovider=ltx-mlx/unknown/presetをcommit。API費用枠を消費しない。成功artifactをDBへ保存した後は既存復元処理が候補を一度だけ接続する。実行失敗はFAILED、アプリ異常終了はunknownを保持し自動再生成しない。別ショットの未確定ローカル実行も解決まで新規起動を止める。手動解決前には利用者がActivity MonitorでCLI/子プロセスの停止を確認する。強制終了時の途中ファイルは採用対象外で、モデルの自動再ロード・ジョブ再開は行わない。
+
+子プロセスはshellを使わず引数配列で起動。資格情報・proxy環境を継承せずHF/Transformers offline指定、標準入出力を破棄する（任意の第三者CLIに対するOSネットワークsandboxではない）。生成60分・変換120秒のtimeoutとプロセスグループ停止。通常終了時は自分の一時ファイルだけを除去し、モデルは削除しない。CLI版・model pack互換性、Mac実build/実推論/画質/24GBメモリ/実再生は共通fixtureとは独立した受入。fixtureの青いMP4をAI生成実績に数えない。
+
 ### V-Cの接続候補
 
 Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
