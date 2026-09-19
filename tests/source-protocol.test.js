@@ -40,3 +40,10 @@ test('story-source character IDs remain stable across image updates and reject a
  const isolated=mergeSourceReferences(updated,[{id:'yu',characterId:'yu',name:'人物A',path:'assets/a.png',image:'data3',hash:'three'}],'owner/b','v3');assert.equal(isolated.length,2);
  assert.throws(()=>mergeSourceReferences([{id:'one',name:'人物A'},{id:'two',name:'人物A'}],[{name:'人物A',path:'a.png',image:'data',hash:'h'}],'owner/a','v4'),/複数/);
 });
+
+test('investor-life adapter preserves chapter, episode and scene IDs without rewriting the source',()=> {
+ const raw={format:'investor-life-source/v1',work:{title:'投資家'},chapters:[{id:'C01',title:'章',episodes:[{id:'C01-E01',title:'話',path:'manuscript/p01/p01-01.md'}]}],settings:[]};
+ const model=normalizeSourceManifest(raw);
+ assert.equal(model.format,'investor-life-source/v1');assert.deepEqual(model.episodes[0].scene_ids,['C01-E01']);assert.equal(model.scenes[0].id,'C01-E01');assert.equal(model.scenes[0].episodeId,'C01-E01');assert.deepEqual(raw,raw);
+ assert.throws(()=>normalizeSourceManifest({...raw,chapters:[{...raw.chapters[0],episodes:[{...raw.chapters[0].episodes[0],id:'../bad'}]}]}),/話ID/);
+});

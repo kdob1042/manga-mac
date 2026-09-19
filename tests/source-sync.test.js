@@ -51,3 +51,21 @@ test('story-source/v1 source-root entrypoint keeps manifest paths source-relativ
  const snapshot=await syncSource('owner/source','token','P01',null,invoke);
  assert.equal(snapshot.sync.manifest_path,'source/manifest.json');assert.deepEqual(paths,['manifest.json','source/manifest.json','source/manuscript/p01/p01-01.md']);
 });
+
+test('library sync pins catalog, manifest, body and assets to the supplied commit', async()=> {
+ const sha='e'.repeat(40), manifest={format:'investor-life-source/v1',work:{title:'投資家'},chapters:[{id:'C01',title:'章',episodes:[{id:'C01-E01',title:'話',path:'manuscript/p01/p01-01.md'}]}],settings:[{id:'WORLD',path:'settings/world.md'}]};
+ const calls=[];
+ const invoke=async(command,args)=>{
+  calls.push({command,args});
+  if(command==='github_file'){
+   const files={'works/investor-life/source/manifest.json':JSON.stringify(manifest),'works/investor-life/source/manuscript/p01/p01-01.md':'# ［C01-E01］ 話\\n\\n本文','works/investor-life/source/settings/world.md':'# 世界\\n\\n設定'};
+   if(!(args.path in files))throw Error(`unexpected file ${args.path}`);
+   return files[args.path];
+  }
+  throw Error(`unexpected ${command}`);
+ };
+ const snapshot=await syncSource('owner/story','token','C01-E01',null,invoke,{commit:sha,workId:'investor-life',workRoot:'works/investor-life',manifestPath:'works/investor-life/source/manifest.json',format:'investor-life-source/v1'});
+ assert.equal(snapshot.workId,'investor-life');assert.equal(snapshot.library.commit,sha);assert.equal(snapshot.protocol.format,'investor-life-source/v1');
+ assert.deepEqual(calls.filter(call=>call.command==='github_get'),[]);
+ assert.deepEqual(calls.filter(call=>call.command==='github_file').map(call=>call.args.path),['works/investor-life/source/manifest.json','works/investor-life/source/manuscript/p01/p01-01.md','works/investor-life/source/settings/world.md']);
+});
