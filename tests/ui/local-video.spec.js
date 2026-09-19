@@ -39,13 +39,14 @@ test('local registration routes only to MLX and stores a candidate before explic
   await page.getByLabel('動きの指示', { exact: true }).fill('Camera gently moves forward.');
   await page.getByLabel('動画の寸法', { exact: true }).selectOption('512:512');
   await page.getByRole('button', { name: 'ショットを保存', exact: true }).click();
+  const before = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-project')));
   await page.getByRole('button', { name: '5秒の動画を生成する', exact: true }).click();
   await expect(page.getByText(/ローカル動画候補を保存しました/)).toBeVisible();
   let p = await page.evaluate(() => JSON.parse(sessionStorage.getItem('fixture-project')));
   expect(p.videoRevisions).toHaveLength(1);
   expect(p.videoShots[0].adopted_revision).toBeNull();
   expect(p.jobs.at(-1).cost.kind).toBe('local');
-  expect(p.history).toEqual(legacy.history);
+  expect(p.history).toEqual(before.history);
   await page.getByRole('button', { name: 'この動画を採用', exact: true }).click();
   await expect(page.getByText(/採用中 ·/)).toBeVisible();
   await page.reload();
