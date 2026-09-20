@@ -76,6 +76,7 @@ pub struct Connections {
     active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
     cancelled: Mutex<HashSet<String>>,
     video: Mutex<HashMap<String, Arc<VideoConnection>>>,
+    tripo: Mutex<HashMap<String, Arc<TripoConnection>>>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -86,6 +87,18 @@ pub struct VideoRegistration {
 }
 // Same ephemeral credential owner as LLM connections; no Debug/Serialize.
 pub struct VideoConnection {
+    pub credential: String,
+    pub max_credits: u64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TripoRegistration {
+    pub credential: String,
+    pub max_credits: u64,
+    pub approved: bool,
+}
+// Same ephemeral credential owner as LLM/video connections; never Serialize/Debug.
+pub struct TripoConnection {
     pub credential: String,
     pub max_credits: u64,
 }
@@ -153,6 +166,43 @@ impl Connections {
     }
     pub fn remove_video(&self, id: &str) -> Result<(), String> {
         self.video.lock().map_err(|_| failure())?.remove(id);
+        Ok(())
+    }
+    pub async fn register_tripo(&self, input: TripoRegistration) -> Result<String, String> {
+        if !input.approved
+            || !(1..=100_000).contains(&input.max_credits)
+            || input.credential.trim().is_empty()
+            || input.credential.len() > 4096
+            || input.credential.chars().any(char::is_control)
+            || !input.credential.starts_with("tsk_")
+        {
+            return Err("Tripoの送信先・モデル・予算を承認し、APIキーを入力してください".into());
+        }
+        PolicyTransport::new("https://api.tripo3d.ai/v2/openapi", false, "").await?;
+        let mut entries = self.tripo.lock().map_err(|_| failure())?;
+        if entries.len() >= 4 {
+            return Err("不要なTripo接続を解除してください".into());
+        }
+        let id = id();
+        entries.insert(
+            id.clone(),
+            Arc::new(TripoConnection {
+                credential: input.credential,
+                max_credits: input.max_credits,
+            }),
+        );
+        Ok(id)
+    }
+    pub fn tripo_connection(&self, id: &str) -> Result<Arc<TripoConnection>, String> {
+        self.tripo
+            .lock()
+            .map_err(|_| failure())?
+            .get(id)
+            .cloned()
+            .ok_or("Tripo接続を登録してください".into())
+    }
+    pub fn remove_tripo(&self, id: &str) -> Result<(), String> {
+        self.tripo.lock().map_err(|_| failure())?.remove(id);
         Ok(())
     }
     pub async fn register(&self, input: Registration) -> Result<String, String> {

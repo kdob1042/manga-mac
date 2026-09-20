@@ -226,7 +226,7 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
     }
     if matches!(
         action,
-        "act" | "resume" | "handoff" | "candidate" | "save_working"
+        "act" | "resume" | "handoff" | "candidate" | "save_working" | "import_asset"
     ) {
         let result = c
             .tool(
@@ -235,6 +235,7 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
                     "resume" => "live_resume",
                     "handoff" => "live_handoff",
                     "save_working" => "live_save_working",
+                    "import_asset" => "live_import_asset",
                     _ => "live_candidate",
                 },
                 input,

@@ -1,9 +1,9 @@
 """Local, authenticated MCP subset for the explicitly opened Blender GUI.
-No remote services, telemetry, arbitrary Python, file loading or process exit.
+No remote services, telemetry, arbitrary Python, arbitrary file loading or process exit.
 """
 import bpy
 from .observation import observe, fingerprint
-from .operations import apply
+from .operations import apply, import_glb
 from .candidate import export_copy
 import json
 import secrets
@@ -17,6 +17,7 @@ bl_info = {"name": "Manga Mac Live", "author": "Manga Mac contributors", "versio
 PROTOCOL = "2025-03-26"
 SERVER = None
 WORKING_FILE = ""
+ASSETS_DIR = ""
 TOKEN = ""
 INSTANCE = ""
 EPOCH = ""
@@ -58,7 +59,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate", "live_save_working"]
+    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate", "live_save_working", "live_import_asset"]
 
 
 def invoke_tool(name, args):
@@ -83,6 +84,17 @@ def invoke_tool(name, args):
         CONTROL = "manual"
         invalidate()  # Invalidate every queued/unsent plan before handing control away.
         return identity()
+    if name == "live_import_asset":
+        if CONTROL != "manual":
+            raise ValueError("manual_control: handoff before importing an asset")
+        current = identity()
+        expected = args.get("expected", {})
+        for key in ("instance", "epoch", "revision", "file", "scene", "view_layer"):
+            if current[key] != expected.get(key):
+                raise ValueError("stale_observation: observe again")
+        result = import_glb(args.get("file"), ASSETS_DIR, args.get("hash"))
+        invalidate()
+        return {**result, **identity()}
     if name in ("live_resume", "live_act", "live_candidate", "live_save_working"):
         current = identity()
         expected = args.get("expected", {})
@@ -141,12 +153,18 @@ def tool_schema(name):
         "live_act": "Apply camera lens/rotation/aim, static object location, or constraint influence. Observe detail first, then read back. No arbitrary Python.",
         "live_handoff": "Disable automatic writes before manual editing or candidate save. This retains your client claim; release it to return to manga-mac.",
         "live_save_working": "Save the application-owned working blend after handoff, with a fresh observation. Never saves an asset original or adopted checkpoint.",
-        "live_candidate": "Render and save a new copy in the same GUI, only after handoff. Prefer saving via manga-mac for candidate registration."}
+        "live_candidate": "Render and save a new copy in the same GUI, only after handoff. Prefer saving via manga-mac for candidate registration.",
+        "live_import_asset": "Import one hash-verified GLB from the app-owned assets folder into this GUI. Hand off to manual control first; never provide a path outside the managed folder."}
     if name == "live_identity": props, required = {}, []
     if name == "live_claim":
         props.update({k:{"type":"string"} for k in ("instance","epoch")}); required += ["instance","epoch"]
     if name in ("live_resume","live_act","live_candidate","live_save_working"):
         props["expected"] = expected; required.append("expected")
+    if name == "live_import_asset":
+        props.update({"expected": expected,
+                      "file": {"type": "string", "pattern": "^[^/\\\\]+\\.glb$"},
+                      "hash": {"type": "string", "pattern": "^[0-9a-fA-F]{64}$"}})
+        required += ["expected", "file", "hash"]
     if name == "live_observe":
         props.update({"scope":{"type":"string","enum":["summary","object","viewport","camera"]},"object":{"type":"string"},"offset":{"type":"integer","minimum":0}})
     if name == "live_act":
