@@ -482,3 +482,15 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 - 2026-09-20: `6a71a78` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35491679314)で、同じSceneの2角度を実描画して画像hashが異なること、camera location/rotationの復元、撮影後の観測版の読戻しを確認。共通CI（35491679300）のweb/storage/llm/blenderも成功。
 - 追加のZIP展開試験を含むローカルNode215件成功。`3afc466` の[ブラウザCI](https://github.com/kdob1042/manga-mac/actions/runs/35492221353)で49件成功。3候補生成→制作依頼ZIP→MCP解放の操作順も確認。
 - 実参照画像からのモデル生成、実MacのCodex操作、人物・演出の見た目の品質は未受入。
+
+
+## Mac上のCodexによる実地確認（#184 / #186 / #187）
+
+実施担当は対象Mac上のCodex。利用者へ試験一式を渡さず、Codexがアプリと同じBlender GUIを操作し、結果・不具合を記録する。Macの画面操作/MCPにアクセスできる環境で実施し、OSの権限許可・本人認証・必要な資格情報の入力だけ利用者へ依頼する。アクセスできない環境では未実施と記録し、CI成功で代替しない。
+
+1. 対象DMGのcommit・macOS/Blender版を記録。試験用作品でアプリからBlenderを起動し、instance/file/sceneと未保存変更の読取りを確認する。
+2. アプリから演出指示と複数アングル撮影を行い、実画像を比較する。実LLM未設定なら演出判断の項目だけ未実施とする。
+3. 「MacのCodexへ渡す」で制作依頼ZIPを読み、同じGUIをMCPまたは利用可能なComputer Useで編集する。引継ぎ中のアプリ自動書込み停止を確認し、操作権を戻して再観測・人物対応を確認する。接続手順は[導入ガイド](INSTALL_MAC.md#macのcodexで同じblenderを操作する)を参照。
+4. 新しい候補を採用→Undo→アプリ再起動で確認する。原稿・他コマ・旧採用版を保持し、開いているGUIには明示再接続する。
+
+関連Issueへ環境/commit・使った操作経路（MCP/Computer Use）・項目ごとの成功/失敗/未実施・画面または画像の証跡を残す。token/APIキーは記録しない。使っていない操作経路まで合格扱いしない。モデル自動生成は #201 の別受入とする。
