@@ -16,6 +16,7 @@ from bpy.app.handlers import persistent
 bl_info = {"name": "Manga Mac Live", "author": "Manga Mac contributors", "version": (1, 0, 0), "blender": (4, 5, 0), "category": "Interface"}
 PROTOCOL = "2025-03-26"
 SERVER = None
+WORKING_FILE = ""
 TOKEN = ""
 INSTANCE = ""
 EPOCH = ""
@@ -57,7 +58,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate"]
+    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate", "live_save_working"]
 
 
 def invoke_tool(name, args):
@@ -74,6 +75,7 @@ def invoke_tool(name, args):
             raise ValueError("another client owns this session")
         CLIENT = client
         CONTROL = "manual"
+        invalidate()
         return identity()
     if args.get("client") != CLIENT or CLIENT is None:
         raise ValueError("session mismatch: reconnect explicitly")
@@ -81,16 +83,21 @@ def invoke_tool(name, args):
         CONTROL = "manual"
         invalidate()  # Invalidate every queued/unsent plan before handing control away.
         return identity()
-    if name in ("live_resume", "live_act", "live_candidate"):
+    if name in ("live_resume", "live_act", "live_candidate", "live_save_working"):
         current = identity()
         expected = args.get("expected", {})
         for key in ("instance", "epoch", "revision", "file", "scene", "view_layer"):
             if current[key] != expected.get(key):
                 raise ValueError("stale_observation: observe again")
+        if name == "live_save_working":
+            if CONTROL != "manual" or not WORKING_FILE or bpy.data.filepath != WORKING_FILE:
+                raise ValueError("Only the application's current working file can be saved after handoff")
+            bpy.ops.wm.save_as_mainfile(filepath=WORKING_FILE)
+            return identity()
         if name == "live_candidate":
             if CONTROL != "manual":
                 raise ValueError("handoff before candidate save")
-            return {**export_copy(), **identity()}
+            return {**export_copy(args), **identity()}
         if name == "live_resume":
             CONTROL = "ai"
             return identity()
@@ -114,8 +121,46 @@ def invoke_tool(name, args):
     if name == "live_release":
         CLIENT = None
         CONTROL = "manual"
+        invalidate()
         return identity()
     raise ValueError("unsupported tool")
+
+
+def tool_schema(name):
+    client = {"type": "string", "minLength": 16, "description": "Your random per-session client ID, reused until live_release"}
+    expected = {"type": "object", "description": "Fresh observation identity; never reuse after a write or manual change",
+                "properties": {k: {"type": "integer" if k == "revision" else "string"} for k in ("instance", "epoch", "revision", "file", "scene", "view_layer")},
+                "required": ["instance", "epoch", "revision", "file", "scene", "view_layer"]}
+    props, required = {"client": client}, ["client"]
+    descriptions = {
+        "live_identity": "Read GUI identity before claiming. Check instance/file/scene with the user; never switch files.",
+        "live_claim": "Claim the explicitly selected GUI after manga-mac yields. Use a new random client ID. Fails if another client owns it.",
+        "live_release": "Finish Codex operations and release ownership before returning to manga-mac.",
+        "live_observe": "Read current GUI state. Summary first, then object detail or viewport/camera image. Images are distinct views.",
+        "live_resume": "Enable this client's writes using a fresh observation. Stop mouse/keyboard editing first.",
+        "live_act": "Apply camera lens/rotation/aim, static object location, or constraint influence. Observe detail first, then read back. No arbitrary Python.",
+        "live_handoff": "Disable automatic writes before manual editing or candidate save. This retains your client claim; release it to return to manga-mac.",
+        "live_save_working": "Save the application-owned working blend after handoff, with a fresh observation. Never saves an asset original or adopted checkpoint.",
+        "live_candidate": "Render and save a new copy in the same GUI, only after handoff. Prefer saving via manga-mac for candidate registration."}
+    if name == "live_identity": props, required = {}, []
+    if name == "live_claim":
+        props.update({k:{"type":"string"} for k in ("instance","epoch")}); required += ["instance","epoch"]
+    if name in ("live_resume","live_act","live_candidate","live_save_working"):
+        props["expected"] = expected; required.append("expected")
+    if name == "live_observe":
+        props.update({"scope":{"type":"string","enum":["summary","object","viewport","camera"]},"object":{"type":"string"},"offset":{"type":"integer","minimum":0}})
+    if name == "live_act":
+        props.update({"request_id":{"type":"string","description":"Fresh UUID; never retry after an unknown result"},
+            "operation":{"type":"object","properties":{"kind":{"enum":["camera","transform","constraint","rotation","aim"]},"object":{"type":"string"},"object_id":{"type":"string"},"value":{"type":"number"},"constraint":{"type":"string"},"location":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}},"required":["kind","object","object_id"],"additionalProperties":False}})
+        for key in ("rotation", "target"):
+            props["operation"]["properties"][key] = {"type":"array", "items":{"type":"number"}, "minItems":3, "maxItems":3}
+        required += ["request_id","operation"]
+    if name == "live_candidate":
+        props.update({k:{"type":"integer","minimum":64,"maximum":4096} for k in ("width","height")})
+        props['angle'] = {'type':'object', 'additionalProperties':False, 'required':['degrees','target'],
+                          'properties':{'degrees':{'type':'number','minimum':-180,'maximum':180},
+                                        'target':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'number'}}}}
+    return {"name":name,"description":descriptions[name],"inputSchema":{"type":"object","properties":props,"required":required}}
 
 
 def dispatch(body):
@@ -125,7 +170,7 @@ def dispatch(body):
         return {"protocolVersion": PROTOCOL, "capabilities": {"tools": {}},
                 "serverInfo": {"name": "manga-mac-live", "version": "1.0.0"}}
     if method == "tools/list":
-        return {"tools": [{"name": n, "description": n, "inputSchema": {"type": "object"}} for n in tool_names()]}
+        return {"tools": [tool_schema(n) for n in tool_names()]}
     if method == "tools/call":
         result = invoke_tool(params.get("name"), params.get("arguments", {}))
         return {"content": [{"type": "text", "text": json.dumps(result)}], "isError": False}

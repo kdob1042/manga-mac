@@ -1,3 +1,4 @@
+import { openLiveShot } from './live-blender';
 import {finalizeProducedSource} from './source-patch.js';
 import {createProjectWriter} from './project-writer.js';
 import SourceUpdate from './SourceUpdate.jsx';
@@ -211,6 +212,9 @@ function App() {
   }
   async function stagePanel(panelId, instruction = '') {
     if (!model.connectionId) throw Error('先に演出AIの接続を登録・テストしてください');
+    const shot=current.current.panels.find(p=>p.id===panelId);
+    if(!shot)throw Error('対象コマがありません');
+    if(!shot.live_binding){const binding=await openLiveShot(call,current.current,shot);await commit({...current.current,panels:current.current.panels.map(p=>p.id===panelId?{...p,live_binding:binding}:p)});}
     return directPanel({ current: () => current.current, commit, call, panelId, instruction,
       cancelled: () => cancel.current, notify: setBusy,
       ask: async (prompt, schema) => JSON.parse(await askLLM(model, { purpose: 'direction', prompt, schema })) });
@@ -261,7 +265,7 @@ function App() {
       perform:async(op,context)=>{
         setSelected(op.panelId);
         if(['resolution','upscale','finishing','video_prepare','video_assign'].includes(op.kind)){message=await panelAction(()=>current.current,commit,op,id=>{setRequestedShot(id);setMedium('video');});return;}
-        if(op.kind==='direction') {await stagePanel(op.panelId,op.args.instruction);if(!cancel.current)await drawChosen(op.panelId);return;}
+        if(op.kind==='direction') {const result=await stagePanel(op.panelId,op.args.instruction);if(!result?.live&&!cancel.current)await drawChosen(op.panelId);return;}
         if(op.kind==='region') {
           const p=current.current,panel=p.panels.find(p=>p.id===op.panelId),job=await beginJob(p,panel,'edit');
           await commit({...p,jobs:[...p.jobs,job]});
@@ -315,12 +319,12 @@ function App() {
       <h3>このコマの演出</h3><p>下の欄に「勇の肩越しから」「もう少し寄って」などを入力してください。構図・演技の変更は撮影からやり直し、旧作画を残して候補を作ります。</p>
       <button disabled={!!busy || !desktop()} onClick={() => run('Blenderで演出中', directChosen)}>Blenderで演出して漫画化</button>
       {activeDirection(project, chosen.id) && <><p role="status">{activeDirection(project, chosen.id).message || '停止した演出があります。保存済みの結果を確認して再開します。'}</p>
-        <button disabled={!!busy || !desktop()} onClick={() => run('演出を再開中', async () => { await stagePanel(chosen.id); if (!cancel.current) await drawChosen(chosen.id); })}>演出を再開</button>
+        <button disabled={!!busy || !desktop()} onClick={() => run('演出を再開中', async () => { const result=await stagePanel(chosen.id); if (!result?.live&&!cancel.current) await drawChosen(chosen.id); })}>演出を再開</button>
         <button disabled={!!busy} onClick={() => run('演出を取り下げ', () => commit(abandonDirection(current.current, activeDirection(current.current, chosen.id).id)))}>演出を取り下げる</button>
       </>}
     </section>}
     <details className="shot-details"><summary>詳細調整・Blenderの保存結果を確認</summary>
-    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run}/>
+    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run} cancelled={()=>cancel.current}/>
     </details>
     {chosen && <section className="shot-controls" aria-label="作画候補">
       <button disabled={!!busy || !chosen.capture_revision || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>

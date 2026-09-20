@@ -5,7 +5,7 @@ export default function LiveBlenderSettings({ project, run, notify }) {
   const [form, setForm] = useState({port:9877, token:'', instance:'', file:'', scene:'Scene', view_layer:'ViewLayer'});
   const [state, setState] = useState(null), [preview, setPreview] = useState(null);
   const work = liveWork(project);
-  useEffect(() => { setState(null); liveCall(call, project, 'disconnect').catch(() => {}); }, [work]);
+  useEffect(() => { let active=true; setState(null); liveCall(call, project, 'status').then(value=>{if(active)setState(value);}).catch(()=>{}); return ()=>{active=false;}; }, [work]);
   const perform = action => run('開いているBlenderへ接続中', async () => {
     try { const result = await liveCall(call, project, action, action === 'connect' ? form : {}); setState(result); if(action === 'connect') setForm(f => ({...f,token:''})); notify(action === 'disconnect' ? 'live接続を切断しました。Blenderは開いたままです。' : '同じGUIのlive状態を確認しました'); }
     catch(e) { setState(null); throw e; }

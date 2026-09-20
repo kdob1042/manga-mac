@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { directPanel, validateDirection, abandonDirection, MAX_DIRECTION_STEPS } from '../src/directing.js';
-import { imageHash } from '../src/revisions.js';
-import { emptyProject } from '../src/core.js';
-const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+import { directPanel, validateDirection } from '../src/directing.js';
 const hash = 'a'.repeat(64);
 const state = { dependencies_pinned: true, checkpoint: { hash }, operations: ['catalog','camera','shot','pose','transform','aim','light','import','capture'],
   state: { scene: 'Scene', camera: 'Camera', lens: 35, frame: 1, resolution: [768,768] },
@@ -11,69 +8,6 @@ const state = { dependencies_pinned: true, checkpoint: { hash }, operations: ['c
   objects: [{ name: 'Actor', type: 'ARMATURE', editable: true }, { name: 'Camera', type: 'CAMERA', editable: true }, { name: 'Light', type: 'LIGHT', editable: true }],
   assets: [{ kind: 'ACTION', name: 'Lean', library: null }], library_assets: [] };
 const action = operation => ({ status: 'action', reason: '演出を調整', operation });
-const ready = { status: 'ready', reason: '撮影へ進む', operation: null };
-async function fixture() {
-  let project = { ...emptyProject(), active: 's', snapshots: [{ id: 's', scenes: [{ id: 'scene', text: 'A\n\nB\n\nC\n\nD' }], settings: [] }], panels: Array.from({length:4},(_,i)=>({id:`p${i}`,snapshotId:'s',sceneId:'scene',unitIds:[`scene:u${i}`],characterIds:[],prompt:'synthetic',image:null})) };
-  const sessions = new Map(), calls = [];
-  let lose = false;
-  const call = async (command, args) => {
-    calls.push({ command, args });
-    if (command === 'blender_latest') return { session_id: 'base', revision: 0, state };
-    if (command === 'blender_fork') return args.ids.map(id => { const s = { session_id: id, revision: 0, state: structuredClone(state), jobs: [] }; sessions.set(id, s); return structuredClone(s); });
-    if (command === 'blender_status') return structuredClone(sessions.get(args.sessionId));
-    if (command === 'blender_capture') { const s = sessions.get(args.sessionId); return { ...structuredClone(s), request_id: args.requestId }; }
-    if (command === 'blender_execute') {
-      const r = args.request, s = sessions.get(r.session_id);
-      assert.equal(r.expected_revision,s.revision);
-      assert.ok(!s.jobs.some(j=>j.id===r.request_id));
-      s.revision++; s.jobs.push({id:r.request_id,status:'complete'});
-      if (r.operation.kind === 'camera') s.state.state.lens = r.operation.lens;
-      if (r.operation.kind === 'capture') { s.preview = image; s.state.image = {hash:await imageHash(image)}; }
-      if (lose && r.operation.kind === 'camera') { lose=false; throw Error('connection lost after execution'); }
-      return { ...structuredClone(s), request_id:r.request_id };
-    }
-    throw Error('unexpected command');
-  };
-  return { current:()=>project, commit:async p=>{project=structuredClone(p);}, call, sessions, calls, lose:()=>{lose=true;} };
-}
-test('four panels automatically fork, direct, capture and retain independent source/scope', async()=>{
-  const f = await fixture();
-  for(let i=0;i<4;i++) {
-    let step=0;
-    await directPanel({...f,panelId:`p${i}`,ask:async()=>step++ ? ready : action({kind:'camera',lens:40+i})});
-  }
-  assert.equal(f.current().captures.length,4);
-  assert.equal(new Set(f.current().panels.map(p=>p.shot_binding.session_id)).size,4);
-  assert.ok(f.current().directing_runs.every(r=>r.status==='complete'));
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='capture').length,4);
-  assert.equal(f.current().snapshots[0].scenes[0].text,'A\n\nB\n\nC\n\nD');
-  assert.equal(state.state.lens,35);
-});
-test('lost response resumes by reading native completion without repeating camera operation', async()=>{
-  const f = await fixture(); f.lose();
-  await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>action({kind:'camera',lens:70})}),/lost/);
-  assert.equal(f.current().directing_runs[0].steps.at(-1).status,'pending');
-  await directPanel({...f,panelId:'p0',ask:async()=>ready});
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  assert.equal(f.current().captures.length,1);
-});
-test('source change, pending native request and cancellation prevent new operations', async()=>{
-  const f=await fixture();
-  let stop=false;
-  await directPanel({...f,panelId:'p0',cancelled:()=>stop,ask:async()=>{stop=true;return action({kind:'camera',lens:70});}});
-  assert.equal(f.current().directing_runs[0].status,'paused');
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,0);
-  const p=f.current(); await f.commit({...p,active:'different'});
-  await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>ready}),/原作/);
-});
-test('missing assets block without capture; an abandoned plan can be replaced explicitly', async()=>{
-  const f=await fixture();
-  await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>({status:'blocked',reason:'図書館の素材がありません',operation:null})}),/図書館/);
-  assert.equal(f.current().captures?.length??0,0);
-  await f.commit(abandonDirection(f.current(),f.current().directing_runs[0].id));
-  await directPanel({...f,panelId:'p0',ask:async()=>ready});
-  assert.equal(f.current().captures.length,1);
-});
 test('unknown targets, code, capabilities, unsafe numbers and unsourced imports are rejected',()=>{
   const s={state};
   for(const op of [{kind:'python',code:'anything'}, {kind:'camera',lens:NaN}, {kind:'camera',lens:70,code:'x'},
@@ -83,47 +17,11 @@ test('unknown targets, code, capabilities, unsafe numbers and unsourced imports 
     {kind:'light',object:'Light',energy:-1,color:[1,1,1]}]) assert.throws(()=>validateDirection(action(op),s));
   assert.doesNotThrow(()=>validateDirection(action({kind:'pose',rig:'Actor',action:'Lean',frame:1}),s));
 });
-test('bounded directing loop stops instead of infinite AI retries',async()=>{
-  const f=await fixture(); let n=0;
-  await assert.rejects(directPanel({...f,panelId:'p0',ask:async()=>action({kind:'camera',lens:40+n++})}),/上限/);
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,MAX_DIRECTION_STEPS);
-  assert.equal(f.current().captures?.length??0,0);
-});
 
-
-test('rejects premature ready until the explicit lens goal matches live state', async()=>{
-  const f=await fixture();
-  f.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
+test('unbound and legacy shots require GUI assignment without starting or querying headless',async()=>{
+ for(const shot_binding of [undefined,{session_id:'old'}]) {
   let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>{
-    calls++;
-    if(calls===1) return ready;
-    if(calls===2) return action({kind:'camera',lens:45});
-    return ready;
-  }});
-  assert.equal(calls,3);
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  assert.equal(f.current().captures.length,1);
-  assert.equal(f.current().directing_runs[0].completionCorrections,1);
-
-  const g=await fixture();
-  g.current().panels[0].prompt='撮影済みの立方体を撮る。カメラの焦点距離だけを45mmに変更。他は変更しない。既に45mmなら撮影可能。';
-  await assert.rejects(
-    directPanel({...g,panelId:'p0',ask:async()=>ready}),
-    /完了を報告しましたが、現在状態が目標と一致しません/
-  );
-  assert.equal(g.current().captures?.length??0,0);
-});
-
-test('one semantic correction never repeats a native operation and a second repeat stops', async()=>{
-  const f=await fixture(); let calls=0;
-  await directPanel({...f,panelId:'p0',ask:async()=>++calls<=2?action({kind:'camera',lens:70}):ready});
-  assert.equal(calls,3);
-  assert.equal(f.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  assert.equal(f.current().captures.length,1);
-  const g=await fixture(); let repeats=0;
-  await assert.rejects(directPanel({...g,panelId:'p0',ask:async()=>{repeats++;return action({kind:'camera',lens:70});}}),/繰り返し/);
-  assert.equal(repeats,3);
-  assert.equal(g.calls.filter(x=>x.args?.request?.operation.kind==='camera').length,1);
-  assert.equal(g.current().captures?.length??0,0);
+  await assert.rejects(directPanel({current:()=>({panels:[{id:'p',shot_binding}]}),panelId:'p',call:async()=>{calls++;}}),/GUI/);
+  assert.equal(calls,0);
+ }
 });

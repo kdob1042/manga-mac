@@ -5,10 +5,11 @@ export function observationKey(s) { return JSON.stringify(['instance','epoch','r
 export function assertLiveTarget(binding, observation) {
   for (const key of ['instance','epoch','file','scene','view_layer']) if (binding?.[key] !== observation?.[key]) throw Error(`target_unknown: ${key} が変わりました。接続対象を再確認してください`);
 }
+const vectorSchema={type:'array',minItems:3,maxItems:3,items:{type:'number',minimum:-10000,maximum:10000}};
 export const liveDirectionSchema = {type:'object',additionalProperties:false,required:['action','reason','scope','object','operation'],properties:{
   action:{type:'string',enum:['observe','act','confirm','ready','blocked']},reason:{type:'string',maxLength:1000},
   scope:{type:'string',enum:['summary','object','viewport','camera']}, object:{type:'string'},
-  operation:{anyOf:[{type:'null'}, {type:'object',additionalProperties:false,required:['kind','object','object_id','value'],properties:{kind:{const:'camera'},object:{type:'string'},object_id:{type:'string'},value:{type:'number',minimum:10,maximum:250}}},
+  operation:{anyOf:[...['rotation','aim'].map(kind=>({type:'object',additionalProperties:false,required:['kind','object','object_id',kind==='aim'?'target':'rotation'],properties:{kind:{const:kind},object:{type:'string'},object_id:{type:'string'},[kind==='aim'?'target':'rotation']:vectorSchema}})),{type:'null'}, {type:'object',additionalProperties:false,required:['kind','object','object_id','value'],properties:{kind:{const:'camera'},object:{type:'string'},object_id:{type:'string'},value:{type:'number',minimum:10,maximum:250}}},
     {type:'object',additionalProperties:false,required:['kind','object','object_id','constraint','value'],properties:{kind:{const:'constraint'},object:{type:'string'},object_id:{type:'string'},constraint:{type:'string'},value:{type:'number',minimum:0,maximum:1}}},
     {type:'object',additionalProperties:false,required:['kind','object','object_id','location'],properties:{kind:{const:'transform'},object:{type:'string'},object_id:{type:'string'},location:{type:'array',minItems:3,maxItems:3,items:{type:'number',minimum:-10000,maximum:10000}}}}]}
 }};
@@ -17,13 +18,17 @@ export function validateLiveDecision(value, detail) {
   if (!['summary','object','viewport','camera'].includes(value.scope) || typeof value.object !== 'string') throw Error('model_judgment: invalid observation');
   if(value.action!=='act') { if(value.operation!==null) throw Error('model_judgment: unexpected operation'); return value; }
   const op=value.operation;
-  const keys={camera:['kind','object','object_id','value'],constraint:['kind','object','object_id','constraint','value'],transform:['kind','object','object_id','location']}[op?.kind];
+  const keys={camera:['kind','object','object_id','value'],constraint:['kind','object','object_id','constraint','value'],transform:['kind','object','object_id','location'],rotation:['kind','object','object_id','rotation'],aim:['kind','object','object_id','target']}[op?.kind];
   if(!keys || Object.keys(op).length!==keys.length || keys.some(k=>!Object.hasOwn(op,k))) throw Error('operation_unsupported: invalid operation');
   if(!detail || detail.name!==op.object || detail.id!==op.object_id) throw Error('observation_missing: 対象objectを詳細観測してください');
   const n=(x,min,max)=>typeof x==='number'&&Number.isFinite(x)&&x>=min&&x<=max;
   if(op.kind==='camera'&&!(detail.type==='CAMERA'&&n(op.value,10,250))) throw Error('model_judgment: invalid lens');
   if(op.kind==='constraint'&&!(detail.constraints?.some(c=>c.name===op.constraint)&&n(op.value,0,1))) throw Error('target_unknown: constraint');
   if(op.kind==='transform'&&!(Array.isArray(op.location)&&op.location.length===3&&op.location.every(x=>n(x,-10000,10000)))) throw Error('model_judgment: invalid transform');
+  if(['rotation','aim'].includes(op.kind)) {
+    const vector=op.kind==='aim'?op.target:op.rotation;
+    if(detail.type!=='CAMERA'||!Array.isArray(vector)||vector.length!==3||!vector.every(x=>n(x,-10000,10000)))throw Error('model_judgment: invalid camera orientation');
+  }
   return value;
 }
 export const failureKind = error => ['observation_missing','target_unknown','operation_unsupported','model_judgment','execution_unknown','visual_unmet','stale_observation'].find(k=>String(error?.message??error).includes(k)) ?? 'execution_failed';
@@ -79,10 +84,10 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
         assertLiveTarget(binding,result);
         state=await read(); // Mandatory fresh read after every write.
         detail=await read('object',decision.operation.object);
-        const actual=decision.operation.kind==='camera'?state.lens:decision.operation.kind==='constraint'?detail.constraints.find(c=>c.name===decision.operation.constraint)?.influence:detail.local?.slice(0,3).map(row=>row[3]);
-        const expected=decision.operation.kind==='transform'?decision.operation.location:decision.operation.value;
+        const actual=decision.operation.kind==='rotation'?detail.rotation:decision.operation.kind==='aim'?detail.evaluated_world:decision.operation.kind==='camera'?state.lens:decision.operation.kind==='constraint'?detail.constraints.find(c=>c.name===decision.operation.constraint)?.influence:detail.local?.slice(0,3).map(row=>row[3]);
+        const expected=decision.operation.kind==='rotation'?decision.operation.rotation:decision.operation.kind==='transform'?decision.operation.location:decision.operation.value;
         const equal=(a,b)=>Array.isArray(b)?Array.isArray(a)&&a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<1e-5):typeof a==='number'&&Math.abs(a-b)<1e-5;
-        if(!equal(actual,expected)) throw Error('execution_failed: 操作後の実値が一致しません');
+        if(!(decision.operation.kind==='aim'?cameraAimsAt(detail.evaluated_world,decision.operation.target):equal(actual,expected))) throw Error('execution_failed: 操作後の実値が一致しません');
         if(result.changed) changes++;
         run.steps[run.steps.length-1]={...run.steps.at(-1),status:'complete',changed:!!result.changed,actual};await save({});continue;
       }
@@ -106,7 +111,8 @@ export async function handoffLive(call,project) {
 }
 export function createLiveBinding(project,panel,observation) {
   const objects=observation.objects??[];
-  const character_objects=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id).map(b=>{
+  const previous=panel.live_binding?.character_objects;
+  const character_objects=(previous?.length?previous:(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id)).map(b=>{
     const mapped=panel.live_binding?.character_objects?.find(o=>o.character_id===b.character_id);
     const prior=panel.live_binding?.objects?.find(o=>mapped?o.id===mapped.object_id:o.name===b.object_name);
     const sameEpoch=panel.live_binding?.epoch===observation.epoch;
@@ -123,4 +129,31 @@ export function verifyLiveMappings(project,panel,observation) {
     const next=actual.find(o=>o.id===b.object_id);
     if(!next||next.name!==b.object_name)throw Error('target_unknown: 人物対応が変わりました。名前・複製・削除を確認し、live対象を再割当してください');
   }
+}
+
+export async function yieldLive(call,project) {
+  invalidateLivePlans(project);
+  return liveCall(call,project,'yield');
+}
+
+// Blender cameras look down local -Z; verify the evaluated world direction.
+export function cameraAimsAt(matrix,target) {
+  if(!Array.isArray(matrix)||matrix.length!==4||!matrix.every(row=>Array.isArray(row)&&row.length===4&&row.every(Number.isFinite)))return false;
+  const forward=matrix.slice(0,3).map(row=>-row[2]);
+  const delta=target.map((v,i)=>v-matrix[i][3]);
+  const length=Math.hypot(...forward)*Math.hypot(...delta);
+  return length>1e-10&&forward.reduce((sum,v,i)=>sum+v*delta[i],0)/length>1-1e-6;
+}
+
+export const directoryWork = project => JSON.stringify([project.workId??'',project.snapshots?.find(s=>s.id===project.active)?.repo??'']);
+export async function openLiveShot(call,project,shot,{template='',scopeType='panel'}={}) {
+  const identity=await call('blender_gui_start',{input:{work:liveWork(project),directory_work:directoryWork(project),scope:`${scopeType}:${shot.id}`,template}});
+  const observation=await liveCall(call,project,'observe',{scope:'summary'});
+  assertLiveTarget(identity,observation);
+  return createLiveBinding(project,shot,observation);
+}
+
+export function livePlanGuard(project) {
+  const work=liveWork(project), version=controlVersions.get(work)??0;
+  return ()=>liveWork(project)===work&&(controlVersions.get(work)??0)===version;
 }

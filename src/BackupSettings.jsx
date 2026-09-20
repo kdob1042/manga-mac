@@ -23,7 +23,6 @@ export function useBackupSchedule(ready, busy) {
 }
 export default function BackupSettings({ disabled }) {
   const [data, setData] = useState(null), [pending, setPending] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState(''), [history, setHistory] = useState([]);
-  const [blender, setBlender] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [form, setForm] = useState({ repository: 'rclone:manga:manga-mac-backups/works', restic: '', rclone: '', rclone_config: '', password: '', consent: false, tools_verified: false, password_saved_elsewhere: false, initialize: false });
   const refresh = async () => setData(await call('backup_status'));
   useEffect(() => {
@@ -48,7 +47,6 @@ export default function BackupSettings({ disabled }) {
     <small>アプリ終了・オフライン中は実行せず、次の起動・接続後に繰り越します。整理対象はクラウドの旧版だけです。クラウド側のゴミ箱により請求容量の反映が遅れる場合があります。</small>
     {history.length > 0 && <ul>{[...history].sort((a,b) => b.completed_at-a.completed_at).map(s => <li key={s.id}>{date(s.completed_at)} · 作品 {s.series.slice(0,8)} <button disabled={locked} onClick={() => action(async () => { await call('backup_restore', { snapshotId: s.id }); setMessage('別作品として復元・検証しました。下の一覧から開けます。現在の作品は保持されています。'); })}>別作品として復元</button></li>)}</ul>}
     {(data?.restored.length > 0 || data?.active !== 'primary' && data) && <div><h4>作品を切り替える</h4><small>保存済みの作品を開くためアプリを再起動します。実行中の作画・転送がある場合は切り替えできません。</small><button disabled={locked || data.active === 'primary'} onClick={() => action(() => call('backup_open', { workspace: 'primary' }))}>元の作品を開く</button>{data.restored.map(w => <div key={w.id}>復元 {date(w.origin.created_at)} <button disabled={locked || data.active === w.id} onClick={() => action(() => call('backup_open', { workspace: w.id }))}>この復元作品を開く</button></div>)}</div>}
-    {data && data.active !== 'primary' && <div><label>復元作品のBlender実行ファイル<input value={blender} onChange={e => setBlender(e.target.value)}/></label><button disabled={locked} onClick={() => action(async () => { await call('backup_rebind_blender', { binary: blender }); setMessage('保存版を保持してBlender実行ファイルを再設定しました。'); })}>保存版を保持してBlenderを再接続</button></div>}
     <details><summary>保存先を設定・再接続</summary>
       <p>導入ガイドの手順でrestic 0.19.1・rclone 1.75.1を用意し、Google DriveまたはOneDriveの専用remoteを設定してください。</p>
       {[['repository','クラウド保存先'],['restic','restic実行ファイルの絶対パス'],['rclone','rclone実行ファイルの絶対パス'],['rclone_config','専用rclone設定ファイルの絶対パス']].map(([key,label]) => <label key={key}>{label}<input value={form[key]} disabled={locked} onChange={e => set(key,e.target.value)}/></label>)}

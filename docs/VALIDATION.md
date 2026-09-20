@@ -461,3 +461,24 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 同fixtureには、アプリ本体と同じRust `blender_live::command` を使う実接続試験も追加した。専用Mac workflowでコンパイルしたtest binaryをGUI稼働中に呼び、誤token/instance/file/scene/view layer/作品の拒否、観測、切断・再接続を検査し、`native_client`の結果をJSONへ残す。通常のunit testではGUI必須試験を明示ignoreし、専用workflowでだけ実行する。最新結果はPR #193を参照。
 
 この結果は配布Tauriアプリの設定画面・候補採用/Undoの通し操作、設定済み実LLMの判断、個人Macの24GB性能を含まない。これらは #184 / #186 / #187 で継続する。異なるrig・アドオン・GPU環境すべての互換性やviewport fallbackの全経路を保証する試験でもない。
+
+## GUI統一とCodex引継ぎ（#195）
+
+仕様変更により旧headless自動演出・Web素材取込・撮影UIの試験をGUI接続案内／GUI撮影へ置換。旧成果物の読取・採否復旧・バックアップ契約は保持。旧実行IPCからプロセスを起動できないことを検証する。
+
+追加検証: GUI内render+copyと寸法・依存固定、nativeで候補保存→capture読戻し、manga-mac yield→別MCP client claim→占有中reclaim拒否→release→再観測。実CodexアプリのComputer Use操作そのものはこのfixtureでは検証しない（#187）。試験結果はPRに記録する。
+
+### #197 GUI自動起動・作業フォルダ・カメラ拡張
+
+- ローカル: Web build、live判断の既存回帰とカメラ回転/注視点の検証を実行。Python構文確認。
+- CI追加: 実Blender 4.5.13 GUIをnative launcherが起動し、同じinstanceの再利用、別コマへの暗黙切替拒否、カメラ回転と注視点の実値読戻し、作業保存、切断/再接続を検証する。
+- 2026-09-20: commit `c1f68da` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35490889836)成功。保存→プロセス終了→再開と、素材原本から別作業へのコピー作成・原本不変も実Blenderで確認。読み込み直後のGUI context不足を修正した後の結果。
+- 同commitの[共通CI](https://github.com/kdob1042/manga-mac/actions/runs/35490889946)でweb/storage/llm/blender成功。ブラウザは48件成功。実Macアプリの視覚品質、実Codex Computer Use、参照画像からの実モデル生成はこのfixtureの合格では代替しない（#184/#187/#199）。
+
+### #199 制作依頼と複数アングル
+
+- 制作依頼の原文範囲・参照bytes/hash・秘密情報除外・古いGUI識別子の拒否をNodeで検証。
+- 3候補を保存しても採用版/他コマ/原文が変わらず、途中の停止や手動変更時は残りを撮らず完成済み候補を残すことをNodeで検証。
+- 2026-09-20: `6a71a78` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35491679314)で、同じSceneの2角度を実描画して画像hashが異なること、camera location/rotationの復元、撮影後の観測版の読戻しを確認。共通CI（35491679300）のweb/storage/llm/blenderも成功。
+- 追加のZIP展開試験を含むローカルNode215件成功。`3afc466` の[ブラウザCI](https://github.com/kdob1042/manga-mac/actions/runs/35492221353)で49件成功。3候補生成→制作依頼ZIP→MCP解放の操作順も確認。
+- 実参照画像からのモデル生成、実MacのCodex操作、人物・演出の見た目の品質は未受入。

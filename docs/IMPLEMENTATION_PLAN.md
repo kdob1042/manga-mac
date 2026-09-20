@@ -95,7 +95,7 @@ LLMが`ready`等の完了を返したこと自体は、Blender操作の完了証
 
 起動時にBlenderの版・ビルド、接続拡張の版、プロトコル、対応操作、描画パス、GUIの要否を照合する。対応版は試験後に固定し、`latest`へ無条件追随しない。Blender API操作はBlenderが許容するメインスレッド／コンテキストで逐次実行し、通信スレッドから直接データを変更しない。GUI依存操作をheadlessで動くと仮定しない。[B7]
 
-アプリ専用セッションを原則とし、ユーザーが編集中のBlenderへ無断接続・終了・上書きしない。接続はローカル限定、認証付き、許可フォルダ内に限定する。外部blendの自動スクリプト実行、任意アドオン導入、パス逸脱を許可しない。信頼していない素材を安全なPythonとみなさない。
+ユーザーが明示接続した同じBlender GUIを編集対象とし、ユーザーが編集中のBlenderへ無断接続・終了・上書きしない。接続はローカル限定、認証付き、許可フォルダ内に限定する。外部blendの自動スクリプト実行、任意アドオン導入、パス逸脱を許可しない。信頼していない素材を安全なPythonとみなさない。
 
 ## 4. 素材と状態の保存
 
@@ -400,7 +400,7 @@ task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求
 
 取消応答の消失・task削除・出力期限切れで続行不能の場合は、サービス側確認の明示後にローカル要求だけ採用せず解決できる。費用・task ID・旧採用版を保持し、遠隔取消成功や返金を表す状態へ変えない。取得済み成果物がある要求は対象外とする。
 
-V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作らない撮影準備は既存shot_batchesへscope_type=videoSourceとして保存し、同じblender_forkとShotControlsで専用セッション・camera/frame・撮影・復旧を扱う。撮影版は共通capturesへ保存し、既存開始画像解決器へ渡す。再撮影しても保存済み動画ショットの開始画像参照・採用動画・漫画履歴は変更しない。旧撮影を使う漫画・動画と、同一base_sessionの保存版変更に影響する撮影を読取り専用で表示する。ファイル名から素材の同一性を推定せず、別接続で再登録した素材の対応は自動推定しない。MV-11の実Blender両媒体受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
+V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作らない撮影準備は既存shot_batchesへscope_type=videoSourceとして保存し、同じShotControlsから接続済みGUIを明示割当し、GUIで撮影した版を保存する。camera/frame・素材・ポーズは同じGUIで編集する。撮影版は共通capturesへ保存し、既存開始画像解決器へ渡す。再撮影しても保存済み動画ショットの開始画像参照・採用動画・漫画履歴は変更しない。旧撮影を使う漫画・動画と、同一base_sessionの保存版変更に影響する撮影を読取り専用で表示する。ファイル名から素材の同一性を推定せず、別接続で再登録した素材の対応は自動推定しない。MV-11の実Blender両媒体受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
 ## 13. 参照資料と未確定事項
 
@@ -531,14 +531,44 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 
 ### Live Blender（#175、A: #176）
 
-GUIを明示接続するliveと保存checkpointから実行するheadlessを併設する。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
+2026-09-20の仕様変更（#195）により、編集・候補保存を明示接続したGUIへ統一し、製品からheadlessを起動しない。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
 
-HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。アプリ管理領域内のfile（symlink解決後を含む）へのlive接続は拒否し、外部の作業用copyを要求する。接続サーバー停止はGUIのpendingリクエストを待たず、旧サーバーからの未実行要求は再起動後も失効する。
+HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧成果物の読み取り・復旧・バックアップ互換は保持するが、旧実行IPCはGUI接続の案内を返す。アプリ管理領域内のfile（symlink解決後を含む）へのlive接続は拒否し、外部の作業用copyを要求する。接続サーバー停止はGUIのpendingリクエストを待たず、旧サーバーからの未実行要求は再起動後も失効する。
 
 Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
 
-Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当は旧typed/headlessの互換経路を維持。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
+Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当ではGUI接続と対象割当を案内し、自動的に別のBlenderを起動しない。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
 
 Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明示。引継ぎ時にアプリ内の計画世代を即失効し、Blender側もmanualへ移行・観測版を更新する。再開は新規runで再観測し、名前/ID/人物対応不明なら停止。外部Computer Use providerは同梱しない。
 
-候補保存は明示操作でBlender標準pack_all/save_as_mainfile(copy=True)を使い、64MiB以下の新規copyをnativeのUUIDディレクトリへ保存する。既存headlessアダプタでそのcopyの依存検証・撮影を行い、新session/ShotBinding/CaptureRevisionとして記録する。この候補撮影はGUIの観測受入の代替ではない。採用前は既存panel pointerを変更せず、採用時に基準版検査と漫画側Undo履歴を残す。採用済みcheckpoint・原文・他コマ・旧作画/動画は保持する。大きなblend、非Object mode、未対応依存は理由を示して停止する。
+候補保存は接続済みGUIのメインスレッド上で依存packing→同期render→save_as_mainfile(copy=True)を一続きに行う。描画・保存の間にGUI入力やMCP書込みを処理しない。64MiB以下のblendと4MiB以下のPNG、撮影時設定をnativeへ送り、検証して新session/ShotBinding/CaptureRevisionとして登録する。撮影寸法は64〜4096、撮影中だけ設定し元へ戻す。color passはcompositor/sequencerを使わない。保存後も作業fileを切り替えない。採用前は既存panel pointerを変更せず、採用時に基準版検査と漫画側Undo履歴を残す。採用済みcheckpoint・原文・他コマ・旧作画/動画は保持する。大きなblend、非Object mode、未対応依存は理由を示して停止する。素材の取込み・ポーズ適用はBlender標準UIを使用する。過去版の再撮影は利用者が未保存作業を保護して外部作業コピーをGUIで開き、接続・対象割当をやり直す。アプリは勝手にfile loadしない。
+
+### MacのCodexとの制御交代（#195）
+
+manga-mac自身のlive自然言語演出は維持する。「MacのCodexへ渡す」は未送信計画を失効させ、MCPクライアントの占有を解放する。native接続はyielded状態となり、observe/act/resume/candidateを拒否する。Codexは同じloopback MCPを別client IDでclaimできる。画面操作だけの場合はclaim不要だが、同じGUIを対象とする。Codexがreleaseし画面操作を終えた後、利用者が「操作権を戻し、再観測する」を選ぶ。別clientが占有中なら復帰を拒否する。file/scene/view layer/epoch変更時は再接続・再割当が必要。
+
+MCPの排他はこの接続経路の書込みを制御するもので、OSのマウス・キーボードをロックしない。CodexのComputer Useと人の手動操作を終えてからmanga-macへ戻す。独自Computer Use providerやCodexの自動起動・自動接続設定は持たない。実Codexの画面操作受入は#187で追跡する。
+
+### GUI作業フォルダと最終制作フロー（#197 / #199）
+
+目標は参照画像・原稿→必要モデル／Scene作成→同じSceneの複数アングル撮影→候補採用である。manga-macで完結できない工程は、同じGUIをMacのCodexまたは人へ引き継ぎ、再観測して戻す。モデル生成プロバイダ接続と複数アングルの一括制作は #199 の未実装工程であり、GUI接続だけで完了とはしない。
+
+#197 は「書類/Manga Mac/3D/<作品キー>/assets」「work/<コマ・撮影キー>/working.blend」「exports」をアプリが作る。素材の内容・分類・タグ・カタログはBlender標準が正本。原稿版の更新でも作品の素材フォルダは変えない。コマと動画撮影の作業ファイルは分離する。
+
+「このコマのBlenderを開く」はGUIを起動し、同梱した接続コードで認証付きloopbackへ接続する。新規作業は新しいシーン、またはassets直下の選択blendから作る。元blendは上書きしない。保存済みworking.blendは続きから開く。Asset LibraryはそのGUIの設定に登録し、利用者の全体設定を保存・変更しない。既存の別作業への接続中は明示切断を求める。Blenderを終了させず、同じ作業の二重起動を防ぐ。アプリ再起動後もBlenderが開いている場合は手動の接続設定から再接続する。
+
+作業保存と撮影候補保存は別操作。作業保存はアプリが作った現在のworking.blendに限定し、採用済みcheckpointを上書きしない。素材とworkingフォルダは利用者の書類領域にあり、現行アプリ内クラウドバックアップの対象外。撮影候補は従来どおり依存を固定してアプリ領域に保存し、バックアップ対象になる。
+
+カメラのレンズに加え、静的な位置・XYZ回転・注視点を許可する。親・制約・アニメーション付きの直接変形は拒否し、Codex／人へ渡す。注視点操作はevaluated worldの視線方向を読み戻す。自然言語の見た目目標は人の確認を必要とし、モデルのreadyだけで撮影・採用しない。
+
+### 制作依頼の引継ぎと角度候補（#199）
+
+対象コマから、原文の正確な範囲、場面文脈、原稿commit、人物・画風参照画像の実bytesとhash、liveのinstance/file/scene/frame、人物とObjectの対応をZIPへまとめる。作品全体や接続設定・tokenを丸ごと書き出さない。「MacのCodexへ渡す」は未送信計画を破棄し、制作依頼を書き出したうえでMCP占有を解放する。利用者がそのZIPをMacのCodexへ渡す。独自Computer UseプロバイダやCodexへの非公開起動APIは使わない。人へ渡す場合も同じ制作資料を用意する。再開時は既存の再観測・対応確認を必須にする。
+
+複数アングルは、利用者が指定するObjectのevaluated原点を注視し、現在のカメラ位置からworld Z軸の周囲へ指定角度だけ回り込む。標準は-30/0/30度、最大5候補。Scene/frameは変えない。各撮影はGUIメインスレッドでカメラ変更→描画→blendコピー→カメラ復元を行う。画像とcheckpointには撮影時の角度を残し、GUIは元のカメラへ戻す。親・制約・アニメーション付きカメラやObject mode以外は既存の制約に従って拒否する。
+
+各候補保存後の観測版をnativeから返し、次の撮影前に照合する。手動変更・取消・Codexへの引継ぎがあれば残りを止め、完成済み候補は残す。採用は別操作。原文・他コマ・旧採用版を変えない。角度候補は画像比較で選ぶもので、自然言語の演出意図を自動で満たしたとは宣言しない。
+
+参照画像からのモデル生成サービスの接続は #201 の未実装工程。標準素材の利用やCodex/人によるモデル・Scene作成を先に同じ経路で扱う。Tripo等は任意の後続接続であり、勝手な素材送信・課金・アドオン導入は行わない。
+
+素材からの作業コピー作成はBlender標準のrelative path remapを使う。新しいGUIで標準blendを開く工程には、撮影時のpacking制約を課さない。依存の固定・サイズ検証は候補撮影時に行う。
