@@ -93,7 +93,13 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   }
   const references = [];
   for (const declaration of referenceDeclarations(model, settings)) {
-    const asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
+    let asset;
+    try {
+      asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
+    } catch (error) {
+      if (!legacySourceRoot) throw error;
+      asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+    }
     references.push({ ...declaration, ...asset });
   }
   const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
