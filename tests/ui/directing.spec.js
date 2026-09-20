@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 const legacy = JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json', import.meta.url)));
 
-test('production requires explicit GUI assignment and never forks background shots', async ({ page }) => {
+test('production opens its GUI and waits for visual confirmation without background shots', async ({ page }) => {
   await page.addInitScript(({ legacy }) => {
     let project = { ...legacy, title:'自動演出テスト', history:[], jobs:[], panels:Array.from({length:4},(_,i)=>({...legacy.panels[0],id:`s:p${i}`,unitIds:[`s:u${i}`],image:null,attempts:0,instructions:[]})), snapshots:[{...legacy.snapshots[0],scenes:[{id:'s',text:'駅の全景。\n\n人物Aが話す。\n\n人物Aが笑う。\n\n静かな余韻。',design:''}]}] };
     const sessions = {}, calls = []; window.nativeCalls = calls;
@@ -26,9 +26,9 @@ test('production requires explicit GUI assignment and never forks background sho
         if(r.purpose==='layout'){const payload=JSON.parse(r.prompt);return {request_id:r.request_id,value:{reason:'配置を維持',pages:payload.pages}};}
         if(r.purpose==='lettering')return {request_id:r.request_id,value:{reason:'本文を配置',layout:JSON.parse(r.prompt).current}};
         if(r.purpose!=='direction') throw Error('Unexpected AI purpose');
-        const payload=JSON.parse(r.prompt.split('\n').at(-1));
-        return {request_id:r.request_id,value: payload.completed.some(o=>o.kind==='camera') ? {status:'ready',reason:'構図を確認、撮影へ',operation:null} : {status:'action',reason:'人物へ寄ります',operation:{kind:'camera',lens:70}}};
+        return {request_id:r.request_id,value:{action:'ready',reason:'見た目を確認してください',scope:'summary',object:'',operation:null}};
       }
+      if(command==='blender_gui_start'||command==='blender_live')return {instance:'gui',epoch:'e',revision:1,file:'/working.blend',scene:'Scene',view_layer:'ViewLayer',objects:[],next_offset:null,control:'ai'};
       if(command==='blender_latest') return {session_id:'base',revision:0,state};
       if(command==='blender_fork') return args.ids.map(id=>sessions[id]={session_id:id,revision:0,state:structuredClone(state),jobs:[]});
       if(command==='blender_status') return structuredClone(sessions[args.sessionId]);
@@ -51,7 +51,9 @@ test('production requires explicit GUI assignment and never forks background sho
   await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();
   await page.getByRole('button',{name:'閉じる',exact:true}).click();
   await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();
-  await expect(page.getByRole('alert').filter({hasText:'Blender GUIへlive接続'})).toBeVisible();
+  await expect(page.getByRole('alert').filter({hasText:'候補保存・採用してから続行'})).toBeVisible();
   const calls=await page.evaluate(()=>window.nativeCalls);
-  expect(calls.some(c=>['blender_execute','blender_fork'].includes(c.command))).toBe(false);
+  expect(calls.filter(c=>c.command==='blender_gui_start')).toHaveLength(1);
+  expect(calls.some(c=>['blender_execute','blender_fork','generate_image'].includes(c.command))).toBe(false);
+  expect(calls.some(c=>c.command==='blender_live'&&c.args.action==='disconnect')).toBe(false);
 });

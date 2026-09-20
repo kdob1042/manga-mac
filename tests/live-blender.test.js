@@ -44,3 +44,21 @@ test('epoch/instance mismatch never resolves by similar name',()=>{
 test('cancel is a live pause, never a headless capture result',async()=>{
  const f=fixture([],{cancel:()=>true});assert.deepEqual(await f.run(),{live:true,status:'paused'});assert.equal(f.requests.length,0);
 });
+
+test('camera orientation requires observed camera identity and finite vectors',()=>{
+ for(const [kind,field] of [['rotation','rotation'],['aim','target']]) {
+  const op={kind,object:'Camera',object_id:'o',[field]:[0,1,2]};
+  const d=decision('act',op), detail={name:'Camera',id:'o',type:'CAMERA'};
+  assert.equal(validateLiveDecision(d,detail),d);
+  assert.throws(()=>validateLiveDecision(d,{...detail,type:'MESH'}),/invalid camera/);
+  assert.throws(()=>validateLiveDecision(decision('act',{...op,[field]:[NaN,0,0]}),detail),/invalid camera/);
+ }
+});
+test('aim readback checks evaluated camera direction, not the operation reply',async()=>{
+ const {cameraAimsAt}=await import('../src/live-blender.js');
+ const matrix=[[1,0,0,0],[0,1,0,0],[0,0,1,5],[0,0,0,1]];
+ assert.equal(cameraAimsAt(matrix,[0,0,0]),true);
+ assert.equal(cameraAimsAt(matrix,[0,0,10]),false);
+ assert.equal(cameraAimsAt(matrix,[0,0,5]),false);
+ assert.equal(cameraAimsAt(matrix,[2,0,0]),false);
+});

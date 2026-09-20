@@ -1,6 +1,7 @@
 """Allowlisted property operations only. RNA discovery is not execution permission."""
 import bpy
 import math
+from mathutils import Vector
 from .observation import object_id
 
 
@@ -14,7 +15,9 @@ def apply(op):
     kind = op.get('kind')
     keys = {'camera': {'kind', 'object', 'object_id', 'value'},
             'constraint': {'kind', 'object', 'object_id', 'constraint', 'value'},
-            'transform': {'kind', 'object', 'object_id', 'location'}}
+            'transform': {'kind', 'object', 'object_id', 'location'},
+            'rotation': {'kind', 'object', 'object_id', 'rotation'},
+            'aim': {'kind', 'object', 'object_id', 'target'}}
     if kind not in keys or set(op) != keys[kind]:
         raise ValueError('operation_unsupported: unapproved property/operator')
     obj = bpy.context.scene.objects.get(op['object'])
@@ -40,13 +43,26 @@ def apply(op):
     else:
         if obj.parent or obj.constraints or obj.rotation_mode != 'XYZ' or bpy.context.mode != 'OBJECT':
             raise ValueError('operation_unsupported: transform context')
-        value = op['location']
+        if kind in ('rotation', 'aim') and obj != bpy.context.scene.camera:
+            raise ValueError('target_unknown: not active camera')
+        value = op[{'transform': 'location', 'rotation': 'rotation', 'aim': 'target'}[kind]]
         if not isinstance(value, list) or len(value) != 3:
             raise ValueError('invalid location')
         value = [scalar(x, -10000, 10000) for x in value]
-        before = list(obj.location)
-        obj.location = value
-        actual = list(obj.location)
+        if kind == 'transform':
+            before = list(obj.location)
+            obj.location = value
+            actual = list(obj.location)
+        else:
+            before = list(obj.rotation_euler)
+            if kind == 'aim':
+                direction = Vector(value) - obj.location
+                if direction.length < 1e-6:
+                    raise ValueError('invalid target: camera and target coincide')
+                obj.rotation_euler = direction.to_track_quat('-Z', 'Y').to_euler('XYZ')
+            else:
+                obj.rotation_euler = value
+            actual = list(obj.rotation_euler)
     bpy.context.view_layer.update()
     # read back actual configured value; visual/evaluated effect remains a separate check
     return {'before': before, 'actual': actual, 'changed': before != actual,
