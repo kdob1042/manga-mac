@@ -11,7 +11,7 @@ import {call,desktop} from './bridge.js';
 import {pagePNG} from './render.js';
 import {pagePanels} from './layout.js';
 const stages={waiting:'依存する範囲の完了待ち',planning:'更新案を計画中',candidate:'更新案を確認できます',drawing:'必要な作画を生成中',stopping:'現在の応答を回収して停止中',stopped:'停止済み・素材を保持',failed:'失敗・候補を保持',complete:'反映済み'};
-export default function SourceUpdate({project,current,commit,acceptSaved,exclusive=fn=>fn(),busy,model}){
+export default function SourceUpdate({project,current,commit,acceptSaved,exclusive=fn=>fn(),busy,model,imageModelId}){
  const scheduler=useRef(createRangeScheduler()),controls=useRef(new Map()),[local,setLocal]=useState([]),[error,setError]=useState('');
  const redraw=()=>setLocal([...controls.current.values()].map(c=>({id:c.id,selection:c.selection,stage:c.stage,note:c.note,workId:c.workId})));
  const sameWork=id=>{if(current.current.workId!==id)throw Error('対象作品が変わりました');};
@@ -51,7 +51,7 @@ export default function SourceUpdate({project,current,commit,acceptSaved,exclusi
   await patchJob(c.id,c.workId,j=>({...j,source_candidate:candidate}));await stage(c,'drawing');
   await produceSourceCandidate({current:()=>current.current,commit,opId:c.id,generate:generatePanel,recover:jobId=>call('recover_image',{jobId}),cancelled:()=>c.stopped,notify:note=>{c.note=note;redraw();},
    refresh:async()=>{sameWork(c.workId);const latest=current.current.jobs.find(j=>j.id===c.id).source_candidate;const refreshed=await refresh(c,latest);await patchJob(c.id,c.workId,j=>({...j,source_candidate:refreshed}));},
-  });await stage(c,c.stopped?'stopped':'candidate');if(c.stopped){scheduler.current.release(c.id);c.acquired=false;}
+   imageModelId});await stage(c,c.stopped?'stopped':'candidate');if(c.stopped){scheduler.current.release(c.id);c.acquired=false;}
  });}
  async function adopt(job){return operate(job,async c=>{
   const applied=await exclusive(async()=>{sameWork(c.workId);const saved=JSON.parse(await call('load_project'));sameWork(c.workId);acceptSaved(saved);return !!saved.sourcePatchReceipts?.[c.id];});

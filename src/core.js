@@ -1,4 +1,5 @@
 import {textForRefs} from './source-refs.js';
+import { defaultImageModelId, defaultVideoModelId } from './media.js';
 // Pure domain logic. Source text is never produced by a language model.
 export function orderedScenes(manifest, episodeId) {
   if (!Array.isArray(manifest.episodes) || !Array.isArray(manifest.scenes)) throw Error('manifest の形式が不正です');
@@ -54,4 +55,4 @@ export function sourceForPanel(panel, snapshot) {
 export function revise(project, panels, label) {
   return { ...project, panels, history: [...project.history, { panels: project.panels, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), label, at: new Date().toISOString() }] };
 }
-export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });
+export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', mediaDefaults: { image: defaultImageModelId, video: defaultVideoModelId }, videoShots: [], videoRevisions: [], videoHistory: [] });

@@ -20,22 +20,22 @@ function PlacementComparison({project,panel,artwork}) {
   },[project,panel,artwork]);
   return <>{error&&<p role="alert">配置プレビュー：{error}</p>}{images&&<div className="upscale-compare">{images.map((src,i)=><figure key={i}><img src={src} alt={i?'配置した仕上げ候補':'現在の配置'}/><figcaption>{i?'再生成候補（現在の配置）':'現在の原稿'}</figcaption></figure>)}</div>}</>;
 }
-export default function FinishingControls({project,panel,current,commit,run,busy}) {
+export default function FinishingControls({project,panel,current,commit,run,busy,imageModelId}) {
   const [plan,setPlan]=useState(null),[error,setError]=useState('');
   useEffect(()=>{
     let stopped=false;setPlan(null);setError('');
-    if(panel.image)imageOf(panel.image).then(im=>{const next=finishingPlan(project,panel.id,im.width,im.height);if(!stopped)setPlan(next);}).catch(e=>{if(!stopped)setError(e.message);});
+    if(panel.image)imageOf(panel.image).then(im=>{const next=finishingPlan(project,panel.id,im.width,im.height,imageModelId);if(!stopped)setPlan(next);}).catch(e=>{if(!stopped)setError(e.message);});
     return()=>{stopped=true;};
-  },[project.layout,panel.image,panel.id]);
+  },[project.layout,panel.image,panel.id,imageModelId]);
   const jobs=project.jobs.filter(j=>j.finishing&&j.panelId===panel.id&&['candidate','unknown'].includes(j.status));
-  const prepare=()=>prepareFinishing(()=>current.current,commit,panel.id);
+  const prepare=()=>prepareFinishing(()=>current.current,commit,panel.id,imageModelId);
   return <section className="shot-controls" aria-label="配置に合わせた仕上げ"><h3>配置に合わせた仕上げ</h3>
     <p>拡大・縮小・位置は「画像トリミング」で調整します。配置は固定したまま、元画像と人物・画風参照を使って絵を再生成できます。構図や細部の一致は保証されないため、比較して採用してください。枠・セリフ・吹き出しは生成画像へ焼き込みません。</p>
     {error&&<p>{error}</p>}
     {plan&&<><p>元画像 {plan.sourceWidth} × {plan.sourceHeight} px ／ 配置に必要な原画像サイズ {plan.requiredWidth} × {plan.requiredHeight} px</p>
       <p>{plan.sourceSufficient?'現在の画像は画素数を満たしています。縮小は出力時に行うため、再生成は不要です。':'現在の画像は配置に対して解像度が不足しています。'}</p>
       <p>再生成サイズ {plan.width} × {plan.height} px（元画像と同じ縦横比）</p>
-      {!plan.sufficient&&<p role="status">必要サイズがエンジン上限1024pxを超えています。この候補を採用しても解像度不足は解消しません。配置の拡大率を下げるか、今後の高解像度エンジン対応が必要です。</p>}</>}
+      {!plan.sufficient&&<p role="status">必要サイズがエンジン上限{plan.engineMax}pxを超えています。この候補を採用しても解像度不足は解消しません。配置の拡大率を下げるか、今後の高解像度エンジン対応が必要です。</p>}</>}
     <button disabled={busy||!plan||!desktop()} onClick={()=>run('配置に合わせて再生成',prepare)}>元画像を参照して仕上げ候補を作る</button>
     {!desktop()&&<small>再生成はMacアプリの既存画像モデルを使用します。</small>}
     {jobs.map(j=>{const artwork=project.artworks.find(a=>a.id===j.output_revision),stale=j.placement_key!==placementKey(project,panel.id);return <div key={j.id}>

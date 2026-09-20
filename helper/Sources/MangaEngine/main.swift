@@ -5,18 +5,25 @@ import MediaGenerationKit
 
 struct Reference: Decodable { let id: String; let name: String; let hash: String; let image: String }
 struct Output: Decodable { let directory: String; let request_hash: String }
-struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int? }
+struct MediaSelection: Decodable { let adapter_id: String; let model_id: String }
+struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int?; let steps: Int?; let media: MediaSelection? }
 
 @main struct MangaEngine {
   static func main() async {
     do {
-      let model = "flux_2_klein_4b_q8p.ckpt"
+      let defaultModel = "flux_2_klein_4b_q8p.ckpt"
+      let prepareIndex = CommandLine.arguments.firstIndex(of: "--prepare")
+      let model = prepareIndex.flatMap { index in
+        index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : nil
+      } ?? defaultModel
       if CommandLine.arguments.contains("--prepare") {
+        guard model == defaultModel else { throw NSError(domain: "Unsupported image adapter", code: 10) }
         try await MediaGenerationEnvironment.default.ensure(model)
         print("ready")
         return
       }
       let request = try JSONDecoder().decode(Request.self, from: FileHandle.standardInput.readDataToEndOfFile())
+      guard request.media?.adapter_id == "media-generation-kit", request.media?.model_id == model else { throw NSError(domain: "Image model selection mismatch", code: 11) }
       let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
       defer { try? FileManager.default.removeItem(at: temp) }
@@ -37,7 +44,7 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
       guard (256...1024).contains(width), (256...1024).contains(height), width % 64 == 0, height % 64 == 0 else { throw NSError(domain: "Unsupported image dimensions", code: 3) }
       pipeline.configuration.width = width
       pipeline.configuration.height = height
-      pipeline.configuration.steps = 4
+      pipeline.configuration.steps = request.steps ?? 4
       pipeline.configuration.seed = request.seed
       let results = try await pipeline.generate(prompt: request.prompt, negativePrompt: "text, lettering, watermark", inputs: inputs)
       guard let first = results.first else { throw NSError(domain: "No generated image", code: 2) }

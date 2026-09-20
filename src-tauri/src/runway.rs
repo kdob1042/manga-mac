@@ -832,6 +832,9 @@ mod tests {
         let connection = VideoConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
+            provider: "runway".into(),
+            model: "gen4.5".into(),
+            adapter_id: "runway".into(),
         };
         let response = request(
             &client,
@@ -931,6 +934,9 @@ mod tests {
         let connection = VideoConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
+            provider: "runway".into(),
+            model: "gen4.5".into(),
+            adapter_id: "runway".into(),
         };
         let response = request(
             &client,
@@ -1056,6 +1062,9 @@ mod tests {
         let connection = VideoConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
+            provider: "runway".into(),
+            model: "gen4.5".into(),
+            adapter_id: "runway".into(),
         };
         for method in [reqwest::Method::GET, reqwest::Method::DELETE] {
             let (url, worker) = local_response("200 OK", "application/json", b"{}".to_vec(), 2);

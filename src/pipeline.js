@@ -2,9 +2,11 @@ import { imageHash } from './revisions.js';
 import { completeImage } from './image-recovery.js';
 import { generationSize, imageRequest } from './image-input.js';
 import { call } from './bridge.js';
+import { executeImage } from './media-runtime.js';
 import { askLLM } from './llm.js';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core.js';
 import { referenceDeclarations, normalizeSourceManifest } from './source-protocol.js';
+import { defaultImageModelId, imageModel } from './media.js';
 
 const STORY_SOURCE_FORMAT = 'story-source/v1';
 
@@ -129,7 +131,9 @@ export async function planScene(scene, snapshot, characters, model, ask = askLLM
   }
   return validatePlan(plan, units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null) {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null) {
+  const selected = imageModel(imageModelId ?? job?.media?.registry_id ?? defaultImageModelId);
+  if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
@@ -149,23 +153,23 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (panel.image) refs.push({ id: panel.artwork_revision ?? panel.id, name: 'Previous accepted expression / style', image: panel.image, hash: await imageHash(panel.image) });
     instruction = [...(panel.instructions ?? []), instruction].filter(Boolean).join('\n');
   }
-  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution);
+  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution, selected.id);
   if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
     const { fitInput } = await import('./canvas-image.js');
     const fitted = await fitInput(source, width, height); source = fitted.image; mapping = fitted.mapping;
   }
   const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-  const request = imageRequest({ panel, references: refs, original: source, originalHash: source ? await imageHash(source) : null, width, height, seed, instruction, job, capture });
+  const request = imageRequest({ panel, references: refs, original: source, originalHash: source ? await imageHash(source) : null, width, height, seed, instruction, job, capture, modelId: selected.id });
   request.recovery = { version: 1, kind: job?.kind,
-    panel: { ...panel, image: null, ...(job?.finishing ? {finishing:job.finishing} : {}), generation: { model: 'flux_2_klein_4b_q8p.ckpt', seed, steps: 4, width, height, input_mapping: mapping, original_hash: request.original_hash, capture_revision: capture?.id ?? panel.capture_revision ?? null, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1,
+    panel: { ...panel, image: null, ...(job?.finishing ? {finishing:job.finishing} : {}), generation: { registry_id: selected.id, adapter_id: selected.adapter_id, model: selected.model_id, seed, steps: selected.input.steps, width, height, input_mapping: mapping, original_hash: request.original_hash, capture_revision: capture?.id ?? panel.capture_revision ?? null, at: new Date().toISOString() }, references: refs.map(({ image, ...r }) => r), status: 'review', attempts: panel.attempts + 1,
       instructions: edit ? [...panel.instructions, instruction] : panel.instructions },
     ...(edit ? { original, original_hash: await imageHash(original), rect: edit.rect } : {}) };
-  const image = await call('generate_image', { request },permit);
+  const image = await executeImage(selected.id, request, permit);
   return completeImage(request.recovery, image);
 }
-export async function editRegion(panel, characters, instruction, rect, job = null, styles = []) {
+export async function editRegion(panel, characters, instruction, rect, job = null, styles = [], imageModelId = null) {
   if (!panel.image) throw Error('先にコマを作画してください');
   if (!Array.isArray(rect) || rect.length !== 4 || rect.some(n => !Number.isFinite(n) || n < 0 || n > 1) || rect[2] <= 0 || rect[3] <= 0 || rect[0] + rect[2] > 1 || rect[1] + rect[3] > 1) throw Error('修正範囲を選択してください');
-  return generatePanel(panel, characters, panel.image, instruction, job, null, styles, { rect });
+  return generatePanel(panel, characters, panel.image, instruction, job, null, styles, { rect }, null, imageModelId);
 }

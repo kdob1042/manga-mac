@@ -1,12 +1,15 @@
 import React,{useEffect,useState} from 'react';
 import { assignMotion, removeMotion, undoMotion, motionStatus, shotFromPanel } from './panel-motion';
 import { adjacentPanelPairs } from './video-transition';
+import { defaultVideoModelId, videoModel } from './media.js';
 export default function PanelMotionControls({project,panel,current,commit,run,busy,onShot,onAdjacentPair}) {
  const [shot,setShot]=useState(''),[prompt,setPrompt]=useState(''),[ratio,setRatio]=useState('960:960'),[status,setStatus]=useState('動画なし');
+ const ratios=videoModel(project.mediaDefaults?.video ?? defaultVideoModelId).input.ratios;
+ useEffect(()=>{if(!ratios.includes(ratio))setRatio(ratios[0]);},[ratios,ratio]);
  useEffect(()=>{let live=true;motionStatus(project,panel).then(s=>{if(live)setStatus(s.message);});return()=>{live=false;};},[project,panel]);
  const adjacent=adjacentPanelPairs(project).find(pair=>pair.fromPanelId===panel.id);
  return <section className="shot-controls" aria-label="コマの動画"><h3>このコマを動かす</h3><p role="status">{status}</p><fieldset disabled={busy}>
- <label>動きの指示<textarea value={prompt} maxLength={1000} onChange={e=>setPrompt(e.target.value)}/></label><label>動画の寸法<select value={ratio} onChange={e=>setRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r=><option key={r}>{r}</option>)}</select></label>
+ <label>動きの指示<textarea value={prompt} maxLength={1000} onChange={e=>setPrompt(e.target.value)}/></label><label>動画の寸法<select value={ratio} onChange={e=>setRatio(e.target.value)}>{ratios.map(r=><option key={r}>{r}</option>)}</select></label>
  <button disabled={!panel.image||!prompt.trim()} onClick={()=>run('コマの動画を準備',async()=>{const next=await shotFromPanel(current.current,panel.id,prompt,ratio);await commit(next);onShot(next.videoShots.at(-1).id);})}>この作画から動画を準備</button>
  {adjacent&&<button disabled={!adjacent.valid} onClick={()=>onAdjacentPair?.(adjacent.id)}>次のコマとのA→B動画を選ぶ</button>}
  {adjacent&&!adjacent.valid&&<small role="alert">{adjacent.reason}</small>}

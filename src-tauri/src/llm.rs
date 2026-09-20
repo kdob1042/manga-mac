@@ -84,11 +84,20 @@ pub struct VideoRegistration {
     pub credential: String,
     pub max_credits: u64,
     pub approved: bool,
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub adapter_id: Option<String>,
 }
 // Same ephemeral credential owner as LLM connections; no Debug/Serialize.
 pub struct VideoConnection {
     pub credential: String,
     pub max_credits: u64,
+    pub provider: String,
+    pub model: String,
+    pub adapter_id: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -132,7 +141,13 @@ impl Connections {
             .map(|c| c.provider == Provider::Ollama)
             .ok_or_else(failure)
     }
-    pub async fn register_video(&self, input: VideoRegistration) -> Result<String, String> {
+    pub async fn register_video(
+        &self,
+        input: VideoRegistration,
+        provider: String,
+        model: String,
+        adapter_id: String,
+    ) -> Result<String, String> {
         if !input.approved
             || !(60..=6000).contains(&input.max_credits)
             || input.credential.trim().is_empty()
@@ -152,6 +167,9 @@ impl Connections {
             Arc::new(VideoConnection {
                 credential: input.credential,
                 max_credits: input.max_credits,
+                provider,
+                model,
+                adapter_id,
             }),
         );
         Ok(id)

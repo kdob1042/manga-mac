@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "defaults": {
+    "image": "flux-2-klein-4b-local",
+    "video": "runway-gen4-5"
+  },
+  "images": [
+    {
+      "id": "flux-2-klein-4b-local",
+      "display_name": "FLUX.2 klein 4B（Mac内）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "flux_2_klein_4b_q8p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": ["generate", "edit", "retake", "finishing"],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true,
+        "transparent_rgba": false,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 4
+      },
+      "requires_preparation": true
+    }
+  ],
+  "videos": [
+    {
+      "id": "runway-gen4-5",
+      "display_name": "Runway gen4.5",
+      "adapter_id": "runway",
+      "provider": "runway",
+      "model_id": "gen4.5",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": ["image_to_video"],
+      "capabilities": {
+        "end_frame": false,
+        "native_audio": false
+      },
+      "input": {
+        "duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "ratios": ["1280:720", "720:1280", "1104:832", "960:960", "832:1104", "1584:672"]
+      },
+      "requires_connection": true
+    }
+  ]
+}
