@@ -66,13 +66,17 @@ fn image_bytes(manifest: &Value) -> Result<(Vec<u8>, String), String> {
     if !matches!(mime, "image/png" | "image/jpeg" | "image/webp") {
         return Err("Tripoへ送れる参照画像はPNG/JPEG/WebPです".into());
     }
-    let bytes = STANDARD.decode(encoded).map_err(|_| "参照画像の形式が不正です")?;
+    let bytes = STANDARD
+        .decode(encoded)
+        .map_err(|_| "参照画像の形式が不正です")?;
     if bytes.is_empty() || bytes.len() > MAX_IMAGE {
         return Err("参照画像は20MB以下にしてください".into());
     }
     let hash = format!("{:x}", Sha256::digest(&bytes));
     if input["hash"].as_str() != Some(hash.as_str())
-        || input["size"].as_u64().is_some_and(|size| size != bytes.len() as u64)
+        || input["size"]
+            .as_u64()
+            .is_some_and(|size| size != bytes.len() as u64)
     {
         return Err("生成入力の画像版が一致しません".into());
     }
@@ -80,7 +84,9 @@ fn image_bytes(manifest: &Value) -> Result<(Vec<u8>, String), String> {
 }
 fn allowed_manifest(manifest: &Value) -> Result<(), String> {
     let object = manifest.as_object().ok_or("生成条件が不正です")?;
-    let allowed = ["version", "provider", "model", "mode", "source", "image", "prompt"];
+    let allowed = [
+        "version", "provider", "model", "mode", "source", "image", "prompt",
+    ];
     if object.keys().any(|key| !allowed.contains(&key.as_str()))
         || manifest["version"] != 1
         || manifest["provider"] != "tripo"
@@ -103,7 +109,9 @@ fn allowed_manifest(manifest: &Value) -> Result<(), String> {
 }
 async fn json_response(response: reqwest::Response) -> Result<Value, String> {
     if !response.status().is_success()
-        || response.content_length().is_some_and(|size| size > MAX_RESPONSE as u64)
+        || response
+            .content_length()
+            .is_some_and(|size| size > MAX_RESPONSE as u64)
         || !response
             .headers()
             .get("content-type")
@@ -160,7 +168,10 @@ async fn upload(
     let url = reqwest::Url::parse(&format!("{API_BASE}/upload")).map_err(|_| failure())?;
     let value = json_response(
         auth(
-            client.post(url).header("Content-Type", content_type).body(body),
+            client
+                .post(url)
+                .header("Content-Type", content_type)
+                .body(body),
             connection,
         )
         .send()
@@ -182,15 +193,13 @@ async fn create_task(
     let url = reqwest::Url::parse(&format!("{API_BASE}/task")).map_err(|_| failure())?;
     let value = json_response(
         auth(
-            client
-                .post(url)
-                .json(&json!({
-                    "type": "image_to_model",
-                    "file": {"type": "jpg", "image_token": token},
-                    "model_version": MODEL_VERSION,
-                    "texture": true,
-                    "pbr": true
-                })),
+            client.post(url).json(&json!({
+                "type": "image_to_model",
+                "file": {"type": "jpg", "image_token": token},
+                "model_version": MODEL_VERSION,
+                "texture": true,
+                "pbr": true
+            })),
             connection,
         )
         .send()
@@ -212,8 +221,7 @@ pub async fn submit(
 ) -> Result<Value, String> {
     let manifest = {
         let db = db.lock().map_err(|_| failure())?;
-        let project = storage::load(&db, root)?
-            .ok_or("作品が読み込まれていません")?;
+        let project = storage::load(&db, root)?.ok_or("作品が読み込まれていません")?;
         let project: Value = serde_json::from_str(&project).map_err(|_| failure())?;
         job(&project, id)?["manifest"].clone()
     };
@@ -223,13 +231,14 @@ pub async fn submit(
         let db = db.lock().map_err(|_| failure())?;
         let current = job(&storage::raw_project(&db)?, id)?;
         if current["remote"]["task_id"].as_str().is_some() {
-            return Err("この生成要求はすでに送信済みです。新規送信せず状態を確認してください".into());
+            return Err(
+                "この生成要求はすでに送信済みです。新規送信せず状態を確認してください".into(),
+            );
         }
     }
-    let client = PolicyTransport::external_client(
-        &reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?,
-    )
-    .await?;
+    let client =
+        PolicyTransport::external_client(&reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?)
+            .await?;
     // The marker is committed before both upload and POST. An interrupted request
     // therefore remains recoverable and cannot be silently resent.
     update(db, id, |_, j| {
@@ -274,8 +283,16 @@ fn safe_status(value: &Value, task: &str) -> Result<Value, String> {
         return Err(failure());
     }
     let status = data["status"].as_str().ok_or_else(failure)?;
-    if !["queued", "running", "success", "failed", "cancelled", "banned", "expired"]
-        .contains(&status)
+    if ![
+        "queued",
+        "running",
+        "success",
+        "failed",
+        "cancelled",
+        "banned",
+        "expired",
+    ]
+    .contains(&status)
     {
         return Err(failure());
     }
@@ -302,10 +319,9 @@ async fn fetch_status(
         remote["last_poll"] = json!(now());
         Ok(remote)
     })?;
-    let client = PolicyTransport::external_client(
-        &reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?,
-    )
-    .await?;
+    let client =
+        PolicyTransport::external_client(&reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?)
+            .await?;
     let url = reqwest::Url::parse(&format!("{API_BASE}/task/{task}")).map_err(|_| failure())?;
     let value = json_response(
         auth(client.get(url), connection)
@@ -395,7 +411,9 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
         .await
         .map_err(|_| failure())?;
     if !response.status().is_success()
-        || response.content_length().is_some_and(|size| size > MAX_MODEL)
+        || response
+            .content_length()
+            .is_some_and(|size| size > MAX_MODEL)
     {
         return Err(failure());
     }
@@ -425,7 +443,9 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
         return Err("Tripoの出力がGLBではありません".into());
     }
     std::fs::rename(&temporary, &path).map_err(|_| failure())?;
-    Ok(json!({"file":path.file_name().and_then(|name|name.to_str()).ok_or_else(failure)?,"hash":hash,"bytes":size}))
+    Ok(
+        json!({"file":path.file_name().and_then(|name|name.to_str()).ok_or_else(failure)?,"hash":hash,"bytes":size}),
+    )
 }
 fn asset_path(assets: &Path, file: &str) -> Result<PathBuf, String> {
     let name = Path::new(file)
@@ -487,10 +507,9 @@ pub async fn collect(
     Ok(artifact)
 }
 pub async fn balance(connection: &TripoConnection) -> Result<Value, String> {
-    let client = PolicyTransport::external_client(
-        &reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?,
-    )
-    .await?;
+    let client =
+        PolicyTransport::external_client(&reqwest::Url::parse(API_ORIGIN).map_err(|_| failure())?)
+            .await?;
     let url = reqwest::Url::parse(&format!("{API_BASE}/user/balance")).map_err(|_| failure())?;
     let value = json_response(
         auth(client.get(url), connection)

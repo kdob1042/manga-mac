@@ -4,8 +4,8 @@ mod live_preview;
 mod llm;
 mod policy_transport;
 mod runway;
-mod tripo;
 pub mod storage;
+mod tripo;
 mod web_asset;
 
 mod blender;
@@ -404,10 +404,7 @@ fn remove_tripo(connection_id: String, state: State<AppState>) -> Result<(), Str
     state.connections.remove_tripo(&connection_id)
 }
 #[tauri::command]
-async fn tripo_balance(
-    connection_id: String,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
+async fn tripo_balance(connection_id: String, state: State<'_, AppState>) -> Result<Value, String> {
     let connection = state.connections.tripo_connection(&connection_id)?;
     tripo::balance(&connection).await
 }
@@ -417,7 +414,10 @@ async fn tripo_submit(
     connection_id: String,
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
-    let _guard = state.video.try_lock().map_err(|_| "外部生成APIの操作中です")?;
+    let _guard = state
+        .video
+        .try_lock()
+        .map_err(|_| "外部生成APIの操作中です")?;
     let connection = state.connections.tripo_connection(&connection_id)?;
     tripo::submit(&state.db, &state.root, &job_id, &connection).await
 }
@@ -431,7 +431,10 @@ async fn tripo_task(
     scope: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
-    let _guard = state.video.try_lock().map_err(|_| "外部生成APIの操作中です")?;
+    let _guard = state
+        .video
+        .try_lock()
+        .map_err(|_| "外部生成APIの操作中です")?;
     let connection = state.connections.tripo_connection(&connection_id)?;
     match action.as_str() {
         "status" => tripo::status(&state.db, &job_id, &connection).await,
@@ -441,7 +444,13 @@ async fn tripo_task(
             let shot_scope = scope.ok_or("生成素材の対象がありません")?;
             let paths = blender_gui::workspace(&documents, &work, &shot_scope)?;
             let assets = paths["assets"].as_str().ok_or("素材フォルダが不正です")?;
-            tripo::collect(&state.db, &job_id, &connection, std::path::Path::new(assets)).await
+            tripo::collect(
+                &state.db,
+                &job_id,
+                &connection,
+                std::path::Path::new(assets),
+            )
+            .await
         }
         _ => Err("未対応のTripo操作です".into()),
     }
