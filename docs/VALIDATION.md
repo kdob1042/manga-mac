@@ -480,5 +480,5 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 - 制作依頼の原文範囲・参照bytes/hash・秘密情報除外・古いGUI識別子の拒否をNodeで検証。
 - 3候補を保存しても採用版/他コマ/原文が変わらず、途中の停止や手動変更時は残りを撮らず完成済み候補を残すことをNodeで検証。
 - 2026-09-20: `6a71a78` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35491679314)で、同じSceneの2角度を実描画して画像hashが異なること、camera location/rotationの復元、撮影後の観測版の読戻しを確認。共通CI（35491679300）のweb/storage/llm/blenderも成功。
-- 追加のZIP展開試験を含むローカルNode215件成功。ブラウザに3候補生成→制作依頼ZIP→MCP解放の操作順検証を追加。
+- 追加のZIP展開試験を含むローカルNode215件成功。`3afc466` の[ブラウザCI](https://github.com/kdob1042/manga-mac/actions/runs/35492221353)で49件成功。3候補生成→制作依頼ZIP→MCP解放の操作順も確認。
 - 実参照画像からのモデル生成、実MacのCodex操作、人物・演出の見た目の品質は未受入。
