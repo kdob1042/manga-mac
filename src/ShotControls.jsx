@@ -62,7 +62,7 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
       {!video&&<details><summary>同じシーンのアングル候補を作る</summary>
         <p>指定Objectの原点を注視し、現在のカメラ位置を中心に左右へ回り込んで撮影します。同じScene・frameを使い、撮影後は元のカメラ位置へ戻ります。</p>
         <button disabled={busy} onClick={()=>run('注視対象を確認中',read)}>注視対象を読み込む</button>
-        <label>注視対象<select value={angleTarget} onChange={e=>setAngleTarget(e.target.value)}><option value="">選択</option>{observed?.objects.filter(o=>o.type!=='CAMERA').map(o=><option key={o.id} value={o.name}>{o.name}</option>)}</select></label>
+        <label>注視対象<select aria-label="注視対象" value={angleTarget} onChange={e=>setAngleTarget(e.target.value)}><option value="">選択</option>{observed?.objects.filter(o=>o.type!=='CAMERA').map(o=><option key={o.id} value={o.name}>{o.name}</option>)}</select></label>
         <label>角度（度、カンマ区切り・最大5個）<input value={angleText} onChange={e=>setAngleText(e.target.value)}/></label>
         <button disabled={busy||!angleTarget} onClick={()=>run('アングル候補を撮影中',async()=>{
           stopAngles.current=false;setAnglePreviews([]);
