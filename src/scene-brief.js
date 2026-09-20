@@ -1,10 +1,11 @@
 import {sourceForPanel} from './core.js';
-import {assertLiveTarget} from './live-blender.js';
+import {assertLiveTarget,verifyLiveMappings} from './live-blender.js';
 
 // Explicit projection: never export the project, connection settings, or credentials.
 export async function buildSceneBrief(project,panel,observation) {
   if(!panel?.live_binding)throw Error('先に対象コマのBlenderを開いてください');
   assertLiveTarget(panel.live_binding,observation);
+  verifyLiveMappings(project,panel,observation);
   const snapshot=project.snapshots.find(s=>s.id===panel.snapshotId);
   if(!snapshot)throw Error('対象原稿が見つかりません');
   const text=sourceForPanel(panel,panel.sourceRefs?project.snapshots:snapshot);
@@ -32,6 +33,7 @@ export async function buildSceneBrief(project,panel,observation) {
   const brief={schema:'manga-mac/scene-brief/v1',work_id:project.workId??null,panel_id:panel.id,
     source:{snapshot_id:snapshot.id,repo:snapshot.repo,commit:snapshot.sha,scene_id:panel.sceneId,text,
       refs:panel.sourceRefs??null,unit_ids:panel.unitIds??[],design:snapshot.scenes.find(s=>s.id===panel.sceneId)?.design??''},
+    context:{scene_text:snapshot.scenes.find(s=>s.id===panel.sceneId)?.text??'',settings:(snapshot.settings??[]).map(s=>({id:s.id,path:s.path,text:s.text}))},
     request:panel.prompt??'',references,
     live:Object.fromEntries(['instance','epoch','revision','file','scene','view_layer','camera','frame'].map(k=>[k,observation[k]])),
     character_objects:panel.live_binding.character_objects??[],

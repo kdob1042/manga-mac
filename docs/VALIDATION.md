@@ -474,3 +474,10 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 - CI追加: 実Blender 4.5.13 GUIをnative launcherが起動し、同じinstanceの再利用、別コマへの暗黙切替拒否、カメラ回転と注視点の実値読戻し、作業保存、切断/再接続を検証する。
 - 2026-09-20: commit `c1f68da` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35490889836)成功。保存→プロセス終了→再開と、素材原本から別作業へのコピー作成・原本不変も実Blenderで確認。読み込み直後のGUI context不足を修正した後の結果。
 - 同commitの[共通CI](https://github.com/kdob1042/manga-mac/actions/runs/35490889946)でweb/storage/llm/blender成功。ブラウザは48件成功。実Macアプリの視覚品質、実Codex Computer Use、参照画像からの実モデル生成はこのfixtureの合格では代替しない（#184/#187/#199）。
+
+### #199 制作依頼と複数アングル
+
+- 制作依頼の原文範囲・参照bytes/hash・秘密情報除外・古いGUI識別子の拒否をNodeで検証。
+- 3候補を保存しても採用版/他コマ/原文が変わらず、途中の停止や手動変更時は残りを撮らず完成済み候補を残すことをNodeで検証。
+- Mac実GUI試験に、同じSceneの2角度を実描画して画像hashが異なることと、撮影後のcamera location/rotationおよび観測版の読戻しを追加。実行結果は確認後に追記する。
+- 実参照画像からのモデル生成、実MacのCodex操作、人物・演出の見た目の品質は未受入。
