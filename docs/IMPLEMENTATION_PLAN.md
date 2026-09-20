@@ -113,15 +113,15 @@ LLMが`ready`等の完了を返したこと自体は、Blender操作の完了証
 
 CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用しない。[B1] 参照解決にはファイル・datablockと版を使う。名称変更等のID補助が必要ならBlender側の小さなcustom propertyで保持し、アプリ独自素材モデルへ拡張しない。解決不能なら要再対応付けとし、似た名前の別素材へ自動差し替えしない。
 
-原稿インターフェース（#143）の形式正本は `contracts/story-source/` の `story-source/v1` 契約とする。原稿リポジトリの入口は `source/manifest.json` で、リポジトリ名や作品名から仕様を推測しない。manifestは `work.title`、入れ子の `episodes[].scenes[]`、`settings[]`、`characters[]` を持ち、読書順と話への所属は配列順を正本にする。場面の現在位置は配列から `P1-3` のように表示し、`id`は位置・タイトル・本文の変更後も維持する固定IDとする。
+原稿インターフェース（#143）の形式正本は `contracts/story-source/` の `story-source/v1` 契約とする。story-libraryの作品入口は `works/{workId}/work.json` で、リポジトリ名や作品名から仕様を推測しない。旧repoの `manifest.json` / `source/manifest.json` は読み取り互換だけにする。manifestは `work.title`、入れ子の `episodes[].scenes[]`、`settings[]`、`characters[]` を持ち、読書順と話への所属は配列順を正本にする。場面の現在位置は配列から `P1-3` のように表示し、`id`は位置・タイトル・本文の変更後も維持する固定IDとする。
 
-本文パスは `source/` 相対で明示し、共通規則の `manuscript/p01/p01-03.md` へ解決する。配列順と現在の連番パスが一致しないmanifest、IDの重複・再利用、危険なパス、未登録・欠損ファイルを検査で拒否する。設定は `settings/`、人物基準画像は指定する場合に `assets/` に置き、人物はファイル名やMarkdownのalt文言から推測せず、人物IDと指定した画像パスで宣言する。設定・人物がない作品も `settings: []`、`characters: []` で表現する。
+本文パスは作品root相対で明示し、共通規則の `manuscript/p01/p01-03.md` へ解決する。入口ファイルの置き場所から相対基準を推測しない。配列順と現在の連番パスが一致しないmanifest、IDの重複・再利用、危険なパス、未登録・欠損ファイルを検査で拒否する。設定は `settings/`、人物基準画像は指定する場合に `assets/` に置き、人物はファイル名やMarkdownのalt文言から推測せず、人物IDと指定した画像パスで宣言する。設定・人物がない作品も `settings: []`、`characters: []` で表現する。
 
 `contracts/story-source/validate.mjs` は形式・ID・パス・タグ・本文見出し・宣言ファイルの過不足を機械検査し、本文の文字列を正規化・生成しない。`paths.mjs` は安全な参照と連番パスを、`structure.mjs` は話・場面の追加・移動・削除・再採番計画を提供する。構造計画は固定IDと本文ファイルの対応を保ったまま、衝突しない一時退避を含む移動計画を返す。削除済みIDの台帳は呼出し側から検査へ渡し、再利用を拒否する。
 
 共通契約の形式正本は `contracts/story-source/` に置き、manga-macの `source-protocol.js` はこのvalidatorを読み取り時に利用する。story-source/v1は同一commitのmanifest・本文・設定・人物画像を取得する単一正本で、旧schema 1/4は既存snapshotを保持する読み取りadapterとして残す。人物は固定IDを優先し、旧形式でIDがない場合の名前対応付けが複数候補になるときは推測せず失敗する。
 
-同期入口はmanifestを手動確認したときだけ読み取り、未対応形式・危険なpath・見出し不整合・宣言画像の取得失敗では現在のsnapshot、漫画、保存データを変更しない。manifestの差分はscene・setting・人物ID/path・画像hashとして表示し、commitだけの変更は「更新なし」とする。`source/manifest.json` と既存rootの `manifest.json` の両方を読み取り可能にするが、manifest内のpathは常にsource相対の正本として保持し、repositoryや作品名から構造を推測しない。
+同期入口はmanifestを手動確認したときだけ読み取り、未対応形式・危険なpath・見出し不整合・宣言画像の取得失敗では現在のsnapshot、漫画、保存データを変更しない。manifestの差分はscene・setting・人物ID/path・画像hashとして表示し、commitだけの変更は「更新なし」とする。`work.json` を優先し、旧 `manifest.json` / `source/manifest.json` は読み取り可能にする。manifest内のpathは常に作品root相対の正本として保持し、repositoryや作品名から構造を推測しない。
 
 場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値を変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
 

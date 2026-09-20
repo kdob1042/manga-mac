@@ -1,6 +1,6 @@
 import { validateCatalog, findWork, importedWorks } from '../contracts/story-library/catalog.mjs';
 import { validateSourceMap } from '../contracts/story-library/source-map.mjs';
-import { assertWorkRoot, joinWorkPath, manifestEntryPath } from '../contracts/story-library/paths.mjs';
+import { assertWorkRoot, joinWorkPath, legacyManifestEntryPath, workEntryPath } from '../contracts/story-library/paths.mjs';
 import { normalizeSourceManifest } from './source-protocol.js';
 
 export const LIBRARY_FORMAT = 'story-library/v1';
@@ -37,7 +37,7 @@ export function libraryManifestLocation(work) {
   assertWorkRoot(work.root);
   return {
     root: work.root,
-    manifestPath: manifestEntryPath(work.root),
+    entryPath: workEntryPath(work.root),
     sourceRoot: work.root,
   };
 }
@@ -82,19 +82,33 @@ export async function fetchStoryLibraryWork(library, workId, token, invokeCall) 
     throw Error('選択した作品はstory-libraryの制作対象ではありません');
   }
   const location = libraryManifestLocation(work);
-  const text = await invokeCall('github_file', {
-    repo: library.repo,
-    path: location.manifestPath,
-    sha: library.sha,
-    token,
-  });
-  const manifest = parseJson(text, location.manifestPath);
+  let entryPath = location.entryPath;
+  let text;
+  try {
+    text = await invokeCall('github_file', {
+      repo: library.repo,
+      path: entryPath,
+      sha: library.sha,
+      token,
+    });
+  } catch (error) {
+    const legacyPath = legacyManifestEntryPath(work.root);
+    if (entryPath === legacyPath) throw error;
+    entryPath = legacyPath;
+    text = await invokeCall('github_file', {
+      repo: library.repo,
+      path: entryPath,
+      sha: library.sha,
+      token,
+    });
+  }
+  const manifest = parseJson(text, entryPath);
   return {
     ...library,
     work,
     manifest,
     outline: manifestOutline(manifest),
-    manifestPath: location.manifestPath,
+    entryPath,
     sourceRoot: location.sourceRoot,
     sourceMapEntry: library.sourceMap?.entries.find(entry => entry.workId === workId) ?? null,
   };

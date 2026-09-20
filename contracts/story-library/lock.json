@@ -1,7 +1,7 @@
 {
   "contract": "story-library/v1",
   "repository": "kdob1042/story-library",
-  "commit": "01195d99ec07cdec875dcce6b7bab58be9563c73",
+  "commit": "2aa103a57ebf2d9496750b09c4a2c0daee4e99d9",
   "files": [
     "contracts/story-library/ids.mjs",
     "contracts/story-library/errors.mjs",
