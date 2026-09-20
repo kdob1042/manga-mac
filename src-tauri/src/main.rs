@@ -5,6 +5,7 @@ mod llm;
 mod policy_transport;
 mod runway;
 pub mod storage;
+mod tripo;
 mod web_asset;
 
 mod blender;
@@ -390,6 +391,69 @@ async fn register_video(
 #[tauri::command]
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
     state.connections.remove_video(&connection_id)
+}
+#[tauri::command]
+async fn register_tripo(
+    input: llm::TripoRegistration,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state.connections.register_tripo(input).await
+}
+#[tauri::command]
+fn remove_tripo(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    state.connections.remove_tripo(&connection_id)
+}
+#[tauri::command]
+async fn tripo_balance(connection_id: String, state: State<'_, AppState>) -> Result<Value, String> {
+    let connection = state.connections.tripo_connection(&connection_id)?;
+    tripo::balance(&connection).await
+}
+#[tauri::command]
+async fn tripo_submit(
+    job_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .video
+        .try_lock()
+        .map_err(|_| "外部生成APIの操作中です")?;
+    let connection = state.connections.tripo_connection(&connection_id)?;
+    tripo::submit(&state.db, &state.root, &job_id, &connection).await
+}
+#[tauri::command]
+async fn tripo_task(
+    job_id: String,
+    connection_id: String,
+    action: String,
+    app: tauri::AppHandle,
+    directory_work: Option<String>,
+    scope: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .video
+        .try_lock()
+        .map_err(|_| "外部生成APIの操作中です")?;
+    let connection = state.connections.tripo_connection(&connection_id)?;
+    match action.as_str() {
+        "status" => tripo::status(&state.db, &job_id, &connection).await,
+        "collect" => {
+            let documents = app.path().document_dir().map_err(err)?;
+            let work = directory_work.ok_or("素材フォルダの対象がありません")?;
+            let shot_scope = scope.ok_or("生成素材の対象がありません")?;
+            let paths = blender_gui::workspace(&documents, &work, &shot_scope)?;
+            let assets = paths["assets"].as_str().ok_or("素材フォルダが不正です")?;
+            tripo::collect(
+                &state.db,
+                &job_id,
+                &connection,
+                std::path::Path::new(assets),
+            )
+            .await
+        }
+        _ => Err("未対応のTripo操作です".into()),
+    }
 }
 fn resolve_video_image(
     project: &Value,
@@ -1028,6 +1092,11 @@ fn main() {
             remove_video,
             video_submit,
             video_task,
+            register_tripo,
+            remove_tripo,
+            tripo_balance,
+            tripo_submit,
+            tripo_task,
             export_file,
             live_export,
             live_video_probe,

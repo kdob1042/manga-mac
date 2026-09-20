@@ -48,6 +48,7 @@ def finish():
             bpy.ops.wm.save_as_mainfile(filepath=str(working), relative_remap=True)
         bpy.context.preferences.filepaths.asset_libraries.new(name='Manga Mac', directory=config['assets'])
         live.WORKING_FILE = str(working)
+        live.ASSETS_DIR = str(Path(config['assets']).resolve())
         live.register()
         # The operating system allocates a free loopback port; no port scan or foreign attach.
         import secrets
