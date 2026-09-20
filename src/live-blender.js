@@ -106,7 +106,8 @@ export async function handoffLive(call,project) {
 }
 export function createLiveBinding(project,panel,observation) {
   const objects=observation.objects??[];
-  const character_objects=(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id).map(b=>{
+  const previous=panel.live_binding?.character_objects;
+  const character_objects=(previous?.length?previous:(project.character_bindings??[]).filter(b=>b.shot_id===panel.shot_binding?.id)).map(b=>{
     const mapped=panel.live_binding?.character_objects?.find(o=>o.character_id===b.character_id);
     const prior=panel.live_binding?.objects?.find(o=>mapped?o.id===mapped.object_id:o.name===b.object_name);
     const sameEpoch=panel.live_binding?.epoch===observation.epoch;
@@ -123,4 +124,9 @@ export function verifyLiveMappings(project,panel,observation) {
     const next=actual.find(o=>o.id===b.object_id);
     if(!next||next.name!==b.object_name)throw Error('target_unknown: 人物対応が変わりました。名前・複製・削除を確認し、live対象を再割当してください');
   }
+}
+
+export async function yieldLive(call,project) {
+  invalidateLivePlans(project);
+  return liveCall(call,project,'yield');
 }

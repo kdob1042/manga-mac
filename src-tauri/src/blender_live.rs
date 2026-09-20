@@ -9,6 +9,7 @@ pub struct Connection {
     port: u16,
     token: String,
     client: String,
+    yielded: bool,
     pub work: String,
     pub target: Value,
 }
@@ -148,6 +149,7 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
             port,
             token,
             client: uuid::Uuid::new_v4().to_string(),
+            yielded: false,
             work: field(&input, "work")?.into(),
             target: Value::Null,
         };
@@ -185,7 +187,7 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         *slot = Some(c);
         return Ok(target);
     }
-    let c = slot.as_ref().ok_or("live接続がありません")?;
+    let c = slot.as_mut().ok_or("live接続がありません")?;
     if input["work"] != c.work {
         return Err("作品が違います。live接続を切断して接続し直してください".into());
     }
@@ -193,6 +195,29 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
     c.check(&now)?;
     if action == "status" {
         return Ok(now);
+    }
+    if action == "yield" {
+        if !c.yielded {
+            c.tool("live_handoff", json!({})).await?;
+            c.tool("live_release", json!({})).await?;
+            c.yielded = true;
+        }
+        return Ok(json!({"control":"codex", "target":now}));
+    }
+    if action == "reclaim" {
+        c.tool(
+            "live_claim",
+            json!({"instance":now["instance"],"epoch":now["epoch"]}),
+        )
+        .await?;
+        c.yielded = false;
+        return c.tool("live_observe", json!({"scope":"summary"})).await;
+    }
+    if c.yielded {
+        return Err(
+            "Codex・手動へ引継ぎ中です。操作を終えて接続を解放し、再観測して操作権を戻してください"
+                .into(),
+        );
     }
     if action == "observe" {
         let result = c.tool("live_observe", input).await?;
@@ -260,6 +285,7 @@ mod tests {
             port: 9877,
             token: String::new(),
             client: String::new(),
+            yielded: false,
             work: "w".into(),
             target: target.clone(),
         };

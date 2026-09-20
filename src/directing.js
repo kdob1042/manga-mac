@@ -1,9 +1,7 @@
 import { directLivePanel } from './live-blender.js';
 import {withResource} from './execution.js';
 // Orchestration only: all 3D state is read back from Blender's existing adapter.
-import { generationSize } from './image-input.js';
 import { sourceForPanel } from './core.js';
-import { planShots, attachShots, recordCapture } from './shots.js';
 
 export const MAX_DIRECTION_STEPS = 12;
 const allowed = {
@@ -100,116 +98,5 @@ export function abandonDirection(project, id) {
 }
 // Dependencies are injectable so cancellation, recovery and cross-shot isolation can be tested without an API.
 export async function directPanel(options) {
- return withResource('blender-session',1,()=>options.current().panels.find(p=>p.id===options.panelId)?.live_binding ? directLivePanel(options) : directPanelExclusive(options),{cancelled:options.cancelled,waiting:()=>options.notify?.('Blender の演出・撮影の完了を待っています')});
-}
-async function directPanelExclusive({ current, commit, call, ask, panelId, instruction = '', cancelled = () => false, notify = () => {} }) {
-  let panel = panelById(current(), panelId);
-  if (!panel || panel.snapshotId !== current().active) throw Error('現在の原作のコマを選択してください');
-  if (!panel.shot_binding) {
-    const base = await call('blender_latest');
-    const batch = planShots(current(), [panelId], base);
-    await commit({ ...current(), shot_batches: [...(current().shot_batches ?? []), batch] });
-    const sessions = await call('blender_fork', { sessionId: batch.base_session, expectedRevision: batch.base_revision, ids: batch.bindings.map(b => b.id) });
-    await commit(attachShots(current(), batch, sessions));
-    panel = panelById(current(), panelId);
-  }
-  const sessionId = panel.shot_binding.session_id;
-  let run = activeDirection(current(), panelId);
-  if (run && instruction && instruction !== run.instruction) throw Error('前の演出を再開するか、取り下げてから新しい指示を実行してください');
-  if (!run) {
-    const state = await call('blender_status', { sessionId });
-    run = { id: crypto.randomUUID(), panel_id: panelId, session_id: sessionId, source: current().active, input: identity(panel), instruction,
-      revision: state.revision, status: 'running', steps: [], catalog: [], phase: 'catalog', capture_size: generationSize(current().captures?.find(c => c.id === panel.capture_revision)?.settings?.resolution ?? (panel.generation ? [panel.generation.width, panel.generation.height] : undefined)) };
-    await commit({ ...current(), directing_runs: [...(current().directing_runs ?? []), run] });
-  }
-  const save = async patch => {
-    run = { ...run, ...patch };
-    await commit({ ...current(), directing_runs: current().directing_runs.map(r => r.id === run.id ? run : r) });
-  };
-  const check = () => {
-    const p = panelById(current(), panelId);
-    if (!p || current().active !== run.source || p.shot_binding?.session_id !== sessionId || identity(p) !== run.input) throw Error('演出対象の原稿・採用版が変わりました。前の演出を取り下げてください');
-    return p;
-  };
-  const inspect = async () => {
-    check();
-    const s = await call('blender_status', { sessionId });
-    const pending = run.steps.findLast(step => step.status === 'pending');
-    if (pending) {
-      const job = s.jobs?.find(j => j.id === pending.id);
-      if (job?.status !== 'complete' || s.revision !== pending.revision + 1) throw Error('前回のBlender要求を確認してください。詳細調整で保存結果を解決するまで再送しません');
-      await save({ revision: s.revision, steps: run.steps.map(x => x.id === pending.id ? { ...x, status: 'complete' } : x), ...(pending.operation.kind === 'catalog' ? { catalog: s.state.library_assets ?? [], phase: 'direct' } : {}) });
-    }
-    if (s.revision !== run.revision || s.jobs?.some(j => ['running','unknown','candidate'].includes(j.status))) throw Error('Blenderの基準版・未確定要求を詳細調整で確認してください');
-    return s;
-  };
-  const execute = async operation => {
-    const s = await inspect();
-    if (cancelled()) return null;
-    const step = { id: crypto.randomUUID(), revision: s.revision, operation, status: 'pending' };
-    await save({ steps: [...run.steps, step] });
-    const result = await call('blender_execute', { request: { session_id: sessionId, request_id: step.id, expected_revision: s.revision, operation } });
-    if (result.session_id !== sessionId || result.revision !== s.revision + 1) throw Error('Blender応答の対象・版が一致しません');
-    await save({ revision: result.revision, steps: run.steps.map(x => x.id === step.id ? { ...x, status: 'complete' } : x), ...(operation.kind === 'catalog' ? { catalog: result.state.library_assets ?? [], phase: 'direct' } : {}) });
-    return result;
-  };
-  try {
-    let s = await inspect();
-    await save({ status: 'running', message: '' });
-    if (run.phase === 'catalog') { await execute({ kind: 'catalog' }); }
-    while (!cancelled() && run.phase === 'direct') {
-      s = await inspect();
-      if (run.steps.filter(x => x.operation.kind !== 'catalog').length >= MAX_DIRECTION_STEPS) throw Error('演出の操作上限に達しました。撮影状態を確認し、必要なら新しい指示でやり直してください');
-      notify(`${panelId} の構図・演技を設計中`);
-      const result = validateDirection(await ask(directionPrompt(current(), check(), s, run), directionSchema), s, run.catalog);
-      check();
-      if (cancelled()) break;
-      if (result.status === 'blocked') { await save({ status: 'blocked', message: result.reason }); throw Error(result.reason); }
-      if (result.status === 'ready') {
-        const mismatch = completionMismatch(directionGoal(check(), run.instruction), s);
-        if (mismatch) {
-          if (run.completionCorrections) {
-            throw Error('演出AIが完了を報告しましたが、現在状態が目標と一致しません（' + mismatch.field + ': ' + mismatch.actual + ' !== ' + mismatch.expected + '）');
-          }
-          await save({
-            completionCorrections: (run.completionCorrections ?? 0) + 1,
-            feedback: {
-              rejectedCompletion: mismatch,
-              message: 'Ready was rejected: live Blender ' + mismatch.field + ' is ' + mismatch.actual + ', but the target is ' + mismatch.expected + '. Return the required action or report a real blocker.',
-            },
-          });
-          continue;
-        }
-        await save({ phase: 'capture', message: result.reason });
-        break;
-      }
-      if (run.steps.some(x => x.status === 'complete' && JSON.stringify(x.operation) === JSON.stringify(result.operation))) {
-        // One bounded semantic correction, never another Blender execution or transport retry.
-        if (run.corrections) throw Error('同じ操作の繰り返しを停止しました。詳細調整で構図を確認してください');
-        await save({ corrections: 1, feedback: { rejectedOperation: result.operation, message: 'This exact operation ALREADY completed successfully. It was NOT executed again. Check currentShot. If the requested state is satisfied return ready with operation:null. A second repeated operation will stop this run.' } });
-        continue;
-      }
-      notify(result.reason);
-      await execute(result.operation);
-    }
-    if (cancelled()) { await save({ status: 'paused' }); return null; }
-    if (run.phase === 'capture') {
-      // Reuse a completed capture if the UI stopped before recording it. Never render it twice.
-      const captured = run.steps.findLast(x => x.operation.kind === 'capture' && x.status === 'complete');
-      let result;
-      if (captured) result = await call('blender_capture', { sessionId, requestId: captured.id });
-      else result = await execute({ kind: 'capture', width: run.capture_size[0], height: run.capture_size[1] });
-      if (!result) { await save({ status: 'paused' }); return null; }
-      check();
-      let next = await recordCapture(current(), panelId, result);
-      if (run.instruction) next = { ...next, panels: next.panels.map(p => p.id === panelId ? { ...p, instructions: [...(p.instructions ?? []), run.instruction] } : p) };
-      // Capture pointer and run completion share the same project save.
-      await commit({ ...next, directing_runs: next.directing_runs.map(r => r.id === run.id ? { ...run, status: 'complete', phase: 'complete' } : r) });
-      return result;
-    }
-  } catch (error) {
-    // Persisted steps retain request IDs. Resume reads native results before any new operation.
-    await save({ status: run.status === 'blocked' ? 'blocked' : 'paused', message: error.message });
-    throw error;
-  }
+ return withResource('blender-session',1,()=>{if(!options.current().panels.find(p=>p.id===options.panelId)?.live_binding)throw Error('Blender GUIへlive接続し、詳細調整で対象コマへ割り当ててください');return directLivePanel(options);},{cancelled:options.cancelled,waiting:()=>options.notify?.('Blender の演出・撮影の完了を待っています')});
 }

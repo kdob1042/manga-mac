@@ -866,49 +866,50 @@ async fn blender_live(
     blender_live::command(&state.live_blender, &action, input).await
 }
 #[tauri::command]
-async fn blender_live_candidate(
-    input: Value,
-    binary: String,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
+fn blender_working_copy(
+    app: tauri::AppHandle,
+    session_id: String,
+    request_id: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let db = state.db.lock().map_err(err)?;
+    let saved = blender::capture(&db, &state.root, &session_id, &request_id)?;
+    let parent = app.path().download_dir().map_err(err)?.join("Manga Mac");
+    std::fs::create_dir_all(&parent).map_err(err)?;
+    let folder = parent.join(format!("blender-working-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&folder).map_err(err)?;
+    let target = folder.join("working.blend");
+    std::fs::copy(
+        state
+            .root
+            .join("blender")
+            .join(request_id)
+            .join("checkpoint.blend"),
+        &target,
+    )
+    .map_err(err)?;
+    if format!("{:x}", Sha256::digest(std::fs::read(&target).map_err(err)?))
+        != saved["state"]["checkpoint"]["hash"]
+            .as_str()
+            .ok_or("Missing checkpoint hash")?
+    {
+        return Err("作業用コピーの検証に失敗しました".into());
+    }
+    Ok(target.to_string_lossy().into())
+}
+#[tauri::command]
+async fn blender_live_candidate(input: Value, state: State<'_, AppState>) -> Result<Value, String> {
     let _engine = state.engine.lock().await;
     let result = blender_live::command(&state.live_blender, "candidate", input).await?;
-    let bytes = STANDARD
-        .decode(result["blend"].as_str().ok_or("Missing candidate")?)
-        .map_err(err)?;
-    if bytes.len() > 64 * 1024 * 1024
-        || !bytes.starts_with(b"BLENDER")
-        || format!("{:x}", Sha256::digest(&bytes)) != result["sha256"].as_str().unwrap_or("")
-    {
-        return Err("Invalid live candidate".into());
-    }
-    let parent = state.root.join("live-candidates");
-    std::fs::create_dir_all(&parent).map_err(err)?;
-    let folder = parent.join(uuid::Uuid::new_v4().to_string());
-    std::fs::create_dir(&folder).map_err(err)?;
-    let path = folder.join("source.blend");
-    std::fs::write(&path, bytes).map_err(err)?;
-    let registered = {
-        let db = state.db.lock().map_err(err)?;
-        blender::register(
-            &db,
-            blender::Registration {
-                binary,
-                library_root: folder.to_string_lossy().into(),
-                source: path.to_string_lossy().into(),
-            },
-        )?
-    };
-    let request: blender::Request = serde_json::from_value(serde_json::json!({
-        "session_id":registered["session_id"], "request_id":uuid::Uuid::new_v4().to_string(),
-        "expected_revision":0, "operation":{"kind":"capture","width":768,"height":768}
-    }))
-    .map_err(err)?;
-    // Reuse existing dependency pinning, immutable checkpoint, capture and recovery contracts.
-    // This is rendering the new exported copy, not a substitute for live GUI observation.
-    let captured = blender::execute(&state.db, &state.root, request).await?;
-    Ok(captured)
+    let mut db = state.db.lock().map_err(err)?;
+    blender::store_live_candidate(
+        &mut db,
+        &state.root,
+        &uuid::Uuid::new_v4().to_string(),
+        result,
+    )
 }
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -946,6 +947,7 @@ fn main() {
             backup_commands::backup_rebind_blender,
             blender_live,
             blender_live_candidate,
+            blender_working_copy,
             blender_fork,
             blender_capture,
             blender_register,
