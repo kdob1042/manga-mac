@@ -226,3 +226,9 @@ tokenは作品へ保存されず、作品/原稿切替時は接続を切断す�
 「手動・Computer Useへ渡す」はAI実行中にも使える。未送信の計画は破棄し、実行済み操作はそのまま残す。同じBlender GUIで編集する。外部Computer Useは別途用意したデスクトップ操作環境を使い、manga-mac内にproviderは不要。再開準備で新しい状態とcamera画像を取得し、演出指示から再開する。file load/undo/redo後は接続をやり直してコマを明示再割当し、人物対応も確認する。
 
 見た目を確認したら「新しい候補版へ保存」。Blender実行ファイルを指定し、現live状態のcopyから768px撮影候補を作る。初期live転送は64MiBまで。候補表示→採用は別操作で、旧採用版を直接上書きしない。「元に戻す」はアプリの採用pointerを戻す操作であり、Blender GUIの手動操作をUndoするものではない。保存・撮影失敗時は既存の要求復旧画面で新sessionを確認し、結果不明を自動再送しない。
+
+### live接続の独立した動作確認
+
+Blenderアドオン/MCPだけの実GUI試験は、リポジトリrootから `python3 blender/test_live_gui.py /Applications/Blender.app/Contents/MacOS/Blender /tmp/manga-live-acceptance` で実行できる。試験専用の新規Blender GUIと人工シーンを起動し、利用者の開いているinstanceや作品には接続しない。試験で起動したプロセスだけを終了する。出力先にはviewport/camera画像、環境、観測版と結果が残る。これはアプリ画面の通し試験・実LLM受入の代わりにはしない。
+
+GitHub Actionsの `Live Blender macOS GUI` は、この共通試験に本番Rust接続クライアントの往復も加えて実行する。

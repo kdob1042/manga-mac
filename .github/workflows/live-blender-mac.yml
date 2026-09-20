@@ -1,0 +1,69 @@
+name: Live Blender macOS GUI
+on:
+  pull_request:
+    branches: [dev]
+    paths: ['blender/live/**', 'blender/test_live_gui.py', 'src-tauri/src/blender_live.rs', 'tests/llm/tests/live_gui.rs', '.github/workflows/live-blender-mac.yml']
+  push:
+    branches: [dev]
+    paths: ['blender/live/**', 'blender/test_live_gui.py', 'src-tauri/src/blender_live.rs', 'tests/llm/tests/live_gui.rs', '.github/workflows/live-blender-mac.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: live-blender-mac-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  live-gui:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+      - name: Build actual native live client integration test
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path tests/llm/Cargo.toml --test live_gui --no-run --message-format=json > "$RUNNER_TEMP/live-test-build.json"
+          python3 - <<'PYTHON'
+          import json, os, pathlib
+          rows = [json.loads(s) for s in (pathlib.Path(os.environ['RUNNER_TEMP'])/'live-test-build.json').read_text().splitlines()]
+          bins = [r['executable'] for r in rows if r.get('reason') == 'compiler-artifact' and r.get('executable') and r.get('target', {}).get('name') == 'live_gui']
+          assert len(bins) == 1, 'native integration executable missing or ambiguous'
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('LIVE_NATIVE_TEST_BIN=' + bins[0] + '\n')
+          PYTHON
+      - name: Install fixed official Blender with publisher checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          folder="$RUNNER_TEMP/live-blender"
+          mkdir -p "$folder"
+          cd "$folder"
+          archive=blender-4.5.13-macos-arm64.dmg
+          curl --fail --location --proto '=https' -o "$archive" "https://download.blender.org/release/Blender4.5/$archive"
+          curl --fail --location --proto '=https' -o checksums.txt https://download.blender.org/release/Blender4.5/blender-4.5.13.sha256
+          python3 - "$archive" <<'PY'
+          import hashlib, pathlib, sys
+          archive = pathlib.Path(sys.argv[1])
+          matches = [line.split()[0] for line in pathlib.Path('checksums.txt').read_text().splitlines()
+                     if len(line.split()) == 2 and line.split()[1].lstrip('*') == archive.name]
+          assert len(matches) == 1, 'publisher checksum missing or ambiguous'
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == matches[0], 'checksum mismatch'
+          PY
+          mkdir -p "$folder/mount"
+          hdiutil attach -nobrowse -readonly -mountpoint "$folder/mount" "$archive"
+          ditto "$folder/mount/Blender.app" "$folder/Blender.app"
+          hdiutil detach "$folder/mount"
+          echo "BLENDER_BIN=$folder/Blender.app/Contents/MacOS/Blender" >> "$GITHUB_ENV"
+      - name: Actual macOS GUI live MCP and state invalidation
+        run: python3 blender/test_live_gui.py "$BLENDER_BIN" blender-mac-results
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Live-Blender-macOS-GUI
+          path: blender-mac-results/
+          if-no-files-found: warn
