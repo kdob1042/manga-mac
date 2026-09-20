@@ -1,3 +1,4 @@
+import LiveBlenderSettings from './LiveBlenderSettings';
 import React, { useState, useEffect } from 'react';
 import { call, desktop } from './bridge';
 import { changedBaseUsers, usageLabel } from './asset-usage';
@@ -80,6 +81,8 @@ export default function BlenderSettings({ disabled, run, notify, project }) {
   });
   const jobStatus = job => job.status === 'running' ? '処理中' : job.status === 'candidate' ? '旧版の候補' : '結果未確定';
   return <fieldset disabled={disabled}><legend>Blender 4.5.13</legend>
+    <LiveBlenderSettings project={project} run={run} notify={notify}/>
+    <h4>Headless：保存ファイルから処理</h4>
     <label>Blender実行ファイル<input value={binary} onChange={e => setBinary(e.target.value)}/></label>
     <label>読み込みを許可する素材フォルダ<input value={library} onChange={e => setLibrary(e.target.value)} placeholder="/Users/名前/BlenderAssets"/></label>
     <label>開くblendファイル<input value={source} onChange={e => setSource(e.target.value)} placeholder="素材フォルダ内のファイル.blend"/></label>

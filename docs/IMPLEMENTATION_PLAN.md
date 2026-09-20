@@ -1,6 +1,6 @@
 # Manga Mac 設計・実装計画 v4.0
 
-更新日：2026-09-17。設計の正本：本リポジトリの `main` にある本書。
+更新日：2026-09-19。設計の正本：本リポジトリの `main` にある本書。
 
 **Blenderで舞台・人物・カメラを扱い、撮影結果を画像AIで漫画化する。アプリは漫画データと工程を管理する。Blenderの既存機能・データを別実装に置き換えない。**
 
@@ -292,7 +292,7 @@ Jevは任意・初期未設定の判断専用接続。2026-09-17に[公式API](h
 
 解像度診断・補間拡大・元画像参照仕上げは既存処理を共用し、動画準備・保存済み動画割当も既存shotFromPanel/assignMotionへ接続する。自動の有料動画POSTは追加しない。
 
-文字枠は既存unit_idに対応する任意の安定ID、角丸/長方形/楕円、しっぽ、文字サイズ/行間/余白、固定状態を後方互換追加する。描画はOS Canvasで共用する。ドラッグ/リサイズ/しっぽ先端は一操作で保存し、Escape/pointercancelは破棄する。AI初期配置は既定で文字量と読書順を使い、作画送信を有効にした場合は認識した重要領域も使う。直接操作の下絵もページ共通描画から切り出し、crop後の見た目と座標を合わせる。機械的なページ/原文/文字あふれ検証と実モデルの品質合格を区別する。
+文字枠は既存unit_idに対応する任意の安定ID、kind（balloon=吹き出し、thought=枠なしの心中描写、narration=四角ナレーション）、角丸/長方形/楕円、しっぽ、文字サイズ/行間/余白、固定状態を後方互換追加する。描画はOS Canvasで共用する。ドラッグ/リサイズ/しっぽ先端は一操作で保存し、Escape/pointercancelは破棄する。AI初期配置は既定で文字量と読書順を使い、作画送信を有効にした場合は認識した重要領域も使う。直接操作の下絵もページ共通描画から切り出し、crop後の見た目と座標を合わせる。機械的なページ/原文/文字あふれ検証と実モデルの品質合格を区別する。
 
 ## 8. UIとプレビュー
 
@@ -449,9 +449,25 @@ SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約
 
 レイアウト編集は原作・作画・Blender・動画と独立。ポインター移動中はReact内の一時案、pointerupで一回だけ保存。取消・Esc・capture消失は破棄。専用layoutHistory/layoutRedoはレイアウトだけ最大100操作保持し、画像や生成Jobを巻き戻さない。構造的なページ除去は、残すコマの配置を失う場合は拒否して範囲拡張を示す。手動の未割当はドラフトとして保持する。新しく計画したコマだけ末尾の新ページへ加え、既存枠を再グリッド化しない。未割当、空ページ、重複、重なり、原文順序不一致は具体的に表示し、完成出力を拒否する。
 
-エディタとPNG/CBZはpagePNGを共有。枠はpolygon path、画像と文字は凸四角形内の内接矩形へ既存の正方形作画＋文字構成を等方縮小する。台形変形を画像へ適用しない。画像全体はcontainで保持するため、局所修正は別モードの作画原本座標をそのまま利用できる。吹き出し位置は既存LetteringControls。文字の最小サイズ・収容検査は出力時に行い、狭すぎる枠を黙って出力しない。ドラッグ画面は未作画／未割当を明示する仮表示、完成プレビューは完成出力と同じ厳格な検査。
+エディタとPNG/CBZはpagePNGを共有。枠はpolygon path。作画は既定でコマ外接をcoverして凸四角形でマスクし、containは明示したコマだけ。文字は凸四角形内の内接矩形へ既存の正方形構成を等方縮小する。台形変形を画像へ適用しない。原本ピクセルは変えず、局所修正は別モードの作画原本座標をそのまま利用できる。吹き出し位置は既存LetteringControls。文字の最小サイズ・収容検査は出力時に行い、狭すぎる枠を黙って出力しない。ドラッグ画面は未作画／未割当を明示する仮表示、完成プレビューは完成出力と同じ厳格な検査。
 
 AIは既存plan接続をlayout用途で共有し、同じ形状検証へ通す。対象ページ限定では他ページを固定。全ページ指定では既存コマを順に保ったページ分割・4/6コマ混在を提案できる。内容の新規分割は従来planSceneと別工程。要求時の原作・コマ・layoutを固定し、既存jobsへ生成前に記録、同じ入力は最大3回・自動再試行なし。候補は保存／再読込可能、採用時に基準一致を再確認し、作画・撮影・動画を起動しない。候補の破棄と手動編集はAI未接続でも可能。実モデルの漫画としての読みやすさは別受入。
+
+### 枠破り（#159）
+
+ホーム枠 `slot.points` は従来どおりページ内の時計回り凸四角形で、枠線・文字・読書順の正本である。任意の `slot.overflow = {points, z?}` だけが作画クリップを広げ、隣のホーム枠と重なってよい。ホーム枠同士の重なりとページ外座標（0..1 の外）は従来どおり拒否する。crop やホーム枠の拡大重ねで代用しない。`layout.version` は 1 のまま。overflow の無い旧作品には overflow を推論しない。作画の全面表示はトリミング節。
+
+`overflow.points` も `validQuad`。ホーム枠の4頂点はすべて overflow に含まれる。`z` は 0〜15、省略時 0。未知キーは拒否。テンプレート・新規ページは overflow を付けない。
+
+作画配置は `artPoints(slot) = overflow.points ?? points` の `panelArtRect`（ホーム枠の窓と、枠外へ続く絵を同じ一枚に揃える）。文字の `contentBox` はホーム枠。描画は (1) 従来どおり全コマをホームで clip して作画・文字・枠 (2) ホーム枠の外（overflow ∖ home）だけを z・読書順で clip し、はみ出した作画を最前面に載せる。ホーム内は従来のコマ割りを塗り直さない。overlay の枠線は従来どおりホームに描き、はみ出しはホームの外なので消えない。不透明ピクセルはそのはみ出し領域で隣を覆う。アルファがあれば `drawImage` のまま。切り抜き・マスク欄は持たない。
+
+他コマの文字矩形と overflow が重なれば警告し、完成 PNG/CBZ を拒否する。自分の文字はホーム内の従来描画のまま残す。
+
+Live の `clip` / `frame` はホーム枠のまま（ビューワーがコマ内再生をマスクする窓）。`artRect` はページ作画と同じ `panelArtRect(artPoints(slot), …)` で、既定は cover。overflow があればホームの窓と枠外の絵が同じ一枚になる。はみ出し形状自体は `pagePNG` 系にだけ焼く。contracts と Rust のホーム clip 検証は変えない。コマ動画の再生は live-manga ビューワーが `clip` でマスクし、この `artRect` を載せる。制作アプリは再生UIを持たない。拡大表示で動画全体を見せるのもビューワー側。
+
+操作はコマ割り編集の「枠破り」トグルと overflow 四隅。ホーム全体移動は overflow も同じ平行移動。ポインター中は下書き、pointerup で既存 `changeLayout`。生成・Blender・動画は呼ばない。AI は overflow を省略してよい。
+
+実装手順・受入条件は Issue #159。#158 は検討記録。実機画質・実モデル評価は別受入。
 
 ### レイアウト変更・対象範囲とreflow（#77 / #113）
 
@@ -475,9 +491,9 @@ LayoutSpliceはbeforePageId/afterPageId、連続するoldPageIds、replacementPa
 
 ### 非破壊画像トリミング
 
-既存Canvas描画とpolygon clipを再利用する漫画固有の組版機能であり、Blenderの汎用合成を再実装しない。`layout.imageCrops[panelId] = {zoom,x,y}` に画像配置だけを保持する。zoomはcover基準1〜8倍、x/yは余剰幅・高さ上の位置0〜1（中央0.5）。外接矩形を覆う等方拡大後、凸四角形でマスクする。パンは余白が露出しない範囲へ制限。座標は画素数から独立し、将来の同一比率の高解像度画像にも適用できる。
+既存Canvas描画とpolygon clipを再利用する漫画固有の組版機能であり、Blenderの汎用合成を再実装しない。`layout.imageCrops[panelId] = {zoom,x,y,fit?}` に画像配置だけを保持する。zoomはcover基準1〜8倍、x/yは余剰幅・高さ上の位置0〜1（中央0.5）。省略時と `fit` なしは外接矩形を覆う等方拡大のあと凸四角形でマスクする。`fit: 'contain'` だけ従来の内接表示。パンは余白が露出しない範囲へ制限。座標は画素数から独立し、将来の同一比率の高解像度画像にも適用できる。
 
-設定のない旧コマは従来contain表示を保持。ユーザーが「画像トリミング」で有効にしたコマだけ全面表示にする。枠操作と画像操作を明示切替し、画像ドラッグは一操作一保存、Esc/cancelは破棄。layoutHistory/Redoを共用し、テンプレート再配置・AI案でもpanelIdに紐付いた配置を保持する。画像原本・ArtworkRevision・文字/吹き出しデータ・生成Jobsを変更しない。文字層には画像の位置・拡大率を適用せず、現在の文字組版を維持する。通常の作画画面は原本表示、組版プレビューとPNG/CBZは同じ変換で描画する。
+設定のないコマも全面表示（cover）とする。外接矩形を覆う等方拡大のあと凸四角形でマスクする。contain は `fit: 'contain'` を明示したコマだけ。ユーザーが「画像トリミング」で位置・拡大率を変えられる。枠操作と画像操作を明示切替し、画像ドラッグは一操作一保存、Esc/cancelは破棄。layoutHistory/Redoを共用し、テンプレート再配置・AI案でもpanelIdに紐付いた配置を保持する。画像原本・ArtworkRevision・文字/吹き出しデータ・生成Jobsを変更しない。文字層には画像の位置・拡大率を適用せず、現在の文字組版を維持する。通常の作画画面は原本表示、組版プレビューとPNG/CBZは同じ変換で描画する。
 
 JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。旧v1出力要求では従来の配置制限を維持する。高解像度化はIssue #57で別管理し、今回の拡大は補間表示のみでAI超解像ではない。
 
@@ -512,3 +528,17 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 既存`pagePNG`と共有する`panelArtRect/pageLayers`から、背景作画・透明な文字/枠・完成静止画を生成する。公開テキストは選んだコマ範囲だけ。出力は固定project snapshotから構築し、native保存開始時のrevision一致を要求する。動画は既存mediaからhash確認後stream copyし、UIへbase64を渡さない。ffprobeで実codec/寸法/尺/音声を確認し、ステージングから新しいUUID刊行ディレクトリへ確定する。既存刊行版は上書きしない。
 
 新規出力はv2契約による自由四角形・可変コマ数・非破壊cropと無音H.264。PNGと配信画像は同じページ・画像配置を使い、文字と枠は動画の上に重ねる。Rustは公開形状と保存済みlayoutの頂点・割当順を照合する。FFmpeg/ffprobe未導入や非対応動画は理由を表示して停止。生成API、Blender描画、組版、動画履歴は再実装しない。作品のクラウド公開はlive-manga側の明示した刊行工程とし、このアプリは自動公開しない。
+
+### Live Blender（#175、A: #176）
+
+GUIを明示接続するliveと保存checkpointから実行するheadlessを併設する。liveは`blender/live`の限定MCPアドオンを使用。上流mcp-for-blenderの固定commit・MIT・再利用箇所は`blender/live/upstream.json`参照。上流の任意Python、telemetry/trajectory、外部素材サービスは組み込まない。再利用するviewport取得以外の不足分は認証・対象・版管理の薄い接続層であり、描画・評価はbpyへ委譲する。
+
+HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、1 writer。nativeはproxy/redirectを使わない。tokenは起動中のメモリのみ。instance/file/scene/view layerを明示照合し、file load/undo/redoでepochを失効。接続・切断でBlender終了・file loadは行わない。旧headlessは既存コードを保持する。アプリ管理領域内のfile（symlink解決後を含む）へのlive接続は拒否し、外部の作業用copyを要求する。接続サーバー停止はGUIのpendingリクエストを待たず、旧サーバーからの未実行要求は再起動後も失効する。
+
+Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
+
+Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当は旧typed/headlessの互換経路を維持。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
+
+Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明示。引継ぎ時にアプリ内の計画世代を即失効し、Blender側もmanualへ移行・観測版を更新する。再開は新規runで再観測し、名前/ID/人物対応不明なら停止。外部Computer Use providerは同梱しない。
+
+候補保存は明示操作でBlender標準pack_all/save_as_mainfile(copy=True)を使い、64MiB以下の新規copyをnativeのUUIDディレクトリへ保存する。既存headlessアダプタでそのcopyの依存検証・撮影を行い、新session/ShotBinding/CaptureRevisionとして記録する。この候補撮影はGUIの観測受入の代替ではない。採用前は既存panel pointerを変更せず、採用時に基準版検査と漫画側Undo履歴を残す。採用済みcheckpoint・原文・他コマ・旧作画/動画は保持する。大きなblend、非Object mode、未対応依存は理由を示して停止する。

@@ -1,5 +1,5 @@
-import {bounds,contentBox,PAGE} from './layout.js';
-import {cropRect} from './image-crop.js';
+import {artPoints,bounds,contentBox,PAGE} from './layout.js';
+import {coverCrop,cropRect} from './image-crop.js';
 import {beginJob,finishJob,adoptCandidate,abandonJob} from './revisions.js';
 import {placementKey} from './placement.js';
 export {placementKey} from './placement.js';
@@ -10,10 +10,11 @@ export function upscaleSize(width,height,factor) {
 export function requiredScale(project,id,width,height) {
   const slot=project.layout.pages.flatMap(p=>p.slots).find(s=>s.panelId===id);
   if(!slot)throw Error('コマをページに配置してください');
-  const b=bounds(slot.points),box={x:0,y:0,width:b.width*PAGE.width,height:b.height*PAGE.height};
-  const crop=project.layout.imageCrops?.[id];
-  const inner=contentBox(slot.points);
-  return crop?cropRect(width,height,box,crop).scale:Math.min(inner.width/720,inner.height/1030)*Math.min(716/width,716/height);
+  const pts=artPoints(slot),b=bounds(pts),box={x:0,y:0,width:b.width*PAGE.width,height:b.height*PAGE.height};
+  const cover=coverCrop(project.layout.imageCrops?.[id]);
+  if(cover)return cropRect(width,height,box,cover).scale;
+  const inner=contentBox(pts);
+  return Math.min(inner.width/720,inner.height/1030)*Math.min(716/width,716/height);
 }
 export async function beginUpscale(project,id,width,height,factor) {
   const size=upscaleSize(width,height,factor),panel=project.panels.find(p=>p.id===id);

@@ -63,3 +63,6 @@
 .recognized-region span { position: absolute; border: 2px solid #d65030; background: #d6503020; pointer-events: none; }
 
 input[type="checkbox"] { width: auto; }
+
+
+.video-transition-option{display:grid;gap:4px}.video-transition-thumbnails{display:flex;gap:8px;max-width:360px}.video-transition-thumbnails img{width:160px;height:160px;object-fit:contain;background:#f3f3ef;border:1px solid #d6d9d2;border-radius:4px}

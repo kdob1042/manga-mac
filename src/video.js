@@ -6,22 +6,63 @@ import { digest, imageHash } from './revisions.js';
 const ratios = ['1280:720', '720:1280', '1104:832', '960:960', '832:1104', '1584:672'];
 const hashPattern = /^[0-9a-f]{64}$/;
 const hashValue = value => digest(new TextEncoder().encode(JSON.stringify(value)));
-export function validateVideoFrame(image, ratio) {
-  // Initial path reuses PNG artwork/captures without implicit provider cropping.
-  if (!image.startsWith('data:image/png;base64,')) throw Error('初期動画入力はPNGの作画・撮影画像に対応しています');
+export function videoFrameDimensions(image) {
+  if (!image.startsWith('data:image/png;base64,')) throw Error('動画入力はPNGの作画画像に対応しています');
   const bytes = Uint8Array.from(atob(image.split(',')[1].slice(0, 44)), c => c.charCodeAt(0));
   if (bytes.length < 24 || bytes.slice(0, 8).join(',') !== '137,80,78,71,13,10,26,10' || String.fromCharCode(...bytes.slice(12, 16)) !== 'IHDR') throw Error('PNGの画像寸法を確認できません');
   const view = new DataView(bytes.buffer), width = view.getUint32(16), height = view.getUint32(20);
+  if (!width || !height || width > 8192 || height > 8192 || width / height < .5 || width / height > 2) throw Error('画像の寸法が動画入力の上限に適合しません');
+  return { width, height, format: 'png' };
+}
+export function validateVideoFrame(image, ratio) {
+  const { width, height } = videoFrameDimensions(image);
   const [w, h] = ratio.split(':').map(Number);
-  if (!width || !height || width > 8192 || height > 8192 || width / height < .5 || width / height > 2 || width * h !== height * w) throw Error('開始画像と出力の縦横比を合わせてください。自動切り抜きは行いません');
+  if (!width || !height || width * h !== height * w) throw Error('開始画像と出力の縦横比を合わせてください。自動切り抜きは行いません');
   return { width, height };
 }
+
 function exactKeys(value, allowed) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(k => !allowed.includes(k))) throw Error('未対応の動画入力です');
 }
 
+function validateTransition(project, shot) {
+  const transition = shot.transition;
+  exactKeys(transition, ['pageId', 'fromPanelId', 'toPanelId', 'fromIndex', 'toIndex', 'fromSceneId', 'fromUnitIds', 'fromCharacterIds', 'toSceneId', 'toUnitIds', 'toCharacterIds', 'fromArtworkRevisionId', 'fromArtworkHash', 'toArtworkRevisionId', 'toArtworkHash']);
+  if (typeof transition.pageId !== 'string' || typeof transition.fromPanelId !== 'string' || typeof transition.toPanelId !== 'string' || transition.fromPanelId === transition.toPanelId || !Number.isSafeInteger(transition.fromIndex) || !Number.isSafeInteger(transition.toIndex) || transition.fromIndex < 0 || transition.toIndex !== transition.fromIndex + 1) throw Error('隣接コマの読書順が不正です');
+  const page = project.layout?.pages?.find(p => p.id === transition.pageId);
+  const pagePanelIds = page?.slots?.filter(slot => slot.panelId !== null).map(slot => slot.panelId) ?? [];
+  if (!page || pagePanelIds[transition.fromIndex] !== transition.fromPanelId || pagePanelIds[transition.toIndex] !== transition.toPanelId) throw Error('隣接コマは同じページの安定した読書順から選択してください');
+  const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
+  const from = project.panels.find(p => p.id === transition.fromPanelId);
+  const to = project.panels.find(p => p.id === transition.toPanelId);
+  if (!snapshot || !from || !to || from.snapshotId !== shot.snapshotId || to.snapshotId !== shot.snapshotId) throw Error('隣接コマの原作版が一致しません');
+  const source = (sceneId, unitIds) => {
+    const scene = snapshot.scenes.find(s => s.id === sceneId);
+    const units = scene ? sourceUnits(scene.id, scene.text).map(u => u.id) : [];
+    if (!scene || !Array.isArray(unitIds) || !unitIds.length || new Set(unitIds).size !== unitIds.length || JSON.stringify(units.filter(id => unitIds.includes(id))) !== JSON.stringify(unitIds)) throw Error('隣接コマの原文範囲・順序が不正です');
+  };
+  source(transition.fromSceneId, transition.fromUnitIds);
+  source(transition.toSceneId, transition.toUnitIds);
+  if (from.sceneId !== transition.fromSceneId || JSON.stringify(from.unitIds) !== JSON.stringify(transition.fromUnitIds) || JSON.stringify(from.characterIds) !== JSON.stringify(transition.fromCharacterIds) || to.sceneId !== transition.toSceneId || JSON.stringify(to.unitIds) !== JSON.stringify(transition.toUnitIds) || JSON.stringify(to.characterIds) !== JSON.stringify(transition.toCharacterIds)) throw Error('隣接コマの原稿・人物参照が変わっています');
+  if (shot.sceneId !== transition.fromSceneId || JSON.stringify(shot.unitIds) !== JSON.stringify(transition.fromUnitIds)) throw Error('動画の始端原稿範囲が不正です');
+  const characterIds = [...new Set([...transition.fromCharacterIds, ...transition.toCharacterIds])];
+  if (JSON.stringify(shot.characterIds) !== JSON.stringify(characterIds)) throw Error('動画の人物参照が不正です');
+  const adopted = (panel, id, hash, label) => {
+    const artwork = project.artworks.find(a => a.id === id && a.hash === hash);
+    if (!artwork || panel.artwork_revision !== id || panel.image !== artwork.panel?.image) throw Error(label + 'の採用作画版が一致しません');
+    return artwork;
+  };
+  const fromArtwork = adopted(from, transition.fromArtworkRevisionId, transition.fromArtworkHash, '始端コマ');
+  const toArtwork = adopted(to, transition.toArtworkRevisionId, transition.toArtworkHash, '終端コマ');
+  if (shot.startImage.kind !== 'artwork' || shot.startImage.id !== fromArtwork.id || shot.startImage.hash !== fromArtwork.hash || shot.endImage.kind !== 'artwork' || shot.endImage.id !== toArtwork.id || shot.endImage.hash !== toArtwork.hash) throw Error('A/Bの採用作画版を動画入力に固定してください');
+  const fromSize = validateVideoFrame(fromArtwork.panel.image, shot.ratio);
+  const toSize = validateVideoFrame(toArtwork.panel.image, shot.ratio);
+  if (fromSize.width !== toSize.width || fromSize.height !== toSize.height) throw Error('始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください');
+  return transition;
+}
+
 export function validateVideoShot(project, shot) {
-  exactKeys(shot, ['id', 'snapshotId', 'sceneId', 'unitIds', 'characterIds', 'startImage', 'prompt', 'duration', 'ratio', 'adopted_revision']);
+  exactKeys(shot, ['id', 'snapshotId', 'sceneId', 'unitIds', 'characterIds', 'startImage', 'endImage', 'transition', 'prompt', 'duration', 'ratio', 'adopted_revision']);
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
   const scene = snapshot?.scenes.find(s => s.id === shot.sceneId);
   if (!scene || typeof shot.id !== 'string' || !shot.id) throw Error('動画の原作参照がありません');
@@ -31,6 +72,13 @@ export function validateVideoShot(project, shot) {
   if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 1000 || shot.duration !== 5 || !ratios.includes(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
   exactKeys(shot.startImage, ['kind', 'id', 'hash']);
   if (!['artwork', 'capture'].includes(shot.startImage.kind) || typeof shot.startImage.id !== 'string' || !hashPattern.test(shot.startImage.hash)) throw Error('開始画像の不変参照が必要です');
+  const hasTransition = shot.transition !== undefined || shot.endImage !== undefined;
+  if (hasTransition) {
+    if (!shot.transition || !shot.endImage) throw Error('A→B動画には始端・終端コマと採用作画版が必要です');
+    exactKeys(shot.endImage, ['kind', 'id', 'hash']);
+    if (shot.endImage.kind !== 'artwork' || typeof shot.endImage.id !== 'string' || !hashPattern.test(shot.endImage.hash)) throw Error('終端画像は採用作画版に限ります');
+    validateTransition(project, shot);
+  }
   return shot;
 }
 
@@ -65,20 +113,44 @@ export function createVideoShot(project, options) {
   return { ...project, videoShots: [...project.videoShots, structuredClone(shot)] };
 }
 
+export function videoConnectionSupportsEndFrame(connection) {
+  // The current Runway/gen4.5 API formally accepts one promptImage only.
+  // The fixture adapter is intentionally not exposed by the UI; it proves the
+  // two-frame contract without pretending to prove real provider quality/API support.
+  return connection?.provider === 'fixture' && connection?.model === 'end-frame-v1';
+}
+
 export async function videoManifest(project, shot, connection, loadCapture) {
   validateVideoShot(project, shot);
   exactKeys(connection, ['id', 'provider', 'model']);
-  if (typeof connection.id !== 'string' || !connection.id || connection.provider !== 'runway' || connection.model !== 'gen4.5') throw Error('対応する動画接続が未設定です');
-  const resolved = await resolveStartImage(project, shot.startImage, loadCapture);
-  validateVideoFrame(resolved.image, shot.ratio);
+  const isRunway = connection.provider === 'runway' && connection.model === 'gen4.5';
+  const isFrameFixture = videoConnectionSupportsEndFrame(connection);
+  if (typeof connection.id !== 'string' || !connection.id || (!isRunway && !isFrameFixture)) throw Error('対応する動画接続が未設定です');
+  if (shot.transition && !isFrameFixture) throw Error('選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません');
+  const start = await resolveStartImage(project, shot.startImage, loadCapture);
+  const startDimensions = validateVideoFrame(start.image, shot.ratio);
+  const end = shot.transition ? await resolveStartImage(project, shot.endImage, loadCapture) : null;
+  const endDimensions = end ? validateVideoFrame(end.image, shot.ratio) : null;
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
+  const source = { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds] };
   const manifest = { version: 1, scope: { type: 'videoShot', id: shot.id },
-    source: { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds] },
-    characterIds: [...shot.characterIds], sourceDependencies: resolved.sourceDependencies,
-    providerInputs: [{ role: 'start_frame', ...resolved.artifact, transform: { kind: 'identity' } }],
+    source, characterIds: [...shot.characterIds],
+    sourceDependencies: end ? { from: start.sourceDependencies, to: end.sourceDependencies } : start.sourceDependencies,
+    providerInputs: [{ role: 'start_frame', ...start.artifact, width: startDimensions.width, height: startDimensions.height, transform: { kind: 'identity' } }, ...(end ? [{ role: 'end_frame', ...end.artifact, width: endDimensions.width, height: endDimensions.height, transform: { kind: 'identity' } }] : [])],
     prompt: shot.prompt, duration: shot.duration, ratio: shot.ratio, connection: { ...connection },
     base_revision: shot.adopted_revision ?? null };
-  return { manifest, input_hash: await hashValue(manifest), image: resolved.image };
+  if (shot.transition) {
+    const t = shot.transition;
+    manifest.transition = { pageId: t.pageId, fromPanelId: t.fromPanelId, toPanelId: t.toPanelId,
+      fromIndex: t.fromIndex, toIndex: t.toIndex,
+      fromArtworkRevisionId: t.fromArtworkRevisionId, fromArtworkHash: t.fromArtworkHash,
+      toArtworkRevisionId: t.toArtworkRevisionId, toArtworkHash: t.toArtworkHash };
+    source.pageId = t.pageId;
+    source.readingOrder = { fromIndex: t.fromIndex, toIndex: t.toIndex };
+    source.from = { panelId: t.fromPanelId, sceneId: t.fromSceneId, unitIds: [...t.fromUnitIds], characterIds: [...t.fromCharacterIds] };
+    source.to = { panelId: t.toPanelId, sceneId: t.toSceneId, unitIds: [...t.toUnitIds], characterIds: [...t.toCharacterIds] };
+  }
+  return { manifest, input_hash: await hashValue(manifest), image: start.image, endImage: end?.image ?? null };
 }
 
 export async function beginVideoJob(project, shotId, connection, loadCapture) {
@@ -93,7 +165,7 @@ export async function beginVideoJob(project, shotId, connection, loadCapture) {
     input_hash: request.input_hash, status: 'running', attempts: 1, at: new Date().toISOString(),
     active_snapshot: project.active, cost: { kind: 'external', amount: null, currency: null } };
   // Caller must save this project successfully BEFORE any paid submission.
-  return { project: { ...project, jobs: [...project.jobs, job] }, job, image: request.image };
+  return { project: { ...project, jobs: [...project.jobs, job] }, job, image: request.image, endImage: request.endImage };
 }
 
 export async function videoJobIsCurrent(project, job, loadCapture) {

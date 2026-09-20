@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { call, desktop, loadProject } from './bridge';
 import { sourceUnits, sourceForPanel } from './core';
-import { createVideoShot, adoptVideoCandidate, undoVideo, beginVideoJob, validateVideoShot } from './video';
+import { createVideoShot, adoptVideoCandidate, undoVideo, beginVideoJob, validateVideoShot, videoConnectionSupportsEndFrame } from './video';
+import { adjacentPanelPairs, createSelectedAdjacentVideoShots } from './video-transition';
 import { videoStatusLabel, resolveVideoTask } from './video-remote';
 import { draftVideoMotion } from './video-plan';
 import ShotControls from './ShotControls';
 import { planVideoSource, attachShots, videoSources } from './shots';
 
 const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
-export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot }) {
+export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot, requestedPairId, onPairConsumed }) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
   const [sceneId, setSceneId] = useState(''), [imageId, setImageId] = useState(''), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState('');
   useEffect(() => { if (requestedShot) { setSelected(requestedShot); setPlayback(null); } }, [requestedShot]);
@@ -17,13 +18,26 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const [ratio, setRatio] = useState('960:960'), [editRatio, setEditRatio] = useState('960:960');
   const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [connectionId, setConnectionId] = useState(''), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
   const [captureSourceId, setCaptureSourceId] = useState(''), [captureCharacters, setCaptureCharacters] = useState([]);
+  const [transitionPairIds, setTransitionPairIds] = useState([]), [transitionPrompt, setTransitionPrompt] = useState(''), [transitionRatio, setTransitionRatio] = useState('960:960');
   const sources = videoSources(project), captureSource = sources.find(s => s.id === captureSourceId);
+  const pairOptions = adjacentPanelPairs(project), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
+  useEffect(() => {
+    const available = new Set(pairOptions.filter(pair => pair.valid).map(pair => pair.id));
+    setTransitionPairIds(ids => ids.filter(id => available.has(id)));
+  }, [pairOptionKey]);
+  useEffect(() => {
+    if (requestedPairId && pairOptions.some(pair => pair.id === requestedPairId && pair.valid)) {
+      setTransitionPairIds(ids => ids.includes(requestedPairId) ? ids : [...ids, requestedPairId]);
+    }
+  }, [requestedPairId, pairOptionKey]);
   const [checkedTask, setCheckedTask] = useState('');
   const connectionRef = useRef('');
   useEffect(() => () => { if (connectionRef.current) call('remove_video', { connectionId: connectionRef.current }).catch(() => {}); }, []);
   const images = [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
     ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))];
   const shot = project.videoShots.find(s => s.id === selected);
+  const activeConnection = connectionId ? { id: connectionId, provider: 'runway', model: 'gen4.5' } : null;
+  const transitionSupported = !shot?.transition || videoConnectionSupportsEndFrame(activeConnection);
   useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setAcceptDeletion(false); setCheckedTask(''); }, [selected, shot?.prompt, shot?.ratio]);
   async function prepareCapture() {
     const p = current.current;
@@ -66,7 +80,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   return <section className="video-workspace" aria-label="動画制作">
     <h2>動画ショット</h2><p>同じ原作・作画・撮影画像から、5秒の無音ショットを準備します。</p>
     <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
-      <p>Runway / gen4.5 · 開始画像1枚と動きの指示を api.dev.runwayml.com へ送ります。</p>
+      <p>Runway / gen4.5 · 通常は開始画像1枚と動きの指示を api.dev.runwayml.com へ送ります。A→Bは終端画像対応の接続だけで実行します。</p>
       <small>5秒あたり60 creditsの見積り（2026-09-16確認）。作品の累計予約枠を上限にします。失敗・成否不明も予約枠を消費し、再登録でリセットしません。実際の請求額はサービス側でも確認してください。</small>
       <label>Runway APIキー<input aria-label="Runway APIキー" type="password" autoComplete="off" disabled={!!connectionId} value={apiKey} onChange={e => setApiKey(e.target.value)}/></label>
       <label>作品の上限（credits）<input aria-label="作品の上限（credits）" type="number" min="60" max="6000" step="60" disabled={!!connectionId} value={budget} onChange={e => setBudget(Number(e.target.value))}/></label>
@@ -107,12 +121,53 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         await commit(next); setSelected(next.videoShots.at(-1).id); setPlayback(null);
       })}>ショットを保存</button>
       <small>選択した場面の原文全体を参照します。台詞音声は生成しません。</small>
+      <details>
+        <summary>隣接コマ間の動画（A→B・任意選択）</summary>
+        <p>同じページで読書順に隣り合うコマだけを対象にします。未選択のままなら何も保存・実行しません。</p>
+        <p>{transitionPairIds.length}件選択中</p>
+        {!pairOptions.length && <p>選択できる隣接コマがありません。ページに採用済み作画のコマを2つ以上配置してください。</p>}
+        {pairOptions.map(pair => <article className="video-transition-option" key={pair.id}>
+          <label>
+            <input
+              type="checkbox"
+              aria-label={'隣接コマ ' + pair.fromPanelId + ' から ' + pair.toPanelId}
+              disabled={!pair.valid}
+              checked={transitionPairIds.includes(pair.id)}
+              onChange={event => setTransitionPairIds(ids => event.target.checked ? [...ids, pair.id] : ids.filter(id => id !== pair.id))}
+            />
+            {pair.fromPanelId} → {pair.toPanelId}
+          </label>
+          <div className="video-transition-thumbnails">
+            {pair.fromImage && <img src={pair.fromImage} alt={'始端 ' + pair.fromPanelId} />}
+            {pair.toImage && <img src={pair.toImage} alt={'終端 ' + pair.toPanelId} />}
+          </div>
+          <small>ページ{pair.pageIndex + 1}・読書順 {pair.fromIndex + 1} → {pair.toIndex + 1}</small>
+          <small>A 作画版 {pair.fromArtworkRevisionId ?? 'なし'} / {pair.fromArtworkHash?.slice(0, 12) ?? 'なし'} / {pair.fromDimensions ? pair.fromDimensions.width + '×' + pair.fromDimensions.height : '寸法不明'}</small>
+          <small>B 作画版 {pair.toArtworkRevisionId ?? 'なし'} / {pair.toArtworkHash?.slice(0, 12) ?? 'なし'} / {pair.toDimensions ? pair.toDimensions.width + '×' + pair.toDimensions.height : '寸法不明'}</small>
+          {!pair.valid && <small role="alert">{pair.reason}</small>}
+        </article>)}
+        <label>隣接コマ間の動き<textarea aria-label="隣接コマ間の動き" maxLength={1000} value={transitionPrompt} onChange={e => setTransitionPrompt(e.target.value)} placeholder="AからBへゆっくりカメラが移動する。"/></label>
+        <label>隣接コマ動画の寸法<select aria-label="隣接コマ動画の寸法" value={transitionRatio} onChange={e => setTransitionRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label>
+        <button
+          disabled={!transitionPairIds.length || !transitionPrompt.trim()}
+          onClick={() => run('選択した隣接コマを保存', async () => {
+            const p = current.current;
+            const next = createSelectedAdjacentVideoShots(p, transitionPairIds, { prompt: transitionPrompt, duration: 5, ratio: transitionRatio });
+            if (next === p) { notify('隣接コマは未選択です。何も保存しません。'); return; }
+            await commit(next);
+            setSelected(next.videoShots.at(-1).id);
+            setTransitionPairIds([]);
+            setPlayback(null);
+            onPairConsumed?.();
+          })}
+        >選択した隣接コマをショットとして保存</button>
+      </details>
     </fieldset>}
-    <nav aria-label="動画ショット一覧">{project.videoShots.map((s, i) => <button key={s.id} aria-pressed={selected === s.id} disabled={busy} onClick={() => { setSelected(s.id); setPlayback(null); setPlayError(''); }}>{i + 1} · {s.sceneId}</button>)}</nav>
+    <nav aria-label="動画ショット一覧">{project.videoShots.map((s, i) => <button key={s.id} aria-pressed={selected === s.id} disabled={busy} onClick={() => { setSelected(s.id); setPlayback(null); setPlayError(''); }}>{i + 1} · {s.transition ? s.transition.fromPanelId + '→' + s.transition.toPanelId : s.sceneId}</button>)}</nav>
     {shot && <section>
-      <h3>{shot.sceneId} · 5秒 · 無音</h3>
+      <h3>{shot.transition ? shot.transition.fromPanelId + ' → ' + shot.transition.toPanelId : shot.sceneId} · 5秒 · 無音</h3>
       <p className="video-source">{sourceForPanel(shot, project.snapshots.find(s => s.id === shot.snapshotId))}</p>
-      <p>{shot.prompt}</p><small>開始画像 {shot.startImage.hash.slice(0, 12)} · {shot.ratio}</small>
+      <p>{shot.prompt}</p><small>開始画像 {shot.startImage.hash.slice(0, 12)}{shot.endImage ? ' · 終端画像 ' + shot.endImage.hash.slice(0, 12) : ''} · {shot.ratio}</small>
       <label>このショットの動き<textarea aria-label="このショットの動き" value={editPrompt} maxLength={1000} disabled={busy} onChange={e => setEditPrompt(e.target.value)}/></label>
       <label>このショットの寸法<select aria-label="このショットの寸法" disabled={busy} value={editRatio} onChange={e => setEditRatio(e.target.value)}>{['960:960','1280:720','720:1280','1104:832','832:1104'].map(r => <option key={r}>{r}</option>)}</select></label>
       <button disabled={busy || !model?.connectionId} onClick={() => run('動きの案を作成中', async () => { setEditPrompt(await draftVideoMotion(current.current, shot, model)); notify('動きの案を作りました。内容を確認して「指示を保存する」で反映できます。'); })}>演出LLMで動きの案を作る</button>
@@ -120,8 +175,9 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         const next = validateVideoShot(current.current, { ...shot, prompt: editPrompt, ratio: editRatio });
         await commit({ ...current.current, videoShots: current.current.videoShots.map(s => s.id === shot.id ? next : s) });
       })}>指示を保存する</button>
-      <button className="primary" disabled={busy || !desktop() || !connectionId} onClick={() => run('動画要求を送信中', generate)}>5秒の動画を生成する</button>
+      <button className="primary" disabled={busy || !desktop() || !connectionId || !transitionSupported} onClick={() => run('動画要求を送信中', generate)}>5秒の動画を生成する</button>
       {!connectionId && <p>動画API接続を登録すると生成・状態照会を利用できます。</p>}
+      {shot.transition && connectionId && !transitionSupported && <p role="alert">現在のRunway / gen4.5は終端画像に対応していないため、このA→Bショットは有料送信しません。</p>}
       {project.jobs.filter(j => j.scope?.type === 'videoShot' && j.scope.id === shot.id).map(j => <article key={j.id}>
         <p>{videoStatusLabel(j)} · 予約 {j.remote?.reserved_credits ?? 0} credits{j.remote?.actual_credits != null ? ` / 実績 ${j.remote.actual_credits} credits` : ''}</p>
         {j.remote?.task_id && <><small>task {j.remote.task_id}</small>

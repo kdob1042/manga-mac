@@ -8,6 +8,7 @@ pub mod storage;
 mod web_asset;
 
 mod blender;
+mod blender_live;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -22,6 +23,7 @@ struct AppState {
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
+    live_blender: blender_live::Live,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -203,18 +205,37 @@ fn source_library(state: State<AppState>) -> Result<Value, String> {
                         .and_then(|s| s["episodeId"].as_str())
                         .unwrap_or("P01")
                         .into(),
+                    work_id: source["workId"]
+                        .as_str()
+                        .map(String::from)
+                        .or_else(|| source["library"]["workId"].as_str().map(String::from)),
+                    work_root: source["library"]["root"].as_str().map(String::from),
+                    manifest_path: source["library"]["manifest_path"]
+                        .as_str()
+                        .map(String::from),
+                    catalog_commit: source["library"]["commit"].as_str().map(String::from),
+                    scene: source["selectedSceneId"].as_str().map(String::from),
+                    format: source["protocol"]["format"].as_str().map(String::from),
                 },
             )?;
         }
     }
     Ok(serde_json::json!({"entries":entries,"active":id}))
 }
+// Keep the existing named Tauri IPC arguments compatible with saved clients.
+#[expect(clippy::too_many_arguments)]
 #[tauri::command]
 fn source_register(
     name: String,
     repo: String,
     episode: String,
     id: Option<String>,
+    work_id: Option<String>,
+    work_root: Option<String>,
+    manifest_path: Option<String>,
+    catalog_commit: Option<String>,
+    scene: Option<String>,
+    format: Option<String>,
     state: State<AppState>,
 ) -> Result<Value, String> {
     let _gate = storage::backup::gate(&state.base, ".source-library.lock")?;
@@ -225,8 +246,12 @@ fn source_register(
         return Err("未登録の作品です".into());
     }
     let new = id.is_none();
-    if new && existing.iter().any(|e| e.repo.eq_ignore_ascii_case(&repo)) {
-        return Err("このリポジトリは登録済みです".into());
+    if new
+        && existing
+            .iter()
+            .any(|e| e.repo.eq_ignore_ascii_case(&repo) && e.work_id.as_ref() == work_id.as_ref())
+    {
+        return Err("このリポジトリ・作品は登録済みです".into());
     }
     let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let root = state.base.join("works").join(&id);
@@ -244,6 +269,12 @@ fn source_register(
             name,
             repo,
             episode,
+            work_id,
+            work_root,
+            manifest_path,
+            catalog_commit,
+            scene,
+            format,
         },
     );
     if entries.is_err() && new {
@@ -358,24 +389,12 @@ async fn register_video(
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
     state.connections.remove_video(&connection_id)
 }
-fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
-    let db = state.db.lock().map_err(err)?;
-    let project: Value =
-        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
-            .map_err(err)?;
-    let job = project["jobs"]
-        .as_array()
-        .ok_or("Missing jobs")?
-        .iter()
-        .find(|j| j["id"].as_str() == Some(job_id))
-        .ok_or("Missing job")?;
-    let shot = project["videoShots"]
-        .as_array()
-        .ok_or("Missing shots")?
-        .iter()
-        .find(|s| s["id"] == job["scope"]["id"])
-        .ok_or("Missing shot")?;
-    let reference = &shot["startImage"];
+fn resolve_video_image(
+    project: &Value,
+    db: &rusqlite::Connection,
+    root: &std::path::Path,
+    reference: &Value,
+) -> Result<String, String> {
     match reference["kind"].as_str() {
         Some("artwork") => {
             let artwork = project["artworks"]
@@ -383,7 +402,7 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 .ok_or("Missing artwork")?
                 .iter()
                 .find(|a| a["id"] == reference["id"] && a["hash"] == reference["hash"])
-                .ok_or("作画版がありません")?;
+                .ok_or("採用作画版がありません")?;
             artwork["panel"]["image"]
                 .as_str()
                 .map(str::to_owned)
@@ -401,8 +420,8 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 })
                 .ok_or("固定撮影版がありません")?;
             let response = blender::capture(
-                &db,
-                &state.root,
+                db,
+                root,
                 c["session_id"].as_str().ok_or("Missing session")?,
                 c["request_id"].as_str().ok_or("Missing request")?,
             )?;
@@ -414,8 +433,39 @@ fn video_start_image(state: &AppState, job_id: &str) -> Result<String, String> {
                 .map(str::to_owned)
                 .ok_or("撮影画像がありません".into())
         }
-        _ => Err("開始画像の形式が未対応です".into()),
+        _ => Err("動画画像の形式が未対応です".into()),
     }
+}
+
+fn video_input_images(state: &AppState, job_id: &str) -> Result<(String, Option<String>), String> {
+    let db = state.db.lock().map_err(err)?;
+    let project: Value =
+        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
+            .map_err(err)?;
+    let job = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .find(|j| j["id"].as_str() == Some(job_id))
+        .ok_or("Missing job")?;
+    let shot = project["videoShots"]
+        .as_array()
+        .ok_or("Missing shots")?
+        .iter()
+        .find(|s| s["id"] == job["scope"]["id"])
+        .ok_or("Missing shot")?;
+    let start = resolve_video_image(&project, &db, &state.root, &shot["startImage"])?;
+    let end = if shot["endImage"].is_object() {
+        Some(resolve_video_image(
+            &project,
+            &db,
+            &state.root,
+            &shot["endImage"],
+        )?)
+    } else {
+        None
+    };
+    Ok((start, end))
 }
 #[tauri::command]
 async fn video_submit(
@@ -425,8 +475,16 @@ async fn video_submit(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
-    let image = video_start_image(&state, &job_id)?;
-    runway::submit(&state.db, &job_id, &connection_id, &connection, &image).await
+    let (start_image, end_image) = video_input_images(&state, &job_id)?;
+    runway::submit(
+        &state.db,
+        &job_id,
+        &connection_id,
+        &connection,
+        &start_image,
+        end_image.as_deref(),
+    )
+    .await
 }
 #[tauri::command]
 async fn video_task(
@@ -795,6 +853,62 @@ async fn blender_recover(
         action,
     )
 }
+#[tauri::command]
+async fn blender_live(
+    action: String,
+    input: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    if action == "connect" {
+        let file = input["file"].as_str().ok_or("Missing Blender file")?;
+        blender_live::validate_working_file(file, &[&state.base, &state.root])?;
+    }
+    blender_live::command(&state.live_blender, &action, input).await
+}
+#[tauri::command]
+async fn blender_live_candidate(
+    input: Value,
+    binary: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _engine = state.engine.lock().await;
+    let result = blender_live::command(&state.live_blender, "candidate", input).await?;
+    let bytes = STANDARD
+        .decode(result["blend"].as_str().ok_or("Missing candidate")?)
+        .map_err(err)?;
+    if bytes.len() > 64 * 1024 * 1024
+        || !bytes.starts_with(b"BLENDER")
+        || format!("{:x}", Sha256::digest(&bytes)) != result["sha256"].as_str().unwrap_or("")
+    {
+        return Err("Invalid live candidate".into());
+    }
+    let parent = state.root.join("live-candidates");
+    std::fs::create_dir_all(&parent).map_err(err)?;
+    let folder = parent.join(uuid::Uuid::new_v4().to_string());
+    std::fs::create_dir(&folder).map_err(err)?;
+    let path = folder.join("source.blend");
+    std::fs::write(&path, bytes).map_err(err)?;
+    let registered = {
+        let db = state.db.lock().map_err(err)?;
+        blender::register(
+            &db,
+            blender::Registration {
+                binary,
+                library_root: folder.to_string_lossy().into(),
+                source: path.to_string_lossy().into(),
+            },
+        )?
+    };
+    let request: blender::Request = serde_json::from_value(serde_json::json!({
+        "session_id":registered["session_id"], "request_id":uuid::Uuid::new_v4().to_string(),
+        "expected_revision":0, "operation":{"kind":"capture","width":768,"height":768}
+    }))
+    .map_err(err)?;
+    // Reuse existing dependency pinning, immutable checkpoint, capture and recovery contracts.
+    // This is rendering the new exported copy, not a substitute for live GUI observation.
+    let captured = blender::execute(&state.db, &state.root, request).await?;
+    Ok(captured)
+}
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -817,6 +931,7 @@ fn main() {
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
+                live_blender: blender_live::Live::default(),
             });
             Ok(())
         })
@@ -829,6 +944,8 @@ fn main() {
             backup_commands::backup_restore,
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
+            blender_live,
+            blender_live_candidate,
             blender_fork,
             blender_capture,
             blender_register,

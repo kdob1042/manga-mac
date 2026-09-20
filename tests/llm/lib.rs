@@ -11,3 +11,6 @@ pub mod storage;
 
 #[path = "../../src-tauri/src/blender.rs"]
 pub mod blender;
+
+#[path = "../../src-tauri/src/blender_live.rs"]
+pub mod blender_live;

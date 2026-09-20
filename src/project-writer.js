@@ -1,5 +1,6 @@
 // One short save boundary per mounted workspace. Network/model work stays outside.
 const equal=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+const canBootstrapWork=(before,after)=>before===after||(before==null&&after!=null);
 function mergeItems(base,next,latest,key){
  const ids=new Set([...base,...next].map(x=>x.id)),result=[...latest];
  for(const id of ids){const before=base.find(x=>x.id===id),after=next.find(x=>x.id===id);if(equal(before,after))continue;
@@ -9,7 +10,7 @@ function mergeItems(base,next,latest,key){
  }return result;
 }
 export function mergeProjectChanges(base,next,latest){
- if(base.workId!==latest.workId||next.workId!==base.workId)throw Error('対象作品が変わりました');
+ if(base.workId!==latest.workId||!canBootstrapWork(base.workId,next.workId))throw Error('対象作品が変わりました');
  if(next.contentToken!==base.contentToken)throw Error('操作の基準版が古くなりました');
  if(next.revision!==base.revision)throw Error('操作の保存版が古くなりました');
  const result={...latest};
@@ -23,7 +24,7 @@ export function mergeProjectChanges(base,next,latest){
 export function createProjectWriter({current,save,accept}){
  let tail=Promise.resolve();
  return {
-  commit(update){const base=current();return this.exclusive(async()=>{const latest=current(),next=typeof update==='function'?update(latest):mergeProjectChanges(base,update,latest);const saved=await save({...next,revision:(latest.revision??0)+1});if(current().workId!==latest.workId)throw Error('対象作品が変わりました');accept(saved);return saved;});},
+  commit(update){const base=current();return this.exclusive(async()=>{const latest=current(),next=typeof update==='function'?update(latest):mergeProjectChanges(base,update,latest);const saved=await save({...next,revision:(latest.revision??0)+1});if(!canBootstrapWork(latest.workId,current().workId))throw Error('対象作品が変わりました');accept(saved);return saved;});},
   exclusive(action){const operation=tail.then(action);tail=operation.catch(()=>{});return operation;},
   flush(){return tail;},
  };

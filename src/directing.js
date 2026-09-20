@@ -1,3 +1,4 @@
+import { directLivePanel } from './live-blender.js';
 import {withResource} from './execution.js';
 // Orchestration only: all 3D state is read back from Blender's existing adapter.
 import { generationSize } from './image-input.js';
@@ -99,7 +100,7 @@ export function abandonDirection(project, id) {
 }
 // Dependencies are injectable so cancellation, recovery and cross-shot isolation can be tested without an API.
 export async function directPanel(options) {
- return withResource('blender-session',1,()=>directPanelExclusive(options),{cancelled:options.cancelled,waiting:()=>options.notify?.('Blender の演出・撮影の完了を待っています')});
+ return withResource('blender-session',1,()=>options.current().panels.find(p=>p.id===options.panelId)?.live_binding ? directLivePanel(options) : directPanelExclusive(options),{cancelled:options.cancelled,waiting:()=>options.notify?.('Blender の演出・撮影の完了を待っています')});
 }
 async function directPanelExclusive({ current, commit, call, ask, panelId, instruction = '', cancelled = () => false, notify = () => {} }) {
   let panel = panelById(current(), panelId);

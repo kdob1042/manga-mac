@@ -209,3 +209,20 @@ FFmpeg/ffprobeが必要。Homebrew利用環境では `brew install ffmpeg`。ア
 修正案は「保存した編集候補」に残り、再起動後も開けます。文字・枠・cropは変更前後のページを比較できます。原稿や人物参照を変更した旧案は再提案が必要です。
 
 画像による対象認識を使う場合、接続設定の「対象認識・文字配置に作画画像をこの接続へ送る」を有効にし、画像対応モデルを選んでください。認識範囲を確認してから適用します。矩形外の画素は保持しますが、服などの輪郭だけを自動マスクする機能ではありません。実モデルでの認識品質とMac実機性能は別受入です。
+
+## 開いているBlenderへのlive接続（#176）
+
+1. リポジトリrootで `python3 scripts/package-live-addon.py` を実行し、生成された `dist/manga_mac_live.zip` をBlender 4.5の Preferences → Add-ons → Install from Diskで導入・有効化する。
+2. 対象の編集用blendを自分で開く。3D ViewのNパネル → Manga Live → Start local connection。採用済みcheckpointそのものを編集用に開かない。アプリ保存領域の外へ作業用コピーを保存して開く（管理領域内のファイルとそのsymlinkへの接続は拒否される）。
+3. アプリ設定 → 開いているBlenderへlive接続。Blender表示のinstance/token、file（未保存なら空）、Scene/View Layerを入力して接続する。外部hostの入力欄はなく127.0.0.1限定。
+4. 疎通確認でfile/scene/cameraを確認。切断後もBlenderと未保存変更はそのまま残る。再接続は切断→対象を再確認→token再入力。別file読込やundo/redo後は再接続が必要。
+
+tokenは作品へ保存されず、作品/原稿切替時は接続を切断する。上流の通常アドオンとは異なる限定版を使用し、同じportへ重ねて起動しない。headlessの設定・保存は従来どおり独立。Mac GUI実接続の受入はVALIDATIONを参照。
+
+### liveで演出し、手動修正して候補へ戻す
+
+接続後「詳細調整・Blenderの保存結果を確認」で対象コマを選び、「このコマを接続中のlive状態へ割り当てる」を押す。自然言語指示は追加観測→許可操作→再観測で進み、結果は確認待ちとなる。既存headlessへ戻すボタンも同じ場所にある。
+
+「手動・Computer Useへ渡す」はAI実行中にも使える。未送信の計画は破棄し、実行済み操作はそのまま残す。同じBlender GUIで編集する。外部Computer Useは別途用意したデスクトップ操作環境を使い、manga-mac内にproviderは不要。再開準備で新しい状態とcamera画像を取得し、演出指示から再開する。file load/undo/redo後は接続をやり直してコマを明示再割当し、人物対応も確認する。
+
+見た目を確認したら「新しい候補版へ保存」。Blender実行ファイルを指定し、現live状態のcopyから768px撮影候補を作る。初期live転送は64MiBまで。候補表示→採用は別操作で、旧採用版を直接上書きしない。「元に戻す」はアプリの採用pointerを戻す操作であり、Blender GUIの手動操作をUndoするものではない。保存・撮影失敗時は既存の要求復旧画面で新sessionを確認し、結果不明を自動再送しない。

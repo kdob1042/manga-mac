@@ -1,6 +1,6 @@
 import {containRect} from './image-input.js';
-import {cropRect} from './image-crop.js';
-import {bounds,contentBox,PAGE,inside} from './layout.js';
+import {coverCrop,cropRect} from './image-crop.js';
+import {artPoints,bounds,contentBox,PAGE,inside} from './layout.js';
 
 export const visualSchema={type:'object',properties:{uncertain:{type:'boolean'},reason:{type:'string'},regions:{type:'array',maxItems:32,items:{type:'object',properties:{panelId:{type:'string'},purpose:{type:'string',enum:['edit','avoid','subject']},label:{type:'string'},rect:{type:'array',minItems:4,maxItems:4,items:{type:'number'}}},required:['panelId','purpose','label','rect'],additionalProperties:false}}},required:['uncertain','reason','regions'],additionalProperties:false};
 export function validRegion(r) {return Array.isArray(r)&&r.length===4&&r.every(Number.isFinite)&&r[0]>=0&&r[1]>=0&&r[2]>.001&&r[3]>.001&&r[0]+r[2]<=1&&r[1]+r[3]<=1;}
@@ -17,11 +17,15 @@ function geometry(project,id,size) {
   if(!size||![size.width,size.height].every(n=>Number.isFinite(n)&&n>0))throw Error('元画像の寸法がありません');
   const slot=project.layout.pages.flatMap(p=>p.slots).find(s=>s.panelId===id);
   if(!slot)throw Error('対象のコマ枠がありません');
-  const box=contentBox(slot.points),scale=Math.min(box.width/720,box.height/1030);
-  const letters={x:box.x+(box.width-720*scale)/2+2*scale,y:box.y+(box.height-1030*scale)/2+2*scale,width:716*scale,height:716*scale};
-  const crop=project.layout.imageCrops?.[id],b=bounds(slot.points);
-  const fitted=containRect(size.width,size.height,letters.width,letters.height);
-  const image=crop?cropRect(size.width,size.height,{x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},crop):{...fitted,x:letters.x+fitted.x,y:letters.y+fitted.y};
+  const home=contentBox(slot.points),art=contentBox(artPoints(slot));
+  const letterScale=Math.min(home.width/720,home.height/1030);
+  const letters={x:home.x+(home.width-720*letterScale)/2+2*letterScale,y:home.y+(home.height-1030*letterScale)/2+2*letterScale,width:716*letterScale,height:716*letterScale};
+  const crop=project.layout.imageCrops?.[id],b=bounds(artPoints(slot));
+  const cover=coverCrop(crop);
+  const artScale=Math.min(art.width/720,art.height/1030);
+  const artBox={x:art.x+(art.width-720*artScale)/2+2*artScale,y:art.y+(art.height-1030*artScale)/2+2*artScale,width:716*artScale,height:716*artScale};
+  const fitted=containRect(size.width,size.height,artBox.width,artBox.height);
+  const image=cover?cropRect(size.width,size.height,{x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},cover):{...fitted,x:artBox.x+fitted.x,y:artBox.y+fitted.y};
   return {letters,image,slot};
 }
 export function letteringRegions(project,id,visual) {
@@ -44,7 +48,7 @@ export function checkVisualEdit(project,op,visual) {
     const {image,slot}=geometry(project,op.panelId,visual.sizes[op.panelId]);
     for(const r of relevant.filter(r=>r.purpose==='subject')) {
       const [x,y,w,h]=r.rect;
-      if([[x,y],[x+w,y],[x+w,y+h],[x,y+h]].some(([a,b])=>!inside([(image.x+a*image.width)/PAGE.width,(image.y+b*image.height)/PAGE.height],slot.points)))throw Error('対象がコマ枠で切れる配置です。倍率・枠を調整してください');
+      if([[x,y],[x+w,y],[x+w,y+h],[x,y+h]].some(([a,b])=>!inside([(image.x+a*image.width)/PAGE.width,(image.y+b*image.height)/PAGE.height],artPoints(slot))))throw Error('対象が作画領域で切れる配置です。倍率・枠を調整してください');
     }
   }
 }
