@@ -2,10 +2,10 @@ name: Live Blender macOS GUI
 on:
   pull_request:
     branches: [dev]
-    paths: ['blender/live/**', 'blender/test_live_gui.py', '.github/workflows/live-blender-mac.yml']
+    paths: ['blender/live/**', 'blender/test_live_gui.py', 'src-tauri/src/blender_live.rs', 'tests/llm/tests/live_gui.rs', '.github/workflows/live-blender-mac.yml']
   push:
     branches: [dev]
-    paths: ['blender/live/**', 'blender/test_live_gui.py', '.github/workflows/live-blender-mac.yml']
+    paths: ['blender/live/**', 'blender/test_live_gui.py', 'src-tauri/src/blender_live.rs', 'tests/llm/tests/live_gui.rs', '.github/workflows/live-blender-mac.yml']
   workflow_dispatch:
 
 permissions:
@@ -20,6 +20,21 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.98.1
+      - name: Build actual native live client integration test
+        shell: bash
+        run: |
+          cargo test --locked --manifest-path tests/llm/Cargo.toml --test live_gui --no-run --message-format=json > "$RUNNER_TEMP/live-test-build.json"
+          python3 - <<'PYTHON'
+          import json, os, pathlib
+          rows = [json.loads(s) for s in (pathlib.Path(os.environ['RUNNER_TEMP'])/'live-test-build.json').read_text().splitlines()]
+          bins = [r['executable'] for r in rows if r.get('reason') == 'compiler-artifact' and r.get('executable') and r.get('target', {}).get('name') == 'live_gui']
+          assert len(bins) == 1, 'native integration executable missing or ambiguous'
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write('LIVE_NATIVE_TEST_BIN=' + bins[0] + '\n')
+          PYTHON
       - name: Install fixed official Blender with publisher checksum
         shell: bash
         run: |

@@ -30,7 +30,7 @@ constraint = bpy.data.objects['Cube'].constraints.new('COPY_LOCATION')
 constraint.name = 'LiveTest'
 constraint.target = bpy.context.scene.camera
 constraint.influence = .5
-Path(CONFIG).write_text(json.dumps({'token':live.TOKEN,'instance':live.INSTANCE}))
+Path(CONFIG).write_text(json.dumps({'token':live.TOKEN,'instance':live.INSTANCE,'port':PORT}))
 os.chmod(CONFIG, 0o600)
 def manual_edit():
     marker = Path(MARKER)
@@ -116,6 +116,10 @@ def main():
                     if process.poll() is not None: raise RuntimeError('Blender GUI startup failed')
                     time.sleep(.1)
                 credentials = json.loads(config.read_text())
+                native_test = os.environ.get('LIVE_NATIVE_TEST_BIN')
+                if native_test:
+                    subprocess.run([native_test,'--ignored','--exact','native_live_connection_to_gui'],
+                        env={**os.environ, 'LIVE_GUI_CONFIG':str(config)}, check=True, timeout=240)
                 client = str(uuid.uuid4())
                 def rpc(method, params=None, token=None):
                     request = urllib.request.Request(f'http://127.0.0.1:{port}/mcp',
@@ -218,7 +222,7 @@ def main():
                     if Path(str(marker)+'.stopped').exists(): break
                     time.sleep(.1)
                 assert Path(str(marker)+'.stopped').exists(), 'GUI stop/revocation failed'
-                (out/'live-acceptance.json').write_text(json.dumps({'platform':platform.platform(),'gui':'macOS GUI' if sys.platform=='darwin' else 'Linux GUI under Xvfb','status':'pass','images':images,'transitions':transitions,'checks':['auth','unsaved manual state','evaluated state','stale rejection','constraint write','handoff blocks write','viewport','camera','immutable copy','pending request stop','release/reconnect','undo invalidation','redo invalidation','file load invalidation']},indent=2))
+                (out/'live-acceptance.json').write_text(json.dumps({'platform':platform.platform(),'gui':'macOS GUI' if sys.platform=='darwin' else 'Linux GUI under Xvfb','status':'pass','native_client':'pass' if native_test else 'not_run','images':images,'transitions':transitions,'checks':['auth','unsaved manual state','evaluated state','stale rejection','constraint write','handoff blocks write','viewport','camera','immutable copy','pending request stop','release/reconnect','undo invalidation','redo invalidation','file load invalidation']},indent=2))
                 print('Live GUI/MCP acceptance: PASS')
             finally:
                 log.flush()
