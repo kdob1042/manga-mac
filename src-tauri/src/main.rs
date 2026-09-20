@@ -881,10 +881,14 @@ fn blender_workspace(app: tauri::AppHandle, input: Value) -> Result<Value, Strin
     )?;
     if input["open_assets"] == true {
         #[cfg(target_os = "macos")]
-        std::process::Command::new("/usr/bin/open")
+        if !std::process::Command::new("/usr/bin/open")
             .arg(paths["assets"].as_str().ok_or("Missing assets")?)
-            .spawn()
-            .map_err(err)?;
+            .status()
+            .map_err(err)?
+            .success()
+        {
+            return Err("素材フォルダを開けませんでした".into());
+        }
     }
     Ok(paths)
 }

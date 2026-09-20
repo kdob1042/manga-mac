@@ -33,10 +33,20 @@ def start():
             bpy.ops.wm.open_mainfile(filepath=str(working), load_ui=True, use_scripts=False)
         elif config.get('template'):
             bpy.ops.wm.open_mainfile(filepath=config['template'], load_ui=True, use_scripts=False)
-            # Resolve relative dependencies before changing the containing directory.
-            from manga_mac_live.capture_support import pin_dependencies
-            pin_dependencies(None)
+        # File loading replaces the window context. Continue on a later GUI tick.
+        bpy.app.timers.register(finish, first_interval=0.5)
+    except Exception as exc:
+        publish({'error': str(exc)})
+    return None
+
+
+def finish():
+    try:
+        working = Path(config['working'])
         if not working.exists():
+            if config.get('template'):
+                from manga_mac_live.capture_support import pin_dependencies
+                pin_dependencies(None)
             bpy.ops.wm.save_as_mainfile(filepath=str(working))
         bpy.context.preferences.filepaths.asset_libraries.new(name='Manga Mac', directory=config['assets'])
         live.WORKING_FILE = str(working)
@@ -57,6 +67,11 @@ def start():
         result = {**live.identity(), 'port': live.SERVER.server_port, 'token': live.TOKEN}
     except Exception as exc:
         result = {'error': str(exc)}
+    publish(result)
+    return None
+
+
+def publish(result):
     destination = root / 'ready.json'
     temporary = root / 'ready.tmp'
     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
