@@ -1,14 +1,11 @@
-//! A dedicated, one-shot Blender CLI session. bpy owns scene/camera/render state.
+//! Immutable Blender artifacts and legacy recovery. New captures come from the GUI.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
     sync::Mutex,
-    time::Duration,
 };
-use tokio::io::AsyncWriteExt;
-const WORKER: &str = include_str!("../../blender/worker.py");
 fn error() -> String {
     "Blender処理を完了できませんでした。要求状態を確認してください".into()
 }
@@ -620,133 +617,87 @@ pub fn validate_operation(operation: &Operation) -> Result<(), String> {
 }
 
 pub async fn execute(
-    db: &Mutex<rusqlite::Connection>,
-    root: &Path,
+    _db: &Mutex<rusqlite::Connection>,
+    _root: &Path,
     request: Request,
 ) -> Result<Value, String> {
-    if !valid_id(&request.request_id) {
-        return Err("要求IDが不正です".into());
-    }
+    // Validate legacy IPC without submitting a job or starting Blender.
+    let _legacy_identity = (
+        &request.session_id,
+        &request.request_id,
+        request.expected_revision,
+    );
     validate_operation(&request.operation)?;
-    let mut current = {
-        let db = db.lock().map_err(|_| error())?;
-        let current = session(&db, &request.session_id)?;
-        if current.revision != request.expected_revision {
-            return Err("Blenderの版が更新されています。状態を再確認してください".into());
-        }
-        let pending:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE session_id=?1 AND status IN ('running','unknown','candidate'))",[&request.session_id],|r|r.get(0)).map_err(|_|error())?;
-        if pending {
-            return Err("応答未確定のBlender要求があります。状態確認が必要です".into());
-        }
-        db.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision) VALUES(?1,?2,'running',?3)",rusqlite::params![request.request_id,request.session_id,request.expected_revision]).map_err(|_|"送信済みの要求です。自動再実行しません")?;
-        current
-    };
-    let folder = root.join("blender").join(&request.request_id);
-    let web_root = root.join("web-assets");
-    std::fs::create_dir_all(&web_root).map_err(|_| error())?;
-    let result = run(&current, &folder, &web_root, &request.operation).await;
-    let mut db = db.lock().map_err(|_| error())?;
-    match result {
-        Ok(result) => {
-            if session(&db, &current.id)?.revision != request.expected_revision {
-                db.execute(
-                    "UPDATE blender_jobs SET status='candidate',result=?2 WHERE id=?1",
-                    rusqlite::params![request.request_id, result.to_string()],
-                )
-                .map_err(|_| error())?;
-                return Err("旧版の撮影結果を候補として保持しました".into());
-            }
-            current.checkpoint = folder.join("checkpoint.blend");
-            current.hash = result["checkpoint"]["hash"]
-                .as_str()
-                .ok_or_else(error)?
-                .into();
-            current.revision += 1;
-            current.state = result.clone();
-            let tx = db.transaction().map_err(|_| error())?;
-            tx.execute(
-                "UPDATE blender_sessions SET data=?2 WHERE id=?1",
-                rusqlite::params![
-                    current.id,
-                    serde_json::to_string(&current).map_err(|_| error())?
-                ],
-            )
-            .map_err(|_| error())?;
-            tx.execute(
-                "UPDATE blender_jobs SET status='complete',result=?2 WHERE id=?1",
-                rusqlite::params![request.request_id, result.to_string()],
-            )
-            .map_err(|_| error())?;
-            tx.commit().map_err(|_| error())?;
-            let mut response = json!({"session_id":current.id,"revision":current.revision,"request_id":request.request_id,"state":result});
-            if !response["state"]["image"].is_null() {
-                response["preview"] = Value::String(preview(&folder)?);
-            }
-            Ok(response)
-        }
-        Err(e) => {
-            db.execute(
-                "UPDATE blender_jobs SET status='unknown' WHERE id=?1",
-                [request.request_id],
-            )
-            .map_err(|_| error())?;
-            Err(e)
-        }
-    }
+    Err("保存ファイルからの自動実行は終了しました。Blender GUIを開いてlive接続し、対象コマへ割り当ててください".into())
 }
-async fn run(
-    session: &Session,
-    folder: &Path,
-    web_root: &Path,
-    operation: &Operation,
+
+/// Store an already rendered GUI copy. No executable is launched and no old version is modified.
+pub fn store_live_candidate(
+    db: &mut rusqlite::Connection,
+    root: &Path,
+    request_id: &str,
+    value: Value,
 ) -> Result<Value, String> {
-    if hash(&session.checkpoint)? != session.hash {
-        return Err("Blenderの入力版が変更されています".into());
+    use base64::Engine;
+    let decode = |text: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .map_err(|_| error())
+    };
+    let blend = decode(value["blend"].as_str().ok_or_else(error)?)?;
+    let png = decode(
+        value["preview"]
+            .as_str()
+            .and_then(|s| s.strip_prefix("data:image/png;base64,"))
+            .ok_or_else(error)?,
+    )?;
+    let result = &value["state"];
+    if blend.len() > 64 * 1024 * 1024
+        || !blend.starts_with(b"BLENDER")
+        || png.len() > 4 * 1024 * 1024
+        || !png.starts_with(b"\x89PNG\r\n\x1a\n")
+        || result["checkpoint"]["hash"] != format!("{:x}", Sha256::digest(&blend))
+        || result["image"]["hash"] != format!("{:x}", Sha256::digest(&png))
+        || result["dependencies_pinned"] != true
+        || result["gui_required"] != true
+        || result["dependencies"] != json!([])
+    {
+        return Err("GUI撮影成果物を検証できません".into());
     }
-    std::fs::create_dir_all(folder.parent().ok_or_else(error)?).map_err(|_| error())?;
-    std::fs::create_dir(folder).map_err(|_| error())?;
-    // The executable script is fixed application content, never text from a model or job.
-    let script = folder.with_extension("py");
-    std::fs::write(&script, WORKER).map_err(|_| error())?;
-    let input = json!({"input":session.checkpoint,"input_hash":session.hash,"library_root":session.library,"web_asset_root":web_root,"output_root":folder,"operation":operation});
-    let mut command = tokio::process::Command::new(&session.binary);
-    command.env_clear();
-    for name in ["HOME", "TMPDIR", "PATH", "LANG", "DISPLAY", "XAUTHORITY"] {
-        if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
-        }
-    }
-    command
-        .args([
-            "--background",
-            "--factory-startup",
-            "--disable-autoexec",
-            "--python-exit-code",
-            "1",
-            "--python",
-        ])
-        .arg(&script)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .kill_on_drop(true);
-    let mut child = command.spawn().map_err(|_| error())?;
-    let mut stdin = child.stdin.take().ok_or_else(error)?;
-    stdin
-        .write_all(input.to_string().as_bytes())
-        .await
-        .map_err(|_| error())?;
-    drop(stdin);
-    let status = tokio::time::timeout(Duration::from_secs(600), child.wait())
-        .await
-        .map_err(|_| error())?
-        .map_err(|_| error())?;
-    if !status.success() {
+    if !valid_id(request_id) {
         return Err(error());
     }
-    let result = verify_output(folder)?;
-    sync_output(folder)?;
-    Ok(result)
+    let id = request_id.to_owned();
+    let folder = root.join("blender").join(&id);
+    std::fs::create_dir_all(folder.parent().ok_or_else(error)?).map_err(|_| error())?;
+    std::fs::create_dir(&folder).map_err(|_| error())?;
+    std::fs::write(folder.join("checkpoint.blend"), blend).map_err(|_| error())?;
+    std::fs::write(folder.join("capture.png"), png).map_err(|_| error())?;
+    std::fs::write(folder.join("result.json"), result.to_string()).map_err(|_| error())?;
+    let verified = verify_output(&folder)?;
+    sync_output(&folder)?;
+    let session = Session {
+        id: id.clone(),
+        binary: PathBuf::new(),
+        library: folder.clone(),
+        checkpoint: folder.join("checkpoint.blend"),
+        hash: verified["checkpoint"]["hash"]
+            .as_str()
+            .ok_or_else(error)?
+            .into(),
+        revision: 1,
+        state: verified.clone(),
+        parent_session_id: None,
+    };
+    let tx = db.transaction().map_err(|_| error())?;
+    tx.execute(
+        "INSERT INTO blender_sessions(id,data) VALUES(?1,?2)",
+        rusqlite::params![id, serde_json::to_string(&session).map_err(|_| error())?],
+    )
+    .map_err(|_| error())?;
+    tx.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision,result) VALUES(?1,?1,'complete',0,?2)", rusqlite::params![id, verified.to_string()]).map_err(|_| error())?;
+    tx.commit().map_err(|_| error())?;
+    capture(db, root, &id, &id)
 }
 
 #[cfg(test)]

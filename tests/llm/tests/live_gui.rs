@@ -42,6 +42,23 @@ async fn native_live_connection_to_gui() {
     .unwrap();
     assert_eq!(observed["instance"], target["instance"]);
     assert_eq!(observed["lens"].as_f64(), Some(35.0));
+    command(&live, "yield", json!({"work":"fixture-work"})).await.unwrap();
+    assert!(command(&live, "resume", json!({"work":"fixture-work","expected":observed})).await.is_err());
+    let codex = Live::default();
+    command(&codex, "connect", input.clone()).await.unwrap();
+    assert!(command(&live, "reclaim", json!({"work":"fixture-work"})).await.is_err());
+    command(&codex, "disconnect", Value::Null).await.unwrap();
+    let fresh=command(&live, "reclaim", json!({"work":"fixture-work"})).await.unwrap();
+    let result=command(&live, "candidate", json!({"work":"fixture-work","expected":fresh,"width":128,"height":96})).await.unwrap();
+    assert_eq!(result["state"]["gui_required"],true);
+    let root=std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+    let mut db=rusqlite::Connection::open_in_memory().unwrap();
+    manga_llm_contracts::blender::initialize(&db).unwrap();
+    let id=uuid::Uuid::new_v4().to_string();
+    let stored=manga_llm_contracts::blender::store_live_candidate(&mut db,&root,&id,result).unwrap();
+    assert_eq!(stored["state"]["state"]["resolution"],json!([128,96]));
+    assert_eq!(manga_llm_contracts::blender::capture(&db,&root,&id,&id).unwrap(),stored);
+    std::fs::remove_dir_all(root).unwrap();
     command(&live, "disconnect", Value::Null).await.unwrap();
     assert!(command(&live, "status", json!({"work":"fixture-work"}))
         .await

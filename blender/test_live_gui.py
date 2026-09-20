@@ -183,7 +183,13 @@ def main():
                     assert isinstance(image['revision'],int)
                     images.append({k:image.get(k) for k in ('image_kind','method','instance','epoch','revision','file','scene','view_layer')})
                     (out/f'live-{kind}.png').write_bytes(data)
-                saved=tool('live_candidate',expected=tool('live_identity'))
+                saved=tool('live_candidate',expected=tool('live_identity'),width=320,height=240)
+                assert saved['state']['gui_required'] is True
+                assert saved['state']['state']['resolution']==[320,240]
+                assert saved['state']['dependencies_pinned'] is True
+                assert saved['state']['dependencies']==[]
+                assert base64.b64decode(saved['preview'].split(',')[1]).startswith(b'\x89PNG')
+                (out/'live-candidate.png').write_bytes(base64.b64decode(saved['preview'].split(',')[1]))
                 blend = base64.b64decode(saved['blend'])
                 assert blend.startswith(b'BLENDER')
                 workfile.write_bytes(blend)
