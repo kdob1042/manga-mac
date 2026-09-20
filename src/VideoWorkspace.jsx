@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { call, desktop, loadProject } from './bridge';
 import { sourceUnits, sourceForPanel } from './core';
@@ -19,8 +19,8 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [connectionId, setConnectionId] = useState(''), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
   const [captureSourceId, setCaptureSourceId] = useState(''), [captureCharacters, setCaptureCharacters] = useState([]);
   const [transitionPairIds, setTransitionPairIds] = useState([]), [transitionPrompt, setTransitionPrompt] = useState(''), [transitionRatio, setTransitionRatio] = useState('960:960');
-  const sources = videoSources(project), captureSource = sources.find(s => s.id === captureSourceId);
-  const pairOptions = adjacentPanelPairs(project), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
+  const sources = useMemo(() => videoSources(project), [project]), captureSource = sources.find(s => s.id === captureSourceId);
+  const pairOptions = useMemo(() => adjacentPanelPairs(project), [project]), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
   useEffect(() => {
     const available = new Set(pairOptions.filter(pair => pair.valid).map(pair => pair.id));
     setTransitionPairIds(ids => ids.filter(id => available.has(id)));

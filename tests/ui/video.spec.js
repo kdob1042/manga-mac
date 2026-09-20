@@ -5,6 +5,7 @@ const legacy = JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json', imp
 test('empty project opens video preparation without native credentials or a generated clip', async ({ page }) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
+  await expect(page.locator('.video-workspace')).toHaveCount(0);
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await expect(page.getByRole('heading', { name: '動画ショット' })).toBeVisible();
   await expect(page.getByText('接続・人物設定から原作を取得してください。')).toBeVisible();
@@ -30,6 +31,9 @@ test('video planning shares artwork and survives reload without changing manga',
   await page.getByLabel('原作の場面').selectOption('s');
   await page.getByLabel('開始画像').selectOption({ index: 1 });
   await page.getByLabel('動きの指示').fill('ゆっくりカメラが寄る');
+  await page.getByRole('button', { name: '漫画', exact: true }).click();
+  await page.getByRole('button', { name: '動画', exact: true }).click();
+  await expect(page.getByLabel('動きの指示')).toHaveValue('ゆっくりカメラが寄る');
   await page.getByRole('button', { name: 'ショットを保存' }).click();
   await expect(page.locator('.video-source')).toContainText('原文です');
   await page.reload();
