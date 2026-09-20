@@ -155,7 +155,11 @@ def tool_schema(name):
         for key in ("rotation", "target"):
             props["operation"]["properties"][key] = {"type":"array", "items":{"type":"number"}, "minItems":3, "maxItems":3}
         required += ["request_id","operation"]
-    if name == "live_candidate": props.update({k:{"type":"integer","minimum":64,"maximum":4096} for k in ("width","height")})
+    if name == "live_candidate":
+        props.update({k:{"type":"integer","minimum":64,"maximum":4096} for k in ("width","height")})
+        props['angle'] = {'type':'object', 'additionalProperties':False, 'required':['degrees','target'],
+                          'properties':{'degrees':{'type':'number','minimum':-180,'maximum':180},
+                                        'target':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'number'}}}}
     return {"name":name,"description":descriptions[name],"inputSchema":{"type":"object","properties":props,"required":required}}
 
 

@@ -337,6 +337,32 @@ mod tests {
         blender_live::command(&live, "handoff", json!({"work":"w"}))
             .await
             .unwrap();
+        let original_camera = blender_live::command(
+            &live,
+            "observe",
+            json!({"work":"w","scope":"object","object":camera}),
+        )
+        .await
+        .unwrap();
+        let mut angle_hashes = Vec::new();
+        for degrees in [0, 30] {
+            state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"}))
+                .await
+                .unwrap();
+            let captured = blender_live::command(&live, "candidate", json!({"work":"w","expected":state,"width":128,"height":128,"angle":{"degrees":degrees,"target":[0,0,0]}})).await.unwrap();
+            angle_hashes.push(captured["state"]["image"]["hash"].clone());
+            let after = blender_live::command(
+                &live,
+                "observe",
+                json!({"work":"w","scope":"object","object":camera}),
+            )
+            .await
+            .unwrap();
+            assert_eq!(after["location"], original_camera["location"]);
+            assert_eq!(after["rotation"], original_camera["rotation"]);
+            assert_eq!(after["revision"], captured["revision"]);
+        }
+        assert_ne!(angle_hashes[0], angle_hashes[1]);
         state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"}))
             .await
             .unwrap();

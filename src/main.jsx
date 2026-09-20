@@ -324,7 +324,7 @@ function App() {
       </>}
     </section>}
     <details className="shot-details"><summary>詳細調整・Blenderの保存結果を確認</summary>
-    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run}/>
+    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run} cancelled={()=>cancel.current}/>
     </details>
     {chosen && <section className="shot-controls" aria-label="作画候補">
       <button disabled={!!busy || !chosen.capture_revision || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>

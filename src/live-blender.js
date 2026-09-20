@@ -152,3 +152,8 @@ export async function openLiveShot(call,project,shot,{template='',scopeType='pan
   assertLiveTarget(identity,observation);
   return createLiveBinding(project,shot,observation);
 }
+
+export function livePlanGuard(project) {
+  const work=liveWork(project), version=controlVersions.get(work)??0;
+  return ()=>liveWork(project)===work&&(controlVersions.get(work)??0)===version;
+}
