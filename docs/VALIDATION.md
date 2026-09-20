@@ -442,3 +442,7 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 ### dev統合後のMac native検証
 
 2026-09-19、run 35476194533 / dev `d3b618d` でMac nativeテスト **82 pass / 3 ignored**。Swift画像エンジンとTauriテストのコンパイルは成功。後続clippyは既存のテスト専用`runway::payload`、不要なstruct update、`source_register`のIPC引数数で停止したため、DMG生成は未実施でmain昇格は保留。#189 / PR #190でテスト専用関数のcfg、冗長初期化の除去、互換を維持するIPC境界だけのlint期待値を修正し、devのMacゲートを再実行する。
+
+追試: [run 35477035742](https://github.com/kdob1042/manga-mac/actions/runs/35477035742) / dev `4084260abe77368d5b51126be393695233488cec`（PR #190反映後）で全チェック成功。macOS validationは2026-09-19 23:59 UTCに完了し、nativeテスト **82 pass / 3 ignored**、clippy `-D warnings`、Swift画像エンジン、TauriのApple Silicon向けapp/DMGビルドが成功した。未署名検証DMGは同runの `Manga-Mac-Apple-Silicon-validation` artifact（ID `10595340393`、ZIP SHA-256 `45eba49cf5247b898aa4b777a616541e82cb3903ea6dea69101cbb0d3d260e59`）。前回のclippy失敗は解消済み。
+
+この成功で更新するのはnativeビルド・自動試験の判定であり、Mac実機でのGUI live往復・実LLMの自然言語判断・候補採用/Undo通し受入・24GB性能は未実施のまま。#184〜#187を継続し、#175はopenを維持する。main昇格と配布用DMGはPR #188で追跡する。
