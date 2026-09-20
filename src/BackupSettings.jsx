@@ -23,7 +23,6 @@ export function useBackupSchedule(ready, busy) {
 }
 export default function BackupSettings({ disabled }) {
   const [data, setData] = useState(null), [pending, setPending] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState(''), [history, setHistory] = useState([]);
-  const [blender, setBlender] = useState('/Applications/Blender.app/Contents/MacOS/Blender');
   const [form, setForm] = useState({ repository: 'rclone:manga:manga-mac-backups/works', restic: '', rclone: '', rclone_config: '', password: '', consent: false, tools_verified: false, password_saved_elsewhere: false, initialize: false });
   const refresh = async () => setData(await call('backup_status'));
   useEffect(() => {

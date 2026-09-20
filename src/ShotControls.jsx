@@ -32,8 +32,8 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
       })}>操作権を戻し、再観測する</button>
       {['viewport','camera'].map(scope=><button key={scope} disabled={busy} onClick={()=>run('GUI画像を取得中',async()=>setPreview(await liveCall(call,current.current,'observe',{scope})))}>{scope==='viewport'?'Viewportを確認':'Cameraを確認'}</button>)}
       {!!chosen.characterIds?.length&&<><button disabled={busy} onClick={()=>run('人物対応を確認中',read)}>人物の対応先を読み込む</button>
-        <label>人物<select value={character} onChange={e=>setCharacter(e.target.value)}><option value="">選択</option>{chosen.characterIds.map(id=><option key={id} value={id}>{project.characters.find(c=>c.id===id)?.name??id}</option>)}</select></label>
-        <label>BlenderのObject<select value={object} onChange={e=>setObject(e.target.value)}><option value="">選択</option>{observed?.objects.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
+        <label>人物<select aria-label="人物" value={character} onChange={e=>setCharacter(e.target.value)}><option value="">選択</option>{chosen.characterIds.map(id=><option key={id} value={id}>{project.characters.find(c=>c.id===id)?.name??id}</option>)}</select></label>
+        <label>BlenderのObject<select aria-label="BlenderのObject" value={object} onChange={e=>setObject(e.target.value)}><option value="">選択</option>{observed?.objects.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
         <button disabled={busy||!character||!object} onClick={()=>run('人物と素材を対応付け',async()=>{
           const s=await read();assertLiveTarget(chosen.live_binding,s);const o=s.objects.find(o=>o.id===object);if(!o)throw Error('Objectが変わりました');
           await updateTarget(p=>({...p,live_binding:{...p.live_binding,objects:s.objects,character_objects:[...(p.live_binding.character_objects??[]).filter(x=>x.character_id!==character),{character_id:character,object_name:o.name,object_id:o.id}]}}));
@@ -48,6 +48,7 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
     </>}
     <p>{message}</p>{preview&&<img className="shot-preview" src={preview.image??preview.preview} alt={preview.image_kind??'保存した候補画像'}/>}
     {!video&&(project.live_candidates??[]).filter(c=>c.panel_id===chosen.id).map(c=><div key={c.id}><span>候補 {c.id.slice(-8)}</span><button disabled={busy} onClick={()=>run('候補を表示中',async()=>{const x=current.current.captures.find(x=>x.id===c.capture_revision);setPreview(await call('blender_capture',{sessionId:x.session_id,requestId:x.request_id}));})}>候補を表示</button><button disabled={busy} onClick={()=>run('候補を採用中',()=>commit(adoptLiveCandidate(current.current,c.id)))}>この候補を採用</button></div>)}
+    {chosen.capture_revision&&<button disabled={busy} onClick={()=>run('作業用コピーを書き出し中',async()=>{const c=current.current.captures.find(c=>c.id===chosen.capture_revision);const path=await call('blender_working_copy',{sessionId:c.session_id,requestId:c.request_id});setMessage(`作業用コピー: ${path}。現在の作業を保存してからBlenderで開き、再接続・再割当してください。`);})}>採用中の版を作業用コピーへ書き出す</button>}
     {chosen.capture_revision&&<button disabled={busy} onClick={()=>run('採用中の撮影を表示中',async()=>{const c=current.current.captures.find(c=>c.id===chosen.capture_revision);setPreview(await call('blender_capture',{sessionId:c.session_id,requestId:c.request_id}));})}>採用中の撮影原本を表示</button>}
     {(project.live_directing_runs??[]).filter(r=>r.panel_id===chosen.id).slice(-1).map(r=><div key={r.id}><p>{r.status}：{r.message}</p>{r.preview&&<img className="shot-preview" src={r.preview} alt={r.image_kind}/>}</div>)}
   </section>;

@@ -205,12 +205,19 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         return Ok(json!({"control":"codex", "target":now}));
     }
     if action == "reclaim" {
-        c.tool("live_claim", json!({"instance":now["instance"],"epoch":now["epoch"]})).await?;
+        c.tool(
+            "live_claim",
+            json!({"instance":now["instance"],"epoch":now["epoch"]}),
+        )
+        .await?;
         c.yielded = false;
         return c.tool("live_observe", json!({"scope":"summary"})).await;
     }
     if c.yielded {
-        return Err("Codex・手動へ引継ぎ中です。操作を終えて接続を解放し、再観測して操作権を戻してください".into());
+        return Err(
+            "Codex・手動へ引継ぎ中です。操作を終えて接続を解放し、再観測して操作権を戻してください"
+                .into(),
+        );
     }
     if action == "observe" {
         let result = c.tool("live_observe", input).await?;

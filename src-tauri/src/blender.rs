@@ -619,26 +619,54 @@ pub fn validate_operation(operation: &Operation) -> Result<(), String> {
 pub async fn execute(
     _db: &Mutex<rusqlite::Connection>,
     _root: &Path,
-    _request: Request,
+    request: Request,
 ) -> Result<Value, String> {
+    // Validate legacy IPC without submitting a job or starting Blender.
+    let _legacy_identity = (
+        &request.session_id,
+        &request.request_id,
+        request.expected_revision,
+    );
+    validate_operation(&request.operation)?;
     Err("保存ファイルからの自動実行は終了しました。Blender GUIを開いてlive接続し、対象コマへ割り当ててください".into())
 }
 
 /// Store an already rendered GUI copy. No executable is launched and no old version is modified.
-pub fn store_live_candidate(db: &mut rusqlite::Connection, root: &Path, request_id: &str, value: Value) -> Result<Value, String> {
+pub fn store_live_candidate(
+    db: &mut rusqlite::Connection,
+    root: &Path,
+    request_id: &str,
+    value: Value,
+) -> Result<Value, String> {
     use base64::Engine;
-    let decode = |text: &str| base64::engine::general_purpose::STANDARD.decode(text).map_err(|_| error());
+    let decode = |text: &str| {
+        base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .map_err(|_| error())
+    };
     let blend = decode(value["blend"].as_str().ok_or_else(error)?)?;
-    let png = decode(value["preview"].as_str().and_then(|s| s.strip_prefix("data:image/png;base64,")).ok_or_else(error)?)?;
+    let png = decode(
+        value["preview"]
+            .as_str()
+            .and_then(|s| s.strip_prefix("data:image/png;base64,"))
+            .ok_or_else(error)?,
+    )?;
     let result = &value["state"];
-    if blend.len() > 64*1024*1024 || !blend.starts_with(b"BLENDER") || png.len() > 4*1024*1024 || !png.starts_with(b"\x89PNG\r\n\x1a\n")
+    if blend.len() > 64 * 1024 * 1024
+        || !blend.starts_with(b"BLENDER")
+        || png.len() > 4 * 1024 * 1024
+        || !png.starts_with(b"\x89PNG\r\n\x1a\n")
         || result["checkpoint"]["hash"] != format!("{:x}", Sha256::digest(&blend))
         || result["image"]["hash"] != format!("{:x}", Sha256::digest(&png))
-        || result["dependencies_pinned"] != true || result["gui_required"] != true
-        || result["dependencies"] != json!([]) {
+        || result["dependencies_pinned"] != true
+        || result["gui_required"] != true
+        || result["dependencies"] != json!([])
+    {
         return Err("GUI撮影成果物を検証できません".into());
     }
-    if !valid_id(request_id) { return Err(error()); }
+    if !valid_id(request_id) {
+        return Err(error());
+    }
     let id = request_id.to_owned();
     let folder = root.join("blender").join(&id);
     std::fs::create_dir_all(folder.parent().ok_or_else(error)?).map_err(|_| error())?;
@@ -648,10 +676,25 @@ pub fn store_live_candidate(db: &mut rusqlite::Connection, root: &Path, request_
     std::fs::write(folder.join("result.json"), result.to_string()).map_err(|_| error())?;
     let verified = verify_output(&folder)?;
     sync_output(&folder)?;
-    let session = Session { id: id.clone(), binary: PathBuf::new(), library: folder.clone(), checkpoint: folder.join("checkpoint.blend"),
-        hash: verified["checkpoint"]["hash"].as_str().ok_or_else(error)?.into(), revision: 1, state: verified.clone(), parent_session_id: None };
+    let session = Session {
+        id: id.clone(),
+        binary: PathBuf::new(),
+        library: folder.clone(),
+        checkpoint: folder.join("checkpoint.blend"),
+        hash: verified["checkpoint"]["hash"]
+            .as_str()
+            .ok_or_else(error)?
+            .into(),
+        revision: 1,
+        state: verified.clone(),
+        parent_session_id: None,
+    };
     let tx = db.transaction().map_err(|_| error())?;
-    tx.execute("INSERT INTO blender_sessions(id,data) VALUES(?1,?2)", rusqlite::params![id, serde_json::to_string(&session).map_err(|_| error())?]).map_err(|_| error())?;
+    tx.execute(
+        "INSERT INTO blender_sessions(id,data) VALUES(?1,?2)",
+        rusqlite::params![id, serde_json::to_string(&session).map_err(|_| error())?],
+    )
+    .map_err(|_| error())?;
     tx.execute("INSERT INTO blender_jobs(id,session_id,status,expected_revision,result) VALUES(?1,?1,'complete',0,?2)", rusqlite::params![id, verified.to_string()]).map_err(|_| error())?;
     tx.commit().map_err(|_| error())?;
     capture(db, root, &id, &id)

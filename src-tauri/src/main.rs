@@ -866,11 +866,48 @@ async fn blender_live(
     blender_live::command(&state.live_blender, &action, input).await
 }
 #[tauri::command]
+fn blender_working_copy(
+    app: tauri::AppHandle,
+    session_id: String,
+    request_id: String,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let db = state.db.lock().map_err(err)?;
+    let saved = blender::capture(&db, &state.root, &session_id, &request_id)?;
+    let parent = app.path().download_dir().map_err(err)?.join("Manga Mac");
+    std::fs::create_dir_all(&parent).map_err(err)?;
+    let folder = parent.join(format!("blender-working-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&folder).map_err(err)?;
+    let target = folder.join("working.blend");
+    std::fs::copy(
+        state
+            .root
+            .join("blender")
+            .join(request_id)
+            .join("checkpoint.blend"),
+        &target,
+    )
+    .map_err(err)?;
+    if format!("{:x}", Sha256::digest(std::fs::read(&target).map_err(err)?))
+        != saved["state"]["checkpoint"]["hash"]
+            .as_str()
+            .ok_or("Missing checkpoint hash")?
+    {
+        return Err("作業用コピーの検証に失敗しました".into());
+    }
+    Ok(target.to_string_lossy().into())
+}
+#[tauri::command]
 async fn blender_live_candidate(input: Value, state: State<'_, AppState>) -> Result<Value, String> {
     let _engine = state.engine.lock().await;
     let result = blender_live::command(&state.live_blender, "candidate", input).await?;
     let mut db = state.db.lock().map_err(err)?;
-    blender::store_live_candidate(&mut db, &state.root, &uuid::Uuid::new_v4().to_string(), result)
+    blender::store_live_candidate(
+        &mut db,
+        &state.root,
+        &uuid::Uuid::new_v4().to_string(),
+        result,
+    )
 }
 
 fn main() {
@@ -910,6 +947,7 @@ fn main() {
             backup_commands::backup_rebind_blender,
             blender_live,
             blender_live_candidate,
+            blender_working_copy,
             blender_fork,
             blender_capture,
             blender_register,

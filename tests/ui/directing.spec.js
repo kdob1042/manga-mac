@@ -51,7 +51,7 @@ test('production requires explicit GUI assignment and never forks background sho
   await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();
   await page.getByRole('button',{name:'閉じる',exact:true}).click();
   await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();
-  await expect(page.getByRole('status').filter({hasText:'Blender GUIへlive接続'})).toBeVisible();
+  await expect(page.getByRole('alert').filter({hasText:'Blender GUIへlive接続'})).toBeVisible();
   const calls=await page.evaluate(()=>window.nativeCalls);
   expect(calls.some(c=>['blender_execute','blender_fork'].includes(c.command))).toBe(false);
 });
