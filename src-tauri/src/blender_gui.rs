@@ -19,7 +19,11 @@ fn key(text: &str) -> String {
 }
 fn directory(path: &Path) -> Result<std::path::PathBuf, String> {
     std::fs::create_dir_all(path).map_err(io)?;
-    if std::fs::symlink_metadata(path).map_err(io)?.file_type().is_symlink() {
+    if std::fs::symlink_metadata(path)
+        .map_err(io)?
+        .file_type()
+        .is_symlink()
+    {
         return Err("Workspace directory cannot be a symlink".into());
     }
     std::fs::canonicalize(path).map_err(io)
@@ -35,7 +39,10 @@ pub fn workspace(documents: &Path, work: &str, scope: &str) -> Result<Value, Str
     let shot = directory(&shots.join(key(scope)))?;
     let exports = directory(&work_root.join("exports"))?;
     let working = shot.join("working.blend");
-    if working.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+    if working
+        .symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
+    {
         return Err("Working file cannot be a symlink".into());
     }
     let mut templates = Vec::new();
@@ -48,7 +55,9 @@ pub fn workspace(documents: &Path, work: &str, scope: &str) -> Result<Value, Str
         }
     }
     templates.sort();
-    Ok(json!({"root":work_root,"assets":assets,"working":working,"exports":exports,"templates":templates}))
+    Ok(
+        json!({"root":work_root,"assets":assets,"working":working,"exports":exports,"templates":templates}),
+    )
 }
 
 pub async fn launch(
@@ -60,7 +69,9 @@ pub async fn launch(
 ) -> Result<Value, String> {
     let work = input["work"].as_str().ok_or("Missing work")?;
     let scope = input["scope"].as_str().ok_or("Missing shot")?;
-    let directory_work = input["directory_work"].as_str().ok_or("Missing directory identity")?;
+    let directory_work = input["directory_work"]
+        .as_str()
+        .ok_or("Missing directory identity")?;
     let paths = workspace(documents, directory_work, scope)?;
     let working = paths["working"].as_str().ok_or("Invalid working path")?;
     let mut processes = launcher.0.lock().await;
@@ -78,7 +89,9 @@ pub async fn launch(
     if let Some(owned) = processes.get_mut(&process_key) {
         if owned.child.try_wait().map_err(io)?.is_none() {
             if owned.identity.is_null() {
-                return Err("前回起動したBlenderの準備を確認してください。二重起動はしません。".into());
+                return Err(
+                    "前回起動したBlenderの準備を確認してください。二重起動はしません。".into(),
+                );
             }
             let mut identity = owned.identity.clone();
             identity["work"] = json!(work);
@@ -89,16 +102,27 @@ pub async fn launch(
     // Never launch a second editor for a still-running GUI after an app restart.
     let pid_path = Path::new(working).parent().unwrap().join("gui.pid");
     if let Ok(pid_text) = std::fs::read_to_string(&pid_path) {
-        let pid = pid_text.parse::<i32>().map_err(|_| "Invalid GUI lock; inspect the working folder")?;
-        if pid <= 0 { return Err("Invalid GUI process identity".into()); }
+        let pid = pid_text
+            .parse::<i32>()
+            .map_err(|_| "Invalid GUI lock; inspect the working folder")?;
+        if pid <= 0 {
+            return Err("Invalid GUI process identity".into());
+        }
         #[cfg(unix)]
-        if unsafe { libc::kill(pid, 0) } == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH) {
-            return Err("この作業のBlenderは既に開いています。接続設定から明示的に再接続してください。".into());
+        if unsafe { libc::kill(pid, 0) } == 0
+            || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+        {
+            return Err(
+                "この作業のBlenderは既に開いています。接続設定から明示的に再接続してください。"
+                    .into(),
+            );
         }
     }
     let template = input["template"].as_str().unwrap_or("");
     if !template.is_empty()
-        && !paths["templates"].as_array().is_some_and(|files| files.iter().any(|p| p == template))
+        && !paths["templates"]
+            .as_array()
+            .is_some_and(|files| files.iter().any(|p| p == template))
     {
         return Err("素材フォルダ内のblendを選択してください".into());
     }
@@ -110,31 +134,80 @@ pub async fn launch(
     }
     let addon = directory(&boot.join("manga_mac_live"))?;
     for (name, content) in [
-        ("__init__.py", include_str!("../../blender/live/__init__.py")),
-        ("observation.py", include_str!("../../blender/live/observation.py")),
-        ("operations.py", include_str!("../../blender/live/operations.py")),
-        ("candidate.py", include_str!("../../blender/live/candidate.py")),
-        ("capture_support.py", include_str!("../../blender/live/capture_support.py")),
-        ("viewport.py", include_str!("../../blender/live/viewport.py")),
-        ("LICENSE.upstream", include_str!("../../blender/live/LICENSE.upstream")),
-        ("upstream.json", include_str!("../../blender/live/upstream.json")),
+        (
+            "__init__.py",
+            include_str!("../../blender/live/__init__.py"),
+        ),
+        (
+            "observation.py",
+            include_str!("../../blender/live/observation.py"),
+        ),
+        (
+            "operations.py",
+            include_str!("../../blender/live/operations.py"),
+        ),
+        (
+            "candidate.py",
+            include_str!("../../blender/live/candidate.py"),
+        ),
+        (
+            "capture_support.py",
+            include_str!("../../blender/live/capture_support.py"),
+        ),
+        (
+            "viewport.py",
+            include_str!("../../blender/live/viewport.py"),
+        ),
+        (
+            "LICENSE.upstream",
+            include_str!("../../blender/live/LICENSE.upstream"),
+        ),
+        (
+            "upstream.json",
+            include_str!("../../blender/live/upstream.json"),
+        ),
     ] {
         std::fs::write(addon.join(name), content).map_err(io)?;
     }
-    std::fs::write(boot.join("launch.py"), include_str!("../../blender/launch_gui.py")).map_err(io)?;
+    std::fs::write(
+        boot.join("launch.py"),
+        include_str!("../../blender/launch_gui.py"),
+    )
+    .map_err(io)?;
     let source = if template.is_empty() {
         Value::Null
     } else {
         json!(Path::new(paths["assets"].as_str().unwrap()).join(template))
     };
-    std::fs::write(boot.join("config.json"), json!({"working":working,"assets":paths["assets"],"template":source}).to_string()).map_err(io)?;
-    let binary = input["binary"].as_str().filter(|s| !s.is_empty()).unwrap_or("/Applications/Blender.app/Contents/MacOS/Blender");
+    std::fs::write(
+        boot.join("config.json"),
+        json!({"working":working,"assets":paths["assets"],"template":source}).to_string(),
+    )
+    .map_err(io)?;
+    let binary = input["binary"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("/Applications/Blender.app/Contents/MacOS/Blender");
     let child = tokio::process::Command::new(binary)
         .args(["--factory-startup", "--disable-autoexec", "--python"])
-        .arg(boot.join("launch.py")).arg("--").arg(boot.join("config.json"))
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null())
-        .kill_on_drop(false).spawn().map_err(|e| format!("Blender GUIを起動できません。4.5.13のインストール先を確認してください: {e}"))?;
-    processes.insert(process_key.clone(), Owned {child, identity: Value::Null});
+        .arg(boot.join("launch.py"))
+        .arg("--")
+        .arg(boot.join("config.json"))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(false)
+        .spawn()
+        .map_err(|e| {
+            format!("Blender GUIを起動できません。4.5.13のインストール先を確認してください: {e}")
+        })?;
+    processes.insert(
+        process_key.clone(),
+        Owned {
+            child,
+            identity: Value::Null,
+        },
+    );
     for _ in 0..450 {
         let owned = processes.get_mut(&process_key).unwrap();
         if owned.child.try_wait().map_err(io)?.is_some() {
@@ -145,7 +218,9 @@ pub async fn launch(
             std::fs::remove_file(boot.join("ready.json")).map_err(io)?;
             let mut identity: Value = serde_json::from_slice(&bytes).map_err(io)?;
             if let Some(error) = identity["error"].as_str() {
-                return Err(format!("GUI準備失敗: {error}。開いたBlenderを確認してください"));
+                return Err(format!(
+                    "GUI準備失敗: {error}。開いたBlenderを確認してください"
+                ));
             }
             if identity["file"] != working {
                 return Err("GUI working file mismatch".into());
@@ -156,7 +231,10 @@ pub async fn launch(
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-    Err("GUI起動の待機時間を超えました。開いたBlenderを確認してください。自動で再起動しません。".into())
+    Err(
+        "GUI起動の待機時間を超えました。開いたBlenderを確認してください。自動で再起動しません。"
+            .into(),
+    )
 }
 
 #[cfg(test)]
@@ -192,44 +270,119 @@ mod tests {
         let launcher = Launcher::default();
         let live = Live::default();
         let input = json!({"work":"w", "directory_work":"w", "scope":"panel:p", "binary":std::env::var("BLENDER_BIN").unwrap()});
-        let identity = launch(&launcher, &live, &root, &root, input.clone()).await.unwrap();
+        let identity = launch(&launcher, &live, &root, &root, input.clone())
+            .await
+            .unwrap();
         assert_eq!(identity["mode"], "live");
         assert!(Path::new(identity["file"].as_str().unwrap()).is_file());
-        let same = launch(&launcher, &live, &root, &root, input.clone()).await.unwrap();
+        let same = launch(&launcher, &live, &root, &root, input.clone())
+            .await
+            .unwrap();
         assert_eq!(identity["instance"], same["instance"]);
-        let mut other = input.clone(); other["scope"] = json!("panel:other");
+        let mut other = input.clone();
+        other["scope"] = json!("panel:other");
         assert!(launch(&launcher, &live, &root, &root, other).await.is_err());
-        let mut state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"})).await.unwrap();
+        let mut state =
+            blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"}))
+                .await
+                .unwrap();
         let camera = state["camera"].as_str().unwrap().to_owned();
-        let detail = blender_live::command(&live, "observe", json!({"work":"w","scope":"object","object":camera})).await.unwrap();
-        blender_live::command(&live, "resume", json!({"work":"w","expected":state})).await.unwrap();
+        let detail = blender_live::command(
+            &live,
+            "observe",
+            json!({"work":"w","scope":"object","object":camera}),
+        )
+        .await
+        .unwrap();
+        blender_live::command(&live, "resume", json!({"work":"w","expected":state}))
+            .await
+            .unwrap();
         for operation in [
             json!({"kind":"rotation","object":camera,"object_id":detail["id"],"rotation":[0.2,0.3,0.4]}),
             json!({"kind":"aim","object":camera,"object_id":detail["id"],"target":[0,0,0]}),
         ] {
-            state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"})).await.unwrap();
+            state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"}))
+                .await
+                .unwrap();
             let applied = blender_live::command(&live, "act", json!({"work":"w","expected":state,"request_id":uuid::Uuid::new_v4().to_string(),"operation":operation})).await.unwrap();
             assert_eq!(applied["changed"], true);
-            let detail = blender_live::command(&live, "observe", json!({"work":"w","scope":"object","object":camera})).await.unwrap();
+            let detail = blender_live::command(
+                &live,
+                "observe",
+                json!({"work":"w","scope":"object","object":camera}),
+            )
+            .await
+            .unwrap();
             if operation["kind"] == "rotation" {
-                for i in 0..3 { assert!((detail["rotation"][i].as_f64().unwrap()-operation["rotation"][i].as_f64().unwrap()).abs()<1e-5); }
+                for i in 0..3 {
+                    assert!(
+                        (detail["rotation"][i].as_f64().unwrap()
+                            - operation["rotation"][i].as_f64().unwrap())
+                        .abs()
+                            < 1e-5
+                    );
+                }
             } else {
-                let rows=detail["evaluated_world"].as_array().unwrap();
-                let mut dot=0.0; let mut length=0.0;
-                for row in rows.iter().take(3) { let delta=-row[3].as_f64().unwrap(); dot += -row[2].as_f64().unwrap()*delta; length += delta*delta; }
-                assert!(dot/length.sqrt()>1.0-1e-6);
+                let rows = detail["evaluated_world"].as_array().unwrap();
+                let mut dot = 0.0;
+                let mut length = 0.0;
+                for row in rows.iter().take(3) {
+                    let delta = -row[3].as_f64().unwrap();
+                    dot += -row[2].as_f64().unwrap() * delta;
+                    length += delta * delta;
+                }
+                assert!(dot / length.sqrt() > 1.0 - 1e-6);
             }
         }
-        blender_live::command(&live, "handoff", json!({"work":"w"})).await.unwrap();
-        state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"})).await.unwrap();
-        blender_live::command(&live, "save_working", json!({"work":"w","expected":state})).await.unwrap();
-        blender_live::command(&live, "disconnect", json!({})).await.unwrap();
-        let reconnected=launch(&launcher, &live, &root, &root, input).await.unwrap();
-        assert_eq!(identity["instance"],reconnected["instance"]);
-        blender_live::command(&live, "disconnect", json!({})).await.unwrap();
+        blender_live::command(&live, "handoff", json!({"work":"w"}))
+            .await
+            .unwrap();
+        state = blender_live::command(&live, "observe", json!({"work":"w","scope":"summary"}))
+            .await
+            .unwrap();
+        blender_live::command(&live, "save_working", json!({"work":"w","expected":state}))
+            .await
+            .unwrap();
+        blender_live::command(&live, "disconnect", json!({}))
+            .await
+            .unwrap();
+        let reconnected = launch(&launcher, &live, &root, &root, input.clone())
+            .await
+            .unwrap();
+        assert_eq!(identity["instance"], reconnected["instance"]);
+        blender_live::command(&live, "disconnect", json!({}))
+            .await
+            .unwrap();
         // Only this test's child processes may be terminated.
-        for owned in launcher.0.lock().await.values_mut() { owned.child.kill().await.unwrap(); }
+        for owned in launcher.0.lock().await.values_mut() {
+            owned.child.kill().await.unwrap();
+        }
+        let reopened = launch(&launcher, &live, &root, &root, input.clone())
+            .await
+            .unwrap();
+        assert_ne!(identity["instance"], reopened["instance"]);
+        let paths = workspace(&root, "w", "panel:p").unwrap();
+        let source = Path::new(paths["assets"].as_str().unwrap()).join("template.blend");
+        std::fs::copy(identity["file"].as_str().unwrap(), &source).unwrap();
+        let original = std::fs::read(&source).unwrap();
+        blender_live::command(&live, "disconnect", json!({}))
+            .await
+            .unwrap();
+        let mut from_template = input;
+        from_template["scope"] = json!("panel:from-template");
+        from_template["template"] = json!("template.blend");
+        let copied = launch(&launcher, &live, &root, &root, from_template)
+            .await
+            .unwrap();
+        assert_ne!(copied["file"], reopened["file"]);
+        assert!(Path::new(copied["file"].as_str().unwrap()).is_file());
+        assert_eq!(std::fs::read(source).unwrap(), original);
+        blender_live::command(&live, "disconnect", json!({}))
+            .await
+            .unwrap();
+        for owned in launcher.0.lock().await.values_mut() {
+            owned.child.kill().await.unwrap();
+        }
         std::fs::remove_dir_all(root).unwrap();
     }
-
 }

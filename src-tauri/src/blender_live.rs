@@ -224,7 +224,10 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         c.check(&result)?;
         return Ok(result);
     }
-    if matches!(action, "act" | "resume" | "handoff" | "candidate" | "save_working") {
+    if matches!(
+        action,
+        "act" | "resume" | "handoff" | "candidate" | "save_working"
+    ) {
         let result = c
             .tool(
                 match action {

@@ -8,8 +8,8 @@ pub mod storage;
 mod web_asset;
 
 mod blender;
-mod blender_live;
 mod blender_gui;
+mod blender_live;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -856,17 +856,35 @@ async fn blender_recover(
     )
 }
 #[tauri::command]
-async fn blender_gui_start(app: tauri::AppHandle, input: Value, state: State<'_, AppState>) -> Result<Value, String> {
+async fn blender_gui_start(
+    app: tauri::AppHandle,
+    input: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let documents = app.path().document_dir().map_err(err)?;
-    blender_gui::launch(&state.blender_gui, &state.live_blender, &state.base, &documents, input).await
+    blender_gui::launch(
+        &state.blender_gui,
+        &state.live_blender,
+        &state.base,
+        &documents,
+        input,
+    )
+    .await
 }
 #[tauri::command]
 fn blender_workspace(app: tauri::AppHandle, input: Value) -> Result<Value, String> {
     let documents = app.path().document_dir().map_err(err)?;
-    let paths = blender_gui::workspace(&documents, input["directory_work"].as_str().ok_or("Missing work")?, input["scope"].as_str().ok_or("Missing shot")?)?;
+    let paths = blender_gui::workspace(
+        &documents,
+        input["directory_work"].as_str().ok_or("Missing work")?,
+        input["scope"].as_str().ok_or("Missing shot")?,
+    )?;
     if input["open_assets"] == true {
         #[cfg(target_os = "macos")]
-        std::process::Command::new("/usr/bin/open").arg(paths["assets"].as_str().ok_or("Missing assets")?).spawn().map_err(err)?;
+        std::process::Command::new("/usr/bin/open")
+            .arg(paths["assets"].as_str().ok_or("Missing assets")?)
+            .spawn()
+            .map_err(err)?;
     }
     Ok(paths)
 }
