@@ -13,27 +13,20 @@ async function readManifest(repo, sha, token, invokeCall = call, explicitPath = 
     const path = safePath(explicitPath);
     return {path, text: await invokeCall('github_file', {repo, path, sha, token})};
   }
-  try {
-    return {path: 'manifest.json', text: await invokeCall('github_file', {repo, path: 'manifest.json', sha, token})};
-  } catch (rootError) {
-    // Existing repositories may expose the canonical entrypoint below source/.
+  let lastError;
+  for (const path of ['manifest.json', 'work.json', 'source/manifest.json']) {
     try {
-      return {path: 'source/manifest.json', text: await invokeCall('github_file', {repo, path: 'source/manifest.json', sha, token})};
-    } catch {
-      throw rootError;
+      return {path, text: await invokeCall('github_file', {repo, path, sha, token})};
+    } catch (error) {
+      lastError = error;
     }
   }
+  throw lastError;
 }
 
 function sourcePath(root, path) {
   const safe = safePath(path);
   return root ? safePath(`${root}/${safe}`) : safe;
-}
-
-function dirname(path) {
-  const parts = path.split('/');
-  parts.pop();
-  return parts.join('/');
 }
 
 function assertInside(root, path) {
@@ -59,22 +52,30 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: 'commits/main', token})).sha;
   if (!/^[0-9a-f]{40}$/i.test(sha)) throw Error('取得commitが不正です');
   const workId = options.workId ?? library?.workId ?? null;
-  const manifestPath = options.manifestPath ?? library?.manifestPath ?? '';
+  const entryPath = options.entryPath ?? options.manifestPath ?? library?.entryPath ?? library?.manifestPath ?? '';
   const sourceRootOption = options.sourceRoot ?? library?.sourceRoot ?? '';
   if (workId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(workId)) throw Error('作品IDが不正です');
   if (options.sceneId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(options.sceneId)) throw Error('シーンIDが不正です');
   if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo
-    && (previous.workId ?? null) === workId && (!manifestPath || previous.sync?.manifest_path === manifestPath)
+    && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
     && (previous.selectedSceneId ?? null) === (options.sceneId ?? null)
     && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
-  const manifestFile = await readManifest(repo, sha, token, invokeCall, manifestPath);
+  const manifestFile = await readManifest(repo, sha, token, invokeCall, entryPath);
   const manifestText = manifestFile.text;
   const manifest = JSON.parse(manifestText);
   const model = normalizeSourceManifest(manifest);
-  const sourceRoot = sourceRootOption || dirname(manifestFile.path);
+  const sourceRoot = sourceRootOption || options.workRoot || library?.root || '';
+  const legacySourceRoot = !sourceRoot && manifestFile.path === 'source/manifest.json' ? 'source' : '';
   assertInside(options.workRoot ?? library?.root ?? '', manifestFile.path);
-  assertInside(options.workRoot ?? library?.root ?? '', sourceRoot);
-  const read = path => invokeCall('github_file', {repo, path: sourcePath(sourceRoot, path), sha, token});
+  if (sourceRoot) assertInside(options.workRoot ?? library?.root ?? '', sourceRoot);
+  const read = async path => {
+    try {
+      return await invokeCall('github_file', {repo, path: sourcePath(sourceRoot, path), sha, token});
+    } catch (error) {
+      if (!legacySourceRoot) throw error;
+      return invokeCall('github_file', {repo, path: sourcePath(legacySourceRoot, path), sha, token});
+    }
+  };
   const ordered = orderedScenes(model, episodeId);
   const selected = options.sceneId ? ordered.filter(scene => scene.id === options.sceneId) : ordered;
   if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは話に存在しません');
@@ -92,7 +93,13 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   }
   const references = [];
   for (const declaration of referenceDeclarations(model, settings)) {
-    const asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
+    let asset;
+    try {
+      asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
+    } catch (error) {
+      if (!legacySourceRoot) throw error;
+      asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+    }
     references.push({ ...declaration, ...asset });
   }
   const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
