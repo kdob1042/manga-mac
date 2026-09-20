@@ -467,3 +467,9 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 仕様変更により旧headless自動演出・Web素材取込・撮影UIの試験をGUI接続案内／GUI撮影へ置換。旧成果物の読取・採否復旧・バックアップ契約は保持。旧実行IPCからプロセスを起動できないことを検証する。
 
 追加検証: GUI内render+copyと寸法・依存固定、nativeで候補保存→capture読戻し、manga-mac yield→別MCP client claim→占有中reclaim拒否→release→再観測。実CodexアプリのComputer Use操作そのものはこのfixtureでは検証しない（#187）。試験結果はPRに記録する。
+
+### #197 GUI自動起動・作業フォルダ・カメラ拡張
+
+- ローカル: Web build、live判断の既存回帰とカメラ回転/注視点の検証を実行。Python構文確認。
+- CI追加: 実Blender 4.5.13 GUIをnative launcherが起動し、同じinstanceの再利用、別コマへの暗黙切替拒否、カメラ回転と注視点の実値読戻し、作業保存、切断/再接続を検証する。
+- CIの成否は実行後に記録する。実Macアプリの視覚品質、実Codex Computer Use、参照画像からの実モデル生成はこのfixtureの合格では代替しない（#184/#187/#199）。

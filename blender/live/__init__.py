@@ -16,6 +16,7 @@ from bpy.app.handlers import persistent
 bl_info = {"name": "Manga Mac Live", "author": "Manga Mac contributors", "version": (1, 0, 0), "blender": (4, 5, 0), "category": "Interface"}
 PROTOCOL = "2025-03-26"
 SERVER = None
+WORKING_FILE = ""
 TOKEN = ""
 INSTANCE = ""
 EPOCH = ""
@@ -57,7 +58,7 @@ def reload_epoch(*_):
 
 
 def tool_names():
-    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate"]
+    return ["live_identity", "live_claim", "live_release", "live_observe", "live_resume", "live_act", "live_handoff", "live_candidate", "live_save_working"]
 
 
 def invoke_tool(name, args):
@@ -82,12 +83,17 @@ def invoke_tool(name, args):
         CONTROL = "manual"
         invalidate()  # Invalidate every queued/unsent plan before handing control away.
         return identity()
-    if name in ("live_resume", "live_act", "live_candidate"):
+    if name in ("live_resume", "live_act", "live_candidate", "live_save_working"):
         current = identity()
         expected = args.get("expected", {})
         for key in ("instance", "epoch", "revision", "file", "scene", "view_layer"):
             if current[key] != expected.get(key):
                 raise ValueError("stale_observation: observe again")
+        if name == "live_save_working":
+            if CONTROL != "manual" or not WORKING_FILE or bpy.data.filepath != WORKING_FILE:
+                raise ValueError("Only the application's current working file can be saved after handoff")
+            bpy.ops.wm.save_as_mainfile(filepath=WORKING_FILE)
+            return identity()
         if name == "live_candidate":
             if CONTROL != "manual":
                 raise ValueError("handoff before candidate save")
@@ -132,19 +138,22 @@ def tool_schema(name):
         "live_release": "Finish Codex operations and release ownership before returning to manga-mac.",
         "live_observe": "Read current GUI state. Summary first, then object detail or viewport/camera image. Images are distinct views.",
         "live_resume": "Enable this client's writes using a fresh observation. Stop mouse/keyboard editing first.",
-        "live_act": "Apply camera lens, static object location, or constraint influence. Observe detail first, then read back. No arbitrary Python.",
+        "live_act": "Apply camera lens/rotation/aim, static object location, or constraint influence. Observe detail first, then read back. No arbitrary Python.",
         "live_handoff": "Disable automatic writes before manual editing or candidate save. This retains your client claim; release it to return to manga-mac.",
+        "live_save_working": "Save the application-owned working blend after handoff, with a fresh observation. Never saves an asset original or adopted checkpoint.",
         "live_candidate": "Render and save a new copy in the same GUI, only after handoff. Prefer saving via manga-mac for candidate registration."}
     if name == "live_identity": props, required = {}, []
     if name == "live_claim":
         props.update({k:{"type":"string"} for k in ("instance","epoch")}); required += ["instance","epoch"]
-    if name in ("live_resume","live_act","live_candidate"):
+    if name in ("live_resume","live_act","live_candidate","live_save_working"):
         props["expected"] = expected; required.append("expected")
     if name == "live_observe":
         props.update({"scope":{"type":"string","enum":["summary","object","viewport","camera"]},"object":{"type":"string"},"offset":{"type":"integer","minimum":0}})
     if name == "live_act":
         props.update({"request_id":{"type":"string","description":"Fresh UUID; never retry after an unknown result"},
-            "operation":{"type":"object","properties":{"kind":{"enum":["camera","transform","constraint"]},"object":{"type":"string"},"object_id":{"type":"string"},"value":{"type":"number"},"constraint":{"type":"string"},"location":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}},"required":["kind","object","object_id"],"additionalProperties":False}})
+            "operation":{"type":"object","properties":{"kind":{"enum":["camera","transform","constraint","rotation","aim"]},"object":{"type":"string"},"object_id":{"type":"string"},"value":{"type":"number"},"constraint":{"type":"string"},"location":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}},"required":["kind","object","object_id"],"additionalProperties":False}})
+        for key in ("rotation", "target"):
+            props["operation"]["properties"][key] = {"type":"array", "items":{"type":"number"}, "minItems":3, "maxItems":3}
         required += ["request_id","operation"]
     if name == "live_candidate": props.update({k:{"type":"integer","minimum":64,"maximum":4096} for k in ("width","height")})
     return {"name":name,"description":descriptions[name],"inputSchema":{"type":"object","properties":props,"required":required}}

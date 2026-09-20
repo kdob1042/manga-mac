@@ -63,6 +63,7 @@ def observe(args):
             if type(value) in (int, float, bool, str):
                 props[key] = {"value": value, "schema": obj.id_properties_ui(key).as_dict()}
         return {"id": object_id(obj), "name": obj.name, "type": obj.type,
+                "rotation": list(obj.rotation_euler), "location": list(obj.location),
                 "local": matrix(obj.matrix_local), "world": matrix(obj.matrix_world),
                 "evaluated_world": matrix(evaluated.matrix_world), "parent": obj.parent.name if obj.parent else None,
                 "constraints": constraints(obj), "custom_properties": props,

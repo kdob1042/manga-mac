@@ -224,13 +224,14 @@ pub async fn command(live: &Live, action: &str, input: Value) -> Result<Value, S
         c.check(&result)?;
         return Ok(result);
     }
-    if matches!(action, "act" | "resume" | "handoff" | "candidate") {
+    if matches!(action, "act" | "resume" | "handoff" | "candidate" | "save_working") {
         let result = c
             .tool(
                 match action {
                     "act" => "live_act",
                     "resume" => "live_resume",
                     "handoff" => "live_handoff",
+                    "save_working" => "live_save_working",
                     _ => "live_candidate",
                 },
                 input,

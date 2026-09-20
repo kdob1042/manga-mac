@@ -59,6 +59,8 @@ jobs:
           ditto "$folder/mount/Blender.app" "$folder/Blender.app"
           hdiutil detach "$folder/mount"
           echo "BLENDER_BIN=$folder/Blender.app/Contents/MacOS/Blender" >> "$GITHUB_ENV"
+      - name: App-owned GUI automatic startup, working save, reconnect and camera orientation
+        run: cargo test --locked --manifest-path tests/llm/Cargo.toml --lib gui_auto_start -- --ignored --nocapture
       - name: Actual macOS GUI live MCP and state invalidation
         run: python3 blender/test_live_gui.py "$BLENDER_BIN" blender-mac-results
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { call } from './bridge';
 import { recordLiveCandidate, adoptLiveCandidate, recordLiveVideoCapture } from './live-candidates';
-import { liveCall, liveWork, handoffLive, yieldLive, verifyLiveMappings, assertLiveTarget, createLiveBinding } from './live-blender';
+import { liveCall, liveWork, directoryWork, openLiveShot, handoffLive, yieldLive, verifyLiveMappings, assertLiveTarget, createLiveBinding } from './live-blender';
 export default function ShotControls({ project, current, commit, chosen, busy, run, scopeType = 'panel', captureSize }) {
   const [message,setMessage]=useState(''),[preview,setPreview]=useState(null),[observed,setObserved]=useState(null);
   const [character,setCharacter]=useState(''),[object,setObject]=useState('');
   const [width,setWidth]=useState(768),[height,setHeight]=useState(768);
   const video=scopeType==='videoSource';
-  useEffect(()=>{setMessage('');setPreview(null);setObserved(null);setCharacter('');setObject('');},[chosen?.id]);
+  const [workspace,setWorkspace]=useState(null),[template,setTemplate]=useState('');
+  useEffect(()=>{setMessage('');setPreview(null);setObserved(null);setCharacter('');setObject('');setWorkspace(null);setTemplate('');},[chosen?.id]);
   const updateTarget=async fn=>{const p=current.current;await commit(video?{...p,shot_batches:p.shot_batches.map(b=>b.scope_type==='videoSource'?{...b,bindings:b.bindings.map(s=>s.id===chosen.id?fn(s):s)}:b)}:{...p,panels:p.panels.map(s=>s.id===chosen.id?fn(s):s)});};
   const read=async()=>{
     let state=await liveCall(call,current.current,'observe',{scope:'summary'}),objects=[...state.objects];
@@ -21,8 +22,12 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
   };
   if(!chosen)return <section><h3>Blenderで構図・撮影</h3><p>対象コマを選択し、設定からBlender GUIへ接続してください。</p></section>;
   return <section className="shot-controls" aria-label="Blenderショット"><h3>Blenderで構図・撮影 · GUI</h3>
+    <button disabled={busy} onClick={()=>run('Blenderの素材フォルダを準備中',async()=>setWorkspace(await call('blender_workspace',{input:{directory_work:directoryWork(current.current),scope:`${scopeType}:${chosen.id}`,open_assets:true}})))}>素材フォルダを開く・再読込</button>
+    {workspace&&<><p>素材: {workspace.assets}<br/>作業: {workspace.working}</p><label>初回に使うblend<select value={template} onChange={e=>setTemplate(e.target.value)}><option value="">新しいシーン</option>{workspace.templates.map(name=><option key={name} value={name}>{name}</option>)}</select></label><small>保存済みの作業ファイルがあれば続きから開きます。素材の原本は上書きしません。</small></>}
+    <button disabled={busy} onClick={()=>run('Blender GUIを開いて接続中',async()=>{const binding=await openLiveShot(call,current.current,chosen,{template,scopeType});await updateTarget(p=>({...p,live_binding:binding}));setMessage('このコマの作業ファイルをGUIで開きました。素材はBlenderのAsset Browserで利用できます。');})}>この{video?'撮影':'コマ'}のBlenderを開く</button>
     <button disabled={busy} onClick={()=>run('live対象を確認中',async()=>{const s=await read();await updateTarget(p=>({...p,live_binding:createLiveBinding(current.current,p,s)}));setMessage('このGUIを対象へ割り当てました。manga-macから自然言語で操作できます。');})}>この{video?'撮影':'コマ'}を接続中のlive状態へ割り当てる</button>
     {chosen.live_binding&&<>
+      <button disabled={busy} onClick={()=>run('作業ファイルを保存中',async()=>{await handoffLive(call,current.current);const expected=await read();assertLiveTarget(chosen.live_binding,expected);await liveCall(call,current.current,'save_working',{expected});setMessage('作業ファイルを保存しました。撮影候補・採用版は変更していません。');})}>作業ファイルを保存</button>
       <p>LIVE: {chosen.live_binding.file||'未保存'} ／ {chosen.live_binding.scene}</p>
       <button onClick={async()=>{try{await handoffLive(call,current.current);setMessage('手動編集へ引継ぎ済み。AIの未送信計画は破棄しました。');}catch(e){setMessage(e.message);}}}>手動へ渡す（AI書込み停止）</button>
       <button onClick={async()=>{try{await yieldLive(call,current.current);setMessage('MacのCodexへ引継ぎ済み。manga-macの書込みと接続の占有を停止しました。Codexの操作・MCP接続を終えてから操作権を戻してください。');}catch(e){setMessage(e.message);}}}>MacのCodexへ渡す</button>

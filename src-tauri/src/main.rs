@@ -9,6 +9,7 @@ mod web_asset;
 
 mod blender;
 mod blender_live;
+mod blender_gui;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -24,6 +25,7 @@ struct AppState {
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
     live_blender: blender_live::Live,
+    blender_gui: blender_gui::Launcher,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -854,6 +856,21 @@ async fn blender_recover(
     )
 }
 #[tauri::command]
+async fn blender_gui_start(app: tauri::AppHandle, input: Value, state: State<'_, AppState>) -> Result<Value, String> {
+    let documents = app.path().document_dir().map_err(err)?;
+    blender_gui::launch(&state.blender_gui, &state.live_blender, &state.base, &documents, input).await
+}
+#[tauri::command]
+fn blender_workspace(app: tauri::AppHandle, input: Value) -> Result<Value, String> {
+    let documents = app.path().document_dir().map_err(err)?;
+    let paths = blender_gui::workspace(&documents, input["directory_work"].as_str().ok_or("Missing work")?, input["scope"].as_str().ok_or("Missing shot")?)?;
+    if input["open_assets"] == true {
+        #[cfg(target_os = "macos")]
+        std::process::Command::new("/usr/bin/open").arg(paths["assets"].as_str().ok_or("Missing assets")?).spawn().map_err(err)?;
+    }
+    Ok(paths)
+}
+#[tauri::command]
 async fn blender_live(
     action: String,
     input: Value,
@@ -933,6 +950,7 @@ fn main() {
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
                 live_blender: blender_live::Live::default(),
+                blender_gui: blender_gui::Launcher::default(),
             });
             Ok(())
         })
@@ -946,6 +964,8 @@ fn main() {
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
             blender_live,
+            blender_gui_start,
+            blender_workspace,
             blender_live_candidate,
             blender_working_copy,
             blender_fork,
