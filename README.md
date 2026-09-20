@@ -41,7 +41,7 @@ mainにはBlender接続・撮影・組版と動画制作の実装候補が追加
 
 ### 共通原稿形式 `story-source/v1`（#143）
 
-新しい原稿の形式正本を `contracts/story-source/` に追加しました。原稿リポジトリでは `source/manifest.json` を入口とし、`episodes[].scenes[]` の配列順で `P1-3` のような現在位置を作り、各場面の固定 `id` で同一場面を継続識別します。本文は `manuscript/p01/p01-03.md`、設定は `settings/*.md`、人物基準画像を使う場合は `assets/` に置きます。
+新しい原稿の形式正本を `contracts/story-source/` に追加しました。story-libraryでは `works/{workId}/work.json` を入口とし、旧repoの `manifest.json` / `source/manifest.json` は読み取り互換として扱い、`episodes[].scenes[]` の配列順で `P1-3` のような現在位置を作り、各場面の固定 `id` で同一場面を継続識別します。本文は `manuscript/p01/p01-03.md`、設定は `settings/*.md`、人物基準画像を使う場合は `assets/` に置きます。
 
 `validate.mjs` はmanifest、連番パス、ID、タグ、本文の先頭見出し、宣言ファイルの過不足を機械検査します。`structure.mjs` は話・場面の追加・移動・削除・再採番を計画し、固定IDを変えずにファイル移動を行える対応表を返します。本文の生成・AIによる補正・原稿への書き戻しは行いません。
 
