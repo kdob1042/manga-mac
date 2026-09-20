@@ -572,3 +572,18 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 参照画像からのモデル生成サービスの接続は #201 の未実装工程。標準素材の利用やCodex/人によるモデル・Scene作成を先に同じ経路で扱う。Tripo等は任意の後続接続であり、勝手な素材送信・課金・アドオン導入は行わない。
 
 素材からの作業コピー作成はBlender標準のrelative path remapを使う。新しいGUIで標準blendを開く工程には、撮影時のpacking制約を課さない。依存の固定・サイズ検証は候補撮影時に行う。
+
+
+## Tripo参照画像→Blender素材連携（#201、2026-09-20）
+
+目標は、作品の人物正本と原稿版を固定してTripoへ明示送信し、検証済みGLBを作品のBlender素材フォルダへ保存し、同じGUIへ取り込んでCodex/人の調整と複数アングル撮影へ戻すこと。manga-macが通常経路を管理し、Blenderのアセット内容・Scene・リグはBlenderを正本とする。
+
+実装済みの境界:
+
+- Tripo接続は起動中nativeメモリだけ。tsk_ APIキー、送信先、モデル版、credits上限、承認を登録時に検査する。プロジェクトやログへ資格情報を保存しない。
+- ジョブmanifestにprovider/model/mode、原稿snapshot、人物版、参照画像bytes/hash、補足指示を固定する。送信前に復元した画像のSHA-256を再計算し、送信済みmarkerを先に保存するため、応答不明時の自動再POSTを行わない。
+- API経路は公式OpenAPIの固定モデル v2.5-20250123 の image_to_model。upload→task→status→collectを保存済みtask IDで追跡し、poll間隔を制限する。
+- 出力URLはHTTPS・公開IP・redirectなしで取得し、512MB上限、GLB magic、SHA-256、atomic renameを検証する。artifactは作品の3D assetsに保存し、採用済みcheckpointを上書きしない。
+- live_import_asset はmanaged assets直下のbasenameとartifact hashだけを受け、同じfile/scene/view layer/観測版を再確認し、手動制御へhandoffしたGUIの標準GLB importerだけを呼ぶ。任意path・任意Python・別Blenderへの接続は許可しない。
+
+実APIでの課金・生成形状・テクスチャ・人物同一性・Mac個人環境の速度は、Codexが対象Macで行う #201 の実地確認へ残す。初回実装は単一参照画像に限定し、multiviewやTripo上流addonの無検証同梱は行わない。上流SDKを利用する場合の固定情報は調査記録の公式SDK commit 4115894a0a603c5183c9ed6dc8662745562c8941（MIT）と一致させ、APIキーをScene propertyへ保存する公式Blender addonは採用しない。

@@ -494,3 +494,16 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 4. 新しい候補を採用→Undo→アプリ再起動で確認する。原稿・他コマ・旧採用版を保持し、開いているGUIには明示再接続する。
 
 関連Issueへ環境/commit・使った操作経路（MCP/Computer Use）・項目ごとの成功/失敗/未実施・画面または画像の証跡を残す。token/APIキーは記録しない。使っていない操作経路まで合格扱いしない。モデル自動生成は #201 の別受入とする。
+
+
+## Tripo連携の実地確認（#201）
+
+実施担当は対象Mac上のCodex。実APIキー・課金が必要な項目は利用者が専用キーと上限を確認した場合だけ実施し、キーやtask URLをIssue・ログ・証跡へ記録しない。Linuxのfixture、Node/Rustの契約試験、GLB fixtureだけではTripoの生成品質受入にしない。
+
+1. Tripoのテスト用人物正本を1枚登録し、設定で固定モデル版 v2.5-20250123、送信対象、補足指示、credits上限を確認する。接続登録だけで課金要求が出ないこと、balance照会が機能することを確認する。
+2. 生成を1回実行し、UIに保存済みtask IDとqueued/running/success等の状態が表示されることを確認する。ネットワークを中断した応答不明ケースでは再送せず、再起動後の再登録で同じtaskを照会できることを確認する。
+3. success後にGLBを取得し、素材フォルダに検証済みファイルができること、プロジェクトへartifact file/hashだけが残ること、APIキー・署名URL・不要なprovider応答が残らないことを確認する。
+4. アプリが起動した同じBlender GUIへ「同じBlender GUIへ取り込む」を押す。file/scene/view layer/観測版一致、手動handoff、標準GLB import、新規オブジェクトの再観測を記録する。別instance・別作品・managed checkpointへの接続やpath指定が拒否されることを確認する。
+5. 取り込んだモデルを同じSceneで調整し、既存のカメラ変更・複数アングル候補・Codex/人への引継ぎへ進む。元の人物正本、原稿、他コマ、旧採用版が変わらないことを確認する。
+
+記録するのは対象Mac/Blender/app commit、項目ごとのpass/fail/not_run、生成物のhashと画面または画像証跡だけ。APIキー・Bearer token・署名URLは記録しない。Tripoの実モデル品質、料金表示、利用規約適合、複数画像/multiviewは結果を別Issue/#201へ残し、fixture成功で完了扱いにしない。
