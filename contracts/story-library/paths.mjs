@@ -2,10 +2,15 @@ import { RELATIVE_ROOT } from './ids.mjs';
 
 const UNSAFE = /[\u0000-\u001f?#%:\\]/;
 
+export const WORK_ENTRY = 'work.json';
+export const LEGACY_MANIFEST_ENTRY = 'source/manifest.json';
+export const MANIFEST_ENTRY_CANDIDATES = Object.freeze([WORK_ENTRY, LEGACY_MANIFEST_ENTRY]);
+
 /**
  * Work-root relative paths are the sandbox for every declared manuscript,
- * setting, and character image.  `source/manifest.json` is only the entry
- * file; callers must not resolve `manuscript/` from the `source/` directory.
+ * setting, and character image. work.json is the single canonical entry.
+ * source/manifest.json is a legacy read fallback only; consumers must not
+ * resolve manuscript paths from the entry file's directory.
  */
 export function safeWorkRelativePath(value, label = 'パス') {
   if (typeof value !== 'string' || !value || value.length > 400) {
@@ -30,19 +35,25 @@ export function joinWorkPath(root, relativePath) {
   return `${safeRoot}/${safe}`;
 }
 
+export function workEntryPath(root) {
+  return joinWorkPath(root, WORK_ENTRY);
+}
+
+export function legacyManifestEntryPath(root) {
+  return joinWorkPath(root, LEGACY_MANIFEST_ENTRY);
+}
+
+/**
+ * Compatibility alias for callers that still use the old helper name.
+ */
 export function manifestEntryPath(root) {
-  return joinWorkPath(root, 'source/manifest.json');
+  return workEntryPath(root);
 }
 
 export function publicationPath(root) {
   return joinWorkPath(root, 'publication.yaml');
 }
 
-/**
- * Reject any resolved path that leaves the work root.  Manifest paths are
- * already work-root relative; this is the last sandbox check for callers
- * that join filesystem paths themselves.
- */
 export function assertInsideWorkRoot(root, resolvedRelativePath) {
   const safeRoot = assertWorkRoot(root);
   const safe = safeWorkRelativePath(resolvedRelativePath, '解決パス');
