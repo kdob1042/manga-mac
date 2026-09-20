@@ -31,7 +31,7 @@ def fingerprint():
               for o in c.scene.objects]
     values.append((bpy.data.filepath, c.scene.name, c.scene.frame_current, c.view_layer.name,
                    c.scene.camera.name if c.scene.camera else None, c.mode,
-                   [object_id(o) for o in c.selected_objects]))
+                   [object_id(o) for o in c.view_layer.objects if o.select_get(view_layer=c.view_layer)]))
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
 
@@ -45,7 +45,7 @@ def observe(args):
         objects = list(c.scene.objects)
         camera = c.scene.camera
         return {"frame": c.scene.frame_current, "object_mode": c.mode,
-                "selection": [{"id": object_id(o), "name": o.name} for o in c.selected_objects],
+                "selection": [{"id": object_id(o), "name": o.name} for o in c.view_layer.objects if o.select_get(view_layer=c.view_layer)],
                 "objects": [{"id": object_id(o), "name": o.name, "type": o.type} for o in objects[offset:offset+100]],
                 "next_offset": offset+100 if len(objects) > offset+100 else None,
                 "lens": camera.data.lens if camera else None,
@@ -63,6 +63,7 @@ def observe(args):
             if type(value) in (int, float, bool, str):
                 props[key] = {"value": value, "schema": obj.id_properties_ui(key).as_dict()}
         return {"id": object_id(obj), "name": obj.name, "type": obj.type,
+                "rotation": list(obj.rotation_euler), "location": list(obj.location),
                 "local": matrix(obj.matrix_local), "world": matrix(obj.matrix_world),
                 "evaluated_world": matrix(evaluated.matrix_world), "parent": obj.parent.name if obj.parent else None,
                 "constraints": constraints(obj), "custom_properties": props,
