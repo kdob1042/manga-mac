@@ -7,7 +7,7 @@ import { adjacentPanelPairs, createSelectedAdjacentVideoShots } from './video-tr
 import { videoStatusLabel, resolveVideoTask } from './video-remote';
 import { draftVideoMotion } from './video-plan';
 import ShotControls from './ShotControls';
-import { planVideoSource, attachShots, videoSources } from './shots';
+import { videoSources } from './shots';
 
 const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
 export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot, requestedPairId, onPairConsumed }) {
@@ -41,11 +41,9 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setAcceptDeletion(false); setCheckedTask(''); }, [selected, shot?.prompt, shot?.ratio]);
   async function prepareCapture() {
     const p = current.current;
-    const base = await call('blender_latest');
-    const batch = planVideoSource(p, { snapshotId: p.active, sceneId, characterIds: captureCharacters }, base);
-    await commit({ ...p, shot_batches: [...(p.shot_batches ?? []), batch] });
-    const sessions = await call('blender_fork', { sessionId: batch.base_session, expectedRevision: batch.base_revision, ids: batch.bindings.map(b => b.id) });
-    await commit(attachShots(current.current, batch, sessions));
+    if(!p.snapshots.find(s=>s.id===p.active)?.scenes.some(s=>s.id===sceneId))throw Error('現在の場面を選択してください');
+    const batch={id:crypto.randomUUID(),scope_type:'videoSource',status:'complete',bindings:[{id:crypto.randomUUID(),snapshotId:p.active,source_revision:p.active,sceneId,characterIds:[...captureCharacters]}]};
+    await commit({...p,shot_batches:[...(p.shot_batches??[]),batch]});
     setCaptureSourceId(batch.bindings[0].id);
   }
   async function refresh() {
@@ -95,7 +93,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
       <legend>ショットを追加</legend>
       <label>原作の場面<select aria-label="原作の場面" value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
-      <details><summary>共有Blender素材から動画用に撮影</summary>
+      <details><summary>開いているBlender GUIから動画用に撮影</summary>
         <p>接続・人物設定で開いた素材から専用ショットを作ります。漫画のコマは不要です。別のコマ・動画のカメラやフレームは変更しません。</p>
         <label>撮影する人物<select aria-label="撮影する人物" multiple value={captureCharacters} onChange={e => setCaptureCharacters([...e.target.selectedOptions].map(o => o.value))}>{project.characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
         <button disabled={!desktop() || !sceneId} onClick={() => run('動画用の撮影を準備', prepareCapture)}>動画用の撮影ショットを作る</button>

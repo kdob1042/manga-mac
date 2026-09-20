@@ -461,3 +461,9 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 同fixtureには、アプリ本体と同じRust `blender_live::command` を使う実接続試験も追加した。専用Mac workflowでコンパイルしたtest binaryをGUI稼働中に呼び、誤token/instance/file/scene/view layer/作品の拒否、観測、切断・再接続を検査し、`native_client`の結果をJSONへ残す。通常のunit testではGUI必須試験を明示ignoreし、専用workflowでだけ実行する。最新結果はPR #193を参照。
 
 この結果は配布Tauriアプリの設定画面・候補採用/Undoの通し操作、設定済み実LLMの判断、個人Macの24GB性能を含まない。これらは #184 / #186 / #187 で継続する。異なるrig・アドオン・GPU環境すべての互換性やviewport fallbackの全経路を保証する試験でもない。
+
+## GUI統一とCodex引継ぎ（#195）
+
+仕様変更により旧headless自動演出・Web素材取込・撮影UIの試験をGUI接続案内／GUI撮影へ置換。旧成果物の読取・採否復旧・バックアップ契約は保持。旧実行IPCからプロセスを起動できないことを検証する。
+
+追加検証: GUI内render+copyと寸法・依存固定、nativeで候補保存→capture読戻し、manga-mac yield→別MCP client claim→占有中reclaim拒否→release→再観測。実CodexアプリのComputer Use操作そのものはこのfixtureでは検証しない（#187）。試験結果はPRに記録する。
