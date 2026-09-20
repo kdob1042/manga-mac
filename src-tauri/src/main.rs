@@ -941,11 +941,18 @@ async fn blender_live_candidate(input: Value, state: State<'_, AppState>) -> Res
     let _engine = state.engine.lock().await;
     let result = blender_live::command(&state.live_blender, "candidate", input).await?;
     let mut db = state.db.lock().map_err(err)?;
-    let observation: Value = ["instance", "epoch", "revision", "file", "scene", "view_layer"]
-        .into_iter()
-        .map(|key| (key.to_owned(), result[key].clone()))
-        .collect::<serde_json::Map<String, Value>>()
-        .into();
+    let observation: Value = [
+        "instance",
+        "epoch",
+        "revision",
+        "file",
+        "scene",
+        "view_layer",
+    ]
+    .into_iter()
+    .map(|key| (key.to_owned(), result[key].clone()))
+    .collect::<serde_json::Map<String, Value>>()
+    .into();
     let mut saved = blender::store_live_candidate(
         &mut db,
         &state.root,

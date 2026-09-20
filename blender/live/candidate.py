@@ -19,8 +19,6 @@ def export_copy(args):
         raise ValueError('Capture dimension must be 64..4096')
     scene = bpy.context.scene
     camera_state(scene)
-    # Only dependencies already referenced by this explicitly selected GUI state.
-    pinned = pin_dependencies(None)
     camera = scene.camera
     original_location, original_rotation = camera.location.copy(), camera.rotation_euler.copy()
     angle = args.get('angle')
@@ -28,6 +26,8 @@ def export_copy(args):
     if angle is not None:
         if not isinstance(angle, dict) or set(angle) != {'degrees', 'target'}:
             raise ValueError('Invalid angle request')
+        if camera.library or camera.parent or camera.constraints or camera.animation_data or camera.data.animation_data or camera.rotation_mode != 'XYZ':
+            raise ValueError('operation_unsupported: angle capture needs a static independent camera')
         degrees = scalar(angle['degrees'], -180, 180)
         target = angle['target']
         if not isinstance(target, list) or len(target) != 3:
@@ -39,6 +39,9 @@ def export_copy(args):
         radians = math.radians(degrees)
         angle_location = [target[0]+dx*math.cos(radians)-dy*math.sin(radians),
                           target[1]+dx*math.sin(radians)+dy*math.cos(radians), target[2]+dz]
+        angle_location = [scalar(x, -10000, 10000) for x in angle_location]
+    # Only dependencies already referenced by this explicitly selected GUI state.
+    pinned = pin_dependencies(None)
     r = scene.render
     old = {k: getattr(r, k) for k in ('filepath', 'resolution_x', 'resolution_y', 'resolution_percentage', 'use_compositing', 'use_sequencer')}
     image_old = {k: getattr(r.image_settings, k) for k in ('file_format', 'color_mode', 'color_depth')}
@@ -72,6 +75,7 @@ def export_copy(args):
         finally:
             if angle_location is not None:
                 camera.location, camera.rotation_euler = original_location, original_rotation
-                bpy.context.view_layer.update()
             for k, v in old.items(): setattr(r, k, v)
             for k, v in image_old.items(): setattr(r.image_settings, k, v)
+            # Flush both camera and render-setting restoration before publishing identity.
+            bpy.context.view_layer.update()
