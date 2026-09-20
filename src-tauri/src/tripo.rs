@@ -229,7 +229,8 @@ pub async fn submit(
     let (bytes, mime) = image_bytes(&manifest)?;
     {
         let db = db.lock().map_err(|_| failure())?;
-        let current = job(&storage::raw_project(&db)?, id)?;
+        let project = storage::raw_project(&db)?;
+        let current = job(&project, id)?;
         if current["remote"]["task_id"].as_str().is_some() {
             return Err(
                 "この生成要求はすでに送信済みです。新規送信せず状態を確認してください".into(),
@@ -269,7 +270,8 @@ pub async fn submit(
 }
 fn saved_task(db: &Mutex<Connection>, id: &str) -> Result<String, String> {
     let db = db.lock().map_err(|_| failure())?;
-    let task = job(&storage::raw_project(&db)?, id)?["remote"]["task_id"]
+    let project = storage::raw_project(&db)?;
+    let task = job(&project, id)?["remote"]["task_id"]
         .as_str()
         .ok_or("Tripoのtask IDがありません。新規送信せず要求を確認してください")?;
     if !task_id(task) {
