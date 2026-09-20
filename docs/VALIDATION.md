@@ -446,3 +446,18 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 追試: [run 35477035742](https://github.com/kdob1042/manga-mac/actions/runs/35477035742) / dev `4084260abe77368d5b51126be393695233488cec`（PR #190反映後）で全チェック成功。macOS validationは2026-09-19 23:59 UTCに完了し、nativeテスト **82 pass / 3 ignored**、clippy `-D warnings`、Swift画像エンジン、TauriのApple Silicon向けapp/DMGビルドが成功した。未署名検証DMGは同runの `Manga-Mac-Apple-Silicon-validation` artifact（ID `10595340393`、ZIP SHA-256 `45eba49cf5247b898aa4b777a616541e82cb3903ea6dea69101cbb0d3d260e59`）。前回のclippy失敗は解消済み。
 
 この成功で更新するのはnativeビルド・自動試験の判定であり、Mac実機でのGUI live往復・実LLMの自然言語判断・候補採用/Undo通し受入・24GB性能は未実施のまま。#184〜#187を継続し、#175はopenを維持する。main昇格と配布用DMGはPR #188で追跡する。
+
+### Mac GUIの実MCP受入（#192 / PR #193）
+
+2026-09-20、[run 35480970981](https://github.com/kdob1042/manga-mac/actions/runs/35480970981) / commit `e3d7e087904ae9886c776113c4fcb41c563d95a2`で **macOS 26.6.2 arm64 / Blender 4.5.13 LTS / EEVEE** の実GUI試験14項目がpass。`bpy.app.background=false`、GUI window 1件を実行時に検査した。従来の「Mac GUI未実施」のうち、Blenderアドオン/MCP単体の判定をこの結果で更新する。
+
+- 認証拒否、未保存lens/frame取得、evaluated state、古い観測の拒否、実constraint influence変更。
+- 手動制御中の書込み拒否、viewport offscreen画像、camera render画像、作業状態の新規copy保存、pending要求中のGUI停止。
+- release後の旧client拒否と明示再接続。実undo/redo/file load後のepoch変更・manual制御への移行・旧clientの拒否。再claim後も古い観測による操作を拒否する。
+- 画像を実際に開き、viewportはグリッド・選択表示を持つ作業画面、cameraは別視点の立方体レンダリングで、空画像ではないことを確認。両画像は同じinstance/epochに属し、それぞれの観測revisionと取得方式を記録する。画像同士のrevisionが同じとは仮定しない。
+
+証跡: 同runの `Live-Blender-macOS-GUI` artifact（ID `10595124244`）、`blender-environment.json`、`live-acceptance.json`、両PNG、Blenderログ。Linux追試 [run 35480970949](https://github.com/kdob1042/manga-mac/actions/runs/35480970949) も追加失効ケースを含め成功。
+
+同fixtureには、アプリ本体と同じRust `blender_live::command` を使う実接続試験も追加した。専用Mac workflowでコンパイルしたtest binaryをGUI稼働中に呼び、誤token/instance/file/scene/view layer/作品の拒否、観測、切断・再接続を検査し、`native_client`の結果をJSONへ残す。通常のunit testではGUI必須試験を明示ignoreし、専用workflowでだけ実行する。最新結果はPR #193を参照。
+
+この結果は配布Tauriアプリの設定画面・候補採用/Undoの通し操作、設定済み実LLMの判断、個人Macの24GB性能を含まない。これらは #184 / #186 / #187 で継続する。異なるrig・アドオン・GPU環境すべての互換性やviewport fallbackの全経路を保証する試験でもない。
