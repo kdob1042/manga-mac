@@ -5,7 +5,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { call } from './bridge';
 import { recordLiveCandidate, adoptLiveCandidate, recordLiveVideoCapture } from './live-candidates';
 import { liveCall, liveWork, directoryWork, openLiveShot, handoffLive, yieldLive, verifyLiveMappings, assertLiveTarget, createLiveBinding } from './live-blender';
-export default function ShotControls({ project, current, commit, chosen, busy, run, scopeType = 'panel', captureSize }) {
+export default function ShotControls({ project, current, commit, chosen, busy, run, scopeType = 'panel', captureSize, cancelled=()=>false }) {
   const [message,setMessage]=useState(''),[preview,setPreview]=useState(null),[observed,setObserved]=useState(null);
   const [character,setCharacter]=useState(''),[object,setObject]=useState('');
   const [width,setWidth]=useState(768),[height,setHeight]=useState(768);
@@ -66,7 +66,7 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
         <label>角度（度、カンマ区切り・最大5個）<input value={angleText} onChange={e=>setAngleText(e.target.value)}/></label>
         <button disabled={busy||!angleTarget} onClick={()=>run('アングル候補を撮影中',async()=>{
           stopAngles.current=false;setAnglePreviews([]);
-          await captureAngles({current:()=>current.current,commit,call,panelId:chosen.id,targetObject:angleTarget,degrees:angleText.split(',').filter(s=>s.trim()).map(Number),width,height,cancelled:()=>stopAngles.current,notify:setMessage,onCapture:p=>setAnglePreviews(old=>[...old,p])});
+          await captureAngles({current:()=>current.current,commit,call,panelId:chosen.id,targetObject:angleTarget,degrees:angleText.split(',').filter(s=>s.trim()).map(Number),width,height,cancelled:()=>stopAngles.current||cancelled(),notify:setMessage,onCapture:p=>setAnglePreviews(old=>[...old,p])});
           setMessage('アングル候補を保存しました。比較して採用できます。元のカメラ位置は保持しています。');
         })}>アングル候補を撮影</button>
         <button disabled={!busy} onClick={()=>{stopAngles.current=true;setMessage('現在の撮影が終わったら停止します。完成済みの候補は残ります。');}}>連続撮影を停止</button>

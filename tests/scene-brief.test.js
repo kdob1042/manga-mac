@@ -15,3 +15,14 @@ test('stale GUI and changed reference bytes cannot be handed off as the intended
  await assert.rejects(buildSceneBrief(project,panel,{...target,epoch:'new'}),/target_unknown/);
  await assert.rejects(buildSceneBrief({...project,characters:[{...project.characters[0],hash:'bad'}]},panel,target),/版が一致/);
 });
+test('handoff ZIP roundtrip preserves source text, reference bytes and named manifest paths',async()=>{
+ const {sceneBriefArchive}=await import('../src/scene-brief.js');
+ const {default:JSZip}=await import('jszip');
+ const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
+ const input={...project,characters:[{...project.characters[0],image:png}]};
+ const zip=await JSZip.loadAsync(await (await sceneBriefArchive(input,panel,target)).arrayBuffer());
+ const brief=JSON.parse(await zip.file('brief.json').async('string'));
+ assert.equal(await zip.file('source.txt').async('string'),'必要な原文。');
+ assert.equal(await zip.file(brief.references[0].path).async('base64'),png.split(',')[1]);
+ assert.equal(brief.live.file,target.file);assert.ok(zip.file('README.txt'));
+});

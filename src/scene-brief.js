@@ -32,6 +32,7 @@ export async function buildSceneBrief(project,panel,observation) {
   }
   const brief={schema:'manga-mac/scene-brief/v1',work_id:project.workId??null,panel_id:panel.id,
     source:{snapshot_id:snapshot.id,repo:snapshot.repo,commit:snapshot.sha,scene_id:panel.sceneId,text,
+      revisions:project.snapshots.filter(s=>s.id===snapshot.id||panel.sourceRefs?.some(r=>r.snapshotId===s.id)).map(s=>({id:s.id,repo:s.repo,commit:s.sha})),
       refs:panel.sourceRefs??null,unit_ids:panel.unitIds??[],design:snapshot.scenes.find(s=>s.id===panel.sceneId)?.design??''},
     context:{scene_text:snapshot.scenes.find(s=>s.id===panel.sceneId)?.text??'',settings:(snapshot.settings??[]).map(s=>({id:s.id,path:s.path,text:s.text}))},
     request:panel.prompt??'',references,
