@@ -323,9 +323,9 @@ pub fn video_pricing(model: &VideoModel, duration: u64, ratio: &str) -> Result<V
     let calculated = rate.checked_mul(duration).ok_or("Invalid cost")?;
     let estimated = calculated.max(minimum);
     Ok(json!({
-        "estimated_credits": estimated,
+        "credits": estimated,
         "rate": rate,
-        "minimum_credits": minimum,
+        "minimum": minimum,
         "tier": tier,
         "checked_at": pricing.get("checked_at").cloned().unwrap_or(Value::Null)
     }))
@@ -390,9 +390,9 @@ mod tests {
         assert_eq!(model.request_profile, "seedance-keyframes-v1");
         assert!(model.end_frame);
         assert_eq!(model.max_prompt_utf16, 15000);
-        assert_eq!(video_pricing(&model, 4, "854:480").unwrap()["estimated_credits"], 80);
-        assert_eq!(video_pricing(&model, 5, "1280:720").unwrap()["estimated_credits"], 150);
-        assert_eq!(video_pricing(&model, 5, "1920:1080").unwrap()["estimated_credits"], 340);
+        assert_eq!(video_pricing(&model, 4, "854:480").unwrap()["credits"], 80);
+        assert_eq!(video_pricing(&model, 5, "1280:720").unwrap()["credits"], 150);
+        assert_eq!(video_pricing(&model, 5, "1920:1080").unwrap()["credits"], 340);
         assert!(video_pricing(&model, 3, "1280:720").is_err());
         assert!(video_pricing(&model, 5, "1000:1000").is_err());
     }
