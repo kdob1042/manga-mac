@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultImageModelId, defaultVideoModelId, imageModels, videoModels, imageModel, videoConnection } from '../src/media.js';
+import { defaultImageModelId, defaultVideoModelId, imageModels, videoModels, imageModel, videoModel, videoConnection } from '../src/media.js';
 import { imageRequest, generationSize } from '../src/image-input.js';
 import { videoConnectionSupportsEndFrame } from '../src/video.js';
 
@@ -9,7 +9,9 @@ test('the public registry exposes only implemented adapters and freezes defaults
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
   assert.ok(imageModels.length >= 2);
   assert.ok(imageModels.every(model => model.adapter_id === 'media-generation-kit'));
-  assert.deepEqual(videoModels.map(model => model.adapter_id), ['runway']);
+  assert.equal(videoModels.length, 2);
+  assert.ok(videoModels.every(model => model.adapter_id === 'runway' && model.provider === 'runway'));
+  assert.deepEqual(videoModels.map(model => model.model_id), ['gen4.5', 'gen4_turbo']);
   assert.throws(() => imageModel('qwen-image'), /未対応/);
   assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
 });
@@ -28,6 +30,19 @@ test('video selection is explicit and test-only end-frame support stays out of p
   assert.deepEqual(connection, { id: 'connection:1', provider: 'runway', model: 'gen4.5', adapter_id: 'runway' });
   assert.equal(videoConnectionSupportsEndFrame(connection), false);
   assert.equal(videoConnectionSupportsEndFrame({ id: 'fixture', provider: 'fixture', model: 'end-frame-v1' }), true);
+});
+
+test('Runway stays one provider while model capabilities and pricing vary by descriptor', () => {
+  const gen45 = videoModel('runway-gen4-5');
+  const turbo = videoModel('runway-gen4-turbo');
+  assert.equal(gen45.provider, 'runway');
+  assert.equal(turbo.provider, 'runway');
+  assert.equal(gen45.adapter_id, turbo.adapter_id);
+  assert.deepEqual(gen45.input.durations_sec, [2,3,4,5,6,7,8,9,10]);
+  assert.deepEqual(turbo.input.durations_sec, [2,3,4,5,6,7,8,9,10]);
+  assert.equal(gen45.pricing.credits_per_second, 12);
+  assert.equal(turbo.pricing.credits_per_second, 5);
+  assert.deepEqual(videoConnection('runway-gen4-turbo', 'connection:2'), { id: 'connection:2', provider: 'runway', model: 'gen4_turbo', adapter_id: 'runway' });
 });
 
 test('both native model definitions produce distinct pinned requests and enforce reference limits', () => {
