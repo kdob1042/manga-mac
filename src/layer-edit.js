@@ -54,7 +54,7 @@ export function planLayerMove(project,job,state,instruction) {
  if(!match)throw Error('レイヤー編集中は「人物名を少し左へ」などの移動、または局所色変更を使ってください。向き・ポーズ変更は未対応です');
  if(state.owner!=='app'||job.status!=='running')throw Error('編集状態を確認し、操作権をアプリに戻してください');
  const panel=project.panels.find(p=>p.id===job.panelId),people=project.characters.filter(c=>c.name===match[1]&&panel?.characterIds.includes(c.id));
- const layers=state.layers.filter(l=>l.visible&&job.compositor.bindings[l.id]===people[0]?.id);
+ const layers=state.layers.filter(l=>l.raster&&!l.parent&&l.visible&&job.compositor.bindings[l.id]===people[0]?.id);
  if(people.length!==1||layers.length!==1)throw Error('人物と対象レイヤーの対応を一つに確定してください');
  const layer=layers[0],horizontal=['左','右'].includes(match[3]),delta=Math.max(1,Math.round((horizontal?state.width:state.height)*(match[2]?.025:.1)))*(['左','上'].includes(match[3])?-1:1);
  return {layer:layer.id,x:layer.x+(horizontal?delta:0),y:layer.y+(horizontal?0:delta),width:layer.width,height:layer.height,rotation:layer.rotation,visible:layer.visible};

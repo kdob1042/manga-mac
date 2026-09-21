@@ -156,9 +156,11 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
     }
     if job["kind"] == "layer_edit" {
         let fixed = &job["layer_edit"];
-        if fixed != &context["layer_edit"] || fixed["preset"] != "colour-only"
+        if fixed != &context["layer_edit"]
+            || fixed["preset"] != "colour-only"
             || fixed["target_hash"] != request["original_hash"]
-            || fixed["width"] != request["width"] || fixed["height"] != request["height"]
+            || fixed["width"] != request["width"]
+            || fixed["height"] != request["height"]
         {
             return Err("レイヤー編集の保存済み入力が一致しません".into());
         }
@@ -166,22 +168,46 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
         let rect = fixed["rect"].as_array().ok_or("Missing colour region")?;
         let coords: Option<Vec<f64>> = rect.iter().map(Value::as_f64).collect();
         let r = coords.ok_or("Invalid colour region")?;
-        if colour.len() != 7 || !colour.starts_with('#') || !colour[1..].bytes().all(|b| b.is_ascii_hexdigit())
-            || r.len() != 4 || r.iter().any(|n| !n.is_finite() || *n < 0.0 || *n > 1.0)
-            || r[2] <= 0.0 || r[3] <= 0.0 || r[0] + r[2] > 1.0 || r[1] + r[3] > 1.0
-        { return Err("Invalid colour-only preset or region".into()); }
-        let owner = hydrated["jobs"].as_array().ok_or("Missing jobs")?.iter()
-            .find(|j| j["id"] == fixed["source"]["session"]).ok_or("Missing source editor job")?;
-        let layer = fixed["source"]["layer"].as_str().ok_or("Missing layer UUID")?;
-        if owner["panelId"] != job["panelId"] || owner["compositor"]["bindings"][layer] != fixed["character_id"] {
+        if colour.len() != 7
+            || !colour.starts_with('#')
+            || !colour[1..].bytes().all(|b| b.is_ascii_hexdigit())
+            || r.len() != 4
+            || r.iter().any(|n| !n.is_finite() || *n < 0.0 || *n > 1.0)
+            || r[2] <= 0.0
+            || r[3] <= 0.0
+            || r[0] + r[2] > 1.0
+            || r[1] + r[3] > 1.0
+        {
+            return Err("Invalid colour-only preset or region".into());
+        }
+        let owner = hydrated["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == fixed["source"]["session"])
+            .ok_or("Missing source editor job")?;
+        let layer = fixed["source"]["layer"]
+            .as_str()
+            .ok_or("Missing layer UUID")?;
+        if owner["panelId"] != job["panelId"]
+            || owner["compositor"]["bindings"][layer] != fixed["character_id"]
+        {
             return Err("Layer character mapping is not confirmed".into());
         }
-        let refs = request["references"].as_array().ok_or("Missing layer references")?;
-        let expected = fixed["references"].as_array().ok_or("Missing fixed references")?;
-        if refs.len() != expected.len() { return Err("Layer reference count changed".into()); }
+        let refs = request["references"]
+            .as_array()
+            .ok_or("Missing layer references")?;
+        let expected = fixed["references"]
+            .as_array()
+            .ok_or("Missing fixed references")?;
+        if refs.len() != expected.len() {
+            return Err("Layer reference count changed".into());
+        }
         for (actual, saved) in refs.iter().zip(expected) {
             for key in ["id", "name", "hash", "role"] {
-                if actual[key] != saved[key] { return Err("Layer reference roles changed".into()); }
+                if actual[key] != saved[key] {
+                    return Err("Layer reference roles changed".into());
+                }
             }
         }
     }

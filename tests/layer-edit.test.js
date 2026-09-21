@@ -31,7 +31,7 @@ test('target, lettering-free context and confirmed character references are actu
 test('named movement requires one confirmed person and layer; unsupported edits fail closed',async()=>{
  const {planLayerMove}=await import('../src/layer-edit.js');
  const project={characters:[{id:'a',name:'神谷'}],panels:[{id:'p',characterIds:['a']}]},job={panelId:'p',status:'running',compositor:{bindings:{l:'a'}}};
- const state={owner:'app',width:400,height:400,layers:[{id:'l',visible:true,x:100,y:100,width:50,height:80,rotation:0}]};
+ const state={owner:'app',width:400,height:400,layers:[{id:'l',raster:true,visible:true,x:100,y:100,width:50,height:80,rotation:0}]};
  assert.equal(planLayerMove(project,job,state,'神谷を少し左へ').x,90);
  assert.throws(()=>planLayerMove(project,job,state,'神谷を左に向かせて'),/未対応/);
  assert.throws(()=>planLayerMove(project,job,{...state,owner:'human'},'神谷を少し左へ'),/操作権/);

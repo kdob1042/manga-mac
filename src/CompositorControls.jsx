@@ -9,6 +9,7 @@ export default function CompositorControls({project,panel,current,commit,run,bus
  const job=project.jobs.find(j=>j.compositor&&['compositor','decompose','layer_edit'].includes(j.kind)&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
  const sessionId=job?.compositor.session_id??job?.id;
  useEffect(()=>{const receive=e=>{if(e.detail.sessionId===sessionId)setState(e.detail.state);};window.addEventListener('compositor-state',receive);return()=>window.removeEventListener('compositor-state',receive);},[sessionId]);
+ useEffect(()=>{const selected=state?.layers?.find(l=>l.id===layer);if(selected){setX(selected.x);setY(selected.y);}},[state,layer]);
  const observe=async value=>{
    const next=value.state??value;setState(next);
    if(job&&next.layers){const saved=current.current.jobs.find(j=>j.id===job.id),bindings=reconcileBindings(saved.compositor.bindings,next,current.current.characters);await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:j.kind==='layer_edit'&&!j.layer_edit_applied?j.status:'running',compositor:{...j.compositor,bindings}}:j)});}
@@ -47,7 +48,7 @@ export default function CompositorControls({project,panel,current,commit,run,bus
  <LayerColourControls job={job} state={state} layer={layer} current={current} commit={commit} run={run} busy={busy} onState={setState}/>
  <button disabled={state.owner!=='app'} onClick={()=>run('直接調整へ引継ぎ',()=>send('handoff'))}>直接調整する</button>
  <button disabled={state.owner!=='app'} onClick={()=>run('Codexへ引継ぎ',()=>send('handoff',{to:'codex'}))}>Codexに渡す</button>
- {state.owner==='codex'&&<p>セッションID: <code>{job.id}</code>。連携版の integrations/compositor/client.py から限定操作できます。</p>}
+ {state.owner==='codex'&&<p>セッションID: <code>{sessionId}</code>。連携版の integrations/compositor/client.py から限定操作できます。</p>}
  <button disabled={state.owner==='app'} onClick={()=>run('アプリへ戻す',()=>send('claim'))}>アプリに戻す</button>
  <button disabled={state.owner!=='app'||(job.kind==='layer_edit'&&!job.layer_edit_applied)} onClick={()=>run('編集版と合成画像を候補に保存',()=>send('snapshot'))}>この版を候補に保存</button></>}
  </fieldset></details>;
