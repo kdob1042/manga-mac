@@ -66,8 +66,6 @@ fn frame_bytes(
         || height == 0
         || width > 8192
         || height > 8192
-        || width * 2 < height
-        || width > height * 2
         || width * h != height * w
     {
         return Err(format!(
