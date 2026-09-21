@@ -78,8 +78,15 @@ def main(app):
             assert moved['ok']
             state = request('claim', moved['value'])['value']
             assert not request('transform', {**state, 'instance':str(uuid.uuid4())}, layer=ids[1], x=7, y=0, width=32, height=32, rotation=0, visible=True)['ok']
+            captured = request('capture_layer', state, layer=ids[1])['value']
+            assert captured['target'].startswith('data:image/png;base64,')
+            imported = request('import_candidate', state, layer=ids[1], image=captured['target'])['value']
+            assert imported['candidate_layer'] != ids[1]
+            state = imported['state']
+            assert len(state['layers']) == 3
+            assert next(l for l in state['layers'] if l['id']==ids[1])['visible'] is False
             saved = request('snapshot', state)['value']
-            assert saved['bundle']['images'] == baseline['bundle']['images'], 'Placement must not change source pixels'
+            assert all(saved['bundle']['images'][name] == value for name,value in baseline['bundle']['images'].items()), 'Candidate import must not change source pixels'
             assert saved['image'] != baseline['image'], 'Actual renderer must reflect placement'
             assert saved['bundle']['manifest']['layers'][0] == baseline['bundle']['manifest']['layers'][0]
             # Repeat exact ID by leaving request.json in place: response and revision must be unchanged.

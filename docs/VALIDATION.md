@@ -542,3 +542,10 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
   手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
 - AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
 - この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。
+
+### 参照付き局所色編集（#224）
+
+- Node fixture: 対象／文脈／人物画像の実入力と役割／hash固定。
+- Rust PNG fixture: 低alpha=1、透明画素のhidden RGB、半透明の範囲外画素をPNG decode→色合成→encode→decodeで完全保持。Canvasを通さない。
+- 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
+- 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。

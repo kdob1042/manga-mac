@@ -127,7 +127,7 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
         return Err("画像モデルが対応しない縦横・寸法です".into());
     }
     let operation = match request["recovery"]["kind"].as_str() {
-        Some("edit") => "edit",
+        Some("edit" | "layer_edit") => "edit",
         Some("retake") if request["recovery"]["panel"]["finishing"].is_object() => "finishing",
         Some("retake") => "retake",
         Some("generate") => "generate",
@@ -151,6 +151,11 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
         {
             return Err("レイヤー分解の入力・枚数が不正です".into());
         }
+    }
+    if request["recovery"]["kind"] == "layer_edit"
+        && request["recovery"]["layer_edit"]["runtime"] != descriptor["runtime"]
+    {
+        return Err("レイヤー編集の実行版が登録情報と一致しません".into());
     }
     let references = request["references"]
         .as_array()

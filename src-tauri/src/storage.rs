@@ -4,6 +4,8 @@ pub mod backup;
 pub mod draft;
 #[path = "image_recovery.rs"]
 pub mod image_recovery;
+#[path = "layer_colour.rs"]
+pub mod layer_colour;
 #[path = "layout.rs"]
 pub mod layout;
 #[path = "lettering.rs"]
@@ -656,6 +658,9 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value, native_source_write: bool
                 "active_snapshot",
                 "placement_key",
                 "finishing",
+                "media",
+                "layered",
+                "layer_edit",
             ] {
                 if target[field] != job[field] {
                     return Err("Submitted job inputs are immutable".into());
