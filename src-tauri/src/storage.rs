@@ -659,6 +659,7 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value, native_source_write: bool
                 "placement_key",
                 "finishing",
                 "media",
+                "cloud_connection",
                 "layered",
                 "layer_edit",
             ] {

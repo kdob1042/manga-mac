@@ -114,7 +114,7 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
     {
         return Err("画像の実行先定義が登録情報と一致しません".into());
     }
-    if selected.adapter_id != "media-generation-kit" {
+    if !["media-generation-kit", "runway-image"].contains(&selected.adapter_id.as_str()) {
         return Err("選択した画像adapterはまだ接続されていません".into());
     }
     let width = request["width"].as_u64().ok_or("画像幅がありません")?;

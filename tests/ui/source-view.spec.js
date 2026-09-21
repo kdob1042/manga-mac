@@ -57,10 +57,27 @@ test('old text has labeled red deletion and replacement; work switch and stale b
  await expect(view.getByRole('button',{name:'選択箇所を漫画に反映',exact:true})).toBeDisabled();
 });
 test('first draft, empty target and moves remain block operations',async({page})=>{
- let view=await mount(page,'','A\n\nB');await expect(view.getByRole('checkbox')).toHaveCount(1);await expect(view.locator('.source-applied')).toHaveCount(0);
+ let view=await mount(page,'','A\n\nB');await expect(view.getByRole('checkbox')).toHaveCount(2);await expect(view.locator('.source-applied')).toHaveCount(0);
  view=await mount(page,'A\n\nB','');await expect(view.getByRole('checkbox')).toHaveCount(1);await expect(view.locator('.source-deletion')).toContainText('A\n\nB');
  view=await mount(page,'A\n\nB\n\nC\n\nD','B\n\nC\n\nD\n\nA');
  await expect(view.getByRole('button',{name:'移動元・移動先をまとめて選択'})).toBeVisible();await view.getByRole('button',{name:'移動元・移動先をまとめて選択'}).click();await expect(view.getByRole('checkbox')).toBeChecked();await expect(view.getByRole('status')).toHaveText('1 / 1 ブロックを選択');
  await page.evaluate(()=>{window.sourceBusy=true;window.renderSource();});await expect(view.getByRole('checkbox')).toBeDisabled();
  await page.screenshot({path:'test-results/source-move.png',fullPage:true});
+});
+
+test('six initial paragraphs support selecting only the second through fourth',async({page})=>{
+ const view=await mount(page,'','A\n\nB\n\nC\n\nD\n\nE\n\nF');
+ const checks=view.getByRole('checkbox');await expect(checks).toHaveCount(6);
+ for(const i of [1,2,3])await checks.nth(i).check();
+ await view.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();
+ expect(await page.evaluate(()=>window.appliedSelections[0].selectedBlockIds.length)).toBe(3);
+ expect(await page.evaluate(()=>window.aiRequests)).toEqual([]);
+});
+test('applied paragraphs have an explicit replan entry',async({page})=>{
+ const view=await mount(page,'A\n\nB','A\n\nB');
+ await expect(view.getByRole('checkbox')).toHaveCount(0);
+ await view.getByRole('button',{name:'反映済み原稿も選んでネームを再計画'}).click();
+ await expect(view.getByRole('checkbox')).toHaveCount(2);await view.getByRole('checkbox').first().check();
+ await view.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();
+ expect(await page.evaluate(()=>window.appliedSelections[0].budget.replanApplied)).toBe(true);
 });

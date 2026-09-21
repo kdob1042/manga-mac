@@ -20,7 +20,7 @@ export function imageRequest({ panel, references, original, originalHash, width,
   if (original && !/^[0-9a-f]{64}$/.test(originalHash ?? '')) throw Error('元画像のハッシュが必要です');
   const selected = validateImageDimensions(modelId, width, height);
   validateImageReferences(modelId, references);
-  return { job: job ? { id: job.id, input_hash: job.input_hash, base_revision: job.base_revision, source_revision: job.source_revision, scope: job.scope } : null,
+  return { ...(job?.cloud_connection?{cloud_connection:job.cloud_connection}:{}), job: job ? { id: job.id, input_hash: job.input_hash, base_revision: job.base_revision, source_revision: job.source_revision, scope: job.scope } : null,
     prompt: `${panel.prompt}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${references.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`,
     references, original, original_hash: originalHash ?? null, width, height, seed, steps: selected.input.steps,
     media: { registry_id: selected.id, adapter_id: selected.adapter_id, model_id: selected.model_id },

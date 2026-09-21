@@ -64,6 +64,9 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             return Err("Image job inputs changed".into());
         }
     }
+    if job["cloud_connection"] != request["cloud_connection"] {
+        return Err("クラウド接続が保存済みJobと一致しません".into());
+    }
     if job.get("media").is_some() && job["media"] != request["media"] {
         return Err("保存済み画像要求の実行先を変更できません".into());
     }
@@ -426,6 +429,62 @@ fn recover_layers(
     )
 }
 
+pub fn store_remote(
+    db: &std::sync::Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    bytes: &[u8],
+) -> Result<Value> {
+    let connection = db.lock().map_err(err)?;
+    let project = raw_project(&connection)?;
+    let job = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .find(|j| j["id"] == id)
+        .ok_or("Missing job")?;
+    if job["remote"]["kind"] != "runway-image"
+        || bytes.len() < 33
+        || bytes.len() > MAX_IMAGE as usize
+        || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+    {
+        return Err("クラウド画像の形式を確認できません".into());
+    }
+    let generation = &job["local_image"]["context"]["panel"]["generation"];
+    if generation["width"] != u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?)
+        || generation["height"] != u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?)
+    {
+        return Err("クラウド画像の寸法が一致しません".into());
+    }
+    let dir = directory(root, id)?;
+    if !fs::symlink_metadata(&dir)
+        .map_err(err)?
+        .file_type()
+        .is_dir()
+    {
+        return Err("Invalid image directory".into());
+    }
+    let receipt = json!({"request_hash":job["local_image"]["request_hash"],"hash":hash(bytes)});
+    for (name, data) in [
+        ("result.png", bytes.to_vec()),
+        ("receipt.json", receipt.to_string().into_bytes()),
+    ] {
+        let path = dir.join(name);
+        let artifact = put(&dir, &data)?;
+        match fs::hard_link(dir.join(artifact), &path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if read_bounded(&path, MAX_IMAGE)? != data {
+                    return Err("既存の画像結果が一致しません".into());
+                }
+            }
+            Err(e) => return Err(err(e)),
+        }
+    }
+    sync_dir(&dir)?;
+    recover(&connection, root, id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,6 +524,45 @@ mod tests {
             json!({"request_hash":destination["request_hash"],"hash":hash(&bytes)}).to_string(),
         )
         .unwrap();
+    }
+    #[test]
+    fn cloud_receipt_reuses_atomic_files_and_preserves_adopted_art() {
+        let (mut db, root, project, request) = setup();
+        reserve(&mut db, &root, &request).unwrap();
+        update_remote_job(&mut db, "local-1", |_, _| {
+            Ok(json!({"kind":"runway-image","task_id":"saved-task"}))
+        })
+        .unwrap();
+        let bytes = STANDARD
+            .decode(
+                request["recovery"]["original"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap()
+                    .1,
+            )
+            .unwrap();
+        let dir = directory(&root, "local-1").unwrap();
+        let artifact = put(&dir, &bytes).unwrap();
+        fs::hard_link(dir.join(artifact), dir.join("result.png")).unwrap();
+        fs::write(dir.join(".pending-interrupted"), b"partial").unwrap();
+        let db = std::sync::Mutex::new(db);
+        let result = store_remote(&db, &root, "local-1", &bytes).unwrap();
+        assert_eq!(store_remote(&db, &root, "local-1", &bytes).unwrap(), result);
+        let connection = db.lock().unwrap();
+        assert_eq!(recover(&connection, &root, "local-1").unwrap(), result);
+        let saved: Value =
+            serde_json::from_str(&load(&connection, &root).unwrap().unwrap()).unwrap();
+        assert_eq!(saved["panels"], project["panels"]);
+        assert!(store_remote(
+            &std::sync::Mutex::new(Connection::open_in_memory().unwrap()),
+            &root,
+            "unknown",
+            &bytes
+        )
+        .is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn layer_colour_receipt_preserves_target_and_rejects_changed_reference_roles() {

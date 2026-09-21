@@ -48,3 +48,19 @@ test('catalog work selection only exposes manga works to the production app',()=
  assert.deepEqual(availableStoryWorks(catalog,'manga').map(work=>work.id),['work-a']);
  assert.deepEqual(availableStoryWorks(catalog,'novel').map(work=>work.id),['work-b']);
 });
+
+
+test('fetches selected dev branch head and pins all library files to it',async()=>{
+ const calls=[];const devSha='d'.repeat(40);
+ const invoke=async(command,args)=>{
+  calls.push({command,args});
+  if(command==='github_get')return JSON.stringify({sha:devSha});
+  if(command==='github_file'&&args.path==='library.json')return JSON.stringify(catalog);
+  if(command==='github_file'&&args.path==='migrations/source-map.json')return JSON.stringify(sourceMap);
+  throw Error('unexpected '+command+' '+args.path);
+ };
+ const library=await fetchStoryLibrary('owner/library','token',invoke,'dev');
+ assert.equal(library.branch,'dev');assert.equal(library.sha,devSha);
+ assert.equal(calls.find(call=>call.command==='github_get').args.path,'commits/dev');
+ assert.ok(calls.filter(call=>call.command==='github_file').every(call=>call.args.sha===devSha));
+});

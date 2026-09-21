@@ -724,6 +724,210 @@ pub async fn cancel(
     })
 }
 
+// Static images reuse Runway's transport, ephemeral credentials, existing image
+// receipts and the project Job. A task ID is durably recorded before polling.
+pub fn image_payload(input: &Value) -> Result<Value, String> {
+    if input["media"]["model_id"] != "gen4_image" || input["width"] != 720 || input["height"] != 720
+    {
+        return Err("Runway静止画はgen4_image / 720×720に対応します".into());
+    }
+    let mut refs = Vec::new();
+    if let Some(original) = input["original"].as_str() {
+        refs.push(json!({"uri":original,"tag":if input["capture"].is_object() {"capture"} else {"original"}}));
+    }
+    for (i, r) in input["references"]
+        .as_array()
+        .ok_or("Missing references")?
+        .iter()
+        .enumerate()
+    {
+        let role = match r["role"].as_str() {
+            Some("character") => "character",
+            Some("style") => "style",
+            Some("context") => "context",
+            None => "reference",
+            _ => return Err("未対応の参照役割です".into()),
+        };
+        refs.push(json!({"uri":r["image"],"tag":format!("{role}{}",i+1)}));
+    }
+    if refs.len() > 3 {
+        return Err("撮影原本・編集元を含め参照は3枚までです".into());
+    }
+    for r in &refs {
+        let uri = r["uri"].as_str().ok_or("Missing image")?;
+        if uri.len() > 5_000_000
+            || ![
+                "data:image/png;base64,",
+                "data:image/jpeg;base64,",
+                "data:image/webp;base64,",
+            ]
+            .iter()
+            .any(|prefix| uri.starts_with(prefix))
+        {
+            return Err("参照画像はPNG/JPEG/WebPの5MB以下にしてください".into());
+        }
+    }
+    let prompt = input["prompt"].as_str().ok_or("Missing prompt")?;
+    let tags = refs
+        .iter()
+        .map(|r| format!("@{}", r["tag"].as_str().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let prompt = format!("{prompt}\nUse references in the given order: {tags}");
+    if prompt.encode_utf16().count() > 1000 {
+        return Err("Runwayの作画指示は参照指定込み1000文字以内にしてください".into());
+    }
+    Ok(
+        json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}),
+    )
+}
+fn image_account(connection: &VideoConnection) -> String {
+    format!("{:x}", Sha256::digest(connection.credential.as_bytes()))
+}
+pub async fn submit_image(
+    db: &Mutex<Connection>,
+    input: &Value,
+    connection: &VideoConnection,
+) -> Result<(), String> {
+    if connection.model != "gen4_image" || connection.adapter_id != "runway-image" {
+        return Err("静止画用の接続を登録してください".into());
+    }
+    let payload = image_payload(input)?;
+    let id = input["job"]["id"].as_str().ok_or("Missing image job")?;
+    let account = image_account(connection);
+    update(db, id, |p, j| {
+        if j.get("remote").is_some() || j["status"] != "running" || j["media"] != input["media"] {
+            return Err("送信済みまたは異なる画像要求です".into());
+        }
+        let used: u64 = p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .filter(|j| j["remote"]["kind"] == "runway-image")
+            .map(|j| j["remote"]["reserved_credits"].as_u64().unwrap_or(0))
+            .sum();
+        if used.saturating_add(5) > connection.max_credits {
+            return Err("作品の静止画credits上限です".into());
+        }
+        Ok(
+            json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}),
+        )
+    })?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let response = json_response(
+        request(&client, reqwest::Method::POST, url, connection)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    let task = response["id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or_else(failure)?;
+    update(db, id, |_, j| {
+        let mut remote = j["remote"].clone();
+        remote["task_id"] = json!(task);
+        remote["status"] = json!("PENDING");
+        Ok(remote)
+    })?;
+    Ok(())
+}
+pub async fn collect_image(
+    db: &Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    connection: &VideoConnection,
+) -> Result<Value, String> {
+    let remote = {
+        let db = db.lock().map_err(|_| failure())?;
+        let p = storage::raw_project(&db)?;
+        p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == id)
+            .ok_or("Missing job")?["remote"]
+            .clone()
+    };
+    if remote["kind"] != "runway-image"
+        || remote["account"] != image_account(connection)
+        || connection.model != "gen4_image"
+    {
+        return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());
+    }
+    {
+        let db = db.lock().map_err(|_| failure())?;
+        if let Ok(saved) = storage::image_recovery::recover(&db, root, id) {
+            return Ok(saved);
+        }
+    }
+    let task = remote["task_id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or("送信応答が未確定です。自動再送しません")?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let value = json_response(
+        request(&client, reqwest::Method::GET, url, connection)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    if value["status"] != "SUCCEEDED" {
+        return Err(format!(
+            "静止画処理状態: {}。後で保存済み作画を回収してください",
+            value["status"].as_str().unwrap_or("UNKNOWN")
+        ));
+    }
+    let url = output_url(&value)?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let mut response = client.get(url).send().await.map_err(|_| failure())?;
+    if !response.status().is_success() {
+        return Err(failure());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| failure())? {
+        if bytes.len() + chunk.len() > 24 * 1024 * 1024 {
+            return Err("画像が大きすぎます".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    storage::image_recovery::store_remote(db, root, id, &bytes)
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+    #[test]
+    fn image_wire_contract_rejects_unsupported_inputs_before_post() {
+        let input = json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
+        let payload = image_payload(&input).unwrap();
+        assert_eq!(payload["ratio"], "720:720");
+        assert_eq!(payload["referenceImages"][0]["tag"], "character1");
+        let mut bad = input.clone();
+        bad["width"] = json!(768);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["references"] = json!([
+            input["references"][0],
+            input["references"][0],
+            input["references"][0],
+            input["references"][0]
+        ]);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["prompt"] = json!("x".repeat(1001));
+        assert!(image_payload(&bad).is_err());
+        bad = input;
+        bad["references"][0]["image"] = json!("https://unapproved.example/image.png");
+        assert!(image_payload(&bad).is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -822,62 +1026,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transition_http_fixture_receives_start_and_end_bytes_in_order() {
+    async fn image_and_video_http_fixtures_receive_exact_reference_bytes() {
         let (manifest, start, end) = transition_fixture();
         let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
-        let expected = body.clone();
-        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = server.local_addr().unwrap();
-        let worker = std::thread::spawn(move || {
-            let (mut socket, _) = server.accept().unwrap();
-            socket
-                .set_read_timeout(Some(Duration::from_secs(5)))
+        let image = image_payload(&json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":start,"role":"character"},{"image":end,"role":"style"}]})).unwrap();
+        for (body, path) in [(body, "image_to_video"), (image, "text_to_image")] {
+            let expected = body.clone();
+            let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = server.local_addr().unwrap();
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = server.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut headers = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !headers.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                let text = String::from_utf8(headers).unwrap().to_lowercase();
+                assert!(text.starts_with(&format!("post /v1/{path} ")));
+                assert!(text.contains("authorization: bearer fixture-secret"));
+                let size: usize = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                let mut bytes = vec![0; size];
+                socket.read_exact(&mut bytes).unwrap();
+                assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
+                let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
+                write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
                 .unwrap();
-            let mut headers = Vec::new();
-            let mut byte = [0_u8; 1];
-            while !headers.ends_with(b"\r\n\r\n") {
-                socket.read_exact(&mut byte).unwrap();
-                headers.push(byte[0]);
-            }
-            let text = String::from_utf8(headers).unwrap().to_lowercase();
-            assert!(text.starts_with("post /v1/image_to_video "));
-            assert!(text.contains("authorization: bearer fixture-secret"));
-            let size: usize = text
-                .lines()
-                .find_map(|line| line.strip_prefix("content-length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            let mut bytes = vec![0; size];
-            socket.read_exact(&mut bytes).unwrap();
-            assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
-            let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
-        });
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
+            let connection = VideoConnection {
+                credential: "fixture-secret".into(),
+                max_credits: 60,
+                provider: "runway".into(),
+                model: "gen4.5".into(),
+                adapter_id: "runway".into(),
+            };
+            let response = request(
+                &client,
+                reqwest::Method::POST,
+                reqwest::Url::parse(&format!("http://{address}/v1/{path}")).unwrap(),
+                &connection,
+            )
+            .json(&body)
+            .send()
+            .await
             .unwrap();
-        let connection = VideoConnection {
-            credential: "fixture-secret".into(),
-            max_credits: 60,
-            provider: "runway".into(),
-            model: "gen4.5".into(),
-            adapter_id: "runway".into(),
-        };
-        let response = request(
-            &client,
-            reqwest::Method::POST,
-            reqwest::Url::parse(&format!("http://{address}/v1/image_to_video")).unwrap(),
-            &connection,
-        )
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-        assert!(json_response(response).await.unwrap()["id"].is_string());
-        worker.join().unwrap();
+            assert!(json_response(response).await.unwrap()["id"].is_string());
+            worker.join().unwrap();
+        }
     }
 
     #[test]

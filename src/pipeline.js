@@ -50,17 +50,26 @@ async function sha256(value) {
 export async function syncSource(repo, token, episodeId, previous, invokeCall = call, options = {}) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
   const library = options.library ?? null;
+  const branch = options.branch ?? library?.branch ?? previous?.sync?.source_branch ?? 'main';
+  if (!['dev','main'].includes(branch)) throw Error('原稿ブランチはdevまたはmainを選んでください');
   const pinnedSha = options.commit ?? library?.sha ?? null;
-  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: 'commits/main', token})).sha;
+  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: `commits/${branch}`, token})).sha;
   if (!/^[0-9a-f]{40}$/i.test(sha)) throw Error('取得commitが不正です');
   const workId = options.workId ?? library?.workId ?? null;
   const entryPath = options.entryPath ?? options.manifestPath ?? library?.entryPath ?? library?.manifestPath ?? '';
   const sourceRootOption = options.sourceRoot ?? library?.sourceRoot ?? '';
   if (workId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(workId)) throw Error('作品IDが不正です');
   if (options.sceneId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(options.sceneId)) throw Error('シーンIDが不正です');
-  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo
+  const requestedEpisodeIds = Array.isArray(options.episodeIds) ? [...options.episodeIds] : [episodeId];
+  if (!requestedEpisodeIds.length || new Set(requestedEpisodeIds).size !== requestedEpisodeIds.length || requestedEpisodeIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(id))) throw Error('取り込む話を選んでください');
+  const previousEpisodes = previous?.episodeIds ?? (previous?.episodeId ? [previous.episodeId] : []);
+  const sameSource = previous?.repo === repo && (previous?.workId ?? null) === workId;
+  let episodeIds = sameSource ? [...new Set([...previousEpisodes,...requestedEpisodeIds])] : requestedEpisodeIds;
+  let selectedSceneId = episodeIds.length === 1 ? options.sceneId : null;
+  if (previous?.sha === sha && JSON.stringify(previousEpisodes) === JSON.stringify(episodeIds) && previous.repo === repo
     && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
-    && (previous.selectedSceneId ?? null) === (options.sceneId ?? null)
+    && (previous.sync?.source_branch ?? 'main') === branch
+    && (previous.selectedSceneId ?? null) === (selectedSceneId ?? null)
     && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
   const manifestFile = await readManifest(repo, sha, token, invokeCall, entryPath);
   const manifestText = manifestFile.text;
@@ -78,9 +87,13 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
       return invokeCall('github_file', {repo, path: sourcePath(legacySourceRoot, path), sha, token});
     }
   };
-  const ordered = orderedScenes(model, episodeId);
-  const selected = options.sceneId ? ordered.filter(scene => scene.id === options.sceneId) : ordered;
-  if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは話に存在しません');
+  if(requestedEpisodeIds.some(id=>!model.episodes.some(e=>e.id===id)))throw Error('選択した話が原稿にありません');
+  episodeIds=model.episodes.filter(e=>episodeIds.includes(e.id)).map(e=>e.id);
+  selectedSceneId=episodeIds.length===1?options.sceneId:null;
+  const ordered = episodeIds.flatMap(id => orderedScenes(model, id).map(scene=>({...scene,episodeId:scene.episodeId??id})));
+  if (new Set(ordered.map(scene => scene.id)).size !== ordered.length) throw Error('複数話で場面IDが重複しています');
+  const selected = selectedSceneId ? ordered.filter(scene => scene.id === selectedSceneId) : ordered;
+  if (selectedSceneId && selected.length !== 1) throw Error('選択したシーンは取込対象の話に存在しません');
   const scenes = [];
   for (const s of selected) {
     const text = await read(s.path);
@@ -104,16 +117,17 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     }
     references.push({ ...declaration, ...asset });
   }
-  const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
+  const scope = episodeIds.join('+');
+  const sceneSuffix = selectedSceneId ? `:${selectedSceneId}` : '';
   const snapshot = {
-    id: workId ? `${repo}@${sha}:${workId}:${episodeId}${sceneSuffix}` : `${repo}@${sha}:${episodeId}${sceneSuffix}`,
-    repo, sha, episodeId, manifest, scenes, settings, references,
+    id: workId ? `${repo}@${sha}:${workId}:${scope}${sceneSuffix}` : `${repo}@${sha}:${scope}${sceneSuffix}`,
+    repo, sha, episodeId: episodeIds[0], episodeIds, manifest, scenes, settings, references,
     ...(workId ? {workId} : {}),
-    ...(options.sceneId ? {selectedSceneId: options.sceneId} : {}),
+    ...(selectedSceneId ? {selectedSceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),
     protocol: {version: 1, ...(model.format ? {format: model.format} : {}), manifest_schema_version: manifest.schema_version ?? model.schema_version},
-    sync: {source_commit: sha, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
-    ...(workId ? {library: {repository: repo, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
+    sync: {source_commit: sha, source_branch:branch, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
+    ...(workId ? {library: {repository: repo, branch, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
   return snapshot;
@@ -131,20 +145,20 @@ export async function planScene(scene, snapshot, characters, model, ask = askLLM
   }
   return validatePlan(plan, units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null) {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null, inputMode = 'capture') {
   const selected = imageModel(imageModelId ?? job?.media?.registry_id ?? defaultImageModelId);
   if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
-    return { id, name: c.name, hash: c.hash, image: c.image };
+    return { id, name: c.name, hash: c.hash, image: c.image, role:'character' };
   });
   for (const style of styles) {
     if (!style.image || !style.hash) throw Error('画風参照が不正です');
-    refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image });
+    refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
   }
   let source = original, mapping = null;
-  if (!source && panel.shot_binding && !capture) throw Error('Blenderショットの撮影原本が必要です');
+  if (inputMode !== 'direct' && !source && panel.shot_binding && !capture) throw Error('Blenderショットの撮影原本が必要です');
   if (!source && capture) {
     if (capture.id !== panel.capture_revision || capture.panel_id !== panel.id || capture.session_id !== panel.shot_binding?.session_id) throw Error('撮影版とコマの対応が一致しません');
     const response = await call('blender_capture', { sessionId: capture.session_id, requestId: capture.request_id });

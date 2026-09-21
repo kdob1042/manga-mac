@@ -9,6 +9,7 @@ test('model switching persists without inference and a saved job keeps its origi
  await page.getByRole('button',{name:'接続・人物設定',exact:true}).click();
  const select=page.getByLabel('画像生成モデル',{exact:true});
  await select.selectOption('flux-2-klein-4b-q6-local');
+ await expect.poll(()=>page.evaluate(async()=>(await (await import('/src/bridge.js')).loadProject()).mediaDefaults.image)).toBe('flux-2-klein-4b-q6-local');
  await page.reload();await page.getByRole('button',{name:'接続・人物設定',exact:true}).click();
  await expect(page.getByLabel('画像生成モデル',{exact:true})).toHaveValue('flux-2-klein-4b-q6-local');
  const result=await page.evaluate(async()=>{
