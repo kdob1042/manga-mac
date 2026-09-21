@@ -914,6 +914,27 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn compositor_bundle_uses_existing_immutable_image_artifacts() {
+        let (mut db, dir) = setup();
+        let mut project = fixture();
+        let image = project["panels"][0]["image"].clone();
+        project["panels"][0]["compositor"] = json!({
+            "bundle": {"manifest": {"documentID":"fixture"},
+                "images": {"layer.png": {"image": image}}}, "bindings": {"layer":"person"}
+        });
+        save(&mut db, &dir, &project.to_string()).unwrap();
+        let raw = raw_project(&db).unwrap();
+        assert!(
+            raw["panels"][0]["compositor"]["bundle"]["images"]["layer.png"]["image"]["artifact_id"]
+                .is_string()
+        );
+        drop(db);
+        let db = Connection::open(dir.join("test.sqlite3")).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        assert_eq!(restored, project);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn legacy_restart_and_history_roundtrip() {
         let (mut db, dir) = setup();
         let original = fixture();

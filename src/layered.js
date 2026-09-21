@@ -1,3 +1,4 @@
+import {compositorRevision} from './compositor.js';
 import {beginJob,imageHash} from './revisions.js';
 import {imageExecution,validateImageDimensions} from './media.js';
 
@@ -15,6 +16,8 @@ export async function layeredRequest(project,panel,modelId,count,width,height,se
  const job=await beginJob(project,panel,'decompose',modelId);
  job.layered={layer_count:count,width,height,seed,runtime:structuredClone(model.runtime),output:structuredClone(model.output)};
  const originalHash=await imageHash(panel.image);
+ job.recovery={panel:{...structuredClone(panel),decomposition:{...structuredClone(job.layered),media:job.media,source_hash:originalHash,source_revision:panel.artwork_revision}}};
+ job.compositor={upstream_revision:compositorRevision,bindings:{}};
  const recovery={version:1,kind:'decompose',panel:{...structuredClone(panel),image:null,generation:{width,height,seed}},original:panel.image,original_hash:originalHash,layered:job.layered};
  return {job,request:{job:{id:job.id,input_hash:job.input_hash,base_revision:job.base_revision,source_revision:job.source_revision,scope:job.scope},media:imageExecution(modelId),
   prompt:'Decompose the input image into independently editable RGBA layers. Preserve the artwork.',original:panel.image,original_hash:originalHash,references:[],width,height,seed,steps:model.input.steps,layer_count:count,recovery}};

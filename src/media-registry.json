@@ -125,11 +125,12 @@
         "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
         "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
         "helper_contract": 2,
+        "weights_sha256": "28c5a5a1417d955ef802f318e489fedefc2ed4c39d79032ea6cdc84b7eafc894",
         "minimum_macos": "15"
       },
       "validation": {
         "runtime": "sdk-source-reviewed",
-        "codec": "fixture-pending",
+        "codec": "fixture-passed",
         "inference": "not_run"
       },
       "requires_preparation": true

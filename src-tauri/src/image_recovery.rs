@@ -73,7 +73,10 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
         || context["panel"]["id"] != job["panelId"]
         || context["panel"]["snapshotId"] != job["source_revision"]
         || !context["panel"]["image"].is_null()
-        || !matches!(job["kind"].as_str(), Some("generate" | "retake" | "edit" | "decompose"))
+        || !matches!(
+            job["kind"].as_str(),
+            Some("generate" | "retake" | "edit" | "decompose")
+        )
     {
         return Err("Invalid image recovery context".into());
     }
@@ -123,16 +126,31 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
         return Err("Image base revision changed".into());
     }
     if job["kind"] == "decompose" {
-        let original = panel["image"].as_str().ok_or("Missing decomposition source")?;
-        let bytes = STANDARD.decode(original.split_once(',').ok_or("Invalid decomposition source")?.1).map_err(err)?;
-        if bytes.len() < 33 || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+        let original = panel["image"]
+            .as_str()
+            .ok_or("Missing decomposition source")?;
+        let bytes = STANDARD
+            .decode(
+                original
+                    .split_once(',')
+                    .ok_or("Invalid decomposition source")?
+                    .1,
+            )
+            .map_err(err)?;
+        if bytes.len() < 33
+            || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
             || request["width"] != u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?)
-            || request["height"] != u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?) {
+            || request["height"] != u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?)
+        {
             return Err("Decomposition must keep source dimensions".into());
         }
-        if request["original"] != panel["image"] || context["original"] != panel["image"]
-            || job["layered"] != context["layered"] || job["layered"]["layer_count"] != request["layer_count"]
-            || job["layered"]["width"] != request["width"] || job["layered"]["height"] != request["height"] {
+        if request["original"] != panel["image"]
+            || context["original"] != panel["image"]
+            || job["layered"] != context["layered"]
+            || job["layered"]["layer_count"] != request["layer_count"]
+            || job["layered"]["width"] != request["width"]
+            || job["layered"]["height"] != request["height"]
+        {
             return Err("分解元・レイヤー数・寸法が保存済み要求と一致しません".into());
         }
     }
@@ -279,20 +297,40 @@ pub fn recover(db: &Connection, root: &Path, id: &str) -> Result<Value> {
     )
 }
 
-fn recover_layers(root: &Path, id: &str, job: &Value, receipt: &Value, dir: &Path) -> Result<Value> {
-    let expected = job["layered"]["layer_count"].as_u64().ok_or("Missing layer count")?;
-    let layers = receipt["layers"].as_array().ok_or("Missing ordered layer receipt")?;
-    if receipt["kind"] != "ordered-rgba-layers" || !(2..=6).contains(&expected) || layers.len() as u64 != expected {
+fn recover_layers(
+    root: &Path,
+    id: &str,
+    job: &Value,
+    receipt: &Value,
+    dir: &Path,
+) -> Result<Value> {
+    let expected = job["layered"]["layer_count"]
+        .as_u64()
+        .ok_or("Missing layer count")?;
+    let layers = receipt["layers"]
+        .as_array()
+        .ok_or("Missing ordered layer receipt")?;
+    if receipt["kind"] != "ordered-rgba-layers"
+        || !(2..=6).contains(&expected)
+        || layers.len() as u64 != expected
+    {
         return Err("Layer result count or kind mismatch".into());
     }
     let mut verified = Vec::new();
     for (index, item) in layers.iter().enumerate() {
         let name = format!("layer-{index}.png");
-        if item["index"] != index || item["filename"] != name { return Err("Layer order mismatch".into()); }
+        if item["index"] != index || item["filename"] != name {
+            return Err("Layer order mismatch".into());
+        }
         let bytes = read_bounded(&dir.join(name), MAX_IMAGE)?;
         let digest = hash(&bytes);
-        if item["hash"] != digest || bytes.len() < 33 || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
-            || &bytes[12..16] != b"IHDR" || bytes[24] != 8 || bytes[25] != 6 {
+        if item["hash"] != digest
+            || bytes.len() < 33
+            || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+            || &bytes[12..16] != b"IHDR"
+            || bytes[24] != 8
+            || bytes[25] != 6
+        {
             return Err("Layer hash or 8-bit RGBA format mismatch".into());
         }
         let width = u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?);
@@ -309,7 +347,9 @@ fn recover_layers(root: &Path, id: &str, job: &Value, receipt: &Value, dir: &Pat
     }
     let mut context = job["local_image"]["context"].clone();
     hydrate(&mut context, &root.join("artifacts"))?;
-    Ok(json!({"kind":"ordered-rgba-layers","job_id":id,"input_hash":job["input_hash"],"context":context,"layers":output}))
+    Ok(
+        json!({"kind":"ordered-rgba-layers","job_id":id,"input_hash":job["input_hash"],"context":context,"layers":output}),
+    )
 }
 
 #[cfg(test)]
@@ -355,7 +395,8 @@ mod tests {
     #[test]
     fn ordered_rgba_receipt_recovers_all_layers_without_resending() {
         let (mut db, root, mut project, mut request) = setup();
-        let fixture: Value = serde_json::from_str(include_str!("../../tests/fixtures/layered.json")).unwrap();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/layered.json")).unwrap();
         project["panels"][0]["image"] = fixture["original"].clone();
         project["jobs"][0]["kind"] = json!("decompose");
         project["jobs"][0]["layered"] = json!({"width":256,"height":256,"layer_count":2});
@@ -374,7 +415,9 @@ mod tests {
         let dir = directory(&root, "local-1").unwrap();
         let mut layers = Vec::new();
         for (index, image) in fixture["layers"].as_array().unwrap().iter().enumerate() {
-            let bytes = STANDARD.decode(image.as_str().unwrap().split_once(',').unwrap().1).unwrap();
+            let bytes = STANDARD
+                .decode(image.as_str().unwrap().split_once(',').unwrap().1)
+                .unwrap();
             let name = format!("layer-{index}.png");
             fs::write(dir.join(&name), &bytes).unwrap();
             layers.push(json!({"index":index,"filename":name,"hash":hash(&bytes)}));

@@ -534,3 +534,11 @@ straight RGBA/sRGB PNGへ書き、ImageIOで読み返す。`.github/workflows/he
 でこの試験と実SDK公開APIのコンパイルを実行する。モデル重みは取得しない。
 Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。Rustでは多層receiptの回収と
 破損／二重送信拒否を確認する。実Qwen推論、層の意味、原画との視覚的一致、24GB性能はnot_run。
+### Compositor外部接続（#217）
+
+- 上流pin: `c39da13b5db11bc8678ec04a7a748e1e0a589244`、format v8、macOS 26.5。
+- `integrations/compositor/build.sh <empty-directory>` は上流に接続口を追加した別アプリをビルドする。
+- `.github/workflows/compositor.yml` は実アプリに人工RGBA背景＋人物を渡し、位置変更、古いrevision拒否、
+  手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
+- AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
+- この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。
