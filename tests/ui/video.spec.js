@@ -30,11 +30,14 @@ test('video planning shares artwork and survives reload without changing manga',
   await page.getByLabel('原作の場面').selectOption('s');
   await page.getByLabel('開始画像').selectOption({ index: 1 });
   await page.getByLabel('動きの指示').fill('ゆっくりカメラが寄る');
+  await page.getByLabel('動画の尺').selectOption('6');
   await page.getByRole('button', { name: 'ショットを保存' }).click();
   await expect(page.locator('.video-source')).toContainText('原文です');
   await page.reload();
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await page.getByRole('button', { name: '1 · s', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /6秒/ })).toBeVisible();
+  await expect(page.getByLabel('このショットの尺')).toHaveValue('6');
   await expect(page.getByLabel('このショットの動き')).toHaveValue('ゆっくりカメラが寄る');
   await page.screenshot({ path: 'test-results/video-planning.png', fullPage: true });
   await page.getByRole('button', { name: '漫画', exact: true }).click();
