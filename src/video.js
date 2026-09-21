@@ -2,7 +2,7 @@
 // No network requests, second asset registry or embedded video bytes here.
 import { sourceUnits } from './core.js';
 import { digest, imageHash } from './revisions.js';
-import { videoModelForConnection } from './media.js';
+import { videoModelForConnection, validateVideoModelRequest, videoEstimateCredits } from './media.js';
 import { sourceResolver } from './source-refs.js';
 
 const hashPattern = /^[0-9a-f]{64}$/;
@@ -12,7 +12,7 @@ export function videoFrameDimensions(image) {
   const bytes = Uint8Array.from(atob(image.split(',')[1].slice(0, 44)), c => c.charCodeAt(0));
   if (bytes.length < 24 || bytes.slice(0, 8).join(',') !== '137,80,78,71,13,10,26,10' || String.fromCharCode(...bytes.slice(12, 16)) !== 'IHDR') throw Error('PNGの画像寸法を確認できません');
   const view = new DataView(bytes.buffer), width = view.getUint32(16), height = view.getUint32(20);
-  if (!width || !height || width > 8192 || height > 8192 || width / height < .5 || width / height > 2) throw Error('画像の寸法が動画入力の上限に適合しません');
+  if (!width || !height || width > 8192 || height > 8192) throw Error('画像の寸法が動画入力の上限に適合しません');
   return { width, height, format: 'png' };
 }
 export function validateVideoFrame(image, ratio) {
@@ -82,7 +82,7 @@ export function validateVideoShot(project, shot) {
     if (!Array.isArray(shot.unitIds) || !shot.unitIds.length || new Set(shot.unitIds).size !== shot.unitIds.length || JSON.stringify(units.filter(id => shot.unitIds.includes(id))) !== JSON.stringify(shot.unitIds)) throw Error('原文の範囲・順序が不正です');
   }
   if (!Array.isArray(shot.characterIds) || new Set(shot.characterIds).size !== shot.characterIds.length || shot.characterIds.some(id => !project.characters.some(c => c.id === id))) throw Error('動画の人物参照が不正です');
-  if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 1000 || !Number.isSafeInteger(shot.duration) || shot.duration <= 0 || typeof shot.ratio !== 'string' || !/^\d+:\d+$/.test(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
+  if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 15000 || !Number.isSafeInteger(shot.duration) || shot.duration <= 0 || typeof shot.ratio !== 'string' || !/^\d+:\d+$/.test(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
   exactKeys(shot.startImage, ['kind', 'id', 'hash']);
   if (!['artwork', 'capture'].includes(shot.startImage.kind) || typeof shot.startImage.id !== 'string' || !hashPattern.test(shot.startImage.hash)) throw Error('開始画像の不変参照が必要です');
   if (shot.sourcePanelId !== undefined || shot.batchId !== undefined) {
@@ -145,21 +145,32 @@ export async function videoManifest(project, shot, connection, loadCapture) {
   exactKeys(connection, ['id', 'provider', 'model', 'adapter_id']);
   const selected = videoModelForConnection(connection);
   if (typeof connection.id !== 'string' || !connection.id || !selected) throw Error('対応する動画接続が未設定です');
-  const input = selected.input;
-  const durations = Array.isArray(input.durations_sec) ? input.durations_sec : [input.duration_sec];
-  if (!durations.includes(shot.duration) || !input.ratios.includes(shot.ratio)) throw Error('選択した動画モデルが尺・寸法に対応していません');
-  if (shot.transition && !selected.capabilities.end_frame) throw Error('選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません');
   const start = await resolveStartImage(project, shot.startImage, loadCapture);
   const startDimensions = validateVideoFrame(start.image, shot.ratio);
+  const aspect = startDimensions.width / startDimensions.height;
+  validateVideoModelRequest(selected.id, {
+    duration: shot.duration,
+    ratio: shot.ratio,
+    prompt: shot.prompt,
+    endFrame: !!shot.transition,
+    aspect
+  });
   const end = shot.transition ? await resolveStartImage(project, shot.endImage, loadCapture) : null;
   const endDimensions = end ? validateVideoFrame(end.image, shot.ratio) : null;
+  if (endDimensions && (endDimensions.width !== startDimensions.width || endDimensions.height !== startDimensions.height)) {
+    throw Error('始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください');
+  }
+  const billing = videoEstimateCredits(selected.id, shot.duration, shot.ratio);
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
   const source = { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds], ...(shot.sourceRefs ? { sourceRefs: structuredClone(shot.sourceRefs) } : {}) };
-  const manifest = { version: 1, scope: { type: 'videoShot', id: shot.id },
+  const manifest = { version: 2, scope: { type: 'videoShot', id: shot.id },
     source, characterIds: [...shot.characterIds],
     sourceDependencies: end ? { from: start.sourceDependencies, to: end.sourceDependencies } : start.sourceDependencies,
     providerInputs: [{ role: 'start_frame', ...start.artifact, width: startDimensions.width, height: startDimensions.height, transform: { kind: 'identity' } }, ...(end ? [{ role: 'end_frame', ...end.artifact, width: endDimensions.width, height: endDimensions.height, transform: { kind: 'identity' } }] : [])],
     prompt: shot.prompt, duration: shot.duration, ratio: shot.ratio, connection: { ...connection },
+    request_profile: selected.request_profile,
+    audio: selected.request_defaults?.audio ?? false,
+    billing: { ...billing, model_id: selected.model_id, request_profile: selected.request_profile },
     base_revision: shot.adopted_revision ?? null };
   if (shot.transition) {
     const t = shot.transition;
