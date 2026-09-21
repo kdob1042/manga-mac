@@ -124,7 +124,7 @@ function App() {
   async function persistLibrarySelection(work, detail, episodeId, sceneId, id) {
     const result=await call('source_register',{
       name:work.title, repo:libraryCatalog.repo, episode:episodeId, id,
-      workId:work.id, workRoot:work.root, manifestPath:detail.manifestPath,
+      workId:work.id, workRoot:work.root, manifestPath:detail.entryPath,
       catalogCommit:libraryCatalog.sha, scene:sceneId, format:work.manuscriptFormat,
     });
     setLibrary(previous=>previous ? {...previous,entries:result.entries,active:result.id} : previous);
@@ -152,7 +152,7 @@ function App() {
     const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
     const item=detail?.outline?.find(episodeItem=>episodeItem.id===episodeId);
     const scene=item?.scenes[0];
-    if (!work||!detail?.manifestPath||!item||!scene) throw Error('話の選択対象が不正です');
+    if (!work||!detail?.entryPath||!item||!scene) throw Error('話の選択対象が不正です');
     const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
     if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
     await persistLibrarySelection(work,detail,episodeId,scene.id,entry.id);
@@ -162,7 +162,7 @@ function App() {
   async function selectLibraryScene(sceneId) {
     const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
     const item=detail?.outline?.find(episodeItem=>episodeItem.id===episode);
-    if (!work||!detail?.manifestPath||!item?.scenes.some(scene=>scene.id===sceneId)) throw Error('シーンの選択対象が不正です');
+    if (!work||!detail?.entryPath||!item?.scenes.some(scene=>scene.id===sceneId)) throw Error('シーンの選択対象が不正です');
     const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
     if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
     await persistLibrarySelection(work,detail,episode,sceneId,entry.id);
