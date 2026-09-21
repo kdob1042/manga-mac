@@ -102,8 +102,8 @@ test('library scene selection reads one scene and keys the snapshot by scene',as
 
 test('multi-episode sync retains previously imported episodes and reads selected branch head',async()=>{
  const manifest={format:'story-source/v1',work:{title:'複数話'},episodes:[
-  {id:'P01',title:'一',scenes:[{id:'P01-01',path:'manuscript/p01/a.md'}]},
-  {id:'P02',title:'二',scenes:[{id:'P02-01',path:'manuscript/p02/a.md'}]}
+  {id:'P01',title:'一',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'}]},
+  {id:'P02',title:'二',scenes:[{id:'P02-01',path:'manuscript/p02/p02-01.md'}]}
  ],settings:[],characters:[]};
  const firstSha='1'.repeat(40),secondSha='2'.repeat(40),heads=[];
  const invoke=async(command,args)=>{
