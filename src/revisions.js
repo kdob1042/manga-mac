@@ -59,7 +59,7 @@ function inputState(project, panel, media = null) {
   return { active: project.active, panel, styles: project.style_references ?? [], characters: panel.characterIds.map(id => project.characters.find(c => c.id === id)), ...(media ? { media } : {}) };
 }
 export async function beginJob(project, panel, kind = 'generate', imageModelId = null) {
-  const media = ['generate', 'edit', 'retake'].includes(kind)
+  const media = ['generate', 'edit', 'retake', 'decompose'].includes(kind)
     ? imageExecution(imageModelId ?? project.mediaDefaults?.image ?? defaultImageModelId)
     : null;
   if (project.jobs.filter(j => !j.notSubmitted && j.panelId === panel.id && j.base_revision === (panel.artwork_revision ?? null) && j.source_revision === panel.snapshotId && j.kind === kind).length >= 3) throw Error('同じ基準版での試行上限です。既存候補を確認してください');

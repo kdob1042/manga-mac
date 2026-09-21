@@ -84,6 +84,55 @@
         "runtime": "sdk-source-reviewed",
         "inference": "not_run"
       }
+    },
+    {
+      "id": "qwen-image-layered-q6-local",
+      "display_name": "Qwen Image Layered / 6-bit（分解専用・実推論未検証）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "qwen_image_layered_1.0_bf16_q6p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "decompose"
+      ],
+      "capabilities": {
+        "text_to_image": false,
+        "image_edit": false,
+        "multi_reference": false,
+        "transparent_rgba": true,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 50,
+        "max_references": 0,
+        "min_layers": 2,
+        "max_layers": 6
+      },
+      "output": {
+        "kind": "ordered-rgba-layers",
+        "channels": 4,
+        "order": "sdk-index-bottom-to-top",
+        "alpha": "straight",
+        "color_space": "sRGB"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "minimum_macos": "15"
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "codec": "fixture-pending",
+        "inference": "not_run"
+      },
+      "requires_preparation": true
     }
   ],
   "videos": [

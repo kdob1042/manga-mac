@@ -610,3 +610,17 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 - 参照は初期アプリ上限8枚。超過を省略せず拒否する。保存済みJobのmodel/adapterと実要求の一致をnativeでも検証。
 - 動画の再登録による資格情報ID変更は状態照会・回収で許すが、provider/model/adapter変更は拒否する。新規送信には開始時の接続IDも必要。旧taskを再送しない。
 - Qwen-Image-Layeredの多層出力とCompositorは#217で扱う。6-bit切替の検証を異なるモデル系列やRGBA対応の実証にしない。
+
+### Qwen Image Layered adapter（#222 / #217 C）
+
+既存helperに`ordered-rgba-layers`出力を追加する。単一RGB経路と分け、既存resource gate、
+Job、image-results予約、receipt、artifactを再利用する。採用SDK revisionを変更せず、
+公開Result.tensorのNHWC A[0,1]+RGB[-1,1]をstraight RGBA/sRGB PNGへ変換する。
+すべての層の枚数・順序・寸法・RGBA形式・hashが一致してから回収する。
+モデル名と入力条件は共有registryだけに置き、分解専用モデルを通常作画の選択肢へ混ぜない。
+
+対象モデルは`qwen_image_layered_1.0_bf16_q6p.ckpt`、50steps、原画と同じ64刻みの寸法、
+明示層数2〜6。層数は意味ラベルの保証ではない。入力は原画canvasのみ、参照画像を渡せない場合は
+省略せず拒否する。重み取得は明示準備、推論は既存のネットワーク禁止プロセス内で行う。
+分解bundleには非表示の原画と順序付き全層を保持し、人物対応は再確認する。
+Compositorで候補を合成・保存する部分はAのPR #220に依存。実推論・24GB性能はnot_run。

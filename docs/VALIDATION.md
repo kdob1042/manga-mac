@@ -526,3 +526,11 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 ## #213 モデル選択の補正（2026-09-21）
 
 Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。
+
+### Layered RGBA adapter（#222）
+
+`tests/swift/LayerPNGTests.swift`は透明白・不透明赤・半透明緑・青の人工ARGB tensorを
+straight RGBA/sRGB PNGへ書き、ImageIOで読み返す。`.github/workflows/helper-contracts.yml`
+でこの試験と実SDK公開APIのコンパイルを実行する。モデル重みは取得しない。
+Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。Rustでは多層receiptの回収と
+破損／二重送信拒否を確認する。実Qwen推論、層の意味、原画との視覚的一致、24GB性能はnot_run。

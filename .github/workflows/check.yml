@@ -272,6 +272,10 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Test RGBA helper codec without model weights
+        run: |
+          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
+          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
@@ -333,6 +337,10 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Test RGBA helper codec without model weights
+        run: |
+          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
+          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
