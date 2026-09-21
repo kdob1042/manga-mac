@@ -461,6 +461,32 @@ async fn register_video(
         .await
 }
 #[tauri::command]
+fn reuse_video_connection(
+    source_connection_id: String,
+    provider: String,
+    model: String,
+    adapter_id: String,
+    approved: bool,
+    state: State<AppState>,
+) -> Result<String, String> {
+    let selected = media::video_model_from_connection(&serde_json::json!({
+        "provider":provider,
+        "model":model,
+        "adapter_id":adapter_id
+    }))?;
+    if selected.adapter_id != "runway" {
+        return Err("選択した動画adapterはまだ接続されていません".into());
+    }
+    state.connections.reuse_video_connection(
+        &source_connection_id,
+        approved,
+        selected.provider,
+        selected.model_id,
+        selected.adapter_id,
+    )
+}
+
+#[tauri::command]
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
     state.connections.remove_video(&connection_id)
 }
@@ -1282,6 +1308,7 @@ fn main() {
             video_playback,
             video_export,
             register_video,
+            reuse_video_connection,
             remove_video,
             video_submit,
             video_task,
