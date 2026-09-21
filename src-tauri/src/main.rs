@@ -12,6 +12,7 @@ mod web_asset;
 mod blender;
 mod blender_gui;
 mod blender_live;
+mod compositor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -28,6 +29,34 @@ struct AppState {
     video: tokio::sync::Mutex<()>,
     live_blender: blender_live::Live,
     blender_gui: blender_gui::Launcher,
+    compositor_gate: tokio::sync::Mutex<()>,
+}
+#[tauri::command]
+async fn compositor_start(
+    session_id: String,
+    bundle: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
+    compositor::start(&session_id, bundle).await
+}
+#[tauri::command]
+async fn compositor_call(
+    session_id: String,
+    request: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
+    if request["op"] == "saved_snapshot" {
+        return compositor::saved_snapshot(&session_id);
+    }
+    compositor::exchange(&session_id, request).await
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -748,8 +777,27 @@ fn media_models() -> Result<Value, String> {
     media::public_registry()
 }
 #[tauri::command]
-async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
+async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<String, String> {
+    let result = generate_media(request, false, state).await?;
+    Ok(result["image"]
+        .as_str()
+        .ok_or("Missing image result")?
+        .to_string())
+}
+#[tauri::command]
+async fn generate_layers(request: Value, state: State<'_, AppState>) -> Result<Value, String> {
+    generate_media(request, true, state).await
+}
+async fn generate_media(
+    mut request: Value,
+    layered: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let selected = media::validate_image_request(&request)?;
+    if (selected.output_kind == "ordered-rgba-layers") != layered {
+        return Err("画像と多層出力の実行窓口が一致しません".into());
+    }
+    request["output_kind"] = serde_json::json!(selected.output_kind);
     let _guard = state.engine.lock().await;
     request["media"] = serde_json::json!({
         "registry_id": selected.registry_id.clone(),
@@ -757,8 +805,6 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         "model_id": selected.model_id.clone(),
     });
     request["steps"] = serde_json::json!(selected.steps);
-    let width = request["width"].as_u64().ok_or("画像幅がありません")?;
-    let height = request["height"].as_u64().ok_or("画像高さがありません")?;
     if let Some(original) = request["original"].as_str() {
         let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
         let bytes = STANDARD.decode(encoded).map_err(err)?;
@@ -794,10 +840,7 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         &state.root,
         request["job"]["id"].as_str().ok_or("Missing job ID")?,
     )?;
-    Ok(result["image"]
-        .as_str()
-        .ok_or("Missing image result")?
-        .to_string())
+    Ok(result)
 }
 #[tauri::command]
 fn recover_image(job_id: String, state: State<'_, AppState>) -> Result<Value, String> {
@@ -1137,6 +1180,7 @@ fn main() {
                 video: tokio::sync::Mutex::new(()),
                 live_blender: blender_live::Live::default(),
                 blender_gui: blender_gui::Launcher::default(),
+                compositor_gate: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })
@@ -1149,6 +1193,8 @@ fn main() {
             backup_commands::backup_restore,
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
+            compositor_start,
+            compositor_call,
             blender_live,
             blender_gui_start,
             blender_workspace,
@@ -1198,6 +1244,7 @@ fn main() {
             cancel_llm,
             llm_request,
             generate_image,
+            generate_layers,
             recover_image,
             prepare_engine,
             prepare_media_engine,

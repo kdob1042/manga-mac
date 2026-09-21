@@ -16,16 +16,14 @@ pub struct ImageModel {
     pub step: u64,
     pub max_aspect_ratio: f64,
     pub steps: u64,
+    pub output_kind: String,
 }
 
 #[derive(Clone)]
 pub struct VideoModel {
-    pub registry_id: String,
     pub adapter_id: String,
     pub provider: String,
     pub model_id: String,
-    pub locality: String,
-    pub end_frame: bool,
 }
 
 fn registry() -> Result<Value, String> {
@@ -89,6 +87,7 @@ pub fn image_model(id: Option<&str>) -> Result<ImageModel, String> {
             .as_f64()
             .ok_or("画像比率定義が不正です")?,
         steps: input["steps"].as_u64().ok_or("画像step定義が不正です")?,
+        output_kind: value["output"]["kind"].as_str().unwrap_or("image").into(),
     })
 }
 
@@ -128,13 +127,36 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
         return Err("画像モデルが対応しない縦横・寸法です".into());
     }
     let operation = match request["recovery"]["kind"].as_str() {
-        Some("edit") => "edit",
+        Some("edit" | "layer_edit") => "edit",
         Some("retake") if request["recovery"]["panel"]["finishing"].is_object() => "finishing",
         Some("retake") => "retake",
         Some("generate") => "generate",
+        Some("decompose") => "decompose",
         _ => return Err("画像生成操作が不正です".into()),
     };
     let descriptor = descriptor("images", &selected.registry_id)?;
+    if selected.output_kind == "ordered-rgba-layers" {
+        if request["recovery"]["layered"]["runtime"] != descriptor["runtime"]
+            || request["recovery"]["layered"]["output"] != descriptor["output"]
+        {
+            return Err("レイヤー実行版・出力条件が登録情報と一致しません".into());
+        }
+        let count = request["layer_count"]
+            .as_u64()
+            .ok_or("レイヤー数がありません")?;
+        if operation != "decompose"
+            || request["original"].as_str().is_none()
+            || count < descriptor["input"]["min_layers"].as_u64().unwrap_or(2)
+            || count > descriptor["input"]["max_layers"].as_u64().unwrap_or(6)
+        {
+            return Err("レイヤー分解の入力・枚数が不正です".into());
+        }
+    }
+    if request["recovery"]["kind"] == "layer_edit"
+        && request["recovery"]["layer_edit"]["runtime"] != descriptor["runtime"]
+    {
+        return Err("レイヤー編集の実行版が登録情報と一致しません".into());
+    }
     let references = request["references"]
         .as_array()
         .ok_or("参照画像一覧がありません")?;
@@ -183,23 +205,13 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     {
         return Err("動画のadapter定義が登録情報と一致しません".into());
     }
-    let capabilities = &value["capabilities"];
     Ok(VideoModel {
-        registry_id: value["id"]
-            .as_str()
-            .ok_or("動画model定義が不正です")?
-            .into(),
         adapter_id: value["adapter_id"]
             .as_str()
             .ok_or("動画adapter定義が不正です")?
             .into(),
         provider: provider.into(),
         model_id: model_id.into(),
-        locality: value["locality"]
-            .as_str()
-            .ok_or("動画接続の場所定義が不正です")?
-            .into(),
-        end_frame: capabilities["end_frame"].as_bool().unwrap_or(false),
     })
 }
 
@@ -229,6 +241,24 @@ mod tests {
         );
     }
 
+    #[test]
+    fn layered_model_does_not_accept_moodboards_or_rgb_generation() {
+        let mut request = json!({"media":{"registry_id":"qwen-image-layered-q6-local"},
+            "width":640,"height":640,"layer_count":4,"original":"fixture","references":[],
+            "recovery":{"kind":"decompose"}});
+        let definition = descriptor("images", "qwen-image-layered-q6-local").unwrap();
+        request["recovery"]["layered"] =
+            json!({"runtime":definition["runtime"],"output":definition["output"]});
+        assert_eq!(
+            validate_image_request(&request).unwrap().output_kind,
+            "ordered-rgba-layers"
+        );
+        request["references"] = json!([{}]);
+        assert!(validate_image_request(&request).is_err());
+        request["references"] = json!([]);
+        request["recovery"]["kind"] = json!("generate");
+        assert!(validate_image_request(&request).is_err());
+    }
     #[test]
     fn invented_image_model_and_video_adapter_are_rejected() {
         let image = json!({

@@ -526,3 +526,25 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 ## #213 モデル選択の補正（2026-09-21）
 
 Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。
+
+### Layered RGBA adapter（#222）
+
+`tests/swift/LayerPNGTests.swift`は透明白・不透明赤・半透明緑・青の人工ARGB tensorを
+straight RGBA/sRGB PNGへ書き、ImageIOで読み返す。`.github/workflows/helper-contracts.yml`
+でこの試験と実SDK公開APIのコンパイルを実行する。モデル重みは取得しない。
+Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。Rustでは多層receiptの回収と
+破損／二重送信拒否を確認する。実Qwen推論、層の意味、原画との視覚的一致、24GB性能はnot_run。
+### Compositor外部接続（#217）
+
+- 上流pin: `c39da13b5db11bc8678ec04a7a748e1e0a589244`、format v8、macOS 26.5。
+- `integrations/compositor/build.sh <empty-directory>` は上流に接続口を追加した別アプリをビルドする。
+- `.github/workflows/compositor.yml` は実アプリに人工RGBA背景＋人物を渡し、位置変更、古いrevision拒否、
+  手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
+- AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
+- この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。
+
+### 参照付き局所色編集（#224）
+
+- Node fixture: 元alpha・完全透明画素・矩形外の全RGBA保持、対象／文脈／人物画像の実入力と役割／hash固定。
+- 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
+- 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。

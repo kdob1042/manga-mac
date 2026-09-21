@@ -610,3 +610,57 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 - 参照は初期アプリ上限8枚。超過を省略せず拒否する。保存済みJobのmodel/adapterと実要求の一致をnativeでも検証。
 - 動画の再登録による資格情報ID変更は状態照会・回収で許すが、provider/model/adapter変更は拒否する。新規送信には開始時の接続IDも必要。旧taskを再送しない。
 - Qwen-Image-Layeredの多層出力とCompositorは#217で扱う。6-bit切替の検証を異なるモデル系列やRGBA対応の実証にしない。
+
+### Qwen Image Layered adapter（#222 / #217 C）
+
+既存helperに`ordered-rgba-layers`出力を追加する。単一RGB経路と分け、既存resource gate、
+Job、image-results予約、receipt、artifactを再利用する。採用SDK revisionを変更せず、
+公開Result.tensorのNHWC A[0,1]+RGB[-1,1]をstraight RGBA/sRGB PNGへ変換する。
+すべての層の枚数・順序・寸法・RGBA形式・hashが一致してから回収する。
+モデル名と入力条件は共有registryだけに置き、分解専用モデルを通常作画の選択肢へ混ぜない。
+
+対象モデルは`qwen_image_layered_1.0_bf16_q6p.ckpt`、50steps、原画と同じ64刻みの寸法、
+明示層数2〜6。層数は意味ラベルの保証ではない。入力は原画canvasのみ、参照画像を渡せない場合は
+省略せず拒否する。重み取得は明示準備、推論は既存のネットワーク禁止プロセス内で行う。
+分解bundleには非表示の原画と順序付き全層を保持し、人物対応は再確認する。
+Compositorで候補を合成・保存する部分はAのPR #220に依存。実推論・24GB性能はnot_run。
+### Compositor接続の実装境界（#217、PR #220）
+
+上流 `robbietilton/Compositor@c39da13b5db11bc8678ec04a7a748e1e0a589244` を固定し、
+`integrations/compositor/prepare.py` で最小の外部操作口だけを重ねる。外部アプリのGUI・renderer・
+ProjectStoreを利用し、manga-macへエンジンを取り込まない。この版のproject formatはコード上v8、
+Xcode projectのdeployment targetはmacOS 26.5。これは連携アプリの条件でありmanga-mac全体の要件ではない。
+
+初期接続口は同一ユーザー専用0700ディレクトリの認証付きfile IPC。任意パスやコマンドは公開せず、
+session/document/revisionを照合し、状態取得、位置・寸法・回転・表示変更、手動引継ぎ、版の書出しに限定する。
+一つのsnapshotからCompositor自身が`.comp`とPNGを出力する。処理IDを再実行せず、成否不明なら照合する。
+原稿・Job・人物対応・候補採用・公開データは引き続きmanga-macが所有する。
+
+接続口の実装・外部アプリfixture・native/UIへの接続・実機受入を別々に完了判定する。
+PR #220ではnative/UI接続と既存Jobへの候補保存、人物対応、確定snapshotの回収を追加する。
+素材は既存image artifactへ外出しし、採用・Undo・バックアップを再利用する。
+人間／アプリ／Codex間の操作権は同じ接続口で移譲し、process instanceを毎回照合する。
+Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
+PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120秒でも書込み権を解放し、次の操作前に再観測する。
+
+Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、
+内部表現はAlpha[0,1]＋RGB[-1,1]で、SDK標準PNG writerはRGB専用。
+RGBA変換・レイヤー順／枚数・receipt・入力canvas役割を実装／検証するまではregistryへ有効登録しない。
+参照編集のRGB出力を透明レイヤーにそのまま差し替えない。ComfyUI/MFLUXへの退避は追加しない。
+
+### 参照付きレイヤー局所色編集（#224、Bの初期preset）
+
+対象UUIDと人物対応を確認して、Compositorが同一版の対象RGBAと文字レイヤーを除いた文脈PNGを出力する。
+既存の画像JobとSwift/MediaGenerationKitへ、canvas=対象、reference 1=文脈、reference 2=人物正本を
+実画像として渡す。入力役割／hash、矩形、色、document／instance／revision、モデルとSDK/helper版を固定する。
+初期presetは色変更だけ。RGB結果の範囲内RGBを対象RGBAへ戻し、元alpha、完全透明画素、範囲外全画素を保持する。
+この処理を向き・ポーズ・輪郭変更へ流用しない。対象にmask/group/effects等がある場合は停止する。
+
+元の編集中版を既存の未採用候補として確定してから、新しい生成Jobを作る。原稿の基準版チェックを通し、
+Compositorの同一sessionを引き続き使う。推論後にprocess instance/document/revisionを再照合してから
+別レイヤーへ取込み、元レイヤーは非表示で残す。結果は再び明示候補保存・採用が必要。
+途中で手動版が変わった結果は保存済みの透過候補として保持し、現行ドキュメントへ自動取込みしない。
+結果や取込み応答が不明でも既存receipt／IPC結果を照合し、再推論・二重取込みしない。
+
+人物同一性・色変更品質・速度・24GB実用性は実推論未受入（not_run）。自然言語の向き変更や
+新輪郭のalpha生成は未対応として扱う。追加のJev分類／モデル自動選択は呼ばない。
