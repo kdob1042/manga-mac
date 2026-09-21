@@ -654,6 +654,8 @@ RGBA変換・レイヤー順／枚数・receipt・入力canvas役割を実装／
 既存の画像JobとSwift/MediaGenerationKitへ、canvas=対象、reference 1=文脈、reference 2=人物正本を
 実画像として渡す。入力役割／hash、矩形、色、document／instance／revision、モデルとSDK/helper版を固定する。
 初期presetは色変更だけ。RGB結果の範囲内RGBを対象RGBAへ戻し、元alpha、完全透明画素、範囲外全画素を保持する。
+合成は既存依存のpng crateをnativeから使い、straight RGBAを直接保持する。
+ブラウザCanvasでの再encodeによる低alpha／範囲外RGBの丸めを避ける。
 この処理を向き・ポーズ・輪郭変更へ流用しない。対象にmask/group/effects等がある場合は停止する。
 
 元の編集中版を既存の未採用候補として確定してから、新しい生成Jobを作る。原稿の基準版チェックを通し、

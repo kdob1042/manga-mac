@@ -1,16 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {colourPixels,validateColourEdit,colourRequest} from '../src/layer-edit.js';
+import {validateColourEdit,colourRequest} from '../src/layer-edit.js';
 import {migrateProject,imageHash} from '../src/revisions.js';
 import {defaultImageModelId} from '../src/media.js';
 const rgba=JSON.parse(readFileSync(new URL('fixtures/layered.json',import.meta.url)));
 
-test('colour-only edit preserves original alpha, transparent pixels and every out-of-range channel',()=>{
- const before=Uint8ClampedArray.from([20,40,60,128, 90,80,70,0, 10,30,50,255, 1,2,3,255]);
- const generated=Uint8ClampedArray.from([255,0,0,255, 0,255,0,255, 0,0,255,0, 9,8,7,0]);
- const result=colourPixels(before,generated,2,2,[0,0,1,.5]);
- assert.deepEqual([...result],[255,0,0,128,90,80,70,0,10,30,50,255,1,2,3,255]);
+test('colour-only preset requires a bounded region and explicit colour',()=>{
  assert.throws(()=>validateColourEdit([.8,0,.5,1],'#ffffff'),/範囲/);
  assert.throws(()=>validateColourEdit([0,0,1,1],'turn left'),/色/);
 });

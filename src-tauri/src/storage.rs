@@ -1,3 +1,5 @@
+#[path = "layer_colour.rs"]
+pub mod layer_colour;
 #[path = "backup.rs"]
 pub mod backup;
 #[path = "draft.rs"]

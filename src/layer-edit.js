@@ -4,16 +4,6 @@ import {validateImageDimensions,validateImageReferences} from './media.js';
 export function validateColourEdit(rect,colour) {
  if(!Array.isArray(rect)||rect.length!==4||rect.some(n=>!Number.isFinite(n)||n<0||n>1)||rect[2]<=0||rect[3]<=0||rect[0]+rect[2]>1||rect[1]+rect[3]>1||!/^#[0-9a-f]{6}$/i.test(colour))throw Error('色と編集範囲を指定してください');
 }
-export function colourPixels(original,generated,width,height,rect) {
- validateColourEdit(rect,'#000000');
- if(original.length!==width*height*4||generated.length!==original.length)throw Error('編集画像の寸法が一致しません');
- const result=new Uint8ClampedArray(original);
- for(let y=Math.floor(rect[1]*height);y<Math.ceil((rect[1]+rect[3])*height);y++)for(let x=Math.floor(rect[0]*width);x<Math.ceil((rect[0]+rect[2])*width);x++){
-  const i=(y*width+x)*4;if(original[i+3]===0)continue;
-  result[i]=generated[i];result[i+1]=generated[i+1];result[i+2]=generated[i+2];
- }
- return result;
-}
 export async function colourRequest(project,panel,sessionId,capture,characterId,rect,colour,modelId) {
  validateColourEdit(rect,colour);
  const {width,height}=capture.state,model=validateImageDimensions(modelId,width,height);
@@ -39,14 +29,8 @@ export async function colourRequest(project,panel,sessionId,capture,characterId,
 }
 export async function completeColourEdit(job,receipt) {
  if(receipt.job_id!==job.id||receipt.input_hash!==job.input_hash||receipt.context?.kind!=='layer_edit'||receipt.context.layer_edit.target_hash!==job.layer_edit.target_hash||receipt.hash!==await imageHash(receipt.image)||await imageHash(receipt.context.target.image)!==job.layer_edit.target_hash)throw Error('レイヤー編集結果と保存済み要求が一致しません');
- const {imageOf}=await import('./canvas-image.js');
- const before=await imageOf(receipt.context.target.image),after=await imageOf(receipt.image),{width,height,rect}=job.layer_edit;
- if([before,after].some(image=>image.width!==width||image.height!==height))throw Error('レイヤー編集の出力寸法が違います');
- const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;const context=canvas.getContext('2d');
- context.drawImage(before,0,0);const original=context.getImageData(0,0,width,height);
- context.clearRect(0,0,width,height);context.drawImage(after,0,0);const changed=context.getImageData(0,0,width,height);
- original.data.set(colourPixels(original.data,changed.data,width,height,rect));context.putImageData(original,0,0);
- return canvas.toDataURL('image/png');
+ if(receipt.colour_composited!==true)throw Error('透過画素を保護したnative編集結果が必要です');
+ return receipt.image;
 }
 
 export function planLayerMove(project,job,state,instruction) {

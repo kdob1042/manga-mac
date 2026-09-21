@@ -347,10 +347,20 @@ pub fn recover(db: &Connection, root: &Path, id: &str) -> Result<Value> {
     {
         return Err("Image output dimensions mismatch".into());
     }
+    let bytes = if job["kind"] == "layer_edit" {
+        let target = context["target"]["image"].as_str().ok_or("Missing target RGBA")?;
+        let original = STANDARD.decode(target.split_once(',').ok_or("Invalid target")?.1).map_err(err)?;
+        if hash(&original) != context["layer_edit"]["target_hash"] {
+            return Err("Target RGBA changed".into());
+        }
+        let rect: [f64; 4] = serde_json::from_value(context["layer_edit"]["rect"].clone()).map_err(err)?;
+        super::layer_colour::compose(&original, &bytes, rect)?
+    } else { bytes };
+    let digest = hash(&bytes);
     // Canonical artifacts are the existing hash store; collecting twice is harmless.
     put(&root.join("artifacts"), &bytes)?;
     Ok(
-        json!({"job_id":id,"input_hash":job["input_hash"],"context":context,"hash":digest,"image":format!("data:image/png;base64,{}",STANDARD.encode(bytes))}),
+        json!({"job_id":id,"input_hash":job["input_hash"],"context":context,"hash":digest,"colour_composited":job["kind"] == "layer_edit","image":format!("data:image/png;base64,{}",STANDARD.encode(bytes))}),
     )
 }
 
