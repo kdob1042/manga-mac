@@ -64,6 +64,9 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             return Err("Image job inputs changed".into());
         }
     }
+    if job.get("media").is_some() && job["media"] != request["media"] {
+        return Err("保存済み画像要求の実行先を変更できません".into());
+    }
     let context = &request["recovery"];
     if context["version"] != 1
         || context["kind"] != job["kind"]

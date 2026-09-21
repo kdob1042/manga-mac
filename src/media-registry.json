@@ -12,7 +12,12 @@
       "model_id": "flux_2_klein_4b_q8p.ckpt",
       "locality": "local",
       "status": "implemented",
-      "operations": ["generate", "edit", "retake", "finishing"],
+      "operations": [
+        "generate",
+        "edit",
+        "retake",
+        "finishing"
+      ],
       "capabilities": {
         "text_to_image": true,
         "image_edit": true,
@@ -27,9 +32,58 @@
         "max_height": 1024,
         "step": 64,
         "max_aspect_ratio": 4,
-        "steps": 4
+        "steps": 4,
+        "max_references": 8
       },
-      "requires_preparation": true
+      "requires_preparation": true,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "inference": "not_run"
+      }
+    },
+    {
+      "id": "flux-2-klein-4b-q6-local",
+      "display_name": "FLUX.2 klein 4B / 6-bit（Mac内・実機未検証）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "flux_2_klein_4b_q6p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake",
+        "finishing"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true,
+        "transparent_rgba": false,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 4,
+        "max_references": 8
+      },
+      "requires_preparation": true,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "inference": "not_run"
+      }
     }
   ],
   "videos": [
@@ -41,7 +95,9 @@
       "model_id": "gen4.5",
       "locality": "cloud",
       "status": "implemented",
-      "operations": ["image_to_video"],
+      "operations": [
+        "image_to_video"
+      ],
       "capabilities": {
         "end_frame": false,
         "native_audio": false
@@ -49,7 +105,14 @@
       "input": {
         "duration_sec": 5,
         "max_input_bytes": 5000000,
-        "ratios": ["1280:720", "720:1280", "1104:832", "960:960", "832:1104", "1584:672"]
+        "ratios": [
+          "1280:720",
+          "720:1280",
+          "1104:832",
+          "960:960",
+          "832:1104",
+          "1584:672"
+        ]
       },
       "requires_connection": true
     }

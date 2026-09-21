@@ -6,7 +6,7 @@ import { imageModel, videoConnection } from './media.js';
 // to the currently selected model while it is being recovered or submitted.
 export async function executeImage(modelId, request, permit = null) {
   const selected = imageModel(modelId ?? request.media?.registry_id);
-  if (request.media?.model_id && request.media.model_id !== selected.model_id) {
+  if (request.media && Object.entries({ registry_id: selected.id, adapter_id: selected.adapter_id, model_id: selected.model_id }).some(([key, value]) => request.media[key] !== value)) {
     throw Error('画像要求と選択中のモデルが一致しません');
   }
   return call('generate_image', {

@@ -602,3 +602,11 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 - live_import_asset はmanaged assets直下のbasenameとartifact hashだけを受け、同じfile/scene/view layer/観測版を再確認し、手動制御へhandoffしたGUIの標準GLB importerだけを呼ぶ。任意path・任意Python・別Blenderへの接続は許可しない。
 
 実APIでの課金・生成形状・テクスチャ・人物同一性・Mac個人環境の速度は、Codexが対象Macで行う #201 の実地確認へ残す。初回実装は単一参照画像に限定し、multiviewやTripo上流addonの無検証同梱は行わない。上流SDKを利用する場合の固定情報は調査記録の公式SDK commit 4115894a0a603c5183c9ed6dc8662745562c8941（MIT）と一致させ、APIキーをScene propertyへ保存する公式Blender addonは採用しない。
+
+### #213 実装境界の補正（2026-09-21）
+
+- 既存FLUX.2 klein 4Bに同一SDKの6-bit重みを追加。モデル定義は一つとし、Swiftはnativeが解決したID・寸法・stepsを受け取る。実機推論・性能は未検証。
+- 通常推論は明示準備済み重みを必要とし、Macのプロセス境界でネットワークを禁止する。SDKの`.local`だけではカタログ通信まで禁止されないためである。準備コマンドだけ通信可能。
+- 参照は初期アプリ上限8枚。超過を省略せず拒否する。保存済みJobのmodel/adapterと実要求の一致をnativeでも検証。
+- 動画の再登録による資格情報ID変更は状態照会・回収で許すが、provider/model/adapter変更は拒否する。新規送信には開始時の接続IDも必要。旧taskを再送しない。
+- Qwen-Image-Layeredの多層出力とCompositorは#217で扱う。6-bit切替の検証を異なるモデル系列やRGBA対応の実証にしない。

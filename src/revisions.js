@@ -60,7 +60,7 @@ function inputState(project, panel, media = null) {
 }
 export async function beginJob(project, panel, kind = 'generate', imageModelId = null) {
   const media = ['generate', 'edit', 'retake'].includes(kind)
-    ? imageExecution(imageModelId ?? defaultImageModelId)
+    ? imageExecution(imageModelId ?? project.mediaDefaults?.image ?? defaultImageModelId)
     : null;
   if (project.jobs.filter(j => !j.notSubmitted && j.panelId === panel.id && j.base_revision === (panel.artwork_revision ?? null) && j.source_revision === panel.snapshotId && j.kind === kind).length >= 3) throw Error('同じ基準版での試行上限です。既存候補を確認してください');
   if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');

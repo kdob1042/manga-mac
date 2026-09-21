@@ -64,14 +64,30 @@ pub fn image_model(id: Option<&str>) -> Result<ImageModel, String> {
     let input = &value["input"];
     Ok(ImageModel {
         registry_id: selected_id,
-        adapter_id: value["adapter_id"].as_str().ok_or("画像adapter定義が不正です")?.into(),
-        model_id: value["model_id"].as_str().ok_or("画像model定義が不正です")?.into(),
-        min_width: input["min_width"].as_u64().ok_or("画像寸法定義が不正です")?,
-        max_width: input["max_width"].as_u64().ok_or("画像寸法定義が不正です")?,
-        min_height: input["min_height"].as_u64().ok_or("画像寸法定義が不正です")?,
-        max_height: input["max_height"].as_u64().ok_or("画像寸法定義が不正です")?,
+        adapter_id: value["adapter_id"]
+            .as_str()
+            .ok_or("画像adapter定義が不正です")?
+            .into(),
+        model_id: value["model_id"]
+            .as_str()
+            .ok_or("画像model定義が不正です")?
+            .into(),
+        min_width: input["min_width"]
+            .as_u64()
+            .ok_or("画像寸法定義が不正です")?,
+        max_width: input["max_width"]
+            .as_u64()
+            .ok_or("画像寸法定義が不正です")?,
+        min_height: input["min_height"]
+            .as_u64()
+            .ok_or("画像寸法定義が不正です")?,
+        max_height: input["max_height"]
+            .as_u64()
+            .ok_or("画像寸法定義が不正です")?,
         step: input["step"].as_u64().ok_or("画像寸法定義が不正です")?,
-        max_aspect_ratio: input["max_aspect_ratio"].as_f64().ok_or("画像比率定義が不正です")?,
+        max_aspect_ratio: input["max_aspect_ratio"]
+            .as_f64()
+            .ok_or("画像比率定義が不正です")?,
         steps: input["steps"].as_u64().ok_or("画像step定義が不正です")?,
     })
 }
@@ -119,9 +135,18 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
         _ => return Err("画像生成操作が不正です".into()),
     };
     let descriptor = descriptor("images", &selected.registry_id)?;
-    if !descriptor["operations"].as_array().is_some_and(|items| {
-        items.iter().any(|item| item.as_str() == Some(operation))
-    }) {
+    let references = request["references"]
+        .as_array()
+        .ok_or("参照画像一覧がありません")?;
+    let maximum = descriptor["input"]["max_references"].as_u64().unwrap_or(0);
+    if references.len() as u64 > maximum {
+        return Err("参照画像の枚数がモデルの上限を超えています".into());
+    }
+
+    if !descriptor["operations"]
+        .as_array()
+        .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(operation)))
+    {
         return Err("選択した画像モデルはこの操作に対応していません".into());
     }
     Ok(selected)
@@ -135,8 +160,12 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     {
         return Err("動画接続に任意の接続先を指定できません".into());
     }
-    let provider = connection["provider"].as_str().ok_or("動画providerがありません")?;
-    let model_id = connection["model"].as_str().ok_or("動画modelがありません")?;
+    let provider = connection["provider"]
+        .as_str()
+        .ok_or("動画providerがありません")?;
+    let model_id = connection["model"]
+        .as_str()
+        .ok_or("動画modelがありません")?;
     let data = registry()?;
     let value = data["videos"]
         .as_array()
@@ -156,11 +185,20 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     }
     let capabilities = &value["capabilities"];
     Ok(VideoModel {
-        registry_id: value["id"].as_str().ok_or("動画model定義が不正です")?.into(),
-        adapter_id: value["adapter_id"].as_str().ok_or("動画adapter定義が不正です")?.into(),
+        registry_id: value["id"]
+            .as_str()
+            .ok_or("動画model定義が不正です")?
+            .into(),
+        adapter_id: value["adapter_id"]
+            .as_str()
+            .ok_or("動画adapter定義が不正です")?
+            .into(),
         provider: provider.into(),
         model_id: model_id.into(),
-        locality: value["locality"].as_str().ok_or("動画接続の場所定義が不正です")?.into(),
+        locality: value["locality"]
+            .as_str()
+            .ok_or("動画接続の場所定義が不正です")?
+            .into(),
         end_frame: capabilities["end_frame"].as_bool().unwrap_or(false),
     })
 }
@@ -173,6 +211,7 @@ mod tests {
     fn current_image_request_is_registry_bound() {
         let model = image_model(None).expect("default image model");
         let request = json!({
+            "references": [],
             "width": 768,
             "height": 768,
             "media": {
@@ -182,12 +221,18 @@ mod tests {
             },
             "recovery": {"kind": "generate", "panel": {}}
         });
-        assert_eq!(validate_image_request(&request).expect("valid request").steps, 4);
+        assert_eq!(
+            validate_image_request(&request)
+                .expect("valid request")
+                .steps,
+            4
+        );
     }
 
     #[test]
     fn invented_image_model_and_video_adapter_are_rejected() {
         let image = json!({
+            "references": [],
             "width": 768,
             "height": 768,
             "media": {"registry_id": "qwen-image", "adapter_id": "qwen", "model_id": "qwen"},

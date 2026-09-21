@@ -521,3 +521,8 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 | UI選択→native生成入口の経路、明示prepare、Jev非使用 | `npm run build`成功。Mac UI・Swift helper・実モデルは`not_run` |
 
 ローカル確認: `npm ci --ignore-scripts`、`npm test` **222件pass**、`npm run build` pass、`git diff --check` pass。Rustの`cargo fmt`／`cargo test`／`clippy`は、この作業環境に`cargo`／`rustc`がないため未実行。Apple SiliconのSwift/Tauriビルド、FLUX実生成、Runwayの有料API、Mac上のcandidate採用・Undo・再起動復旧は、対象MacのCI／実機受入で別途確認する。
+
+
+## #213 モデル選択の補正（2026-09-21）
+
+Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。

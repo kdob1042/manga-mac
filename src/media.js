@@ -4,8 +4,8 @@ import registry from './media-registry.json' with { type: 'json' };
 // matching adapter is implemented; mentioning a future model here would make
 // it look usable, so future adapters add their descriptor only when ready.
 export const mediaRegistry = registry;
-export const imageModels = registry.images;
-export const videoModels = registry.videos;
+export const imageModels = registry.images.filter(item => item.status === 'implemented');
+export const videoModels = registry.videos.filter(item => item.status === 'implemented');
 export const defaultImageModelId = registry.defaults.image;
 export const defaultVideoModelId = registry.defaults.video;
 
@@ -70,5 +70,13 @@ export function imageOperationForJob(job) {
 export function validateImageOperation(id, operation) {
   const selected = imageModel(id);
   if (!selected.operations.includes(operation)) throw Error(`画像モデルは${operation}に対応していません`);
+  return selected;
+}
+
+export function validateImageReferences(id, references) {
+  const selected = imageModel(id);
+  if (!Array.isArray(references) || references.length > selected.input.max_references) {
+    throw Error(`参照画像は最大${selected.input.max_references}枚です`);
+  }
   return selected;
 }

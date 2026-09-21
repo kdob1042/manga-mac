@@ -398,7 +398,12 @@ async fn register_video(
     }
     state
         .connections
-        .register_video(input, selected.provider, selected.model_id, selected.adapter_id)
+        .register_video(
+            input,
+            selected.provider,
+            selected.model_id,
+            selected.adapter_id,
+        )
         .await
 }
 #[tauri::command]
@@ -551,16 +556,18 @@ fn video_job_model(
     job_id: &str,
     connection_id: &str,
     registered: &llm::VideoConnection,
+    submitting: bool,
 ) -> Result<media::VideoModel, String> {
     let db = state.db.lock().map_err(err)?;
-    let project: Value = serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
-        .map_err(err)?;
+    let project: Value =
+        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
+            .map_err(err)?;
     let job = project["jobs"]
         .as_array()
         .and_then(|jobs| jobs.iter().find(|job| job["id"].as_str() == Some(job_id)))
         .ok_or("保存済み動画要求がありません")?;
     let connection = &job["manifest"]["connection"];
-    if connection["id"].as_str() != Some(connection_id) {
+    if submitting && connection["id"].as_str() != Some(connection_id) {
         return Err("動画要求と選択中の接続が一致しません。元の接続を再登録してください".into());
     }
     let selected = media::video_model_from_connection(connection)?;
@@ -581,18 +588,20 @@ async fn video_submit(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
-    let selected = video_job_model(&state, &job_id, &connection_id, &connection)?;
+    let selected = video_job_model(&state, &job_id, &connection_id, &connection, true)?;
     let (start_image, end_image) = video_input_images(&state, &job_id)?;
     match selected.adapter_id.as_str() {
-        "runway" => runway::submit(
-            &state.db,
-            &job_id,
-            &connection_id,
-            &connection,
-            &start_image,
-            end_image.as_deref(),
-        )
-        .await,
+        "runway" => {
+            runway::submit(
+                &state.db,
+                &job_id,
+                &connection_id,
+                &connection,
+                &start_image,
+                end_image.as_deref(),
+            )
+            .await
+        }
         _ => Err("選択した動画adapterはまだ接続されていません".into()),
     }
 }
@@ -606,7 +615,7 @@ async fn video_task(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
-    let selected = video_job_model(&state, &job_id, &connection_id, &connection)?;
+    let selected = video_job_model(&state, &job_id, &connection_id, &connection, false)?;
     if selected.adapter_id != "runway" {
         return Err("選択した動画adapterはまだ接続されていません".into());
     }
@@ -662,7 +671,15 @@ fn engine_path() -> Result<PathBuf, String> {
     Err("画像エンジンが同梱されていません。macOSビルドを使用してください".into())
 }
 async fn run_engine(input: Option<String>, model_id: &str) -> Result<String, String> {
-    let mut command = tokio::process::Command::new(engine_path()?);
+    let engine = engine_path()?;
+    let mut command = if input.is_some() && cfg!(target_os = "macos") {
+        let mut sandbox = tokio::process::Command::new("/usr/bin/sandbox-exec");
+        sandbox.args(["-p", "(version 1)(allow default)(deny network*)"]);
+        sandbox.arg(&engine);
+        sandbox
+    } else {
+        tokio::process::Command::new(&engine)
+    };
     command.env_clear();
     for name in ["HOME", "TMPDIR", "PATH", "LANG"] {
         if let Some(value) = std::env::var_os(name) {

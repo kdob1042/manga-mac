@@ -11,19 +11,22 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
 @main struct MangaEngine {
   static func main() async {
     do {
-      let defaultModel = "flux_2_klein_4b_q8p.ckpt"
-      let prepareIndex = CommandLine.arguments.firstIndex(of: "--prepare")
-      let model = prepareIndex.flatMap { index in
-        index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : nil
-      } ?? defaultModel
-      if CommandLine.arguments.contains("--prepare") {
-        guard model == defaultModel else { throw NSError(domain: "Unsupported image adapter", code: 10) }
-        try await MediaGenerationEnvironment.default.ensure(model)
+      if let index = CommandLine.arguments.firstIndex(of: "--prepare") {
+        guard index + 1 < CommandLine.arguments.count else { throw NSError(domain: "Missing model", code: 10) }
+        // Native resolves this identifier from the shared registry. No second model list here.
+        try await MediaGenerationEnvironment.default.ensure(CommandLine.arguments[index + 1])
         print("ready")
         return
       }
       let request = try JSONDecoder().decode(Request.self, from: FileHandle.standardInput.readDataToEndOfFile())
-      guard request.media?.adapter_id == "media-generation-kit", request.media?.model_id == model else { throw NSError(domain: "Image model selection mismatch", code: 11) }
+      guard let selection = request.media, selection.adapter_id == "media-generation-kit",
+        selection.model_id.hasSuffix(".ckpt"), !selection.model_id.contains("/"),
+        let width = request.width, let height = request.height, let steps = request.steps,
+        width > 0, height > 0, steps > 0
+      else { throw NSError(domain: "Invalid native image descriptor", code: 11) }
+      let model = selection.model_id
+      // Missing weights fail locally; only --prepare may download.
+      try await MediaGenerationEnvironment.default.ensure(model, offline: true)
       let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
       defer { try? FileManager.default.removeItem(at: temp) }
@@ -40,14 +43,12 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
       }
       // Model downloads are exclusively triggered by --prepare, never a cloud backend.
       var pipeline = try await MediaGenerationPipeline.fromPretrained(model, backend: .local)
-      let width = request.width ?? 768, height = request.height ?? 768
-      guard (256...1024).contains(width), (256...1024).contains(height), width % 64 == 0, height % 64 == 0 else { throw NSError(domain: "Unsupported image dimensions", code: 3) }
       pipeline.configuration.width = width
       pipeline.configuration.height = height
-      pipeline.configuration.steps = request.steps ?? 4
+      pipeline.configuration.steps = steps
       pipeline.configuration.seed = request.seed
       let results = try await pipeline.generate(prompt: request.prompt, negativePrompt: "text, lettering, watermark", inputs: inputs)
-      guard let first = results.first else { throw NSError(domain: "No generated image", code: 2) }
+      guard results.count == 1, let first = results.first else { throw NSError(domain: "No generated image", code: 2) }
       let output = temp.appendingPathComponent("result.png")
       try first.write(to: output, type: .png)
       // Publish durable bytes and a hash receipt before signaling completion.
