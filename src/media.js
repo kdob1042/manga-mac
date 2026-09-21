@@ -49,6 +49,40 @@ export function videoModelForConnection(connection) {
   return selected;
 }
 
+export function videoOutputTier(id, ratio) {
+  const selected = videoModel(id);
+  if (!selected.input.ratios.includes(ratio)) throw Error('動画モデルが対応しない寸法です');
+  for (const [tier, ratios] of Object.entries(selected.output_tiers ?? {})) {
+    if (ratios.includes(ratio)) return tier;
+  }
+  if (Number.isSafeInteger(selected.pricing?.credits_per_second)) return 'default';
+  throw Error('動画モデルの料金tierを確認できません');
+}
+
+export function videoEstimateCredits(id, duration, ratio) {
+  const selected = videoModel(id);
+  if (!Number.isSafeInteger(duration) || !selected.input.durations_sec.includes(duration)) throw Error('動画モデルが対応しない尺です');
+  const tier = videoOutputTier(id, ratio);
+  const rate = tier === 'default'
+    ? selected.pricing?.credits_per_second
+    : selected.pricing?.credits_per_second_by_tier?.[tier];
+  if (!Number.isSafeInteger(rate) || rate < 0) throw Error('動画モデルの料金定義が不正です');
+  const minimum = selected.pricing?.minimum_credits ?? 0;
+  if (!Number.isSafeInteger(minimum) || minimum < 0) throw Error('動画モデルの最低料金定義が不正です');
+  const calculated = rate * duration;
+  if (!Number.isSafeInteger(calculated)) throw Error('動画料金を計算できません');
+  return { credits: Math.max(minimum, calculated), rate, minimum, tier, checked_at: selected.pricing?.checked_at ?? null };
+}
+
+export function validateVideoModelRequest(id, { duration, ratio, prompt, endFrame = false, aspect = null } = {}) {
+  const selected = videoModel(id);
+  if (!selected.input.durations_sec.includes(duration) || !selected.input.ratios.includes(ratio)) throw Error('選択した動画モデルが尺・寸法に対応していません');
+  if (endFrame && !selected.capabilities.end_frame) throw Error('選択した動画モデルは終端画像に対応していません');
+  if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > selected.input.max_prompt_utf16) throw Error('選択した動画モデルが動画指示の長さに対応していません');
+  if (aspect != null && (!Number.isFinite(aspect) || aspect < selected.input.min_aspect_ratio || aspect > selected.input.max_aspect_ratio)) throw Error('選択した動画モデルが入力画像の縦横比に対応していません');
+  return selected;
+}
+
 export function validateImageDimensions(id, width, height) {
   const selected = imageModel(id);
   const input = selected.input;
