@@ -507,3 +507,31 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 5. 取り込んだモデルを同じSceneで調整し、既存のカメラ変更・複数アングル候補・Codex/人への引継ぎへ進む。元の人物正本、原稿、他コマ、旧採用版が変わらないことを確認する。
 
 記録するのは対象Mac/Blender/app commit、項目ごとのpass/fail/not_run、生成物のhashと画面または画像証跡だけ。APIキー・Bearer token・署名URLは記録しない。Tripoの実モデル品質、料金表示、利用規約適合、複数画像/multiviewは結果を別Issue/#201へ残し、fixture成功で完了扱いにしない。
+
+## Issue #213 — 画像・動画の軽量モデル切替基盤（2026-09-20）
+
+実装した判定境界:
+
+| 検証 | 結果 |
+|---|---|
+| `src/media-registry.json`の実装済み項目だけをUI選択肢へ公開 | Node `tests/media.test.js`で確認。画像はFLUX.2 klein 4B、動画はRunway gen4.5のみ |
+| 画像要求へregistry ID・adapter・model・step数を固定し、モデル依存の寸法を検査 | Nodeで確認。既存画像要求・仕上げ・局所修正は同じ候補／採用経路を使用 |
+| 動画接続・manifestのprovider/model/adapter固定、尺・比率・終端画像能力の送信前検査 | 既存動画回帰＋media testで確認。fixtureの終端画像adapterはUI registryへ公開しない |
+| 任意モデル名・provider・adapter、未実装モデル、cloud fallback、旧Jobの付替えを拒否 | JS/native境界を追加。native Rust試験はRust toolchain未配置のため`not_run` |
+| UI選択→native生成入口の経路、明示prepare、Jev非使用 | `npm run build`成功。Mac UI・Swift helper・実モデルは`not_run` |
+
+ローカル確認: `npm ci --ignore-scripts`、`npm test` **222件pass**、`npm run build` pass、`git diff --check` pass。Rustの`cargo fmt`／`cargo test`／`clippy`は、この作業環境に`cargo`／`rustc`がないため未実行。Apple SiliconのSwift/Tauriビルド、FLUX実生成、Runwayの有料API、Mac上のcandidate採用・Undo・再起動復旧は、対象MacのCI／実機受入で別途確認する。
+
+
+## #213 モデル選択の補正（2026-09-21）
+
+Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。
+
+### Compositor外部接続（#217）
+
+- 上流pin: `c39da13b5db11bc8678ec04a7a748e1e0a589244`、format v8、macOS 26.5。
+- `integrations/compositor/build.sh <empty-directory>` は上流に接続口を追加した別アプリをビルドする。
+- `.github/workflows/compositor.yml` は実アプリに人工RGBA背景＋人物を渡し、位置変更、古いrevision拒否、
+  手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
+- AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
+- この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。

@@ -2,6 +2,7 @@
 mod backup_commands;
 mod live_preview;
 mod llm;
+mod media;
 mod policy_transport;
 mod runway;
 pub mod storage;
@@ -386,7 +387,24 @@ async fn register_video(
     input: llm::VideoRegistration,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    state.connections.register_video(input).await
+    let connection = serde_json::json!({
+        "provider": input.provider.as_deref().unwrap_or("runway"),
+        "model": input.model.as_deref().unwrap_or("gen4.5"),
+        "adapter_id": input.adapter_id.as_deref().unwrap_or("runway")
+    });
+    let selected = media::video_model_from_connection(&connection)?;
+    if selected.adapter_id != "runway" {
+        return Err("選択した動画adapterはまだ接続されていません".into());
+    }
+    state
+        .connections
+        .register_video(
+            input,
+            selected.provider,
+            selected.model_id,
+            selected.adapter_id,
+        )
+        .await
 }
 #[tauri::command]
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
@@ -533,6 +551,35 @@ fn video_input_images(state: &AppState, job_id: &str) -> Result<(String, Option<
     };
     Ok((start, end))
 }
+fn video_job_model(
+    state: &AppState,
+    job_id: &str,
+    connection_id: &str,
+    registered: &llm::VideoConnection,
+    submitting: bool,
+) -> Result<media::VideoModel, String> {
+    let db = state.db.lock().map_err(err)?;
+    let project: Value =
+        serde_json::from_str(&storage::load(&db, &state.root)?.ok_or("作品がありません")?)
+            .map_err(err)?;
+    let job = project["jobs"]
+        .as_array()
+        .and_then(|jobs| jobs.iter().find(|job| job["id"].as_str() == Some(job_id)))
+        .ok_or("保存済み動画要求がありません")?;
+    let connection = &job["manifest"]["connection"];
+    if submitting && connection["id"].as_str() != Some(connection_id) {
+        return Err("動画要求と選択中の接続が一致しません。元の接続を再登録してください".into());
+    }
+    let selected = media::video_model_from_connection(connection)?;
+    if registered.provider != selected.provider
+        || registered.model != selected.model_id
+        || registered.adapter_id != selected.adapter_id
+    {
+        return Err("保存済み動画要求の実行先を別モデルへ変更できません".into());
+    }
+    Ok(selected)
+}
+
 #[tauri::command]
 async fn video_submit(
     job_id: String,
@@ -541,16 +588,22 @@ async fn video_submit(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
+    let selected = video_job_model(&state, &job_id, &connection_id, &connection, true)?;
     let (start_image, end_image) = video_input_images(&state, &job_id)?;
-    runway::submit(
-        &state.db,
-        &job_id,
-        &connection_id,
-        &connection,
-        &start_image,
-        end_image.as_deref(),
-    )
-    .await
+    match selected.adapter_id.as_str() {
+        "runway" => {
+            runway::submit(
+                &state.db,
+                &job_id,
+                &connection_id,
+                &connection,
+                &start_image,
+                end_image.as_deref(),
+            )
+            .await
+        }
+        _ => Err("選択した動画adapterはまだ接続されていません".into()),
+    }
 }
 #[tauri::command]
 async fn video_task(
@@ -562,6 +615,10 @@ async fn video_task(
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
     let connection = state.connections.video_connection(&connection_id)?;
+    let selected = video_job_model(&state, &job_id, &connection_id, &connection, false)?;
+    if selected.adapter_id != "runway" {
+        return Err("選択した動画adapterはまだ接続されていません".into());
+    }
     match action.as_str() {
         "status" => runway::status(&state.db, &job_id, &connection).await,
         "collect" => runway::collect(&state.db, &state.root, &job_id, &connection).await,
@@ -613,8 +670,16 @@ fn engine_path() -> Result<PathBuf, String> {
     }
     Err("画像エンジンが同梱されていません。macOSビルドを使用してください".into())
 }
-async fn run_engine(input: Option<String>) -> Result<String, String> {
-    let mut command = tokio::process::Command::new(engine_path()?);
+async fn run_engine(input: Option<String>, model_id: &str) -> Result<String, String> {
+    let engine = engine_path()?;
+    let mut command = if input.is_some() && cfg!(target_os = "macos") {
+        let mut sandbox = tokio::process::Command::new("/usr/bin/sandbox-exec");
+        sandbox.args(["-p", "(version 1)(allow default)(deny network*)"]);
+        sandbox.arg(&engine);
+        sandbox
+    } else {
+        tokio::process::Command::new(&engine)
+    };
     command.env_clear();
     for name in ["HOME", "TMPDIR", "PATH", "LANG"] {
         if let Some(value) = std::env::var_os(name) {
@@ -627,7 +692,7 @@ async fn run_engine(input: Option<String>) -> Result<String, String> {
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
     if input.is_none() {
-        command.arg("--prepare");
+        command.args(["--prepare", model_id]);
     }
     let mut child = command.spawn().map_err(err)?;
     if let Some(body) = input {
@@ -655,24 +720,45 @@ async fn run_engine(input: Option<String>) -> Result<String, String> {
 }
 #[tauri::command]
 async fn prepare_engine(state: State<'_, AppState>) -> Result<String, String> {
+    prepare_engine_for(None, state).await
+}
+
+async fn prepare_engine_for(
+    model_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     let _guard = state
         .engine
         .try_lock()
         .map_err(|_| "画像エンジンは処理中です")?;
-    run_engine(None).await
+    let selected = media::image_model(model_id.as_deref())?;
+    run_engine(None, &selected.model_id).await
+}
+
+#[tauri::command]
+async fn prepare_media_engine(
+    model_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    prepare_engine_for(Some(model_id), state).await
+}
+
+#[tauri::command]
+fn media_models() -> Result<Value, String> {
+    media::public_registry()
 }
 #[tauri::command]
 async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
+    let selected = media::validate_image_request(&request)?;
     let _guard = state.engine.lock().await;
-    let width = request["width"].as_u64().unwrap_or(768);
-    let height = request["height"].as_u64().unwrap_or(768);
-    if !(256..=1024).contains(&width)
-        || !(256..=1024).contains(&height)
-        || !width.is_multiple_of(64)
-        || !height.is_multiple_of(64)
-    {
-        return Err("未対応の画像寸法です".into());
-    }
+    request["media"] = serde_json::json!({
+        "registry_id": selected.registry_id.clone(),
+        "adapter_id": selected.adapter_id.clone(),
+        "model_id": selected.model_id.clone(),
+    });
+    request["steps"] = serde_json::json!(selected.steps);
+    let width = request["width"].as_u64().ok_or("画像幅がありません")?;
+    let height = request["height"].as_u64().ok_or("画像高さがありません")?;
     if let Some(original) = request["original"].as_str() {
         let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
         let bytes = STANDARD.decode(encoded).map_err(err)?;
@@ -701,7 +787,7 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         storage::image_recovery::reserve(&mut db, &state.root, &request)?
     };
     request["output"] = destination;
-    run_engine(Some(request.to_string())).await?;
+    run_engine(Some(request.to_string()), &selected.model_id).await?;
     let db = state.db.lock().map_err(err)?;
     let result = storage::image_recovery::recover(
         &db,
@@ -1113,7 +1199,9 @@ fn main() {
             llm_request,
             generate_image,
             recover_image,
-            prepare_engine
+            prepare_engine,
+            prepare_media_engine,
+            media_models
         ])
         .run(tauri::generate_context!())
         .expect("Manga Mac failed");

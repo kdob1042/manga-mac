@@ -1,4 +1,5 @@
 import { collectVideoResult } from './video.js';
+import { videoModelForConnection } from './media.js';
 
 // Reconcile transport metadata persisted by Rust into the existing domain jobs.
 // This is called after IPC AND on restart; it never starts a network request.
@@ -13,8 +14,9 @@ export function restoreVideoResults(project) {
     if (['candidate', 'complete', 'abandoned'].includes(original.status)) continue;
     const status = ({ PENDING: 'submitted', THROTTLED: 'submitted', RUNNING: 'submitted', SUCCEEDED: 'output_pending', FAILED: 'failed', CANCELLED: 'cancelled', cancel_requested: 'cancel_requested', unknown: 'unknown' })[remote.status];
     if (!status) throw Error('未対応の動画サービス状態です');
+    const model = videoModelForConnection(original.manifest?.connection);
     next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status,
-      cost: { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
+      cost: model?.locality === 'local' ? { kind: 'local', amount: null, currency: null } : { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
   }
   return next;
 }

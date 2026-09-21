@@ -2,8 +2,8 @@
 // No network requests, second asset registry or embedded video bytes here.
 import { sourceUnits } from './core.js';
 import { digest, imageHash } from './revisions.js';
+import { videoModelForConnection } from './media.js';
 
-const ratios = ['1280:720', '720:1280', '1104:832', '960:960', '832:1104', '1584:672'];
 const hashPattern = /^[0-9a-f]{64}$/;
 const hashValue = value => digest(new TextEncoder().encode(JSON.stringify(value)));
 export function videoFrameDimensions(image) {
@@ -69,7 +69,7 @@ export function validateVideoShot(project, shot) {
   const units = sourceUnits(scene.id, scene.text).map(u => u.id);
   if (!Array.isArray(shot.unitIds) || !shot.unitIds.length || new Set(shot.unitIds).size !== shot.unitIds.length || JSON.stringify(units.filter(id => shot.unitIds.includes(id))) !== JSON.stringify(shot.unitIds)) throw Error('原文の範囲・順序が不正です');
   if (!Array.isArray(shot.characterIds) || new Set(shot.characterIds).size !== shot.characterIds.length || shot.characterIds.some(id => !project.characters.some(c => c.id === id))) throw Error('動画の人物参照が不正です');
-  if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 1000 || shot.duration !== 5 || !ratios.includes(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
+  if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 1000 || !Number.isSafeInteger(shot.duration) || shot.duration <= 0 || typeof shot.ratio !== 'string' || !/^\d+:\d+$/.test(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
   exactKeys(shot.startImage, ['kind', 'id', 'hash']);
   if (!['artwork', 'capture'].includes(shot.startImage.kind) || typeof shot.startImage.id !== 'string' || !hashPattern.test(shot.startImage.hash)) throw Error('開始画像の不変参照が必要です');
   const hasTransition = shot.transition !== undefined || shot.endImage !== undefined;
@@ -114,19 +114,17 @@ export function createVideoShot(project, options) {
 }
 
 export function videoConnectionSupportsEndFrame(connection) {
-  // The current Runway/gen4.5 API formally accepts one promptImage only.
-  // The fixture adapter is intentionally not exposed by the UI; it proves the
-  // two-frame contract without pretending to prove real provider quality/API support.
-  return connection?.provider === 'fixture' && connection?.model === 'end-frame-v1';
+  return !!videoModelForConnection(connection)?.capabilities?.end_frame;
 }
 
 export async function videoManifest(project, shot, connection, loadCapture) {
   validateVideoShot(project, shot);
-  exactKeys(connection, ['id', 'provider', 'model']);
-  const isRunway = connection.provider === 'runway' && connection.model === 'gen4.5';
-  const isFrameFixture = videoConnectionSupportsEndFrame(connection);
-  if (typeof connection.id !== 'string' || !connection.id || (!isRunway && !isFrameFixture)) throw Error('対応する動画接続が未設定です');
-  if (shot.transition && !isFrameFixture) throw Error('選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません');
+  exactKeys(connection, ['id', 'provider', 'model', 'adapter_id']);
+  const selected = videoModelForConnection(connection);
+  if (typeof connection.id !== 'string' || !connection.id || !selected) throw Error('対応する動画接続が未設定です');
+  const input = selected.input;
+  if (shot.duration !== input.duration_sec || !input.ratios.includes(shot.ratio)) throw Error('選択した動画モデルが尺・寸法に対応していません');
+  if (shot.transition && !selected.capabilities.end_frame) throw Error('選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません');
   const start = await resolveStartImage(project, shot.startImage, loadCapture);
   const startDimensions = validateVideoFrame(start.image, shot.ratio);
   const end = shot.transition ? await resolveStartImage(project, shot.endImage, loadCapture) : null;
@@ -160,10 +158,11 @@ export async function beginVideoJob(project, shotId, connection, loadCapture) {
   if (jobs.some(j => ['running', 'unknown', 'submitted', 'cancel_requested', 'output_pending'].includes(j.status))) throw Error('未確定の動画要求を確認してください');
   if (jobs.filter(j => j.base_revision === shot.adopted_revision).length >= 3) throw Error('同じ動画版の試行上限です');
   const request = await videoManifest(project, shot, connection, loadCapture);
+  const selected = videoModelForConnection(connection);
   const job = { id: crypto.randomUUID(), kind: 'video', scope: request.manifest.scope,
     source_revision: shot.snapshotId, base_revision: shot.adopted_revision, manifest: request.manifest,
     input_hash: request.input_hash, status: 'running', attempts: 1, at: new Date().toISOString(),
-    active_snapshot: project.active, cost: { kind: 'external', amount: null, currency: null } };
+    active_snapshot: project.active, cost: { kind: selected.locality === 'local' ? 'local' : 'external', amount: null, currency: null } };
   // Caller must save this project successfully BEFORE any paid submission.
   return { project: { ...project, jobs: [...project.jobs, job] }, job, image: request.image, endImage: request.endImage };
 }
