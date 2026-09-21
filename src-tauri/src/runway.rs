@@ -1167,7 +1167,8 @@ mod tests {
         invalid["providerInputs"][0]["role"] = json!("end_frame");
         assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
         invalid = pair.clone();
-        invalid["providerInputs"].as_array_mut().unwrap().push(invalid["providerInputs"][1].clone());
+        let duplicate = invalid["providerInputs"][1].clone();
+        invalid["providerInputs"].as_array_mut().unwrap().push(duplicate);
         assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
         invalid = pair;
         invalid["audio"] = json!(true);
@@ -1312,7 +1313,7 @@ mod tests {
 
     #[test]
     fn seedance_reservation_uses_tier_rate_and_minimum() {
-        let (manifest, _) = seedance_fixture(false);
+        let (manifest, _, _) = seedance_fixture(false);
         let job = json!({
             "id":"seedance-job",
             "scope":{"type":"videoShot","id":"v"},
