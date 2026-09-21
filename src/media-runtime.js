@@ -1,25 +1,11 @@
+import { createImageExecutor } from './image-executor.js';
 import { call } from './bridge.js';
 import { imageModel, videoConnection } from './media.js';
 
 // The UI reaches native media adapters through these two narrow gates. The
 // registry selection is copied into every request so a saved job cannot drift
 // to the currently selected model while it is being recovered or submitted.
-export async function executeImage(modelId, request, permit = null) {
-  const selected = imageModel(modelId ?? request.media?.registry_id);
-  if (request.media && Object.entries({ registry_id: selected.id, adapter_id: selected.adapter_id, model_id: selected.model_id }).some(([key, value]) => request.media[key] !== value)) {
-    throw Error('画像要求と選択中のモデルが一致しません');
-  }
-  return call('generate_image', {
-    request: {
-      ...request,
-      media: {
-        registry_id: selected.id,
-        adapter_id: selected.adapter_id,
-        model_id: selected.model_id,
-      },
-    },
-  }, permit);
-}
+export const executeImage = createImageExecutor(imageModel, call);
 
 export async function executeVideo(action, modelId, connectionId, args = {}) {
   const connection = videoConnection(modelId, connectionId);
