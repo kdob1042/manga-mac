@@ -98,3 +98,36 @@ test('library scene selection reads one scene and keys the snapshot by scene',as
  assert.match(snapshot.id,/P01-02$/);
  assert.deepEqual(paths,['works/work/work.json','works/work/manuscript/p01/p01-02.md']);
 });
+
+
+test('multi-episode sync retains previously imported episodes and reads selected branch head',async()=>{
+ const manifest={format:'story-source/v1',work:{title:'複数話'},episodes:[
+  {id:'P01',title:'一',scenes:[{id:'P01-01',path:'manuscript/p01/a.md'}]},
+  {id:'P02',title:'二',scenes:[{id:'P02-01',path:'manuscript/p02/a.md'}]}
+ ],settings:[],characters:[]};
+ const firstSha='1'.repeat(40),secondSha='2'.repeat(40),heads=[];
+ const invoke=async(command,args)=>{
+  if(command==='github_get'){heads.push(args.path);return JSON.stringify({sha:firstSha});}
+  if(command==='github_file'){
+   if(args.path==='manifest.json')return JSON.stringify(manifest);
+   if(args.path==='manuscript/p01/a.md')return '# P01\n\n本文1';
+   if(args.path==='manuscript/p02/a.md')return '# P02\n\n本文2';
+  }
+  throw Error('unexpected '+command+' '+args.path);
+ };
+ const first=await syncSource('owner/story','token','P01',null,invoke,{branch:'dev',episodeIds:['P01','P02']});
+ assert.deepEqual(first.episodeIds,['P01','P02']);assert.equal(first.sync.source_branch,'dev');
+ assert.deepEqual(first.scenes.map(scene=>scene.id),['P01-01','P02-01']);assert.deepEqual(heads,['commits/dev']);
+ const update=async(command,args)=>{
+  if(command==='github_file'){
+   if(args.path==='manifest.json')return JSON.stringify(manifest);
+   if(args.path==='manuscript/p01/a.md')return '# P01\n\n本文1更新';
+   if(args.path==='manuscript/p02/a.md')return '# P02\n\n本文2更新';
+  }
+  throw Error('unexpected '+command+' '+args.path);
+ };
+ const second=await syncSource('owner/story','token','P02',first,update,{branch:'dev',commit:secondSha,episodeIds:['P02']});
+ assert.deepEqual(second.episodeIds,['P01','P02']);
+ assert.deepEqual(second.scenes.map(scene=>scene.id),['P01-01','P02-01']);
+ assert.match(second.scenes[0].text,/更新/);assert.match(second.scenes[1].text,/更新/);
+});
