@@ -450,6 +450,39 @@ mod tests {
         .unwrap();
     }
     #[test]
+    fn layer_colour_receipt_preserves_target_and_rejects_changed_reference_roles() {
+        let (mut db, root, mut project, mut request) = setup();
+        let fixed = json!({"preset":"colour-only","colour":"#3366cc","rect":[0,0,1,1],"width":1,"height":1,"target_hash":request["recovery"]["original_hash"],"character_id":"person","source":{"session":"editor","layer":"layer"},"references":[{"id":"context","name":"Context","role":"context","hash":"context-hash"},{"id":"person","name":"Person","role":"character","hash":"person-hash"}]});
+        project["jobs"][0]["kind"] = json!("layer_edit");
+        project["jobs"][0]["layer_edit"] = fixed.clone();
+        let owner = json!({"id":"editor","kind":"compositor","status":"candidate","panelId":project["panels"][0]["id"],"compositor":{"bindings":{"layer":"person"}}});
+        project["jobs"].as_array_mut().unwrap().push(owner);
+        save(&mut db, &root, &project.to_string()).unwrap();
+        request["job"] = project["jobs"][0].clone();
+        request["original_hash"] = fixed["target_hash"].clone();
+        request["references"] = fixed["references"].clone();
+        request["recovery"]["kind"] = json!("layer_edit");
+        request["recovery"]["layer_edit"] = fixed.clone();
+        request["recovery"]["target"] = json!({"image":request["recovery"]["original"]});
+        let mut changed = request.clone();
+        changed["references"][0]["role"] = json!("character");
+        assert!(reserve(&mut db, &root, &changed).is_err());
+        changed = request.clone();
+        changed["recovery"]["layer_edit"]["source"]["layer"] = json!("deleted");
+        assert!(reserve(&mut db, &root, &changed).is_err());
+        let destination = reserve(&mut db, &root, &request).unwrap();
+        assert!(reserve(&mut db, &root, &request).is_err());
+        publish(&root, &destination, &request);
+        let receipt = recover(&db, &root, "local-1").unwrap();
+        assert_eq!(receipt["context"]["layer_edit"], fixed);
+        assert_eq!(
+            receipt["context"]["target"]["image"],
+            request["recovery"]["original"]
+        );
+        assert_eq!(recover(&db, &root, "local-1").unwrap(), receipt);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn ordered_rgba_receipt_recovers_all_layers_without_resending() {
         let (mut db, root, mut project, mut request) = setup();
         let fixture: Value =
