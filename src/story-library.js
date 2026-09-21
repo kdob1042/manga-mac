@@ -5,6 +5,7 @@ import { normalizeSourceManifest } from './source-protocol.js';
 
 export const LIBRARY_FORMAT = 'story-library/v1';
 export const DEFAULT_STORY_LIBRARY_REPO = 'kdob1042/story-library';
+export const SOURCE_BRANCHES = ['dev', 'main'];
 const SHA = /^[a-f0-9]{40}$/;
 
 function parseJson(text, label) {
@@ -15,9 +16,14 @@ function parseJson(text, label) {
   }
 }
 
-function commitFrom(value) {
+export function sourceBranch(value = 'main') {
+  if (!SOURCE_BRANCHES.includes(value)) throw Error('原稿ブランチはdevまたはmainを選んでください');
+  return value;
+}
+
+function commitFrom(value, branch) {
   const sha = parseJson(value, 'commit').sha;
-  if (!SHA.test(sha)) throw Error('story-libraryのmain commitが不正です');
+  if (!SHA.test(sha)) throw Error(`story-libraryの${branch} commitが不正です`);
   return sha;
 }
 
@@ -61,9 +67,10 @@ export function manifestOutline(manifest) {
   }));
 }
 
-export async function fetchStoryLibrary(repo, token, invokeCall) {
+export async function fetchStoryLibrary(repo, token, invokeCall, branch = 'main') {
   if (typeof invokeCall !== 'function') throw Error('GitHub接続が必要です');
-  const sha = commitFrom(await invokeCall('github_get', {repo, path: 'commits/main', token}));
+  const selectedBranch = sourceBranch(branch);
+  const sha = commitFrom(await invokeCall('github_get', {repo, path: `commits/${selectedBranch}`, token}), selectedBranch);
   const [catalogText, sourceMapText] = await Promise.all([
     invokeCall('github_file', {repo, path: 'library.json', sha, token}),
     invokeCall('github_file', {repo, path: 'migrations/source-map.json', sha, token}),
@@ -72,7 +79,7 @@ export async function fetchStoryLibrary(repo, token, invokeCall) {
   const sourceMap = validateSourceMap(parseJson(sourceMapText, 'migrations/source-map.json'), {
     catalogWorkIds: new Set(catalog.works.map(work => work.id)),
   });
-  return {repo, sha, catalog, sourceMap};
+  return {repo, branch:selectedBranch, sha, catalog, sourceMap};
 }
 
 export async function fetchStoryLibraryWork(library, workId, token, invokeCall) {
