@@ -20,12 +20,9 @@ pub struct ImageModel {
 
 #[derive(Clone)]
 pub struct VideoModel {
-    pub registry_id: String,
     pub adapter_id: String,
     pub provider: String,
     pub model_id: String,
-    pub locality: String,
-    pub end_frame: bool,
 }
 
 fn registry() -> Result<Value, String> {
@@ -183,23 +180,13 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     {
         return Err("動画のadapter定義が登録情報と一致しません".into());
     }
-    let capabilities = &value["capabilities"];
     Ok(VideoModel {
-        registry_id: value["id"]
-            .as_str()
-            .ok_or("動画model定義が不正です")?
-            .into(),
         adapter_id: value["adapter_id"]
             .as_str()
             .ok_or("動画adapter定義が不正です")?
             .into(),
         provider: provider.into(),
         model_id: model_id.into(),
-        locality: value["locality"]
-            .as_str()
-            .ok_or("動画接続の場所定義が不正です")?
-            .into(),
-        end_frame: capabilities["end_frame"].as_bool().unwrap_or(false),
     })
 }
 

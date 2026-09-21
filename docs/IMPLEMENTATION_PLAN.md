@@ -610,3 +610,27 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 - 参照は初期アプリ上限8枚。超過を省略せず拒否する。保存済みJobのmodel/adapterと実要求の一致をnativeでも検証。
 - 動画の再登録による資格情報ID変更は状態照会・回収で許すが、provider/model/adapter変更は拒否する。新規送信には開始時の接続IDも必要。旧taskを再送しない。
 - Qwen-Image-Layeredの多層出力とCompositorは#217で扱う。6-bit切替の検証を異なるモデル系列やRGBA対応の実証にしない。
+
+### Compositor接続の実装境界（#217、PR #220）
+
+上流 `robbietilton/Compositor@c39da13b5db11bc8678ec04a7a748e1e0a589244` を固定し、
+`integrations/compositor/prepare.py` で最小の外部操作口だけを重ねる。外部アプリのGUI・renderer・
+ProjectStoreを利用し、manga-macへエンジンを取り込まない。この版のproject formatはコード上v8、
+Xcode projectのdeployment targetはmacOS 26.5。これは連携アプリの条件でありmanga-mac全体の要件ではない。
+
+初期接続口は同一ユーザー専用0700ディレクトリの認証付きfile IPC。任意パスやコマンドは公開せず、
+session/document/revisionを照合し、状態取得、位置・寸法・回転・表示変更、手動引継ぎ、版の書出しに限定する。
+一つのsnapshotからCompositor自身が`.comp`とPNGを出力する。処理IDを再実行せず、成否不明なら照合する。
+原稿・Job・人物対応・候補採用・公開データは引き続きmanga-macが所有する。
+
+接続口の実装・外部アプリfixture・native/UIへの接続・実機受入を別々に完了判定する。
+PR #220ではnative/UI接続と既存Jobへの候補保存、人物対応、確定snapshotの回収を追加する。
+素材は既存image artifactへ外出しし、採用・Undo・バックアップを再利用する。
+人間／アプリ／Codex間の操作権は同じ接続口で移譲し、process instanceを毎回照合する。
+Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
+PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120秒でも書込み権を解放し、次の操作前に再観測する。
+
+Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、
+内部表現はAlpha[0,1]＋RGB[-1,1]で、SDK標準PNG writerはRGB専用。
+RGBA変換・レイヤー順／枚数・receipt・入力canvas役割を実装／検証するまではregistryへ有効登録しない。
+参照編集のRGB出力を透明レイヤーにそのまま差し替えない。ComfyUI/MFLUXへの退避は追加しない。

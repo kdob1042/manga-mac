@@ -526,3 +526,12 @@ liveのreadyは構造確認の提案として扱い、任意自然言語の見�
 ## #213 モデル選択の補正（2026-09-21）
 
 Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。
+
+### Compositor外部接続（#217）
+
+- 上流pin: `c39da13b5db11bc8678ec04a7a748e1e0a589244`、format v8、macOS 26.5。
+- `integrations/compositor/build.sh <empty-directory>` は上流に接続口を追加した別アプリをビルドする。
+- `.github/workflows/compositor.yml` は実アプリに人工RGBA背景＋人物を渡し、位置変更、古いrevision拒否、
+  手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
+- AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
+- この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。

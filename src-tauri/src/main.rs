@@ -12,6 +12,7 @@ mod web_asset;
 mod blender;
 mod blender_gui;
 mod blender_live;
+mod compositor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -28,6 +29,34 @@ struct AppState {
     video: tokio::sync::Mutex<()>,
     live_blender: blender_live::Live,
     blender_gui: blender_gui::Launcher,
+    compositor_gate: tokio::sync::Mutex<()>,
+}
+#[tauri::command]
+async fn compositor_start(
+    session_id: String,
+    bundle: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
+    compositor::start(&session_id, bundle).await
+}
+#[tauri::command]
+async fn compositor_call(
+    session_id: String,
+    request: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
+    if request["op"] == "saved_snapshot" {
+        return compositor::saved_snapshot(&session_id);
+    }
+    compositor::exchange(&session_id, request).await
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -757,8 +786,6 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         "model_id": selected.model_id.clone(),
     });
     request["steps"] = serde_json::json!(selected.steps);
-    let width = request["width"].as_u64().ok_or("画像幅がありません")?;
-    let height = request["height"].as_u64().ok_or("画像高さがありません")?;
     if let Some(original) = request["original"].as_str() {
         let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
         let bytes = STANDARD.decode(encoded).map_err(err)?;
@@ -1137,6 +1164,7 @@ fn main() {
                 video: tokio::sync::Mutex::new(()),
                 live_blender: blender_live::Live::default(),
                 blender_gui: blender_gui::Launcher::default(),
+                compositor_gate: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })
@@ -1149,6 +1177,8 @@ fn main() {
             backup_commands::backup_restore,
             backup_commands::backup_open,
             backup_commands::backup_rebind_blender,
+            compositor_start,
+            compositor_call,
             blender_live,
             blender_gui_start,
             blender_workspace,
