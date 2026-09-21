@@ -781,15 +781,27 @@ mod tests {
     }
 
     #[test]
-    fn provider_body_uses_actual_bytes_and_rejects_unavailable_controls() {
+    fn provider_body_uses_actual_bytes_and_registered_model_contract() {
         let (manifest, image) = fixture();
         let body = payload(&manifest, &image).unwrap();
         assert_eq!(body["promptImage"], image);
         assert_eq!(body["duration"], 5);
         assert_eq!(body["model"], "gen4.5");
         assert!(body.get("sourceDependencies").is_none());
+
+        let mut ten_seconds = manifest.clone();
+        ten_seconds["duration"] = json!(10);
+        assert_eq!(payload(&ten_seconds, &image).unwrap()["duration"], 10);
+
+        let mut turbo = manifest.clone();
+        turbo["connection"]["model"] = json!("gen4_turbo");
+        turbo["duration"] = json!(6);
+        let turbo_body = payload(&turbo, &image).unwrap();
+        assert_eq!(turbo_body["model"], "gen4_turbo");
+        assert_eq!(turbo_body["duration"], 6);
+
         for (key, value) in [
-            ("duration", json!(10)),
+            ("duration", json!(11)),
             ("ratio", json!("1920:1080")),
             ("endImage", json!("ignored")),
             ("depth", json!("ignored")),
@@ -798,6 +810,9 @@ mod tests {
             bad[key] = value;
             assert!(payload(&bad, &image).is_err());
         }
+        let mut invented = manifest.clone();
+        invented["connection"]["model"] = json!("invented");
+        assert!(payload(&invented, &image).is_err());
         let mut bad = manifest.clone();
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
