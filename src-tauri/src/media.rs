@@ -209,13 +209,20 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
         .as_array()
         .ok_or("動画尺定義が不正です")?
         .iter()
-        .map(|item| item.as_u64().ok_or_else(|| "動画尺定義が不正です".to_string()))
+        .map(|item| {
+            item.as_u64()
+                .ok_or_else(|| "動画尺定義が不正です".to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let ratios = input["ratios"]
         .as_array()
         .ok_or("動画寸法定義が不正です")?
         .iter()
-        .map(|item| item.as_str().map(str::to_owned).ok_or_else(|| "動画寸法定義が不正です".to_string()))
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "動画寸法定義が不正です".to_string())
+        })
         .collect::<Result<Vec<_>, _>>()?;
     if durations_sec.is_empty() || ratios.is_empty() {
         return Err("動画モデルの入力定義が空です".into());
