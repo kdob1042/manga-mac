@@ -236,7 +236,9 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
         model_id: model_id.into(),
         durations_sec,
         ratios,
-        end_frame: value["capabilities"]["end_frame"].as_bool().unwrap_or(false),
+        end_frame: value["capabilities"]["end_frame"]
+            .as_bool()
+            .unwrap_or(false),
         credits_per_second: value["pricing"]["credits_per_second"]
             .as_u64()
             .ok_or("動画料金定義が不正です")?,
