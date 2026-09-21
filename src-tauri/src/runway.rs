@@ -273,6 +273,7 @@ fn reserve(
         || shot["snapshotId"] != job["source_revision"]
         || shot["prompt"] != job["manifest"]["prompt"]
         || shot["unitIds"] != job["manifest"]["source"]["unitIds"]
+        || shot["sourceRefs"] != job["manifest"]["source"]["sourceRefs"]
         || shot["sceneId"] != job["manifest"]["source"]["sceneId"]
         || shot["characterIds"] != job["manifest"]["characterIds"]
         || shot["ratio"] != job["manifest"]["ratio"]

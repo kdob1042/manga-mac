@@ -402,6 +402,8 @@ task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求
 
 V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作らない撮影準備は既存shot_batchesへscope_type=videoSourceとして保存し、同じShotControlsから接続済みGUIを明示割当し、GUIで撮影した版を保存する。camera/frame・素材・ポーズは同じGUIで編集する。撮影版は共通capturesへ保存し、既存開始画像解決器へ渡す。再撮影しても保存済み動画ショットの開始画像参照・採用動画・漫画履歴は変更しない。旧撮影を使う漫画・動画と、同一base_sessionの保存版変更に影響する撮影を読取り専用で表示する。ファイル名から素材の同一性を推定せず、別接続で再登録した素材の対応は自動推定しない。MV-11の実Blender両媒体受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
+選択コマの動画バッチは、漫画画面のページ内選択を動画画面へ渡し、採用済みArtworkRevisionを開始画像に固定した通常の`videoShots`をコマごとに作る。共通の尺・比率・演出方針を一括適用した後も、動きの指示はshot単位で編集可能とする。作成元panel IDとbatch IDは追跡用であり、原文・画像・人物を複製しない。原稿対応または採用作画版が変わったレシピは送信前に拒否する。実行確認では件数・model・最大予約creditsを表示し、明示確認後に既存`beginVideoJob`とmedia runtimeへ1件ずつ渡す。全件分を未送信running Jobとして先行保存せず、各Jobを保存してからその1件だけPOSTする。結果は従来どおり候補であり、自動採用・バッチUndo・第二のキューを追加しない。
+
 ## 13. 参照資料と未確定事項
 
 一次資料（2026-09-14参照。`latest`は説明用リンクであり依存固定値ではない）：

@@ -43,3 +43,38 @@ test('video planning shares artwork and survives reload without changing manga',
   await page.getByRole('button', { name: '漫画', exact: true }).click();
   await expect(page.locator('.caption')).toHaveText(original);
 });
+
+test('selected manga panels become editable video recipes before any batch submission', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(project => new Promise((resolve, reject) => {
+    const open = indexedDB.open('manga-mac', 1);
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const db = open.result, tx = db.transaction('data', 'readwrite');
+      tx.objectStore('data').put(project, 'project');
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  }), legacy);
+  await page.reload();
+  const drawing = page.getByRole('region', { name: '参照付き作画' });
+  await drawing.getByRole('checkbox').check();
+  await drawing.getByRole('button', { name: '選択コマを動画化' }).click();
+  await expect(page.getByText('選択コマの動画レシピ・バッチ生成')).toBeVisible();
+  await expect(page.getByLabel('s:p0の動き')).toBeVisible();
+  await page.getByLabel('共通の動き').fill('人物は小さくうなずき、カメラがゆっくり寄る');
+  await page.getByRole('button', { name: '共通設定を選択コマへ適用' }).click();
+  await expect(page.getByLabel('s:p0の動き')).toHaveValue('人物は小さくうなずき、カメラがゆっくり寄る');
+  await page.getByRole('button', { name: '選択コマの動画レシピを保存' }).click();
+  await expect(page.getByRole('status')).toContainText('1コマの動画レシピを保存しました');
+  await expect(page.getByRole('navigation', { name: '動画ショット一覧' }).getByRole('button')).toHaveCount(1);
+  expect(await page.evaluate(async () => {
+    const { loadProject } = await import('/src/bridge.js');
+    const saved = await loadProject();
+    const shot = saved.videoShots[0];
+    return { sourcePanelId: shot.sourcePanelId, batchId: shot.batchId, jobs: saved.jobs.filter(job => job.kind === 'video').length };
+  })).toMatchObject({ sourcePanelId: 's:p0', jobs: 0 });
+  await page.reload();
+  await page.getByRole('button', { name: '動画', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: '動画ショット一覧' }).getByRole('button')).toHaveCount(1);
+});
