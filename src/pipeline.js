@@ -90,7 +90,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   if(requestedEpisodeIds.some(id=>!model.episodes.some(e=>e.id===id)))throw Error('選択した話が原稿にありません');
   episodeIds=model.episodes.filter(e=>episodeIds.includes(e.id)).map(e=>e.id);
   selectedSceneId=episodeIds.length===1?options.sceneId:null;
-  const ordered = episodeIds.flatMap(id => orderedScenes(model, id));
+  const ordered = episodeIds.flatMap(id => orderedScenes(model, id).map(scene=>({...scene,episodeId:scene.episodeId??id})));
   if (new Set(ordered.map(scene => scene.id)).size !== ordered.length) throw Error('複数話で場面IDが重複しています');
   const selected = selectedSceneId ? ordered.filter(scene => scene.id === selectedSceneId) : ordered;
   if (selectedSceneId && selected.length !== 1) throw Error('選択したシーンは取込対象の話に存在しません');

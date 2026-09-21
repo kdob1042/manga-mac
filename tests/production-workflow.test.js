@@ -71,3 +71,9 @@ test('unchanged applied paragraph can be explicitly replanned without making the
  assert.equal(expected.afterUnits[1].id,p.sourceApplication.units[1].id);
  assert.notEqual(expected.afterUnits[0].id,p.sourceApplication.units[0].id);
 });
+
+test('source candidate generation blocks approval only in its own section',()=>{
+ const p=fixture();p.jobs=[{id:'source-op',kind:'sourcePatch',status:'candidate',run:{stage:'drawing'},source_patch:{expected:{sourceEdits:[{newRefs:[p.sourceApplication.units[0].source],oldUnitIds:[]}]}}}];
+ assert.match(completionProblems(p,'a').join(' '),/未確定/);assert.deepEqual(completionProblems(p,'b'),[]);
+ p.jobs[0].run.stage='candidate';assert.deepEqual(completionProblems(p,'a'),[]);
+});

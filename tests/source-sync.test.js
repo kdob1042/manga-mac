@@ -115,7 +115,7 @@ test('multi-episode sync retains previously imported episodes and reads selected
   }
   throw Error('unexpected '+command+' '+args.path);
  };
- const first=await syncSource('owner/story','token','P01',null,invoke,{branch:'dev',episodeIds:['P01','P02']});
+ const first=await syncSource('owner/story','token','P01',null,invoke,{branch:'dev',episodeIds:['P02','P01']});
  assert.deepEqual(first.episodeIds,['P01','P02']);assert.equal(first.sync.source_branch,'dev');
  assert.deepEqual(first.scenes.map(scene=>scene.id),['P01-01','P02-01']);assert.deepEqual(heads,['commits/dev']);
  const update=async(command,args)=>{

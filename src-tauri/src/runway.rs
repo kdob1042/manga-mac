@@ -1031,59 +1031,59 @@ mod tests {
         let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
         let image = image_payload(&json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":start,"role":"character"},{"image":end,"role":"style"}]})).unwrap();
         for (body, path) in [(body, "image_to_video"), (image, "text_to_image")] {
-        let expected = body.clone();
-        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = server.local_addr().unwrap();
-        let worker = std::thread::spawn(move || {
-            let (mut socket, _) = server.accept().unwrap();
-            socket
-                .set_read_timeout(Some(Duration::from_secs(5)))
+            let expected = body.clone();
+            let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = server.local_addr().unwrap();
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = server.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut headers = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !headers.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                let text = String::from_utf8(headers).unwrap().to_lowercase();
+                assert!(text.starts_with(&format!("post /v1/{path} ")));
+                assert!(text.contains("authorization: bearer fixture-secret"));
+                let size: usize = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                let mut bytes = vec![0; size];
+                socket.read_exact(&mut bytes).unwrap();
+                assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
+                let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
+                write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
                 .unwrap();
-            let mut headers = Vec::new();
-            let mut byte = [0_u8; 1];
-            while !headers.ends_with(b"\r\n\r\n") {
-                socket.read_exact(&mut byte).unwrap();
-                headers.push(byte[0]);
-            }
-            let text = String::from_utf8(headers).unwrap().to_lowercase();
-            assert!(text.starts_with(&format!("post /v1/{path} ")));
-            assert!(text.contains("authorization: bearer fixture-secret"));
-            let size: usize = text
-                .lines()
-                .find_map(|line| line.strip_prefix("content-length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            let mut bytes = vec![0; size];
-            socket.read_exact(&mut bytes).unwrap();
-            assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
-            let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
-        });
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
+            let connection = VideoConnection {
+                credential: "fixture-secret".into(),
+                max_credits: 60,
+                provider: "runway".into(),
+                model: "gen4.5".into(),
+                adapter_id: "runway".into(),
+            };
+            let response = request(
+                &client,
+                reqwest::Method::POST,
+                reqwest::Url::parse(&format!("http://{address}/v1/{path}")).unwrap(),
+                &connection,
+            )
+            .json(&body)
+            .send()
+            .await
             .unwrap();
-        let connection = VideoConnection {
-            credential: "fixture-secret".into(),
-            max_credits: 60,
-            provider: "runway".into(),
-            model: "gen4.5".into(),
-            adapter_id: "runway".into(),
-        };
-        let response = request(
-            &client,
-            reqwest::Method::POST,
-            reqwest::Url::parse(&format!("http://{address}/v1/{path}")).unwrap(),
-            &connection,
-        )
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-        assert!(json_response(response).await.unwrap()["id"].is_string());
-        worker.join().unwrap();
+            assert!(json_response(response).await.unwrap()["id"].is_string());
+            worker.join().unwrap();
         }
     }
 

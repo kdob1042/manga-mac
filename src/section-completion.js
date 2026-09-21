@@ -3,7 +3,7 @@ import {validateApplication} from './source-application.js';
 import {sourceResolver} from './source-refs.js';
 
 const snapshot=p=>p.snapshots.find(s=>s.id===p.active);
-export const sectionKey=(p,id)=>`${p.workId??snapshot(p)?.repo??''}:${snapshot(p)?.scenes.find(s=>s.id===id)?.episodeId??''}:${id}`;
+export const sectionKey=(p,id)=>`${p.workId??snapshot(p)?.repo??''}:${snapshot(p)?.scenes.find(s=>s.id===id)?.episodeId??snapshot(p)?.episodeId??''}:${id}`;
 export function sectionPanels(p,id){return p.panels.filter(panel=>panel.sceneId===id||(panel.sourceRefs??[]).some(r=>r.sceneId===id));}
 export function sectionVersion(p,id){
  const source=snapshot(p),scene=source?.scenes.find(s=>s.id===id);if(!scene)return null;
@@ -22,7 +22,13 @@ export function completionProblems(p,id){
  if(changes.blocks.some(b=>[...(b.newRefs??[]),...(b.oldUnitIds??[]).flatMap(uid=>p.sourceApplication?.units.filter(u=>u.id===uid).map(u=>u.source)??[])].some(r=>r.sceneId===id)))errors.push('未割当または未反映の原稿があります');
  if(!panels.length)errors.push('コマがありません');
  if(panels.some(x=>!x.image))errors.push('未作画のコマがあります');
- if(p.jobs.some(j=>['running','unknown'].includes(j.status)&&(ids.has(j.panelId)||j.source_candidate?.patch.panels.some(x=>ids.has(x.id)))))errors.push('実行中・応答未確定の処理があります');
+ const affects=j=>{
+  if(ids.has(j.panelId))return true;
+  const owner=j.sourcePatchOp?p.jobs.find(o=>o.id===j.sourcePatchOp):j;
+  const edits=owner?.source_patch?.expected?.sourceEdits??owner?.source_candidate?.prepared?.expected?.sourceEdits??[];
+  return edits.some(e=>(e.newRefs??[]).some(r=>r.sceneId===id)||(e.oldUnitIds??[]).some(uid=>p.sourceApplication.units.some(u=>u.id===uid&&u.source.sceneId===id)));
+ };
+ if(p.jobs.some(j=>(['running','unknown'].includes(j.status)||(!['complete','cancelled'].includes(j.status)&&['waiting','planning','drawing','stopping'].includes(j.run?.stage)))&&affects(j)))errors.push('実行中・応答未確定の処理があります');
  try{validateApplication(p,(p.sourceApplication?.units??[]).filter(u=>u.source.sceneId===id));}catch(e){errors.push(e.message);}
  return [...new Set(errors)];
 }
