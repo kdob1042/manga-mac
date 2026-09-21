@@ -32,7 +32,11 @@ export async function refreshSourceCandidate(project,candidate,invoke){
  const prepared={...old,identity:{...old.identity,baseContentToken:project.contentToken},expected,plan};
  const ids=new Set(old.plan.scope.panelIds);
  const panels=project.panels.filter(p=>!ids.has(p.id)).concat(candidate.patch.panels.filter(p=>ids.has(p.id)||p.id.startsWith(`source:${old.identity.opId}:panel:`)));
- return makeSourceCandidate(project,prepared,panels,candidate.redrawPanelIds,candidate.reason);
+ const updated=makeSourceCandidate(project,prepared,panels,candidate.redrawPanelIds,candidate.reason);
+ // Unchanged content permits refreshing the native read set, not replanning the user's geometry.
+ if (project.contentToken===old.identity.baseContentToken) updated.patch.layout=structuredClone(candidate.patch.layout);
+ else if (candidate.nameConfirmed || candidate.manualLayout) throw Error('別の制作変更がありました。確定ネームを保持しています。対象範囲を再確認してください');
+ return {...candidate,...updated};
 }
 export async function commitSourceUpdate(project,prepared,patch,invoke){
  if(project.workId!==prepared.identity.workId)throw Error('対象作品が変わりました');

@@ -1165,3 +1165,59 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
+
+// Static images reuse Runway's transport, ephemeral credentials, existing image
+// receipts and the project Job. A task ID is durably recorded before polling.
+pub fn image_payload(input: &Value) -> Result<Value,String> {
+    if input["media"]["model_id"]!="gen4_image" || input["width"]!=720 || input["height"]!=720 {return Err("Runway静止画はgen4_image / 720×720に対応します".into());}
+    let mut refs=Vec::new();
+    if let Some(original)=input["original"].as_str(){refs.push(json!({"uri":original,"tag":"original"}));}
+    for (i,r) in input["references"].as_array().ok_or("Missing references")?.iter().enumerate(){
+        refs.push(json!({"uri":r["image"],"tag":format!("ref{}",i+1)}));
+    }
+    if refs.len()>3{return Err("撮影原本・編集元を含め参照は3枚までです".into());}
+    for r in &refs {
+        let uri=r["uri"].as_str().ok_or("Missing image")?;
+        if uri.len()>5_000_000 || !["data:image/png;base64,","data:image/jpeg;base64,","data:image/webp;base64,"].iter().any(|prefix|uri.starts_with(prefix)){return Err("参照画像はPNG/JPEG/WebPの5MB以下にしてください".into());}
+    }
+    let prompt=input["prompt"].as_str().ok_or("Missing prompt")?;
+    let tags=refs.iter().map(|r|format!("@{}",r["tag"].as_str().unwrap_or_default())).collect::<Vec<_>>().join(" ");
+    let prompt=format!("{prompt}\nUse references in the given order: {tags}");
+    if prompt.encode_utf16().count()>1000{return Err("Runwayの作画指示は参照指定込み1000文字以内にしてください".into());}
+    Ok(json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}))
+}
+fn image_account(connection:&VideoConnection)->String{format!("{:x}",Sha256::digest(connection.credential.as_bytes()))}
+pub async fn submit_image(db:&Mutex<Connection>, input:&Value, connection:&VideoConnection)->Result<(),String>{
+    if connection.model!="gen4_image" || connection.adapter_id!="runway-image" {return Err("静止画用の接続を登録してください".into());}
+    let payload=image_payload(input)?;
+    let id=input["job"]["id"].as_str().ok_or("Missing image job")?;
+    let account=image_account(connection);
+    update(db,id,|p,j|{
+        if j.get("remote").is_some() || j["status"]!="running" || j["media"]!=input["media"]{return Err("送信済みまたは異なる画像要求です".into());}
+        let used:u64=p["jobs"].as_array().ok_or("Missing jobs")?.iter().filter(|j|j["remote"]["kind"]=="runway-image").map(|j|j["remote"]["reserved_credits"].as_u64().unwrap_or(0)).sum();
+        if used.saturating_add(5)>connection.max_credits{return Err("作品の静止画credits上限です".into());}
+        Ok(json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}))
+    })?;
+    let url=reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_|failure())?;
+    let client=PolicyTransport::external_client(&url).await?;
+    let response=json_response(request(&client,reqwest::Method::POST,url,connection).json(&payload).send().await.map_err(|_|failure())?).await?;
+    let task=response["id"].as_str().filter(|s|uuid::Uuid::parse_str(s).is_ok()).ok_or_else(failure)?;
+    update(db,id,|_,j|{let mut remote=j["remote"].clone();remote["task_id"]=json!(task);remote["status"]=json!("PENDING");Ok(remote)})?;
+    Ok(())
+}
+pub async fn collect_image(db:&Mutex<Connection>,root:&Path,id:&str,connection:&VideoConnection)->Result<Value,String>{
+    let remote={let db=db.lock().map_err(|_|failure())?;let p=storage::raw_project(&db)?;p["jobs"].as_array().ok_or("Missing jobs")?.iter().find(|j|j["id"]==id).ok_or("Missing job")?["remote"].clone()};
+    if remote["kind"]!="runway-image" || remote["account"]!=image_account(connection) || connection.model!="gen4_image"{return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());}
+    {let db=db.lock().map_err(|_|failure())?;if let Ok(saved)=storage::image_recovery::recover(&db,root,id){return Ok(saved);}}
+    let task=remote["task_id"].as_str().filter(|s|uuid::Uuid::parse_str(s).is_ok()).ok_or("送信応答が未確定です。自動再送しません")?;
+    let url=reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_|failure())?;
+    let client=PolicyTransport::external_client(&url).await?;
+    let value=json_response(request(&client,reqwest::Method::GET,url,connection).send().await.map_err(|_|failure())?).await?;
+    if value["status"]!="SUCCEEDED"{return Err(format!("静止画処理状態: {}。後で保存済み作画を回収してください",value["status"].as_str().unwrap_or("UNKNOWN")));}
+    let url=output_url(&value)?;let client=PolicyTransport::external_client(&url).await?;
+    let mut response=client.get(url).send().await.map_err(|_|failure())?;
+    if !response.status().is_success(){return Err(failure());}
+    let mut bytes=Vec::new();
+    while let Some(chunk)=response.chunk().await.map_err(|_|failure())?{if bytes.len()+chunk.len()>24*1024*1024{return Err("画像が大きすぎます".into());}bytes.extend_from_slice(&chunk);}
+    storage::image_recovery::store_remote(db,root,id,&bytes)
+}

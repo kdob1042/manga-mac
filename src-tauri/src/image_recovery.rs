@@ -64,6 +64,7 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             return Err("Image job inputs changed".into());
         }
     }
+    if job["cloud_connection"] != request["cloud_connection"] {return Err("クラウド接続が保存済みJobと一致しません".into());}
     if job.get("media").is_some() && job["media"] != request["media"] {
         return Err("保存済み画像要求の実行先を変更できません".into());
     }
@@ -716,4 +717,26 @@ mod tests {
         assert!(save(&mut db, &root, &project.to_string()).is_err());
         fs::remove_dir_all(root).unwrap();
     }
+}
+
+pub fn store_remote(db:&std::sync::Mutex<Connection>,root:&Path,id:&str,bytes:&[u8])->Result<Value>{
+ let connection=db.lock().map_err(err)?;
+ let project=raw_project(&connection)?;
+ let job=project["jobs"].as_array().ok_or("Missing jobs")?.iter().find(|j|j["id"]==id).ok_or("Missing job")?;
+ if job["remote"]["kind"]!="runway-image" || bytes.len()<33 || bytes.len()>MAX_IMAGE as usize || &bytes[..8]!=b"\x89PNG\r\n\x1a\n" {return Err("クラウド画像の形式を確認できません".into());}
+ let generation=&job["local_image"]["context"]["panel"]["generation"];
+ if generation["width"]!=u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?) || generation["height"]!=u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?){return Err("クラウド画像の寸法が一致しません".into());}
+ let dir=directory(root,id)?;
+ if !fs::symlink_metadata(&dir).map_err(err)?.file_type().is_dir(){return Err("Invalid image directory".into());}
+ let receipt=json!({"request_hash":job["local_image"]["request_hash"],"hash":hash(bytes)});
+ for (name,data) in [("result.png",bytes.to_vec()),("receipt.json",receipt.to_string().into_bytes())]{
+  let path=dir.join(name);
+  match fs::OpenOptions::new().write(true).create_new(true).open(&path){
+   Ok(mut f)=>{f.write_all(&data).and_then(|_|f.sync_all()).map_err(err)?;},
+   Err(e) if e.kind()==std::io::ErrorKind::AlreadyExists=>{if read_bounded(&path,MAX_IMAGE)?!=data{return Err("既存の画像結果が一致しません".into());}},
+   Err(e)=>return Err(err(e)),
+  }
+ }
+ sync_dir(&dir)?;
+ recover(&connection,root,id)
 }

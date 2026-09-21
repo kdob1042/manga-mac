@@ -110,8 +110,8 @@ test('multi-episode sync retains previously imported episodes and reads selected
   if(command==='github_get'){heads.push(args.path);return JSON.stringify({sha:firstSha});}
   if(command==='github_file'){
    if(args.path==='manifest.json')return JSON.stringify(manifest);
-   if(args.path==='manuscript/p01/a.md')return '# P01\n\n本文1';
-   if(args.path==='manuscript/p02/a.md')return '# P02\n\n本文2';
+   if(args.path==='manuscript/p01/p01-01.md')return '# P01\n\n本文1';
+   if(args.path==='manuscript/p02/p02-01.md')return '# P02\n\n本文2';
   }
   throw Error('unexpected '+command+' '+args.path);
  };
@@ -121,8 +121,8 @@ test('multi-episode sync retains previously imported episodes and reads selected
  const update=async(command,args)=>{
   if(command==='github_file'){
    if(args.path==='manifest.json')return JSON.stringify(manifest);
-   if(args.path==='manuscript/p01/a.md')return '# P01\n\n本文1更新';
-   if(args.path==='manuscript/p02/a.md')return '# P02\n\n本文2更新';
+   if(args.path==='manuscript/p01/p01-01.md')return '# P01\n\n本文1更新';
+   if(args.path==='manuscript/p02/p02-01.md')return '# P02\n\n本文2更新';
   }
   throw Error('unexpected '+command+' '+args.path);
  };

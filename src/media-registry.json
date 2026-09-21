@@ -148,6 +148,47 @@
         "inference": "not_run"
       },
       "requires_preparation": true
+    },
+    {
+      "id": "runway-gen4-image",
+      "display_name": "Runway Gen-4 Image（クラウド・720×720・5 credits/枚）",
+      "adapter_id": "runway-image",
+      "model_id": "gen4_image",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true
+      },
+      "input": {
+        "min_width": 720,
+        "max_width": 720,
+        "min_height": 720,
+        "max_height": 720,
+        "step": 1,
+        "max_aspect_ratio": 1,
+        "steps": 1,
+        "max_references": 3
+      },
+      "requires_preparation": false,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "official-api-reviewed",
+        "inference": "not_run"
+      },
+      "cost": {
+        "credits": 5,
+        "usd_per_credit": 0.01
+      }
     }
   ],
   "videos": [

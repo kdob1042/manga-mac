@@ -14,3 +14,5 @@
 .source-manuscript .toolbar { flex-wrap:wrap; height:auto; gap:.5rem; }
 .source-reader { margin:1rem; }
 .source-reader > summary { cursor:pointer; padding:.75rem; font-weight:600; }
+
+.section-complete{background:#e0f4e5!important;border-left:4px solid #237e41;padding:8px}.section-review{background:#fff1ca!important;border-left:4px solid #a36b00;padding:8px}

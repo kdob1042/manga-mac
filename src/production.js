@@ -1,3 +1,4 @@
+import {generatePanel} from './pipeline.js';
 import {withResource} from './execution.js';
 import { activeDirection } from './directing.js';
 import { affectedScenes, revise } from './core.js';
@@ -198,5 +199,27 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
   }catch(e){
    const p=current();if(p.workId===cp.workId)await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:submitted?'unknown':'cancelled',...(!submitted?{notSubmitted:true}:{})}:j)}));throw e;
   }
+ }
+}
+
+// Freeze the batch before the first request. Each saved job is the recovery boundary.
+export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false,capture=false}){
+ const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
+ if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
+ const selected=targets.filter(p=>regenerate||!p.image);
+ for(const panel of selected){
+  if(frozen.jobs.some(j=>j.panelId===panel.id&&['running','unknown','candidate'].includes(j.status)))throw Error('未確定の要求・保存済み候補を先に確認してください');
+  for(const id of panel.characterIds)if(!frozen.characters.find(c=>c.id===id&&c.image&&c.hash))throw Error('人物の参照画像がありません');
+ }
+ for(const [i,original] of selected.entries()){
+  if(cancelled())break;
+  const p=current(),panel=p.panels.find(x=>x.id===original.id);
+  if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
+  const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId);
+  await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
+  try{
+   const result=await generate(panel,frozen.characters,null,'',job,capture?frozen.captures?.find(c=>c.id===panel.capture_revision):null,frozen.style_references??[],null,null,imageModelId,capture?'capture':'direct');
+   await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
+  }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
 }

@@ -142,20 +142,20 @@ export async function planScene(scene, snapshot, characters, model, ask = askLLM
   }
   return validatePlan(plan, units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null) {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null, inputMode = 'capture') {
   const selected = imageModel(imageModelId ?? job?.media?.registry_id ?? defaultImageModelId);
   if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
     if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
-    return { id, name: c.name, hash: c.hash, image: c.image };
+    return { id, name: c.name, hash: c.hash, image: c.image, role:'character' };
   });
   for (const style of styles) {
     if (!style.image || !style.hash) throw Error('画風参照が不正です');
-    refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image });
+    refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
   }
   let source = original, mapping = null;
-  if (!source && panel.shot_binding && !capture) throw Error('Blenderショットの撮影原本が必要です');
+  if (inputMode !== 'direct' && !source && panel.shot_binding && !capture) throw Error('Blenderショットの撮影原本が必要です');
   if (!source && capture) {
     if (capture.id !== panel.capture_revision || capture.panel_id !== panel.id || capture.session_id !== panel.shot_binding?.session_id) throw Error('撮影版とコマの対応が一致しません');
     const response = await call('blender_capture', { sessionId: capture.session_id, requestId: capture.request_id });
