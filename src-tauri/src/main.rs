@@ -887,7 +887,7 @@ async fn generate_media(
                         || e.contains("RUNNING")
                         || e.contains("THROTTLED") =>
                 {
-                    ()
+                    continue;
                 }
                 Err(e) => return Err(e),
             }
