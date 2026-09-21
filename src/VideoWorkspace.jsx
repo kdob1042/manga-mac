@@ -54,7 +54,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const estimate = (seconds, outputRatio) => {
     try { return videoEstimateCredits(videoModelId, seconds, outputRatio); } catch { return null; }
   };
-  const currentEstimate = estimate(duration, ratio);
+  const draftEstimate = estimate(duration, ratio);
   const requestError = (seconds, outputRatio, text, endFrame = false) => {
     try {
       validateVideoModelRequest(videoModelId, { duration: seconds, ratio: outputRatio, prompt: text || 'x', endFrame });
@@ -68,6 +68,8 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const images = [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
     ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))];
   const shot = project.videoShots.find(s => s.id === selected);
+  const currentEstimate = shot ? estimate(shot.duration, shot.ratio) : draftEstimate;
+  const estimateDuration = shot?.duration ?? duration;
   const activeConnection = connectionId ? videoConnection(videoModelId, connectionId) : null;
   const transitionSupported = !shot?.transition || videoConnectionSupportsEndFrame(activeConnection);
   const shotRequestError = shot ? requestError(shot.duration, shot.ratio, shot.prompt, !!shot.transition) : '';
@@ -150,7 +152,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
       <label>動画の生成先<select aria-label="動画の生成先" value={videoModelId} onChange={e => run('動画モデルを選択', async () => { const next = e.target.value; setVideoModelId(next); setApproved(false); await commit({ ...current.current, mediaDefaults: { ...current.current.mediaDefaults, video: next } }); })}>{videoModels.map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
       <p>{selectedVideoModel.display_name} · 選択した接続の対応機能・入力条件を送信前に検証します。A→Bは終端画像対応の接続だけで実行します。</p>
-      <small>{currentEstimate ? `${currentEstimate.tier} · ${currentEstimate.rate} credits/秒 · ${duration}秒で${currentEstimate.credits} credits${currentEstimate.minimum ? `（最低${currentEstimate.minimum}）` : ''}` : '現在の尺・寸法は選択モデルに非対応'}（{selectedVideoModel.pricing?.checked_at ?? '料金確認日不明'}確認）。予約額は実請求額とは別です。</small>
+      <small>{currentEstimate ? `${currentEstimate.tier} · ${currentEstimate.rate} credits/秒 · ${estimateDuration}秒で${currentEstimate.credits} credits${currentEstimate.minimum ? `（最低${currentEstimate.minimum}）` : ''}` : '現在の尺・寸法は選択モデルに非対応'}（{selectedVideoModel.pricing?.checked_at ?? '料金確認日不明'}確認）。予約額は実請求額とは別です。</small>
       <label>{selectedVideoModel.display_name} APIキー<input aria-label="Runway APIキー" type="password" autoComplete="off" disabled={!!connectionId} value={apiKey} onChange={e => setApiKey(e.target.value)}/></label>
       <label>作品の上限（credits）<input aria-label="作品の上限（credits）" type="number" min={1} max="6000" step="1" disabled={!!connectionId} value={budget} onChange={e => setBudget(Number(e.target.value))}/></label>
       <label><input type="checkbox" disabled={!!connectionId} checked={approved} onChange={e => setApproved(e.target.checked)}/>この送信先・モデル・送信内容・予算内での生成を許可する</label>
