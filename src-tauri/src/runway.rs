@@ -1,5 +1,5 @@
 //! One official REST adapter. No SDK server, retries, fallback or secret logging.
-use crate::{llm::VideoConnection, policy_transport::PolicyTransport, storage};
+use crate::{llm::VideoConnection, media, policy_transport::PolicyTransport, storage};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -13,7 +13,6 @@ use std::{
 
 const ORIGIN: &str = "https://api.dev.runwayml.com";
 const OUTPUT_HOST: &str = "dnznrvs05pmza.cloudfront.net";
-pub const CREDITS: u64 = 60;
 fn failure() -> String {
     "動画APIの応答を確定できませんでした。新規生成を再送せず状態を確認してください".into()
 }
@@ -63,14 +62,7 @@ fn frame_bytes(
     let (w, h) = ratio.split_once(':').ok_or_else(failure)?;
     let w = w.parse::<u64>().map_err(|_| failure())?;
     let h = h.parse::<u64>().map_err(|_| failure())?;
-    if width == 0
-        || height == 0
-        || width > 8192
-        || height > 8192
-        || width * 2 < height
-        || width > height * 2
-        || width * h != height * w
-    {
+    if width == 0 || height == 0 || width > 8192 || height > 8192 || width * h != height * w {
         return Err(format!(
             "{}と出力の縦横比を合わせてください。自動切り抜きは行いません",
             label
@@ -140,71 +132,80 @@ pub fn payload_with_frames(
     }) {
         return Err("未対応の画像制御です".into());
     }
-    if manifest["duration"] != 5 {
-        return Err("未対応の動画入力です".into());
-    }
     let prompt = manifest["prompt"].as_str().ok_or("Missing prompt")?;
     let ratio = manifest["ratio"].as_str().ok_or("Missing ratio")?;
-    if prompt.trim().is_empty()
-        || prompt.encode_utf16().count() > 1000
-        || ![
-            "1280:720", "720:1280", "1104:832", "960:960", "832:1104", "1584:672",
-        ]
-        .contains(&ratio)
-    {
-        return Err("未対応の動画指示・寸法です".into());
+    let duration = manifest["duration"]
+        .as_u64()
+        .ok_or("動画の尺がありません")?;
+    if prompt.trim().is_empty() || prompt.encode_utf16().count() > 1000 {
+        return Err("未対応の動画指示です".into());
     }
-    if inputs.len() == 1 {
-        if end_image.is_some()
+
+    // Keep the synthetic end-frame fixture isolated from production models.
+    if manifest["connection"]["provider"] == "fixture"
+        && manifest["connection"]["model"] == "end-frame-v1"
+    {
+        if duration != 5
+            || ratio != "960:960"
+            || inputs.len() != 2
+            || end_image.is_none()
             || inputs[0]["role"] != "start_frame"
-            || inputs[0]["media_type"] != "image"
-            || inputs[0]["transform"] != json!({"kind":"identity"})
-            || manifest["connection"]["provider"] != "runway"
-            || manifest["connection"]["model"] != "gen4.5"
+            || inputs[1]["role"] != "end_frame"
+            || inputs.iter().any(|input| {
+                input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
+            })
         {
             return Err("未対応の動画入力です".into());
         }
-        let (_, _, _) = frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
+        let (_, start_width, start_height) =
+            frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
+        let end = end_image.ok_or_else(failure)?;
+        let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+        if start_width != end_width || start_height != end_height {
+            return Err(
+                "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください"
+                    .into(),
+            );
+        }
         return Ok(json!({
-            "model":"gen4.5",
+            "model":"end-frame-v1",
             "promptImage":start_image,
+            "lastFrame":end,
             "promptText":prompt,
             "ratio":ratio,
-            "duration":5,
+            "duration":duration,
             "outputFormat":"mp4"
         }));
     }
-    if inputs.len() != 2
-        || end_image.is_none()
-        || inputs[0]["role"] != "start_frame"
-        || inputs[1]["role"] != "end_frame"
-        || inputs.iter().any(|input| {
-            input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
-        })
-        || manifest["connection"]["provider"] != "fixture"
-        || manifest["connection"]["model"] != "end-frame-v1"
+
+    let selected = media::video_model_from_connection(&manifest["connection"])?;
+    if selected.adapter_id != "runway"
+        || selected.provider != "runway"
+        || !selected.durations_sec.contains(&duration)
+        || !selected.ratios.iter().any(|supported| supported == ratio)
     {
-        return Err(
-            "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
-        );
+        return Err("選択した動画モデルが尺・寸法に対応していません".into());
     }
-    let (_, start_width, start_height) = frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
-    let end = end_image.ok_or_else(failure)?;
-    let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
-    if start_width != end_width || start_height != end_height {
-        return Err(
-            "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
-        );
+    if inputs.len() != 1
+        || end_image.is_some()
+        || inputs[0]["role"] != "start_frame"
+        || inputs[0]["media_type"] != "image"
+        || inputs[0]["transform"] != json!({"kind":"identity"})
+    {
+        if inputs.len() == 2 && !selected.end_frame {
+            return Err(
+                "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
+            );
+        }
+        return Err("未対応の動画入力です".into());
     }
-    // Fixture-only contract for tests and future adapter work. Current Runway is
-    // deliberately rejected above because its official API has no end-frame field.
+    frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
     Ok(json!({
-        "model":"end-frame-v1",
+        "model":selected.model_id,
         "promptImage":start_image,
-        "lastFrame":end,
         "promptText":prompt,
         "ratio":ratio,
-        "duration":5,
+        "duration":duration,
         "outputFormat":"mp4"
     }))
 }
@@ -221,6 +222,20 @@ fn reserve(
     {
         return Err("送信済み・未確定要求は再POSTできません".into());
     }
+    let selected = media::video_model_from_connection(&job["manifest"]["connection"])?;
+    if selected.adapter_id != "runway" || selected.provider != "runway" {
+        return Err("選択した動画adapterはまだ接続されていません".into());
+    }
+    let duration = job["manifest"]["duration"]
+        .as_u64()
+        .ok_or("動画の尺がありません")?;
+    if !selected.durations_sec.contains(&duration) {
+        return Err("選択した動画モデルが尺に対応していません".into());
+    }
+    let credits = selected
+        .credits_per_second
+        .checked_mul(duration)
+        .ok_or("Invalid cost")?;
     let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     if jobs.iter().any(|j| {
         j["remote"]["actual_credits"].as_u64().unwrap_or(0)
@@ -233,7 +248,7 @@ fn reserve(
         .filter_map(|j| j["remote"]["reserved_credits"].as_u64())
         .try_fold(0_u64, |a, b| a.checked_add(b))
         .ok_or("Invalid cost")?;
-    if spent.saturating_add(CREDITS) > budget {
+    if spent.saturating_add(credits) > budget {
         return Err("作品の動画予算上限です。接続設定を確認してください".into());
     }
     let shot = project["videoShots"]
@@ -319,7 +334,7 @@ fn reserve(
     }) {
         return Err("先に未確定要求を確認してください".into());
     }
-    Ok(json!({"status":"unknown","reserved_credits":CREDITS,"submitted_at":now()}))
+    Ok(json!({"status":"unknown","reserved_credits":credits,"submitted_at":now()}))
 }
 
 async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {
@@ -756,15 +771,27 @@ mod tests {
     }
 
     #[test]
-    fn provider_body_uses_actual_bytes_and_rejects_unavailable_controls() {
+    fn provider_body_uses_actual_bytes_and_registered_model_contract() {
         let (manifest, image) = fixture();
         let body = payload(&manifest, &image).unwrap();
         assert_eq!(body["promptImage"], image);
         assert_eq!(body["duration"], 5);
         assert_eq!(body["model"], "gen4.5");
         assert!(body.get("sourceDependencies").is_none());
+
+        let mut ten_seconds = manifest.clone();
+        ten_seconds["duration"] = json!(10);
+        assert_eq!(payload(&ten_seconds, &image).unwrap()["duration"], 10);
+
+        let mut turbo = manifest.clone();
+        turbo["connection"]["model"] = json!("gen4_turbo");
+        turbo["duration"] = json!(6);
+        let turbo_body = payload(&turbo, &image).unwrap();
+        assert_eq!(turbo_body["model"], "gen4_turbo");
+        assert_eq!(turbo_body["duration"], 6);
+
         for (key, value) in [
-            ("duration", json!(10)),
+            ("duration", json!(11)),
             ("ratio", json!("1920:1080")),
             ("endImage", json!("ignored")),
             ("depth", json!("ignored")),
@@ -773,6 +800,9 @@ mod tests {
             bad[key] = value;
             assert!(payload(&bad, &image).is_err());
         }
+        let mut invented = manifest.clone();
+        invented["connection"]["model"] = json!("invented");
+        assert!(payload(&invented, &image).is_err());
         let mut bad = manifest.clone();
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
@@ -873,6 +903,43 @@ mod tests {
             60
         );
     }
+    #[test]
+    fn reservation_uses_selected_model_rate_and_duration() {
+        let (mut manifest, _) = fixture();
+        manifest["connection"]["model"] = json!("gen4_turbo");
+        let job = json!({
+            "id":"j",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "c", 24).is_err());
+        assert_eq!(
+            reserve(&project, &job, "c", 25).unwrap()["reserved_credits"],
+            25
+        );
+    }
+
     #[test]
     fn output_urls_and_status_projection_never_expose_secrets_or_unapproved_hosts() {
         for url in [
@@ -1168,70 +1235,197 @@ mod tests {
 
 // Static images reuse Runway's transport, ephemeral credentials, existing image
 // receipts and the project Job. A task ID is durably recorded before polling.
-pub fn image_payload(input: &Value) -> Result<Value,String> {
-    if input["media"]["model_id"]!="gen4_image" || input["width"]!=720 || input["height"]!=720 {return Err("Runway静止画はgen4_image / 720×720に対応します".into());}
-    let mut refs=Vec::new();
-    if let Some(original)=input["original"].as_str(){refs.push(json!({"uri":original,"tag":"original"}));}
-    for (i,r) in input["references"].as_array().ok_or("Missing references")?.iter().enumerate(){
+pub fn image_payload(input: &Value) -> Result<Value, String> {
+    if input["media"]["model_id"] != "gen4_image" || input["width"] != 720 || input["height"] != 720
+    {
+        return Err("Runway静止画はgen4_image / 720×720に対応します".into());
+    }
+    let mut refs = Vec::new();
+    if let Some(original) = input["original"].as_str() {
+        refs.push(json!({"uri":original,"tag":"original"}));
+    }
+    for (i, r) in input["references"]
+        .as_array()
+        .ok_or("Missing references")?
+        .iter()
+        .enumerate()
+    {
         refs.push(json!({"uri":r["image"],"tag":format!("ref{}",i+1)}));
     }
-    if refs.len()>3{return Err("撮影原本・編集元を含め参照は3枚までです".into());}
-    for r in &refs {
-        let uri=r["uri"].as_str().ok_or("Missing image")?;
-        if uri.len()>5_000_000 || !["data:image/png;base64,","data:image/jpeg;base64,","data:image/webp;base64,"].iter().any(|prefix|uri.starts_with(prefix)){return Err("参照画像はPNG/JPEG/WebPの5MB以下にしてください".into());}
+    if refs.len() > 3 {
+        return Err("撮影原本・編集元を含め参照は3枚までです".into());
     }
-    let prompt=input["prompt"].as_str().ok_or("Missing prompt")?;
-    let tags=refs.iter().map(|r|format!("@{}",r["tag"].as_str().unwrap_or_default())).collect::<Vec<_>>().join(" ");
-    let prompt=format!("{prompt}\nUse references in the given order: {tags}");
-    if prompt.encode_utf16().count()>1000{return Err("Runwayの作画指示は参照指定込み1000文字以内にしてください".into());}
-    Ok(json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}))
+    for r in &refs {
+        let uri = r["uri"].as_str().ok_or("Missing image")?;
+        if uri.len() > 5_000_000
+            || ![
+                "data:image/png;base64,",
+                "data:image/jpeg;base64,",
+                "data:image/webp;base64,",
+            ]
+            .iter()
+            .any(|prefix| uri.starts_with(prefix))
+        {
+            return Err("参照画像はPNG/JPEG/WebPの5MB以下にしてください".into());
+        }
+    }
+    let prompt = input["prompt"].as_str().ok_or("Missing prompt")?;
+    let tags = refs
+        .iter()
+        .map(|r| format!("@{}", r["tag"].as_str().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let prompt = format!("{prompt}\nUse references in the given order: {tags}");
+    if prompt.encode_utf16().count() > 1000 {
+        return Err("Runwayの作画指示は参照指定込み1000文字以内にしてください".into());
+    }
+    Ok(
+        json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}),
+    )
 }
-fn image_account(connection:&VideoConnection)->String{format!("{:x}",Sha256::digest(connection.credential.as_bytes()))}
-pub async fn submit_image(db:&Mutex<Connection>, input:&Value, connection:&VideoConnection)->Result<(),String>{
-    if connection.model!="gen4_image" || connection.adapter_id!="runway-image" {return Err("静止画用の接続を登録してください".into());}
-    let payload=image_payload(input)?;
-    let id=input["job"]["id"].as_str().ok_or("Missing image job")?;
-    let account=image_account(connection);
-    update(db,id,|p,j|{
-        if j.get("remote").is_some() || j["status"]!="running" || j["media"]!=input["media"]{return Err("送信済みまたは異なる画像要求です".into());}
-        let used:u64=p["jobs"].as_array().ok_or("Missing jobs")?.iter().filter(|j|j["remote"]["kind"]=="runway-image").map(|j|j["remote"]["reserved_credits"].as_u64().unwrap_or(0)).sum();
-        if used.saturating_add(5)>connection.max_credits{return Err("作品の静止画credits上限です".into());}
-        Ok(json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}))
+fn image_account(connection: &VideoConnection) -> String {
+    format!("{:x}", Sha256::digest(connection.credential.as_bytes()))
+}
+pub async fn submit_image(
+    db: &Mutex<Connection>,
+    input: &Value,
+    connection: &VideoConnection,
+) -> Result<(), String> {
+    if connection.model != "gen4_image" || connection.adapter_id != "runway-image" {
+        return Err("静止画用の接続を登録してください".into());
+    }
+    let payload = image_payload(input)?;
+    let id = input["job"]["id"].as_str().ok_or("Missing image job")?;
+    let account = image_account(connection);
+    update(db, id, |p, j| {
+        if j.get("remote").is_some() || j["status"] != "running" || j["media"] != input["media"] {
+            return Err("送信済みまたは異なる画像要求です".into());
+        }
+        let used: u64 = p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .filter(|j| j["remote"]["kind"] == "runway-image")
+            .map(|j| j["remote"]["reserved_credits"].as_u64().unwrap_or(0))
+            .sum();
+        if used.saturating_add(5) > connection.max_credits {
+            return Err("作品の静止画credits上限です".into());
+        }
+        Ok(
+            json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}),
+        )
     })?;
-    let url=reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_|failure())?;
-    let client=PolicyTransport::external_client(&url).await?;
-    let response=json_response(request(&client,reqwest::Method::POST,url,connection).json(&payload).send().await.map_err(|_|failure())?).await?;
-    let task=response["id"].as_str().filter(|s|uuid::Uuid::parse_str(s).is_ok()).ok_or_else(failure)?;
-    update(db,id,|_,j|{let mut remote=j["remote"].clone();remote["task_id"]=json!(task);remote["status"]=json!("PENDING");Ok(remote)})?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let response = json_response(
+        request(&client, reqwest::Method::POST, url, connection)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    let task = response["id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or_else(failure)?;
+    update(db, id, |_, j| {
+        let mut remote = j["remote"].clone();
+        remote["task_id"] = json!(task);
+        remote["status"] = json!("PENDING");
+        Ok(remote)
+    })?;
     Ok(())
 }
-pub async fn collect_image(db:&Mutex<Connection>,root:&Path,id:&str,connection:&VideoConnection)->Result<Value,String>{
-    let remote={let db=db.lock().map_err(|_|failure())?;let p=storage::raw_project(&db)?;p["jobs"].as_array().ok_or("Missing jobs")?.iter().find(|j|j["id"]==id).ok_or("Missing job")?["remote"].clone()};
-    if remote["kind"]!="runway-image" || remote["account"]!=image_account(connection) || connection.model!="gen4_image"{return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());}
-    {let db=db.lock().map_err(|_|failure())?;if let Ok(saved)=storage::image_recovery::recover(&db,root,id){return Ok(saved);}}
-    let task=remote["task_id"].as_str().filter(|s|uuid::Uuid::parse_str(s).is_ok()).ok_or("送信応答が未確定です。自動再送しません")?;
-    let url=reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_|failure())?;
-    let client=PolicyTransport::external_client(&url).await?;
-    let value=json_response(request(&client,reqwest::Method::GET,url,connection).send().await.map_err(|_|failure())?).await?;
-    if value["status"]!="SUCCEEDED"{return Err(format!("静止画処理状態: {}。後で保存済み作画を回収してください",value["status"].as_str().unwrap_or("UNKNOWN")));}
-    let url=output_url(&value)?;let client=PolicyTransport::external_client(&url).await?;
-    let mut response=client.get(url).send().await.map_err(|_|failure())?;
-    if !response.status().is_success(){return Err(failure());}
-    let mut bytes=Vec::new();
-    while let Some(chunk)=response.chunk().await.map_err(|_|failure())?{if bytes.len()+chunk.len()>24*1024*1024{return Err("画像が大きすぎます".into());}bytes.extend_from_slice(&chunk);}
-    storage::image_recovery::store_remote(db,root,id,&bytes)
+pub async fn collect_image(
+    db: &Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    connection: &VideoConnection,
+) -> Result<Value, String> {
+    let remote = {
+        let db = db.lock().map_err(|_| failure())?;
+        let p = storage::raw_project(&db)?;
+        p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == id)
+            .ok_or("Missing job")?["remote"]
+            .clone()
+    };
+    if remote["kind"] != "runway-image"
+        || remote["account"] != image_account(connection)
+        || connection.model != "gen4_image"
+    {
+        return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());
+    }
+    {
+        let db = db.lock().map_err(|_| failure())?;
+        if let Ok(saved) = storage::image_recovery::recover(&db, root, id) {
+            return Ok(saved);
+        }
+    }
+    let task = remote["task_id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or("送信応答が未確定です。自動再送しません")?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let value = json_response(
+        request(&client, reqwest::Method::GET, url, connection)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    if value["status"] != "SUCCEEDED" {
+        return Err(format!(
+            "静止画処理状態: {}。後で保存済み作画を回収してください",
+            value["status"].as_str().unwrap_or("UNKNOWN")
+        ));
+    }
+    let url = output_url(&value)?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let mut response = client.get(url).send().await.map_err(|_| failure())?;
+    if !response.status().is_success() {
+        return Err(failure());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| failure())? {
+        if bytes.len() + chunk.len() > 24 * 1024 * 1024 {
+            return Err("画像が大きすぎます".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    storage::image_recovery::store_remote(db, root, id, &bytes)
 }
 
 #[cfg(test)]
 mod image_tests {
- use super::*;
- #[test]
- fn image_wire_contract_rejects_unsupported_inputs_before_post(){
-  let input=json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
-  let payload=image_payload(&input).unwrap();assert_eq!(payload["ratio"],"720:720");assert_eq!(payload["referenceImages"][0]["tag"],"ref1");
-  let mut bad=input.clone();bad["width"]=json!(768);assert!(image_payload(&bad).is_err());
-  bad=input.clone();bad["references"]=json!([input["references"][0],input["references"][0],input["references"][0],input["references"][0]]);assert!(image_payload(&bad).is_err());
-  bad=input.clone();bad["prompt"]=json!("x".repeat(1001));assert!(image_payload(&bad).is_err());
-  bad=input;bad["references"][0]["image"]=json!("https://unapproved.example/image.png");assert!(image_payload(&bad).is_err());
- }
+    use super::*;
+    #[test]
+    fn image_wire_contract_rejects_unsupported_inputs_before_post() {
+        let input = json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
+        let payload = image_payload(&input).unwrap();
+        assert_eq!(payload["ratio"], "720:720");
+        assert_eq!(payload["referenceImages"][0]["tag"], "ref1");
+        let mut bad = input.clone();
+        bad["width"] = json!(768);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["references"] = json!([
+            input["references"][0],
+            input["references"][0],
+            input["references"][0],
+            input["references"][0]
+        ]);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["prompt"] = json!("x".repeat(1001));
+        assert!(image_payload(&bad).is_err());
+        bad = input;
+        bad["references"][0]["image"] = json!("https://unapproved.example/image.png");
+        assert!(image_payload(&bad).is_err());
+    }
 }

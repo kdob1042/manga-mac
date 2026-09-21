@@ -149,7 +149,7 @@ impl Connections {
         adapter_id: String,
     ) -> Result<String, String> {
         if !input.approved
-            || !(if adapter_id == "runway-image" {5} else {60}..=6000).contains(&input.max_credits)
+            || !(1..=6000).contains(&input.max_credits)
             || input.credential.trim().is_empty()
             || input.credential.len() > 4096
             || input.credential.chars().any(char::is_control)

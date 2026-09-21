@@ -24,6 +24,10 @@ pub struct VideoModel {
     pub adapter_id: String,
     pub provider: String,
     pub model_id: String,
+    pub durations_sec: Vec<u64>,
+    pub ratios: Vec<String>,
+    pub end_frame: bool,
+    pub credits_per_second: u64,
 }
 
 fn registry() -> Result<Value, String> {
@@ -205,6 +209,29 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     {
         return Err("動画のadapter定義が登録情報と一致しません".into());
     }
+    let input = &value["input"];
+    let durations_sec = input["durations_sec"]
+        .as_array()
+        .ok_or("動画尺定義が不正です")?
+        .iter()
+        .map(|item| {
+            item.as_u64()
+                .ok_or_else(|| "動画尺定義が不正です".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ratios = input["ratios"]
+        .as_array()
+        .ok_or("動画寸法定義が不正です")?
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::to_owned)
+                .ok_or_else(|| "動画寸法定義が不正です".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if durations_sec.is_empty() || ratios.is_empty() {
+        return Err("動画モデルの入力定義が空です".into());
+    }
     Ok(VideoModel {
         adapter_id: value["adapter_id"]
             .as_str()
@@ -212,6 +239,14 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
             .into(),
         provider: provider.into(),
         model_id: model_id.into(),
+        durations_sec,
+        ratios,
+        end_frame: value["capabilities"]["end_frame"]
+            .as_bool()
+            .unwrap_or(false),
+        credits_per_second: value["pricing"]["credits_per_second"]
+            .as_u64()
+            .ok_or("動画料金定義が不正です")?,
     })
 }
 

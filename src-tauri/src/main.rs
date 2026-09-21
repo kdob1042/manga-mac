@@ -412,14 +412,29 @@ fn video_export(
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
-async fn register_image(input: llm::VideoRegistration,state: State<'_, AppState>)->Result<String,String>{
- state.connections.register_video(input,"runway".into(),"gen4_image".into(),"runway-image".into()).await
+async fn register_image(
+    input: llm::VideoRegistration,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    state
+        .connections
+        .register_video(
+            input,
+            "runway".into(),
+            "gen4_image".into(),
+            "runway-image".into(),
+        )
+        .await
 }
 #[tauri::command]
-async fn recover_cloud_image(job_id:String,connection_id:String,state:State<'_,AppState>)->Result<Value,String>{
- let _guard=state.engine.lock().await;
- let connection=state.connections.video_connection(&connection_id)?;
- runway::collect_image(&state.db,&state.root,&job_id,&connection).await
+async fn recover_cloud_image(
+    job_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state.engine.lock().await;
+    let connection = state.connections.video_connection(&connection_id)?;
+    runway::collect_image(&state.db, &state.root, &job_id, &connection).await
 }
 #[tauri::command]
 async fn register_video(
@@ -838,27 +853,43 @@ async fn generate_media(
             return Err("参照画像のハッシュが一致しません".into());
         }
     }
-    if selected.adapter_id=="runway-image" {
+    if selected.adapter_id == "runway-image" {
         runway::image_payload(&request)?;
-        let connection=state.connections.video_connection(request["cloud_connection"].as_str().ok_or("静止画接続を登録してください")?)?;
-        if connection.adapter_id!="runway-image" {return Err("静止画接続が必要です".into());}
+        let connection = state.connections.video_connection(
+            request["cloud_connection"]
+                .as_str()
+                .ok_or("静止画接続を登録してください")?,
+        )?;
+        if connection.adapter_id != "runway-image" {
+            return Err("静止画接続が必要です".into());
+        }
     }
     let destination = {
         let mut db = state.db.lock().map_err(err)?;
         storage::image_recovery::reserve(&mut db, &state.root, &request)?
     };
     request["output"] = destination;
-    if selected.adapter_id=="runway-image" {
-        let connection=state.connections.video_connection(request["cloud_connection"].as_str().ok_or("静止画接続を登録してください")?)?;
-        runway::submit_image(&state.db,&request,&connection).await?;
+    if selected.adapter_id == "runway-image" {
+        let connection = state.connections.video_connection(
+            request["cloud_connection"]
+                .as_str()
+                .ok_or("静止画接続を登録してください")?,
+        )?;
+        runway::submit_image(&state.db, &request, &connection).await?;
         // Poll only GET; a stopped/lost request is recovered by its durable task ID.
-        let id=request["job"]["id"].as_str().ok_or("Missing job")?;
+        let id = request["job"]["id"].as_str().ok_or("Missing job")?;
         for _ in 0..60 {
             tokio::time::sleep(Duration::from_secs(5)).await;
-            match runway::collect_image(&state.db,&state.root,id,&connection).await {
-                Ok(result)=>return Ok(result),
-                Err(e) if e.contains("PENDING") || e.contains("RUNNING") || e.contains("THROTTLED")=>(),
-                Err(e)=>return Err(e),
+            match runway::collect_image(&state.db, &state.root, id, &connection).await {
+                Ok(result) => return Ok(result),
+                Err(e)
+                    if e.contains("PENDING")
+                        || e.contains("RUNNING")
+                        || e.contains("THROTTLED") =>
+                {
+                    ()
+                }
+                Err(e) => return Err(e),
             }
         }
         return Err("静止画は処理中です。保存済み作画を回収してください".into());

@@ -27,6 +27,7 @@ jobs:
           cargo fmt --manifest-path src-tauri/Cargo.toml
           git diff -- src-tauri > /tmp/rustfmt.patch
           cat /tmp/rustfmt.patch
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Rust storage tests
         run: cargo test --locked --manifest-path tests/storage/Cargo.toml
       - name: Rust transport tests

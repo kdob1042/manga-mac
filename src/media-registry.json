@@ -194,7 +194,7 @@
   "videos": [
     {
       "id": "runway-gen4-5",
-      "display_name": "Runway gen4.5",
+      "display_name": "Runway Gen-4.5",
       "adapter_id": "runway",
       "provider": "runway",
       "model_id": "gen4.5",
@@ -208,7 +208,62 @@
         "native_audio": false
       },
       "input": {
-        "duration_sec": 5,
+        "durations_sec": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "default_duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "ratios": [
+          "1280:720",
+          "720:1280",
+          "1104:832",
+          "960:960",
+          "832:1104"
+        ]
+      },
+      "pricing": {
+        "unit": "runway-credit",
+        "credits_per_second": 12,
+        "checked_at": "2026-09-21"
+      },
+      "requires_connection": true
+    },
+    {
+      "id": "runway-gen4-turbo",
+      "display_name": "Runway Gen-4 Turbo",
+      "adapter_id": "runway",
+      "provider": "runway",
+      "model_id": "gen4_turbo",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "image_to_video"
+      ],
+      "capabilities": {
+        "end_frame": false,
+        "native_audio": false
+      },
+      "input": {
+        "durations_sec": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "default_duration_sec": 5,
         "max_input_bytes": 5000000,
         "ratios": [
           "1280:720",
@@ -218,6 +273,11 @@
           "832:1104",
           "1584:672"
         ]
+      },
+      "pricing": {
+        "unit": "runway-credit",
+        "credits_per_second": 5,
+        "checked_at": "2026-09-21"
       },
       "requires_connection": true
     }
