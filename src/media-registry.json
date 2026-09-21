@@ -171,9 +171,9 @@
           "720:1280",
           "1104:832",
           "960:960",
-          "832:1104",
-          "1584:672"
-        ]
+          "832:1104"
+        ],
+        "max_input_aspect_ratio": 2
       },
       "pricing": {
         "unit": "runway-credit",
@@ -218,7 +218,8 @@
           "960:960",
           "832:1104",
           "1584:672"
-        ]
+        ],
+        "max_input_aspect_ratio": 2.358
       },
       "pricing": {
         "unit": "runway-credit",
