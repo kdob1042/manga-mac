@@ -640,10 +640,33 @@ session/document/revisionを照合し、状態取得、位置・寸法・回転�
 PR #220ではnative/UI接続と既存Jobへの候補保存、人物対応、確定snapshotの回収を追加する。
 素材は既存image artifactへ外出しし、採用・Undo・バックアップを再利用する。
 人間／アプリ／Codex間の操作権は同じ接続口で移譲し、process instanceを毎回照合する。
-Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
+Bの初期presetは後述の局所色変更。Cの実推論は未受入。実アプリ接続・再起動復旧のCIを通すまで
 PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120秒でも書込み権を解放し、次の操作前に再観測する。
 
 Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、
 内部表現はAlpha[0,1]＋RGB[-1,1]で、SDK標準PNG writerはRGB専用。
 RGBA変換・レイヤー順／枚数・receipt・入力canvas役割を実装／検証するまではregistryへ有効登録しない。
 参照編集のRGB出力を透明レイヤーにそのまま差し替えない。ComfyUI/MFLUXへの退避は追加しない。
+
+### 参照付きレイヤー局所色編集（#224、Bの初期preset）
+
+対象UUIDと人物対応を確認して、Compositorが同一版の対象RGBAと文字レイヤーを除いた文脈PNGを出力する。
+既存の画像JobとSwift/MediaGenerationKitへ、canvas=対象、reference 1=文脈、reference 2=人物正本を
+実画像として渡す。入力役割／hash、矩形、色、document／instance／revision、モデルとSDK/helper版を固定する。
+初期presetは色変更だけ。RGB結果の範囲内RGBを対象RGBAへ戻し、元alpha、完全透明画素、範囲外全画素を保持する。
+合成は既存依存のpng crateをnativeから使い、straight RGBAを直接保持する。
+ブラウザCanvasでの再encodeによる低alpha／範囲外RGBの丸めを避ける。
+この処理を向き・ポーズ・輪郭変更へ流用しない。対象にmask/group/effects等がある場合は停止する。
+
+元の編集中版を既存の未採用候補として確定してから、新しい生成Jobを作る。原稿の基準版チェックを通し、
+Compositorの同一sessionを引き続き使う。推論後にprocess instance/document/revisionを再照合してから
+別レイヤーへ取込み、元レイヤーは非表示で残す。結果は再び明示候補保存・採用が必要。
+途中で手動版が変わった結果は保存済みの透過候補として保持し、現行ドキュメントへ自動取込みしない。
+結果や取込み応答が不明でも既存receipt／IPC結果を照合し、再推論・二重取込みしない。
+
+人物同一性・色変更品質・速度・24GB実用性は実推論未受入（not_run）。自然言語の向き変更や
+新輪郭のalpha生成は未対応として扱う。追加のJev分類／モデル自動選択は呼ばない。
+
+「人物名を少し左へ」等の限定移動文は、コマ内の一意な人物名と確認済みレイヤーUUIDから
+許可済みtransformを作る。曖昧な対応、未確定Job、他の操作権、向き・ポーズ変更は拒否し、
+通常のコマ全体編集やLLM分類へ流さない。一般的な自然言語演出機能の完了とはしない。

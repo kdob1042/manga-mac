@@ -1,26 +1,33 @@
-import React,{useState} from 'react';
+import React,{useState,useEffect} from 'react';
+import LayerColourControls from './LayerColourControls.jsx';
 import {call,desktop} from './bridge.js';
 import {imageOf} from './canvas-image.js';
 import {beginCompositor,finishCompositor,rasterBundle,reconcileBindings,operation} from './compositor.js';
 
 export default function CompositorControls({project,panel,current,commit,run,busy}) {
  const [state,setState]=useState(null),[layer,setLayer]=useState(''),[x,setX]=useState(0),[y,setY]=useState(0);
- const job=project.jobs.find(j=>j.compositor&&['compositor','decompose'].includes(j.kind)&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
+ const job=project.jobs.find(j=>j.compositor&&['compositor','decompose','layer_edit'].includes(j.kind)&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
+ const sessionId=job?.compositor.session_id??job?.id;
+ useEffect(()=>{const receive=e=>{if(e.detail.sessionId===sessionId)setState(e.detail.state);};window.addEventListener('compositor-state',receive);return()=>window.removeEventListener('compositor-state',receive);},[sessionId]);
+ useEffect(()=>{const selected=state?.layers?.find(l=>l.id===layer);if(selected){setX(selected.x);setY(selected.y);}},[state,layer]);
  const observe=async value=>{
    const next=value.state??value;setState(next);
-   if(job&&next.layers){const bindings=reconcileBindings(job.compositor.bindings,next,current.current.characters);await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'running',compositor:{...j.compositor,bindings}}:j)});}
+   if(job&&next.layers){const saved=current.current.jobs.find(j=>j.id===job.id),bindings=reconcileBindings(saved.compositor.bindings,next,current.current.characters);await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:j.kind==='layer_edit'&&!j.layer_edit_applied?j.status:'running',compositor:{...j.compositor,bindings}}:j)});}
  };
  const send=async(op,args={})=>{
-   const result=await call('compositor_call',{sessionId:job.id,request:op==='state'||op==='recover'||op==='saved_snapshot'?{op}:operation(state,op,args)});
+   const result=await call('compositor_call',{sessionId:job.compositor.session_id??job.id,request:op==='state'||op==='recover'||op==='saved_snapshot'?{op}:operation(state,op,args)});
    if(result.bundle){
      const p=current.current, saved=p.jobs.find(j=>j.id===job.id);
      const ready={...p,jobs:p.jobs.map(j=>j.id===job.id?{...j,status:'running'}:j)};
      await commit(await finishCompositor(ready,saved,result));setState(null);
-   }else await observe(result);
+   }else {
+     if(result.candidate_layer&&job.kind==='layer_edit')await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,layer_edit_applied:true,compositor:{...j.compositor,bindings:{...j.compositor.bindings,[result.candidate_layer]:job.layer_edit.character_id}}}:j)});
+     await observe(result);
+   }
  };
  const selected=state?.layers?.find(l=>l.id===layer);
  return <details className="shot-controls"><summary>外部レイヤー編集（Compositor）</summary>
- <p>連携版CompositorとmacOS 26.5以降が必要です。AIによるレイヤー描き直しはまだ利用できません。</p>
+ <p>連携版CompositorとmacOS 26.5以降が必要です。向き・ポーズ変更は未対応です。局所色変更は人物対応の確認後に使えます。</p>
  <fieldset disabled={busy||!desktop()}>
  {!job&&<button disabled={!panel.image} onClick={()=>run('Compositorを接続',async()=>{
    const p=current.current, source=p.panels.find(item=>item.id===panel.id), next=await beginCompositor(p,source);
@@ -38,10 +45,11 @@ export default function CompositorControls({project,panel,current,commit,run,bus
  {selected&&<><label>人物対応<select value={job.compositor.bindings[layer]??''} onChange={e=>run('人物対応を保存',()=>commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,compositor:{...j.compositor,bindings:{...j.compositor.bindings,[layer]:e.target.value}}}:j)}))}><option value="">未確認</option>{project.characters.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
  <label>X<input type="number" value={x} onChange={e=>setX(Number(e.target.value))}/></label><label>Y<input type="number" value={y} onChange={e=>setY(Number(e.target.value))}/></label>
  <button disabled={state.owner!=='app'} onClick={()=>run('配置を変更',()=>send('transform',{layer,x,y,width:selected.width,height:selected.height,rotation:selected.rotation,visible:selected.visible}))}>位置を変更</button></>}
+ <LayerColourControls job={job} state={state} layer={layer} current={current} commit={commit} run={run} busy={busy} onState={setState}/>
  <button disabled={state.owner!=='app'} onClick={()=>run('直接調整へ引継ぎ',()=>send('handoff'))}>直接調整する</button>
  <button disabled={state.owner!=='app'} onClick={()=>run('Codexへ引継ぎ',()=>send('handoff',{to:'codex'}))}>Codexに渡す</button>
- {state.owner==='codex'&&<p>セッションID: <code>{job.id}</code>。連携版の integrations/compositor/client.py から限定操作できます。</p>}
+ {state.owner==='codex'&&<p>セッションID: <code>{sessionId}</code>。連携版の integrations/compositor/client.py から限定操作できます。</p>}
  <button disabled={state.owner==='app'} onClick={()=>run('アプリへ戻す',()=>send('claim'))}>アプリに戻す</button>
- <button disabled={state.owner!=='app'} onClick={()=>run('編集版と合成画像を候補に保存',()=>send('snapshot'))}>この版を候補に保存</button></>}
+ <button disabled={state.owner!=='app'||(job.kind==='layer_edit'&&!job.layer_edit_applied)} onClick={()=>run('編集版と合成画像を候補に保存',()=>send('snapshot'))}>この版を候補に保存</button></>}
  </fieldset></details>;
 }

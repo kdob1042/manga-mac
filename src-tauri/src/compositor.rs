@@ -204,7 +204,18 @@ pub async fn exchange(id: &str, args: Value) -> Result<Value, String> {
             .ok_or("照合対象がありません")?
             .to_owned();
     } else {
-        if !["open", "state", "claim", "handoff", "transform", "snapshot"].contains(&op) {
+        if ![
+            "open",
+            "state",
+            "claim",
+            "handoff",
+            "transform",
+            "snapshot",
+            "capture_layer",
+            "import_candidate",
+        ]
+        .contains(&op)
+        {
             return Err("未対応のCompositor操作です".into());
         }
         if pending.exists() {

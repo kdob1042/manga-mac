@@ -284,6 +284,17 @@ function App() {
   async function edit() {
     if(!instruction.trim())throw Error('修正内容を入力してください');
     const p=current.current,context=editContext(p,page,selected,rect);
+    const layerJob=p.jobs.find(j=>j.compositor&&j.panelId===chosen?.id&&['running','unknown'].includes(j.status));
+    if(layerJob){
+      if(layerJob.kind==='layer_edit'&&!layerJob.layer_edit_applied)throw Error('生成済みレイヤーを回収してから移動してください');
+      const sessionId=layerJob.compositor.session_id??layerJob.id;
+      const state=await call('compositor_call',{sessionId,request:{op:'state'}});
+      const {planLayerMove}=await import('./layer-edit.js'),{operation}=await import('./compositor.js');
+      const args=planLayerMove(p,layerJob,state,instruction);
+      const result=await call('compositor_call',{sessionId,request:operation(state,'transform',args)});
+      window.dispatchEvent(new CustomEvent('compositor-state',{detail:{sessionId,state:result.state??result}}));
+      setInstruction('');setNotice('人物レイヤーを移動しました。候補に保存してから採用できます');return;
+    }
     // Explicit manual region selection also works without an LLM connection.
     if(chosen && rect && editRoute(instruction).kind==='region') {
       await applyEdit({base:editBase(p),context,plan:{reason:instruction,operations:[{kind:'region',panelId:chosen.id,args:{instruction}}]}});return;
@@ -335,7 +346,7 @@ function App() {
     </details>
     {chosen && <section className="shot-controls" aria-label="作画候補">
       <button disabled={!!busy || !chosen.capture_revision || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>
-      {project.jobs.filter(j => ['generate','edit','retake','compositor','decompose'].includes(j.kind) && !j.finishing && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
+      {project.jobs.filter(j => ['generate','edit','retake','compositor','decompose','layer_edit'].includes(j.kind) && !j.finishing && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
         <p>{job.status === 'unknown' ? '応答未確定：再実行する前に結果を確認してください' : '作画候補：採用前の原稿を保持しています'}</p>
         {job.status === 'unknown' && ['generate','edit','retake'].includes(job.kind) && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
         {job.output_revision && <><img className="shot-preview" src={project.artworks.find(a => a.id === job.output_revision)?.panel.image} alt="新しい作画候補"/><button disabled={!!busy} onClick={() => run('作画候補を採用中', async () => commit(await adoptCandidate(current.current, job.id)))}>この候補を採用</button></>}

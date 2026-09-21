@@ -43,6 +43,13 @@
       "validation": {
         "runtime": "sdk-source-reviewed",
         "inference": "not_run"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "minimum_macos": "14",
+        "weights_sha256": "430ba0f94ee0851a7f95c1383527f931afa6219898a51c5aa8e37979e9e4c86a"
       }
     },
     {
@@ -83,6 +90,13 @@
       "validation": {
         "runtime": "sdk-source-reviewed",
         "inference": "not_run"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "minimum_macos": "14",
+        "weights_sha256": "ba42005a6d4e6c48430787db98ae8913aced4654682b59d0d0f1d9ccf820fe30"
       }
     },
     {

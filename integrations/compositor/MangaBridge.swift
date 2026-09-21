@@ -114,6 +114,48 @@ import CryptoKit
             NSApplication.shared.activate()
             return try state()
         }
+        if op == "capture_layer" {
+            guard let raw = request["layer"] as? String, let id = UUID(uuidString: raw),
+                  let document = session.document, let layer = document.layers.first(where: { $0.id == id }),
+                  layer.asset != nil, layer.isVisible, layer.parentID == nil, !layer.isGroup,
+                  layer.mask == nil, layer.maskSourceID == nil, layer.effects == nil,
+                  layer.adjustment == nil, layer.shape == nil, layer.text == nil,
+                  layer.opacity == 1, layer.blendMode == .normal,
+                  let snapshot = session.projectSnapshot() else { throw BridgeError.unsupported }
+            // No ambiguous clipping/group/mask flattening. Lettering is excluded from model context.
+            guard document.layers.allSatisfy({ $0.parentID == nil && !$0.isGroup && $0.mask == nil && $0.maskSourceID == nil && $0.adjustment == nil }) else { throw BridgeError.unsupported }
+            let base = try state()
+            var targetManifest = snapshot.manifest
+            targetManifest.layers = snapshot.manifest.layers.filter { $0.id == id }
+            targetManifest = ProjectManifest(resolution: targetManifest.resolution, documentID: targetManifest.documentID,
+                width: targetManifest.width, height: targetManifest.height, activeLayerID: id, layers: targetManifest.layers)
+            let target = try await ImageExporter.shared.pngData(ProjectSnapshot(manifest: targetManifest, images: [id: layer.asset!]))
+            var contextManifest = snapshot.manifest
+            contextManifest.layers.removeAll { $0.text != nil }
+            let context = try await ImageExporter.shared.pngData(ProjectSnapshot(manifest: contextManifest, images: snapshot.images, masks: snapshot.masks))
+            return ["state": base, "layer": id.uuidString, "target": "data:image/png;base64," + target.base64EncodedString(),
+                    "context": "data:image/png;base64," + context.base64EncodedString()]
+        }
+        if op == "import_candidate" {
+            guard let raw = request["layer"] as? String, let id = UUID(uuidString: raw),
+                  let index = session.document?.layers.firstIndex(where: { $0.id == id }),
+                  let text = request["image"] as? String, text.hasPrefix("data:image/png;base64,"),
+                  let data = Data(base64Encoded: String(text.dropFirst("data:image/png;base64,".count))), data.count < 24 * 1024 * 1024, data.count >= 33, data[24] == 8, data[25] == 6,
+                  let document = session.document else { throw BridgeError.invalid }
+            let url = directory.appendingPathComponent("import-\(id.uuidString)-\(session.mangaRevision).png")
+            try data.write(to: url, options: .withoutOverwriting)
+            defer { try? FileManager.default.removeItem(at: url) }
+            let asset = try await ImageImporter.shared.decode(url)
+            guard asset.image.width == document.width, asset.image.height == document.height else { throw BridgeError.invalid }
+            var candidate = ImageLayer(asset: asset, origin: .zero)
+            candidate.name = document.layers[index].name + " · Colour candidate"
+            session.beginEdit("Manga colour candidate")
+            session.document?.layers[index].isVisible = false
+            session.document?.layers.insert(candidate, at: index + 1)
+            session.activeLayerID = candidate.id
+            session.endEdit()
+            return ["state": try state(), "candidate_layer": candidate.id.uuidString]
+        }
         if op == "transform" {
             guard let raw = request["layer"] as? String, let layerID = UUID(uuidString: raw),
                   let index = session.document?.layers.firstIndex(where: { $0.id == layerID }),
