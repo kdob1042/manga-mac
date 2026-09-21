@@ -1,11 +1,11 @@
-#[path = "layer_colour.rs"]
-pub mod layer_colour;
 #[path = "backup.rs"]
 pub mod backup;
 #[path = "draft.rs"]
 pub mod draft;
 #[path = "image_recovery.rs"]
 pub mod image_recovery;
+#[path = "layer_colour.rs"]
+pub mod layer_colour;
 #[path = "layout.rs"]
 pub mod layout;
 #[path = "lettering.rs"]
