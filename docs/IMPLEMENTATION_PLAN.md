@@ -388,7 +388,7 @@ V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、�
 
 Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
 
-APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratioは保存済みmanifestとregistryから解決する。開始画像はRustで既存作画/固定撮影から再解決し、実bytes・hashを照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)で5MBはbase64化後のData URI全体の上限であることを確認済み。PNG/8192px以下/縦横比0.5〜2かつ選択モデルの出力ratioと厳密一致だけを送信し、サービス側の暗黙cropへ依存しない。任意model ID・任意endpoint・任意JSON payloadは受け付けない。
+APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratioは保存済みmanifestとregistryから解決する。開始画像はRustで既存作画/固定撮影から再解決し、実bytes・hashを照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)で5MBはbase64化後のData URI全体の上限であることを確認済み。PNG/8192px以下かつ選択モデルで許可したratioと厳密一致する入力だけを送信し、モデルごとの入力aspect制約はregistryで公開するratioへ反映してサービス側の暗黙cropへ依存しない。任意model ID・任意endpoint・任意JSON payloadは受け付けない。
 
 POST前に既存job.remoteへunknown・予約費用・送信日時をSQLite commitする。受信task IDを即保存。古いUI保存でremoteの削除/巻戻しを許さず、送信後のmanifest等を固定する。新規POSTは同じjobで一回だけ。再起動は既存taskのGETに戻し、取得完了artifactがUI保存前に残った場合も候補として一度だけ再接続する。API成功とローカル保存・採用を分ける。
 
