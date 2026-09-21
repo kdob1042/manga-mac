@@ -242,7 +242,8 @@ mod tests {
             "width":640,"height":640,"layer_count":4,"original":"fixture","references":[],
             "recovery":{"kind":"decompose"}});
         let definition = descriptor("images", "qwen-image-layered-q6-local").unwrap();
-        request["recovery"]["layered"] = json!({"runtime":definition["runtime"],"output":definition["output"]});
+        request["recovery"]["layered"] =
+            json!({"runtime":definition["runtime"],"output":definition["output"]});
         assert_eq!(
             validate_image_request(&request).unwrap().output_kind,
             "ordered-rgba-layers"
