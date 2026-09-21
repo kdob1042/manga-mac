@@ -11,8 +11,8 @@ mod web_asset;
 
 mod blender;
 mod blender_gui;
-mod compositor;
 mod blender_live;
+mod compositor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -32,14 +32,30 @@ struct AppState {
     compositor_gate: tokio::sync::Mutex<()>,
 }
 #[tauri::command]
-async fn compositor_start(session_id: String, bundle: Value, state: State<'_, AppState>) -> Result<Value, String> {
-    let _guard = state.compositor_gate.try_lock().map_err(|_| "Compositor操作中です")?;
+async fn compositor_start(
+    session_id: String,
+    bundle: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
     compositor::start(&session_id, bundle).await
 }
 #[tauri::command]
-async fn compositor_call(session_id: String, request: Value, state: State<'_, AppState>) -> Result<Value, String> {
-    let _guard = state.compositor_gate.try_lock().map_err(|_| "Compositor操作中です")?;
-    if request["op"] == "saved_snapshot" { return compositor::saved_snapshot(&session_id); }
+async fn compositor_call(
+    session_id: String,
+    request: Value,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _guard = state
+        .compositor_gate
+        .try_lock()
+        .map_err(|_| "Compositor操作中です")?;
+    if request["op"] == "saved_snapshot" {
+        return compositor::saved_snapshot(&session_id);
+    }
     compositor::exchange(&session_id, request).await
 }
 fn err(e: impl std::fmt::Display) -> String {

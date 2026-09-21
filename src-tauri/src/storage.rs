@@ -924,7 +924,10 @@ mod tests {
         });
         save(&mut db, &dir, &project.to_string()).unwrap();
         let raw = raw_project(&db).unwrap();
-        assert!(raw["panels"][0]["compositor"]["bundle"]["images"]["layer.png"]["image"]["artifact_id"].is_string());
+        assert!(
+            raw["panels"][0]["compositor"]["bundle"]["images"]["layer.png"]["image"]["artifact_id"]
+                .is_string()
+        );
         drop(db);
         let db = Connection::open(dir.join("test.sqlite3")).unwrap();
         let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
