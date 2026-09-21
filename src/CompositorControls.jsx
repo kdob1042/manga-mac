@@ -1,3 +1,5 @@
+import {imageHash} from './revisions.js';
+import {textForRefs} from './source-refs.js';
 import React,{useState,useEffect} from 'react';
 import LayerColourControls from './LayerColourControls.jsx';
 import {call,desktop} from './bridge.js';
@@ -5,7 +7,7 @@ import {imageOf} from './canvas-image.js';
 import {beginCompositor,finishCompositor,rasterBundle,reconcileBindings,operation} from './compositor.js';
 
 export default function CompositorControls({project,panel,current,commit,run,busy}) {
- const [state,setState]=useState(null),[layer,setLayer]=useState(''),[x,setX]=useState(0),[y,setY]=useState(0);
+ const [useCapture,setUseCapture]=useState(false),[state,setState]=useState(null),[layer,setLayer]=useState(''),[x,setX]=useState(0),[y,setY]=useState(0);
  const job=project.jobs.find(j=>j.compositor&&['compositor','decompose','layer_edit'].includes(j.kind)&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
  const sessionId=job?.compositor.session_id??job?.id;
  useEffect(()=>{const receive=e=>{if(e.detail.sessionId===sessionId)setState(e.detail.state);};window.addEventListener('compositor-state',receive);return()=>window.removeEventListener('compositor-state',receive);},[sessionId]);
@@ -15,7 +17,8 @@ export default function CompositorControls({project,panel,current,commit,run,bus
    if(job&&next.layers){const saved=current.current.jobs.find(j=>j.id===job.id),bindings=reconcileBindings(saved.compositor.bindings,next,current.current.characters);await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:j.kind==='layer_edit'&&!j.layer_edit_applied?j.status:'running',compositor:{...j.compositor,bindings}}:j)});}
  };
  const send=async(op,args={})=>{
-   const result=await call('compositor_call',{sessionId:job.compositor.session_id??job.id,request:op==='state'||op==='recover'||op==='saved_snapshot'?{op}:operation(state,op,args)});
+   let result=await call('compositor_call',{sessionId:job.compositor.session_id??job.id,request:op==='state'||op==='recover'||op==='saved_snapshot'?{op}:operation(state,op,args)});
+   if(op==='claim'){result=await call('compositor_call',{sessionId,request:operation(result.state??result,'snapshot')});}
    if(result.bundle){
      const p=current.current, saved=p.jobs.find(j=>j.id===job.id);
      const ready={...p,jobs:p.jobs.map(j=>j.id===job.id?{...j,status:'running'}:j)};
@@ -27,12 +30,15 @@ export default function CompositorControls({project,panel,current,commit,run,bus
  };
  const selected=state?.layers?.find(l=>l.id===layer);
  return <details className="shot-controls"><summary>外部レイヤー編集（Compositor）</summary>
- <p>連携版CompositorとmacOS 26.5以降が必要です。向き・ポーズ変更は未対応です。局所色変更は人物対応の確認後に使えます。</p>
+ <details><summary>このコマの原稿・参照</summary><pre className="source-text">{textForRefs(panel.sourceRefs??[],project.snapshots)}</pre><div className="characters">{project.characters.filter(c=>panel.characterIds.includes(c.id)).map(c=><figure key={c.id}><img src={c.image} alt={c.name}/><figcaption>{c.name}</figcaption></figure>)}</div></details><p>連携版CompositorとmacOS 26.5以降が必要です。向き・ポーズ変更は未対応です。局所色変更は人物対応の確認後に使えます。</p>
  <fieldset disabled={busy||!desktop()}>
- {!job&&<button disabled={!panel.image} onClick={()=>run('Compositorを接続',async()=>{
-   const p=current.current, source=p.panels.find(item=>item.id===panel.id), next=await beginCompositor(p,source);
-   let bundle=source.compositor?.bundle;
-   if(!bundle){const image=await imageOf(source.image), canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;canvas.getContext('2d').drawImage(image,0,0);bundle=rasterBundle(canvas.toDataURL('image/png'),image.width,image.height);}
+ {!job&&panel.capture_revision&&<label><input type="checkbox" checked={useCapture} onChange={e=>setUseCapture(e.target.checked)}/>撮影原本をCompositorで編集（AI生成なし）</label>}
+ {!job&&<button disabled={!panel.image&&!panel.capture_revision} onClick={()=>run('Compositorを接続',async()=>{
+   const p=current.current, source=p.panels.find(item=>item.id===panel.id),capture=(useCapture||!source.image)?p.captures?.find(c=>c.id===source.capture_revision):null;
+   const next=await beginCompositor(p,source,capture);
+   let original=source.image,bundle=capture?null:source.compositor?.bundle;
+   if(capture){const value=await call('blender_capture',{sessionId:capture.session_id,requestId:capture.request_id});original=value.preview;if(await imageHash(original)!==capture.image.hash)throw Error('撮影原本のhashが一致しません');}
+   if(!bundle){const image=await imageOf(original), canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;canvas.getContext('2d').drawImage(image,0,0);bundle=rasterBundle(canvas.toDataURL('image/png'),image.width,image.height);}
    await commit({...p,jobs:[...p.jobs,next]});
    try{setState(await call('compositor_start',{sessionId:next.id,bundle}));}
    catch(error){await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===next.id?{...j,status:'unknown'}:j)});throw error;}

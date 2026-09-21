@@ -64,7 +64,7 @@ export async function beginJob(project, panel, kind = 'generate', imageModelId =
     : null;
   if (project.jobs.filter(j => !j.notSubmitted && j.panelId === panel.id && j.base_revision === (panel.artwork_revision ?? null) && j.source_revision === panel.snapshotId && j.kind === kind).length >= 3) throw Error('同じ基準版での試行上限です。既存候補を確認してください');
   if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');
-  const cloud=media&&imageModel(media.registry_id).locality==='cloud';
+  const cloud=media?.adapter_id==='runway-image';
   if(cloud&&!project.mediaDefaults?.imageConnection)throw Error('クラウド静止画の接続・予算を登録してください');
   return { ...(cloud?{cloud_connection:project.mediaDefaults.imageConnection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
     base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), input_hash: await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel, media)))),

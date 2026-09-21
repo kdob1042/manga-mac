@@ -1221,3 +1221,17 @@ pub async fn collect_image(db:&Mutex<Connection>,root:&Path,id:&str,connection:&
     while let Some(chunk)=response.chunk().await.map_err(|_|failure())?{if bytes.len()+chunk.len()>24*1024*1024{return Err("画像が大きすぎます".into());}bytes.extend_from_slice(&chunk);}
     storage::image_recovery::store_remote(db,root,id,&bytes)
 }
+
+#[cfg(test)]
+mod image_tests {
+ use super::*;
+ #[test]
+ fn image_wire_contract_rejects_unsupported_inputs_before_post(){
+  let input=json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
+  let payload=image_payload(&input).unwrap();assert_eq!(payload["ratio"],"720:720");assert_eq!(payload["referenceImages"][0]["tag"],"ref1");
+  let mut bad=input.clone();bad["width"]=json!(768);assert!(image_payload(&bad).is_err());
+  bad=input.clone();bad["references"]=json!([input["references"][0],input["references"][0],input["references"][0],input["references"][0]]);assert!(image_payload(&bad).is_err());
+  bad=input.clone();bad["prompt"]=json!("x".repeat(1001));assert!(image_payload(&bad).is_err());
+  bad=input;bad["references"][0]["image"]=json!("https://unapproved.example/image.png");assert!(image_payload(&bad).is_err());
+ }
+}

@@ -1,31 +1,43 @@
-name: Production workspace export (temporary)
+name: Production workflow validation (temporary)
 on:
   push:
     branches: [issue/230-work-1]
-    paths: [.github/workflows/production-workspace-export.yml]
 permissions:
   contents: read
 jobs:
-  workspace:
+  validate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
-      - name: Export tracked source and test dependencies only
-        run: |
-          mkdir -p /tmp/manga-workspace
-          git archive --format=tar HEAD | gzip -n > /tmp/manga-workspace/source.tar.gz
-          tar -czf /tmp/manga-workspace/node_modules.tar.gz node_modules
-          git rev-parse HEAD > /tmp/manga-workspace/COMMIT
-      - uses: actions/upload-artifact@v4
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
-          name: production-test-workspace
-          path: /tmp/manga-workspace/
-          retention-days: 1
+          toolchain: 1.98.1
+          components: rustfmt
+      - run: npm ci
+      - run: npm test && npm run build
+      - name: Format Rust and report patch
+        run: |
+          cargo fmt --manifest-path src-tauri/Cargo.toml
+          git diff -- src-tauri > /tmp/rustfmt.patch
+          cat /tmp/rustfmt.patch
+      - name: Rust storage tests
+        run: cargo test --locked --manifest-path tests/storage/Cargo.toml
+      - name: Rust transport tests
+        run: cargo test --locked --manifest-path tests/llm/Cargo.toml
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test tests/ui/production-workflow.spec.js tests/ui/source-library.spec.js tests/ui/layout.spec.js tests/ui/compositor.spec.js tests/ui/image-crop.spec.js
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-workflow-validation
+          path: |
+            /tmp/rustfmt.patch
+            test-results/
+          retention-days: 3

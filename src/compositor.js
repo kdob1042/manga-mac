@@ -7,11 +7,12 @@ export function rasterBundle(image, width, height, ids = [crypto.randomUUID(), c
   return {manifest:{format:'com.compositor.project',version:8,colorSpace:'sRGB',documentID,width,height,activeLayerID:layerID,
     layers:[{id:layerID,name:'原画',isVisible:true,transform:{origin:[0,0],size:[width,height],rotation:0,flipX:false,flipY:false,sampling:'High quality'},imageFile:`${layerID}.png`}]}, images:{[`${layerID}.png`]:{image}}};
 }
-export async function beginCompositor(project, panel) {
-  if (!panel.image) throw Error('作画を用意してください');
+export async function beginCompositor(project, panel, capture = null) {
+  if (!panel.image && !capture) throw Error('作画または撮影原本を用意してください');
+  if(capture && (capture.id!==panel.capture_revision || capture.panel_id!==panel.id))throw Error('撮影原本の対象が一致しません');
   const job = await beginJob(project,panel,'compositor');
   // The existing job owns provenance and late-result handling; no second job queue.
-  return {...job,recovery:{panel:structuredClone(panel)},compositor:{upstream_revision:compositorRevision,bindings:structuredClone(panel.compositor?.bindings??{})}};
+  return {...job,recovery:{panel:structuredClone(panel)},compositor:{...(capture?{input_capture:capture.id}:{}),upstream_revision:compositorRevision,bindings:structuredClone(panel.compositor?.bindings??{})}};
 }
 export function reconcileBindings(bindings, state, characters) {
   const layers=new Set(state.layers.map(l=>l.id)), people=new Set(characters.map(c=>c.id));

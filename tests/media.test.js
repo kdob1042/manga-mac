@@ -8,7 +8,7 @@ test('the public registry exposes only implemented adapters and freezes defaults
   assert.equal(defaultImageModelId, 'flux-2-klein-4b-local');
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
   assert.ok(imageModels.length >= 2);
-  assert.ok(imageModels.every(model => model.adapter_id === 'media-generation-kit'));
+  assert.ok(imageModels.every(model => ['media-generation-kit','runway-image'].includes(model.adapter_id)));
   assert.deepEqual(videoModels.map(model => model.adapter_id), ['runway']);
   assert.throws(() => imageModel('qwen-image'), /未対応/);
   assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
@@ -31,8 +31,17 @@ test('video selection is explicit and test-only end-frame support stays out of p
 });
 
 test('both native model definitions produce distinct pinned requests and enforce reference limits', () => {
-  const requests = imageModels.map(selected => imageRequest({ panel: { prompt: 'scene' }, references: [], width: 768, height: 768, seed: 5, instruction: '', modelId: selected.id }));
+  const requests = imageModels.filter(m=>m.locality==='local').map(selected => imageRequest({ panel: { prompt: 'scene' }, references: [], width: 768, height: 768, seed: 5, instruction: '', modelId: selected.id }));
   assert.notEqual(requests[0].media.model_id, requests[1].media.model_id);
   assert.equal(requests[0].media.model_id, imageModels[0].model_id);
   assert.throws(() => imageRequest({ panel: {}, references: Array(9).fill({name:'ref'}), width:768, height:768, seed:5 }), /最大8枚/);
+});
+
+test('cloud image descriptor pins dimensions, cost, connection and ordered references',()=>{
+ const selected=imageModel('runway-gen4-image');assert.equal(selected.locality,'cloud');assert.equal(selected.cost.credits,5);
+ assert.deepEqual(generationSize([768,768],selected.id),[720,720]);
+ const references=[{id:'hero',name:'Hero',role:'character',image:'data:image/png;base64,YQ==',hash:'a'.repeat(64)}];
+ const request=imageRequest({panel:{prompt:'scene'},references,width:720,height:720,seed:1,instruction:'',modelId:selected.id,job:{id:'j',cloud_connection:'approved'}});
+ assert.equal(request.cloud_connection,'approved');assert.deepEqual(request.references,references);
+ assert.throws(()=>imageRequest({panel:{},references:Array(4).fill(references[0]),width:720,height:720,seed:1,modelId:selected.id}),/最大3枚/);
 });
