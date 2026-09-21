@@ -1,5 +1,5 @@
 //! Small registry and validation boundary shared by image/video dispatch.
-//! Provider-specific wire formats remain in their adapters (Swift and runway).
+//! Provider-specific wire formats remain in their adapters (MFLUX and runway).
 use serde_json::{json, Value};
 
 const REGISTRY: &str = include_str!("../../src/media-registry.json");
@@ -95,7 +95,7 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
     {
         return Err("画像の実行先定義が登録情報と一致しません".into());
     }
-    if selected.adapter_id != "media-generation-kit" {
+    if selected.adapter_id != "mflux" {
         return Err("選択した画像adapterはまだ接続されていません".into());
     }
     let width = request["width"].as_u64().ok_or("画像幅がありません")?;
