@@ -287,3 +287,9 @@ Compositorは任意の別アプリです。採用上流はmacOS 26.5以降を要
 作業用packageはCompositorが管理し、候補には同一版の合成PNGと編集可能な素材を保存します。
 応答がない場合は操作を再送せず「未確定の結果を照合」、保存後の応答消失は「保存済み候補を回収」で照合します。
 モデル重み・Python環境・常駐AIサーバーは追加しません。レイヤーAI編集・自動分解は未対応です。
+
+「Codexに渡す」の後、MacのCodexは表示されたsession IDで
+`python3 integrations/compositor/client.py <session-ID> state`を実行できます。
+取得したinstance/document/revisionを`--arguments`に含めて限定操作を行い、
+終了時はhandoffでappへ返すか、manga-macの「アプリに戻す」で再観測・回収します。
+キー・接続トークンは作品やターミナル出力へ表示しません。

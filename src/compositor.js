@@ -18,7 +18,7 @@ export function reconcileBindings(bindings, state, characters) {
   return Object.fromEntries(Object.entries(bindings).filter(([layer,character])=>layers.has(layer)&&people.has(character)));
 }
 export async function finishCompositor(project, job, snapshot) {
-  if (!snapshot?.image?.startsWith('data:image/png;base64,') || snapshot.upstream_revision!==compositorRevision || snapshot.state?.document!==snapshot.bundle?.manifest?.documentID || snapshot.state?.owner!=='app') throw Error('Compositorの保存版と合成画像が一致しません');
+  if (!snapshot?.image?.startsWith('data:image/png;base64,') || snapshot.upstream_revision!==compositorRevision || snapshot.state?.document!==snapshot.bundle?.manifest?.documentID || !['app','codex'].includes(snapshot.state?.owner)) throw Error('Compositorの保存版と合成画像が一致しません');
   const source=job.recovery?.panel;
   if (!source || source.id!==job.panelId) throw Error('編集元のコマがありません');
   const bindings=reconcileBindings(job.compositor.bindings,snapshot.state,project.characters);
@@ -27,6 +27,6 @@ export async function finishCompositor(project, job, snapshot) {
   return finishJob(project,job,generated,false,true);
 }
 export function operation(state, op, args={}) {
-  if (!state?.document || !Number.isSafeInteger(state.revision) || !['app','human'].includes(state.owner)) throw Error('Compositorの状態を再取得してください');
-  return {...args,op,document:state.document,revision:state.revision};
+  if (!state?.document || !Number.isSafeInteger(state.revision) || !['app','human','codex'].includes(state.owner)) throw Error('Compositorの状態を再取得してください');
+  return {...args,op,instance:state.instance,document:state.document,revision:state.revision};
 }

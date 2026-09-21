@@ -27,5 +27,5 @@ test('Compositor candidates preserve editable source and use existing adoption/u
 test('layer character bindings never infer from names or array order',()=>{
  assert.deepEqual(reconcileBindings({a:'p1',b:'p2',c:'missing'},{layers:[{id:'b',name:'p1'},{id:'c'}]},[{id:'p1'},{id:'p2'}]),{b:'p2'});
  assert.throws(()=>operation({document:'x',revision:NaN,owner:'app'},'transform'),/再取得/);
- assert.deepEqual(operation({document:'x',revision:3,owner:'app'},'transform',{layer:'a',x:2}),{op:'transform',document:'x',revision:3,layer:'a',x:2});
+ assert.deepEqual(operation({document:'x',revision:3,owner:'app'},'transform',{layer:'a',x:2}),{op:'transform',instance:undefined,document:'x',revision:3,layer:'a',x:2});
 });

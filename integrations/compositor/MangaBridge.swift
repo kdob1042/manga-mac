@@ -7,6 +7,7 @@ import CryptoKit
     private let directory: URL
     private let token: String
     private let sessionID: String
+    private let instanceID = UUID().uuidString
     private let isCurrent: () -> Bool
     private var owner = "human"
     private var processing = false
@@ -34,7 +35,7 @@ import CryptoKit
     }
     private func poll() async {
         guard !processing else { return }
-        if owner == "app", Date().timeIntervalSince(lastActivity) > 120 {
+        if owner != "human", Date().timeIntervalSince(lastActivity) > 120 {
             owner = "human"; session.isProjectBusy = false
         }
         let requestURL = directory.appendingPathComponent("request.json")
@@ -71,18 +72,20 @@ import CryptoKit
              "rotation": layer.transform.rotation, "raster": layer.asset != nil,
              "parent": layer.parentID?.uuidString as Any? ?? NSNull()]
         }
-        return ["session": sessionID, "document": document.id.uuidString, "revision": session.mangaRevision,
+        return ["session": sessionID, "instance": instanceID, "document": document.id.uuidString, "revision": session.mangaRevision,
                 "owner": owner, "width": document.width, "height": document.height, "layers": layers]
     }
     private func base(_ request: [String: Any]) throws {
         _ = try state()
-        guard request["document"] as? String == documentID?.uuidString,
+        guard request["instance"] as? String == instanceID,
+              request["document"] as? String == documentID?.uuidString,
               (request["revision"] as? NSNumber)?.uint64Value == session.mangaRevision else { throw BridgeError.stale }
     }
     private func perform(_ request: [String: Any], id: String) async throws -> [String: Any] {
-        guard isCurrent(), let op = request["op"] as? String else { throw BridgeError.documentChanged }
+        guard isCurrent(), let op = request["op"] as? String,
+              let actor = request["actor"] as? String, ["app", "codex"].contains(actor) else { throw BridgeError.documentChanged }
         if op == "open" {
-            guard documentID == nil, session.document == nil, session.canStartProjectOperation else { throw BridgeError.busy }
+            guard actor == "app", documentID == nil, session.document == nil, session.canStartProjectOperation else { throw BridgeError.busy }
             session.isProjectBusy = true
             do {
                 // Native stages this package only before launch. Never writes to the live package.
@@ -97,15 +100,17 @@ import CryptoKit
         if op == "state" { return try state() }
         try base(request)
         if op == "claim" {
-            guard owner == "human", session.canStartProjectOperation, session.canEditLayers else { throw BridgeError.busy }
+            guard actor == "app", (owner == "codex" || (owner == "human" && session.canStartProjectOperation && session.canEditLayers)) else { throw BridgeError.busy }
             session.isProjectBusy = true
             owner = "app"
             return try state()
         }
-        guard owner == "app", session.isProjectBusy else { throw BridgeError.ownership }
+        guard owner == actor, session.isProjectBusy else { throw BridgeError.ownership }
         if op == "handoff" {
-            owner = "human"
-            session.isProjectBusy = false
+            let next = request["to"] as? String ?? "human"
+            guard ["app", "human", "codex"].contains(next) else { throw BridgeError.invalid }
+            owner = next
+            session.isProjectBusy = next != "human"
             NSApplication.shared.activate()
             return try state()
         }

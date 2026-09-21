@@ -786,8 +786,6 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         "model_id": selected.model_id.clone(),
     });
     request["steps"] = serde_json::json!(selected.steps);
-    let width = request["width"].as_u64().ok_or("画像幅がありません")?;
-    let height = request["height"].as_u64().ok_or("画像高さがありません")?;
     if let Some(original) = request["original"].as_str() {
         let (_, encoded) = original.split_once(',').ok_or("Invalid original image")?;
         let bytes = STANDARD.decode(encoded).map_err(err)?;

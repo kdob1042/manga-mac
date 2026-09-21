@@ -626,7 +626,8 @@ session/document/revisionを照合し、状態取得、位置・寸法・回転�
 接続口の実装・外部アプリfixture・native/UIへの接続・実機受入を別々に完了判定する。
 PR #220ではnative/UI接続と既存Jobへの候補保存、人物対応、確定snapshotの回収を追加する。
 素材は既存image artifactへ外出しし、採用・Undo・バックアップを再利用する。
-Codex操作権移譲、Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
+人間／アプリ／Codex間の操作権は同じ接続口で移譲し、process instanceを毎回照合する。
+Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
 PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120秒でも書込み権を解放し、次の操作前に再観測する。
 
 Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、

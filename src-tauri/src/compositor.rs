@@ -13,7 +13,7 @@ fn error(e: impl std::fmt::Display) -> String {
 }
 fn directory(id: &str) -> Result<PathBuf, String> {
     let id = Uuid::parse_str(id).map_err(error)?.to_string();
-    Ok(std::env::temp_dir().join(format!("manga-compositor-{id}")))
+    Ok(std::env::temp_dir().canonicalize().map_err(error)?.join(format!("manga-compositor-{id}")))
 }
 fn read(path: &Path) -> Result<Value, String> {
     let meta = std::fs::symlink_metadata(path).map_err(error)?;
@@ -174,6 +174,12 @@ pub async fn start(id: &str, bundle: Value) -> Result<Value, String> {
 pub async fn exchange(id: &str, args: Value) -> Result<Value, String> {
     let dir = directory(id)?;
     let config = connection(&dir, id)?;
+    let lock_path = dir.join("ipc.lock");
+    if lock_path.exists() && !std::fs::symlink_metadata(&lock_path).map_err(error)?.is_file() {
+        return Err("Compositor操作ロックが不正です".into());
+    }
+    let ipc_gate = std::fs::OpenOptions::new().read(true).write(true).create(true).truncate(false).open(lock_path).map_err(error)?;
+    ipc_gate.try_lock().map_err(|_| "別のCompositor操作が実行中です")?;
     let op = args["op"].as_str().ok_or("操作がありません")?;
     let pending = dir.join("pending.json");
     let request_id;
@@ -193,6 +199,7 @@ pub async fn exchange(id: &str, args: Value) -> Result<Value, String> {
         let mut request = args.as_object().ok_or("操作が不正です")?.clone();
         request.insert("id".into(), json!(request_id));
         request.insert("protocol".into(), json!(1));
+        request.insert("actor".into(), json!("app"));
         request.insert("session".into(), json!(id));
         request.insert("token".into(), config["token"].clone());
         write(&pending, &json!({"id": request_id}))?;

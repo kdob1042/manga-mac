@@ -46,9 +46,9 @@ def main(app):
         try:
             def request(op, state=None, **args):
                 rid = str(uuid.uuid4())
-                body = {'id': rid, 'protocol': 1, 'session': sid, 'token': token, 'op': op, **args}
+                body = {'id': rid, 'protocol': 1, 'session': sid, 'token': token, 'op': op, 'actor':'app', **args}
                 if state:
-                    body.update(document=state['document'], revision=state['revision'])
+                    body.update(document=state['document'], revision=state['revision'], instance=state['instance'])
                 pending = root / 'request.tmp'
                 pending.write_text(json.dumps(body)); pending.replace(root / 'request.json')
                 result = root / (rid + '.json')
@@ -71,6 +71,13 @@ def main(app):
             assert human['owner'] == 'human'
             assert not request('snapshot', human)['ok']
             state = request('claim', human)['value']
+            codex = request('handoff', state, to='codex')['value']
+            assert codex['owner'] == 'codex'
+            assert not request('transform', codex, layer=ids[1], x=7, y=0, width=32, height=32, rotation=0, visible=True)['ok']
+            moved = request('transform', codex, actor='codex', layer=ids[1], x=6, y=0, width=32, height=32, rotation=0, visible=True)
+            assert moved['ok']
+            state = request('claim', moved['value'])['value']
+            assert not request('transform', {**state, 'instance':str(uuid.uuid4())}, layer=ids[1], x=7, y=0, width=32, height=32, rotation=0, visible=True)['ok']
             saved = request('snapshot', state)['value']
             assert saved['bundle']['images'] == baseline['bundle']['images'], 'Placement must not change source pixels'
             assert saved['image'] != baseline['image'], 'Actual renderer must reflect placement'
@@ -82,6 +89,21 @@ def main(app):
             output.mkdir(parents=True, exist_ok=True)
             (output / 'compositor-roundtrip.json').write_text(json.dumps({'status': 'passed', 'upstream': 'c39da13b5db11bc8678ec04a7a748e1e0a589244', 'inference': 'not_run'}))
             (output / 'composite.png').write_bytes(base64.b64decode(saved['image'].split(',')[1]))
+            process.terminate(); process.wait(timeout=10)
+            root = (root / 'restart').resolve(); root.mkdir(mode=0o700)
+            sid, token = str(uuid.uuid4()), secrets.token_hex(32)
+            (root / 'connection.json').write_text(json.dumps({'session':sid,'token':token}))
+            package = root / 'working.comp'; (package / 'images').mkdir(parents=True)
+            (package / 'manifest.json').write_text(json.dumps(saved['bundle']['manifest']))
+            for name, record in saved['bundle']['images'].items():
+                (package / 'images' / name).write_bytes(base64.b64decode(record['image'].split(',')[1]))
+            process = subprocess.Popen([str(pathlib.Path(app) / 'Contents/MacOS/Compositor'), '--manga-session', str(root)])
+            restored = request('open')['value']
+            assert restored['document'] == state['document']
+            assert restored['instance'] != state['instance']
+            assert not request('transform', {**restored, 'instance':state['instance']}, layer=ids[1], x=8, y=0, width=32, height=32, rotation=0, visible=True)['ok']
+            assert request('snapshot', restored)['value']['image'] == saved['image'], 'Reopened package must render the identical PNG'
+
         finally:
             # Only the exact fixture process is terminated, never another user's editor.
             process.terminate()
