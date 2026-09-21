@@ -912,6 +912,40 @@ mod tests {
         );
     }
     #[test]
+    fn reservation_uses_selected_model_rate_and_duration() {
+        let (mut manifest, _) = fixture();
+        manifest["connection"]["model"] = json!("gen4_turbo");
+        let job = json!({
+            "id":"j",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "c", 24).is_err());
+        assert_eq!(reserve(&project, &job, "c", 25).unwrap()["reserved_credits"], 25);
+    }
+
+    #[test]
     fn output_urls_and_status_projection_never_expose_secrets_or_unapproved_hosts() {
         for url in [
             "http://dnznrvs05pmza.cloudfront.net/v.mp4",
