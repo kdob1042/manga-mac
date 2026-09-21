@@ -64,8 +64,8 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   if (!requestedEpisodeIds.length || new Set(requestedEpisodeIds).size !== requestedEpisodeIds.length || requestedEpisodeIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(id))) throw Error('取り込む話を選んでください');
   const previousEpisodes = previous?.episodeIds ?? (previous?.episodeId ? [previous.episodeId] : []);
   const sameSource = previous?.repo === repo && (previous?.workId ?? null) === workId;
-  const episodeIds = sameSource ? [...new Set([...previousEpisodes,...requestedEpisodeIds])] : requestedEpisodeIds;
-  const selectedSceneId = episodeIds.length === 1 ? options.sceneId : null;
+  let episodeIds = sameSource ? [...new Set([...previousEpisodes,...requestedEpisodeIds])] : requestedEpisodeIds;
+  let selectedSceneId = episodeIds.length === 1 ? options.sceneId : null;
   if (previous?.sha === sha && JSON.stringify(previousEpisodes) === JSON.stringify(episodeIds) && previous.repo === repo
     && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
     && (previous.sync?.source_branch ?? 'main') === branch
@@ -87,6 +87,9 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
       return invokeCall('github_file', {repo, path: sourcePath(legacySourceRoot, path), sha, token});
     }
   };
+  if(requestedEpisodeIds.some(id=>!model.episodes.some(e=>e.id===id)))throw Error('選択した話が原稿にありません');
+  episodeIds=model.episodes.filter(e=>episodeIds.includes(e.id)).map(e=>e.id);
+  selectedSceneId=episodeIds.length===1?options.sceneId:null;
   const ordered = episodeIds.flatMap(id => orderedScenes(model, id));
   if (new Set(ordered.map(scene => scene.id)).size !== ordered.length) throw Error('複数話で場面IDが重複しています');
   const selected = selectedSceneId ? ordered.filter(scene => scene.id === selectedSceneId) : ordered;

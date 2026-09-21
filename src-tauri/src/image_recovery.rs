@@ -526,6 +526,31 @@ mod tests {
         .unwrap();
     }
     #[test]
+    fn cloud_receipt_reuses_atomic_files_and_preserves_adopted_art() {
+        let (mut db, root, project, request) = setup();
+        reserve(&mut db, &root, &request).unwrap();
+        update_remote_job(&mut db, "local-1", |_, _| {
+            Ok(json!({"kind":"runway-image","task_id":"saved-task"}))
+        })
+        .unwrap();
+        let bytes = STANDARD
+            .decode(request["recovery"]["original"].as_str().unwrap().split_once(',').unwrap().1)
+            .unwrap();
+        let dir = directory(&root, "local-1").unwrap();
+        let artifact = put(&dir, &bytes).unwrap();
+        fs::hard_link(dir.join(artifact), dir.join("result.png")).unwrap();
+        fs::write(dir.join(".pending-interrupted"), b"partial").unwrap();
+        let db = std::sync::Mutex::new(db);
+        let result = store_remote(&db, &root, "local-1", &bytes).unwrap();
+        assert_eq!(store_remote(&db, &root, "local-1", &bytes).unwrap(), result);
+        let connection = db.lock().unwrap();
+        assert_eq!(recover(&connection, &root, "local-1").unwrap(), result);
+        let saved: Value = serde_json::from_str(&load(&connection, &root).unwrap().unwrap()).unwrap();
+        assert_eq!(saved["panels"], project["panels"]);
+        assert!(store_remote(&std::sync::Mutex::new(Connection::open_in_memory().unwrap()), &root, "unknown", &bytes).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn layer_colour_receipt_preserves_target_and_rejects_changed_reference_roles() {
         let (mut db, root, mut project, mut request) = setup();
         let fixture: Value =

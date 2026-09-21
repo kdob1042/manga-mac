@@ -724,6 +724,8 @@ pub async fn cancel(
     })
 }
 
+// Static images reuse Runway's transport, ephemeral credentials, existing image
+// receipts and the project Job. A task ID is durably recorded before polling.
 pub fn image_payload(input: &Value) -> Result<Value, String> {
     if input["media"]["model_id"] != "gen4_image" || input["width"] != 720 || input["height"] != 720
     {
@@ -1427,6 +1429,3 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 }
-
-// Static images reuse Runway's transport, ephemeral credentials, existing image
-// receipts and the project Job. A task ID is durably recorded before polling.

@@ -11,7 +11,7 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
  const token=project.contentToken;
  const id=JSON.stringify([project.workId,token,targetSnapshotId]);
  const result={id,workId:project.workId,targetSnapshotId,baseContentToken:token,budget,blocks:[]};
- if(equal(oldKeys,newKeys))return result;
+ if(equal(oldKeys,newKeys)&&!budget.replanApplied)return result;
  const coarse=old.length+fresh.length>(budget.maxUnits??4000);
  const diff=coarse?undefined:diffArrays(oldKeys,newKeys,{timeout:budget.timeout??100,maxEditLength:budget.maxEditLength??2000});
  // Only globally unique matches anchor changed regions. Repeated text inside a
@@ -35,7 +35,19 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
   const deletion=result.blocks.find(b=>b.kind==='delete'&&equal(b.oldUnitIds.map(id=>key(old.find(u=>u.id===id))),texts.map(key)));
   if(deletion){insertion.kind='move';insertion.oldUnitIds=deletion.oldUnitIds;insertion.moveStart=deletion.start;insertion.moveEnd=deletion.end;deletion.merged=true;}
  }
- result.blocks=result.blocks.filter(b=>!b.merged);return result;
+ result.blocks=result.blocks.filter(b=>!b.merged);
+ if(budget.replanApplied){
+  const touched=new Set(result.blocks.flatMap(b=>b.oldUnitIds));
+  for(const [at,u] of fresh.entries()){
+   if(result.blocks.some(b=>b.newRefs.some(r=>equal(r,u.source))))continue;
+   const matches=old.map((v,i)=>({v,i})).filter(({v})=>key(v)===key(u)&&!touched.has(v.id));
+   if(matches.length!==1)continue;
+   const {v,i}=matches[0],blockId=`${id}:replan:${i}`;
+   result.blocks.push({id:blockId,groupId:blockId,kind:'replace',replan:true,oldUnitIds:[v.id],newRefs:[u.source],beforeUnitId:i?old[i-1].id:null,afterUnitId:old[i+1]?.id??null,start:i,end:i+1,targetStart:at});
+  }
+  result.blocks.sort((a,b)=>a.targetStart-b.targetStart);
+ }
+ return result;
 }
 export function buildExpectedApplication(project,changeset,selectedBlockIds){
  const current=buildChangeSet(project,changeset.targetSnapshotId,changeset.budget);

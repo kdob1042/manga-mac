@@ -175,6 +175,7 @@ export async function produceDraft({
 export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{},imageModelId=null,panelIds=null}){
  const check=()=>{const p=current(),owner=p.jobs.find(j=>j.id===opId&&j.kind==='sourcePatch');
   const c=owner?.source_candidate;if(owner?.status!=='candidate'||!c||c.prepared.identity.workId!==p.workId||c.prepared.identity.baseContentToken!==p.contentToken)throw Error('原稿反映の候補が古いか、取り下げられています');return {p,c};};
+ const frozen=structuredClone(check().p);
  const candidateProject=({p,c})=>({...p,...c.patch});
  const persist=async result=>{const {p,c}=check();const patch={...c.patch,panels:result.panels};const updated={...c,patch,redrawPanelIds:c.redrawPanelIds.filter(id=>!patch.panels.find(p=>p.id===id)?.image)};
   const owned=result.jobs.filter(j=>j.sourcePatchOp===opId);
@@ -184,6 +185,7 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
  for(const id of targets){
   if(cancelled())return;
   await refresh();
+  if(JSON.stringify(check().p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(check().p.style_references)!==JSON.stringify(frozen.style_references))throw Error('参照が変わったため残りの作画を停止しました');
   let cp=candidateProject(check()),panel=cp.panels.find(p=>p.id===id);if(panel.image)continue;
   const pending=cp.jobs.find(j=>j.sourcePatchOp===opId&&j.panelId===id&&['unknown','candidate'].includes(j.status));
   if(pending){
@@ -195,7 +197,7 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
   await commit(p=>{if(p.workId!==cp.workId)throw Error('対象作品が変わりました');return {...p,jobs:[...p.jobs,job]};});notify(`${id} の必要な作画を生成中`);
   let submitted=false;
   try {
-   const generated=await withResource('local-inference',1,async permit=>{await refresh();submitted=true;return generate(panel,cp.characters,null,'',job,null,cp.style_references??[],null,permit,imageModelId);},{cancelled,waiting:()=>notify('ローカル推論は1件ずつ実行します。順番を待っています')});
+   const generated=await withResource('local-inference',1,async permit=>{await refresh();submitted=true;return generate(panel,cp.characters,null,'',job,null,cp.style_references??[],null,permit,imageModelId,'direct');},{cancelled,waiting:()=>notify('ローカル推論は1件ずつ実行します。順番を待っています')});
    await refresh();
    await persist(await finishJob(candidateProject(check()),job,generated));
   }catch(e){

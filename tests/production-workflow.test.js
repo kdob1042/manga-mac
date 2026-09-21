@@ -4,7 +4,7 @@ import {emptyProject} from '../src/core.js';
 import {initialLayout} from '../src/layout.js';
 import {defaultLettering} from '../src/lettering.js';
 import {tokenizeSnapshot} from '../src/source-refs.js';
-import {completeSection,sectionStatus,reopenSection,undoCompletion} from '../src/section-completion.js';
+import {completeSection,sectionStatus,reopenSection,undoCompletion,completionProblems} from '../src/section-completion.js';
 import {producePanels} from '../src/production.js';
 import {buildChangeSet,buildExpectedApplication} from '../src/source-diff.js';
 import {proposeSourceReplan} from '../src/source-replan.js';
@@ -45,12 +45,29 @@ test('unknown request prevents batch repost and leaves layout untouched',async()
  await assert.rejects(producePanels(args),/lost response/);await assert.rejects(producePanels(args),/未確定/);assert.equal(sent,1);assert.deepEqual(p.layout,before);
 });
 test('manual name split/merge preserves all source and confirmed geometry survives refresh',async()=>{
- let p=fixture();p.panels=[];p.layout=initialLayout([]);p.sourceApplication.units=[];
+ let p=fixture();p.snapshots[0].scenes[0].text='最初の文。次の文。最後の文。';p.panels=[];p.layout=initialLayout([]);p.sourceApplication.units=[];
  const changes=buildChangeSet(p),expected=buildExpectedApplication(p,changes,[changes.blocks[0].id]),prepared={expected,identity:{opId:'op',workId:p.workId,baseContentToken:p.contentToken,targetSnapshotId:p.active},plan:{scope:{pageIds:[],panelIds:[]}}};
  let c=await proposeSourceReplan(p,prepared,async prompt=>JSON.stringify({reason:'name',panels:JSON.parse(prompt).mutableUnits.map(a=>({unitIds:[a.id],prompt:'art',characterIds:[],reusePanelId:null}))}));
- validateName(p,c);assert.equal(namePanels(c).length,1);
+ validateName(p,c);assert.equal(namePanels(c).length,3);
+ const refs=namePanels(c).flatMap(p=>p.sourceRefs);
+ c=editName(p,c,[{refs}]);assert.equal(namePanels(c).length,1);
+ c=editName(p,c,[{refs:refs.slice(0,1)},{refs:refs.slice(1)}]);assert.equal(namePanels(c).length,2);
+ assert.deepEqual(namePanels(c).flatMap(p=>p.sourceRefs),refs);
  assert.throws(()=>editName(p,c,[]),/欠落/);
  c.patch.layout.pages[0].slots[0].points[0][0]+=.01;c.nameConfirmed=true;
  const next=await refreshSourceCandidate(p,c,async()=>prepared.plan);assert.deepEqual(next.patch.layout,c.patch.layout);assert.equal(next.nameConfirmed,true);
  assert.throws(()=>editName(p,c,[]),/確定/);
+});
+
+test('legacy completion renders a migration requirement instead of throwing',()=>{
+ const p=fixture();delete p.contentToken;delete p.sourceApplication;
+ assert.match(completionProblems(p,'a').join(' '),/移行/);
+});
+test('unchanged applied paragraph can be explicitly replanned without making the default diff dirty',()=>{
+ const p=fixture();assert.equal(buildChangeSet(p).blocks.length,0);
+ const changes=buildChangeSet(p,p.active,{replanApplied:true});assert.equal(changes.blocks.length,2);
+ const expected=buildExpectedApplication(p,changes,[changes.blocks[0].id]);
+ assert.deepEqual(expected.afterUnits.map(u=>u.source),p.sourceApplication.units.map(u=>u.source));
+ assert.equal(expected.afterUnits[1].id,p.sourceApplication.units[1].id);
+ assert.notEqual(expected.afterUnits[0].id,p.sourceApplication.units[0].id);
 });
