@@ -3,6 +3,7 @@
 import { sourceUnits } from './core.js';
 import { digest, imageHash } from './revisions.js';
 import { videoModelForConnection } from './media.js';
+import { sourceResolver } from './source-refs.js';
 
 const hashPattern = /^[0-9a-f]{64}$/;
 const hashValue = value => digest(new TextEncoder().encode(JSON.stringify(value)));
@@ -62,16 +63,38 @@ function validateTransition(project, shot) {
 }
 
 export function validateVideoShot(project, shot) {
-  exactKeys(shot, ['id', 'snapshotId', 'sceneId', 'unitIds', 'characterIds', 'startImage', 'endImage', 'transition', 'prompt', 'duration', 'ratio', 'adopted_revision']);
+  exactKeys(shot, ['id', 'snapshotId', 'sceneId', 'unitIds', 'sourceRefs', 'characterIds', 'startImage', 'endImage', 'transition', 'prompt', 'duration', 'ratio', 'adopted_revision', 'sourcePanelId', 'batchId']);
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
   const scene = snapshot?.scenes.find(s => s.id === shot.sceneId);
   if (!scene || typeof shot.id !== 'string' || !shot.id) throw Error('動画の原作参照がありません');
-  const units = sourceUnits(scene.id, scene.text).map(u => u.id);
-  if (!Array.isArray(shot.unitIds) || !shot.unitIds.length || new Set(shot.unitIds).size !== shot.unitIds.length || JSON.stringify(units.filter(id => shot.unitIds.includes(id))) !== JSON.stringify(shot.unitIds)) throw Error('原文の範囲・順序が不正です');
+  if (shot.sourceRefs !== undefined) {
+    if (!Array.isArray(shot.sourceRefs) || !shot.sourceRefs.length) throw Error('原文の範囲・順序が不正です');
+    const resolve = sourceResolver(project.snapshots), keys = new Set();
+    for (const ref of shot.sourceRefs) {
+      exactKeys(ref, ['snapshotId', 'sceneId', 'startCp', 'endCp']);
+      const key = JSON.stringify(ref);
+      if (keys.has(key)) throw Error('原文の範囲・順序が不正です');
+      keys.add(key); resolve(ref);
+    }
+    if (!Array.isArray(shot.unitIds)) throw Error('原文の範囲・順序が不正です');
+  } else {
+    const units = sourceUnits(scene.id, scene.text).map(u => u.id);
+    if (!Array.isArray(shot.unitIds) || !shot.unitIds.length || new Set(shot.unitIds).size !== shot.unitIds.length || JSON.stringify(units.filter(id => shot.unitIds.includes(id))) !== JSON.stringify(shot.unitIds)) throw Error('原文の範囲・順序が不正です');
+  }
   if (!Array.isArray(shot.characterIds) || new Set(shot.characterIds).size !== shot.characterIds.length || shot.characterIds.some(id => !project.characters.some(c => c.id === id))) throw Error('動画の人物参照が不正です');
   if (typeof shot.prompt !== 'string' || !shot.prompt.trim() || shot.prompt.length > 1000 || !Number.isSafeInteger(shot.duration) || shot.duration <= 0 || typeof shot.ratio !== 'string' || !/^\d+:\d+$/.test(shot.ratio)) throw Error('動画の指示・尺・寸法が未対応です');
   exactKeys(shot.startImage, ['kind', 'id', 'hash']);
   if (!['artwork', 'capture'].includes(shot.startImage.kind) || typeof shot.startImage.id !== 'string' || !hashPattern.test(shot.startImage.hash)) throw Error('開始画像の不変参照が必要です');
+  if (shot.sourcePanelId !== undefined || shot.batchId !== undefined) {
+    if (typeof shot.sourcePanelId !== 'string' || !shot.sourcePanelId || typeof shot.batchId !== 'string' || !shot.batchId) throw Error('動画レシピの作成元が不正です');
+    const panel = project.panels.find(item => item.id === shot.sourcePanelId);
+    const artwork = project.artworks.find(item => item.id === shot.startImage.id && item.hash === shot.startImage.hash);
+    if (!panel || panel.snapshotId !== shot.snapshotId || panel.sceneId !== shot.sceneId
+      || JSON.stringify(panel.unitIds) !== JSON.stringify(shot.unitIds)
+      || JSON.stringify(panel.sourceRefs ?? null) !== JSON.stringify(shot.sourceRefs ?? null)
+      || JSON.stringify(panel.characterIds) !== JSON.stringify(shot.characterIds)
+      || panel.artwork_revision !== artwork?.id || panel.image !== artwork?.panel?.image) throw Error('動画化したコマの原稿・採用作画版が変わっています');
+  }
   const hasTransition = shot.transition !== undefined || shot.endImage !== undefined;
   if (hasTransition) {
     if (!shot.transition || !shot.endImage) throw Error('A→B動画には始端・終端コマと採用作画版が必要です');
@@ -131,7 +154,7 @@ export async function videoManifest(project, shot, connection, loadCapture) {
   const end = shot.transition ? await resolveStartImage(project, shot.endImage, loadCapture) : null;
   const endDimensions = end ? validateVideoFrame(end.image, shot.ratio) : null;
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
-  const source = { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds] };
+  const source = { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds], ...(shot.sourceRefs ? { sourceRefs: structuredClone(shot.sourceRefs) } : {}) };
   const manifest = { version: 1, scope: { type: 'videoShot', id: shot.id },
     source, characterIds: [...shot.characterIds],
     sourceDependencies: end ? { from: start.sourceDependencies, to: end.sourceDependencies } : start.sourceDependencies,
