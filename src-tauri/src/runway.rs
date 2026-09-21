@@ -283,9 +283,9 @@ fn validate_billing_snapshot(
     let expected = media::video_pricing(selected, duration, ratio)?;
     let saved = &manifest["billing"];
     if !saved.is_object()
-        || saved["estimated_credits"] != expected["estimated_credits"]
+        || saved["credits"] != expected["credits"]
         || saved["rate"] != expected["rate"]
-        || saved["minimum_credits"] != expected["minimum_credits"]
+        || saved["minimum"] != expected["minimum"]
         || saved["tier"] != expected["tier"]
         || saved["checked_at"] != expected["checked_at"]
         || saved["model_id"].as_str() != Some(selected.model_id.as_str())
@@ -326,7 +326,7 @@ fn reserve(
     } else {
         media::video_pricing(&selected, duration, ratio)?
     };
-    let credits = pricing["estimated_credits"]
+    let credits = pricing["credits"]
         .as_u64()
         .ok_or("Invalid cost")?;
     let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
