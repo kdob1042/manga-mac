@@ -49,8 +49,8 @@ test('story-library work entry supports work to second episode to second scene i
   }]};
   const sourceMap={format:'story-library-source-map/v1',authority:'origin',entries:[{workId:'work-a',origin:{repository:'owner/a'},target:{root:'works/work-a'}}]};
   const manifest={format:'story-source/v1',work:{title:'作品A'},episodes:[
-   {id:'P01',title:'第一話',scenes:[{id:'P01-01',title:'1-1',path:'manuscript/p01/p01-01.md'},{id:'P01-02',title:'1-2',path:'manuscript/p01/p01-02.md'}]},
-   {id:'P02',title:'第二話',scenes:[{id:'P02-01',title:'2-1',path:'manuscript/p02/p02-01.md'},{id:'P02-02',title:'2-2',path:'manuscript/p02/p02-02.md'}]}
+   {id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'},{id:'P01-02',path:'manuscript/p01/p01-02.md'}]},
+   {id:'P02',title:'第二話',scenes:[{id:'P02-01',path:'manuscript/p02/p02-01.md'},{id:'P02-02',path:'manuscript/p02/p02-02.md'}]}
   ],settings:[],characters:[]};
   let entry={id:'primary',name:'原稿ライブラリ',repo,episode:'P01'};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
@@ -88,7 +88,8 @@ test('story-library work entry supports work to second episode to second scene i
  await page.getByRole('button',{name:'一覧を更新',exact:true}).click();
  await page.getByLabel('原稿ライブラリの作品').selectOption('work-a');
  await page.getByLabel('話を選ぶ').selectOption('P02');
- await page.getByLabel('シーンを選ぶ').selectOption('P02-02');
+ await page.getByRole('button',{name:'閲覧中だけ',exact:true}).click();
+ await page.getByLabel('原稿ライブラリのシーン').selectOption('P02-02');
  await page.getByRole('button',{name:'接続・人物設定'}).click();
  await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('P02-02');

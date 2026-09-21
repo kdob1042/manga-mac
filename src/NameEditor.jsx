@@ -2,7 +2,8 @@ import React,{useRef,useState} from 'react';
 import LayoutEditor from './LayoutEditor.jsx';
 import {namePanels,editName,validateName} from './name-edit.js';
 import {textForRefs} from './source-refs.js';
-export default function NameEditor({project,candidate,onChange,busy,model}){
+export default function NameEditor({project,candidate,onChange,busy,model,onDraw}){
+ const [drawing,setDrawing]=useState([]);
  const [page,setPage]=useState(0),[error,setError]=useState(''),[selected,setSelected]=useState(null);
  const projected={...project,...candidate.patch,layoutHistory:candidate.layoutHistory??[],layoutRedo:candidate.layoutRedo??[]};
  const current=useRef(projected);current.current=projected;
@@ -19,6 +20,7 @@ export default function NameEditor({project,candidate,onChange,busy,model}){
  {j===p.sourceRefs.length-1&&i<panels.length-1&&<button onClick={()=>change(g=>{g[i+1].refs.unshift(g[i].refs.pop());if(!g[i].refs.length)g.splice(i,1);})}>次のコマへ移す</button>}
  {j>0&&<button onClick={()=>change(g=>{const tail=g[i].refs.splice(j);g.splice(i+1,0,{refs:tail});})}>ここでコマを分割</button>}</div>)}
  {i<panels.length-1&&<button onClick={()=>change(g=>{g[i].refs.push(...g[i+1].refs);g.splice(i+1,1);})}>次のコマと統合</button>}</fieldset>)}
+ {candidate.nameConfirmed&&<fieldset disabled={busy}><legend>確定ネームから作画</legend>{namePanels(candidate).filter(p=>!p.image).map((p,i)=><div key={p.id}><label><input type="checkbox" checked={drawing.includes(p.id)} onChange={e=>setDrawing(e.target.checked?[...drawing,p.id]:drawing.filter(id=>id!==p.id))}/>作画対象 {i+1}</label><button onClick={()=>onDraw?.([p.id])}>この候補コマを生成</button></div>)}<button disabled={!drawing.some(id=>candidate.redrawPanelIds.includes(id))} onClick={()=>onDraw?.(drawing.filter(id=>candidate.redrawPanelIds.includes(id)))}>選択した候補コマを生成</button></fieldset>}
  <p>原文は編集しません。割当変更したコマは作画待ちに戻り、旧採用版は保持されます。</p>
  <button disabled={busy} onClick={()=>run('ネーム確定',()=>onChange({...validateName(project,candidate),nameConfirmed:!candidate.nameConfirmed}))}>{candidate.nameConfirmed?'ネームの確定を解除':'このネームを確定'}</button>
  </section>;

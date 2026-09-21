@@ -34,6 +34,9 @@ jobs:
         run: cargo test --locked --manifest-path tests/llm/Cargo.toml
       - run: npx playwright install --with-deps chromium
       - run: npx playwright test tests/ui/production-workflow.spec.js tests/ui/source-library.spec.js tests/ui/layout.spec.js tests/ui/compositor.spec.js tests/ui/image-crop.spec.js
+      - name: Browser failure context
+        if: failure()
+        run: find test-results -name error-context.md -exec cat {} \;
       - uses: actions/upload-artifact@v4
         if: always()
         with:

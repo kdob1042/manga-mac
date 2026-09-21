@@ -17,6 +17,7 @@ export function sectionVersion(p,id){
 export function completionProblems(p,id){
  const source=snapshot(p),scene=source?.scenes.find(s=>s.id===id),panels=sectionPanels(p,id),ids=new Set(panels.map(x=>x.id)),errors=[];
  if(!scene)return ['原稿が削除されています'];
+ if(!p.contentToken||!p.workId||!p.sourceApplication)return ['原稿を保存・移行してから完了を承認してください'];
  const changes=buildChangeSet(p);
  if(changes.blocks.some(b=>[...(b.newRefs??[]),...(b.oldUnitIds??[]).flatMap(uid=>p.sourceApplication?.units.filter(u=>u.id===uid).map(u=>u.source)??[])].some(r=>r.sceneId===id)))errors.push('未割当または未反映の原稿があります');
  if(!panels.length)errors.push('コマがありません');

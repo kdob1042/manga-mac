@@ -172,14 +172,16 @@ export async function produceDraft({
 
 // Reuse the ordinary image jobs and recovery for a source candidate. Only the
 // candidate receives generated panels; the adopted manga remains unchanged.
-export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{},imageModelId=null}){
+export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{},imageModelId=null,panelIds=null}){
  const check=()=>{const p=current(),owner=p.jobs.find(j=>j.id===opId&&j.kind==='sourcePatch');
   const c=owner?.source_candidate;if(owner?.status!=='candidate'||!c||c.prepared.identity.workId!==p.workId||c.prepared.identity.baseContentToken!==p.contentToken)throw Error('原稿反映の候補が古いか、取り下げられています');return {p,c};};
  const candidateProject=({p,c})=>({...p,...c.patch});
  const persist=async result=>{const {p,c}=check();const patch={...c.patch,panels:result.panels};const updated={...c,patch,redrawPanelIds:c.redrawPanelIds.filter(id=>!patch.panels.find(p=>p.id===id)?.image)};
   const owned=result.jobs.filter(j=>j.sourcePatchOp===opId);
   return commit(latest=>{if(latest.workId!==p.workId)throw Error('対象作品が変わりました');return {...latest,artworks:[...latest.artworks.filter(a=>!result.artworks.some(b=>b.id===a.id)),...result.artworks],jobs:latest.jobs.map(j=>j.id===opId?{...j,source_candidate:updated}:owned.find(n=>n.id===j.id)??j)};});};
- for(const id of [...check().c.redrawPanelIds]){
+ const targets=panelIds?[...new Set(panelIds)]:[...check().c.redrawPanelIds];
+ if(targets.some(id=>!check().c.redrawPanelIds.includes(id)))throw Error('未作画の候補コマだけを選んでください');
+ for(const id of targets){
   if(cancelled())return;
   await refresh();
   let cp=candidateProject(check()),panel=cp.panels.find(p=>p.id===id);if(panel.image)continue;
