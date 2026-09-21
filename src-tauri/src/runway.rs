@@ -62,12 +62,7 @@ fn frame_bytes(
     let (w, h) = ratio.split_once(':').ok_or_else(failure)?;
     let w = w.parse::<u64>().map_err(|_| failure())?;
     let h = h.parse::<u64>().map_err(|_| failure())?;
-    if width == 0
-        || height == 0
-        || width > 8192
-        || height > 8192
-        || width * h != height * w
-    {
+    if width == 0 || height == 0 || width > 8192 || height > 8192 || width * h != height * w {
         return Err(format!(
             "{}と出力の縦横比を合わせてください。自動切り抜きは行いません",
             label
@@ -157,8 +152,7 @@ pub fn payload_with_frames(
             || inputs[0]["role"] != "start_frame"
             || inputs[1]["role"] != "end_frame"
             || inputs.iter().any(|input| {
-                input["media_type"] != "image"
-                    || input["transform"] != json!({"kind":"identity"})
+                input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
             })
         {
             return Err("未対応の動画入力です".into());
@@ -166,8 +160,7 @@ pub fn payload_with_frames(
         let (_, start_width, start_height) =
             frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
         let end = end_image.ok_or_else(failure)?;
-        let (_, end_width, end_height) =
-            frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+        let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
         if start_width != end_width || start_height != end_height {
             return Err(
                 "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください"
@@ -201,8 +194,7 @@ pub fn payload_with_frames(
     {
         if inputs.len() == 2 && !selected.end_frame {
             return Err(
-                "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません"
-                    .into(),
+                "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
             );
         }
         return Err("未対応の動画入力です".into());
@@ -942,7 +934,10 @@ mod tests {
             }]
         });
         assert!(reserve(&project, &job, "c", 24).is_err());
-        assert_eq!(reserve(&project, &job, "c", 25).unwrap()["reserved_credits"], 25);
+        assert_eq!(
+            reserve(&project, &job, "c", 25).unwrap()["reserved_credits"],
+            25
+        );
     }
 
     #[test]
