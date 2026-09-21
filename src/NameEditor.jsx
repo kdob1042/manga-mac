@@ -9,7 +9,7 @@ export default function NameEditor({project,candidate,onChange,busy,model,onDraw
  const current=useRef(projected);current.current=projected;
  async function run(label,fn){try{setError('');await fn();}catch(e){setError(e.message);}}
  const remember=next=>onChange({...next,nameUndo:[...(candidate.nameUndo??[]),{patch:candidate.patch,redrawPanelIds:candidate.redrawPanelIds}].slice(-30),nameRedo:[]});
- const change=fn=>run('原稿割当',async()=>{const groups=namePanels(candidate).map(p=>({id:p.id,refs:p.sourceRefs}));fn(groups);await remember(editName(project,candidate,groups));});
+ const change=fn=>run('原稿割当',async()=>{const groups=namePanels(candidate).map(p=>({id:p.id,refs:structuredClone(p.sourceRefs)}));fn(groups);await remember(editName(project,candidate,groups));});
  const undo=redo=>run('ネーム履歴',()=>{const key=redo?'nameRedo':'nameUndo',other=redo?'nameUndo':'nameRedo',stack=candidate[key]??[],value=stack.at(-1);if(!value)return;return onChange({...candidate,...value,nameConfirmed:false,[key]:stack.slice(0,-1),[other]:[...(candidate[other]??[]),{patch:candidate.patch,redrawPanelIds:candidate.redrawPanelIds}]});});
  return <section aria-label="生成前のネーム"><h4>{candidate.nameConfirmed?'確定したネーム':'原文入りネーム候補'}</h4>{error&&<p role="alert">{error}</p>}
  <button disabled={busy||!candidate.nameUndo?.length||candidate.nameConfirmed} onClick={()=>undo(false)}>ネームUndo</button><button disabled={busy||!candidate.nameRedo?.length||candidate.nameConfirmed} onClick={()=>undo(true)}>ネームRedo</button>

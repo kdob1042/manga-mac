@@ -86,6 +86,7 @@ function App() {
     }
     setSourceBranch(loaded.sourceSelection?.branch ?? s?.sync?.source_branch ?? 'main');
     setSelectedEpisodeIds(loaded.sourceSelection?.episodeIds ?? s?.episodeIds ?? (s?.episodeId ? [s.episodeId] : []));
+    showScene(loaded,loaded.sourceSelection?.sceneId);
     setReady(true);
   }).catch(e => setError(`保存作品を読み込めません: ${e.message}`)); }, []);
   const writer=useRef(null);if(!writer.current)writer.current=createProjectWriter({current:()=>current.current,save:saveProject,accept:p=>{current.current=p;setProject(p);setPagePreview(null);}});
@@ -132,6 +133,11 @@ function App() {
     }
     setNotice(`原稿一覧を更新しました（${loaded.catalog.works.length}作品、${loaded.branch} @${loaded.sha.slice(0,8)}）。作品を選択してください。`);
   }
+  function showScene(p,sceneId){
+    const panel=p.panels.find(panel=>panel.sceneId===sceneId||(panel.sourceRefs??[]).some(r=>r.sceneId===sceneId));
+    const index=p.layout?.pages.findIndex(page=>page.slots.some(slot=>slot.panelId===panel?.id))??-1;
+    setSelected(panel?.id??null);setRect(null);if(index>=0)setPage(index);
+  }
   async function persistLibrarySelection(work, detail, episodeId, sceneId, id) {
     const result=await call('source_register',{
       name:work.title, repo:detail.repo, episode:episodeId, id,
@@ -142,6 +148,7 @@ function App() {
     return result;
   }
   async function selectLibraryWork(workId) {
+    setPending(null);
     if (!libraryCatalog) throw Error('先に原稿一覧を更新してください');
     const detail=await fetchStoryLibraryWork(libraryCatalog,workId,token,call);
     const work=detail.work;
@@ -160,6 +167,7 @@ function App() {
     await commit({...current.current,workId:work.id,sourceSelection:{workId:work.id,episodeId:first.id,sceneId:firstScene.id,episodeIds:[first.id],branch:sourceBranch}});
   }
   async function selectLibraryEpisode(episodeId) {
+    setPending(null);
     const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
     const item=detail?.outline?.find(episodeItem=>episodeItem.id===episodeId);
     const scene=item?.scenes[0];
@@ -167,17 +175,18 @@ function App() {
     const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
     if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
     await persistLibrarySelection(work,detail,episodeId,scene.id,entry.id);
-    setEpisode(episodeId); setSelectedSceneId(scene.id);
+    setEpisode(episodeId); setSelectedSceneId(scene.id);showScene(current.current,scene.id);
     await commit({...current.current,workId:work.id,sourceSelection:{...current.current.sourceSelection,workId:work.id,episodeId,sceneId:scene.id,episodeIds:selectedEpisodeIds,branch:sourceBranch}});
   }
   async function selectLibraryScene(sceneId) {
+    setPending(null);
     const work=findLibraryWork(libraryCatalog?.catalog,selectedWorkId), detail=libraryCatalog;
     const item=detail?.outline?.find(episodeItem=>episodeItem.id===episode);
     if (!work||!detail?.entryPath||!item?.scenes.some(scene=>scene.id===sceneId)) throw Error('シーンの選択対象が不正です');
     const entry=library?.entries.find(currentEntry=>currentEntry.id===library.active);
     if (!entry||entry.work_id!==work.id) throw Error('先に作品を選択してください');
     await persistLibrarySelection(work,detail,episode,sceneId,entry.id);
-    setSelectedSceneId(sceneId);
+    setSelectedSceneId(sceneId);showScene(current.current,sceneId);
     await commit({...current.current,workId:work.id,sourceSelection:{...current.current.sourceSelection,workId:work.id,episodeId:episode,sceneId,episodeIds:selectedEpisodeIds,branch:sourceBranch}});
   }
   function toggleImportEpisode(id,checked) {

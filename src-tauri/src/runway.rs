@@ -733,7 +733,7 @@ pub fn image_payload(input: &Value) -> Result<Value, String> {
     }
     let mut refs = Vec::new();
     if let Some(original) = input["original"].as_str() {
-        refs.push(json!({"uri":original,"tag":"original"}));
+        refs.push(json!({"uri":original,"tag":if input["capture"].is_object() {"capture"} else {"original"}}));
     }
     for (i, r) in input["references"]
         .as_array()
@@ -741,7 +741,14 @@ pub fn image_payload(input: &Value) -> Result<Value, String> {
         .iter()
         .enumerate()
     {
-        refs.push(json!({"uri":r["image"],"tag":format!("ref{}",i+1)}));
+        let role = match r["role"].as_str() {
+            Some("character") => "character",
+            Some("style") => "style",
+            Some("context") => "context",
+            None => "reference",
+            _ => return Err("未対応の参照役割です".into()),
+        };
+        refs.push(json!({"uri":r["image"],"tag":format!("{role}{}",i+1)}));
     }
     if refs.len() > 3 {
         return Err("撮影原本・編集元を含め参照は3枚までです".into());
@@ -900,7 +907,7 @@ mod image_tests {
         let input = json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
         let payload = image_payload(&input).unwrap();
         assert_eq!(payload["ratio"], "720:720");
-        assert_eq!(payload["referenceImages"][0]["tag"], "ref1");
+        assert_eq!(payload["referenceImages"][0]["tag"], "character1");
         let mut bad = input.clone();
         bad["width"] = json!(768);
         assert!(image_payload(&bad).is_err());
@@ -1019,9 +1026,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transition_http_fixture_receives_start_and_end_bytes_in_order() {
+    async fn image_and_video_http_fixtures_receive_exact_reference_bytes() {
         let (manifest, start, end) = transition_fixture();
         let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
+        let image = image_payload(&json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":start,"role":"character"},{"image":end,"role":"style"}]})).unwrap();
+        for (body, path) in [(body, "image_to_video"), (image, "text_to_image")] {
         let expected = body.clone();
         let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = server.local_addr().unwrap();
@@ -1037,7 +1046,7 @@ mod tests {
                 headers.push(byte[0]);
             }
             let text = String::from_utf8(headers).unwrap().to_lowercase();
-            assert!(text.starts_with("post /v1/image_to_video "));
+            assert!(text.starts_with(&format!("post /v1/{path} ")));
             assert!(text.contains("authorization: bearer fixture-secret"));
             let size: usize = text
                 .lines()
@@ -1066,7 +1075,7 @@ mod tests {
         let response = request(
             &client,
             reqwest::Method::POST,
-            reqwest::Url::parse(&format!("http://{address}/v1/image_to_video")).unwrap(),
+            reqwest::Url::parse(&format!("http://{address}/v1/{path}")).unwrap(),
             &connection,
         )
         .json(&body)
@@ -1075,6 +1084,7 @@ mod tests {
         .unwrap();
         assert!(json_response(response).await.unwrap()["id"].is_string());
         worker.join().unwrap();
+        }
     }
 
     #[test]

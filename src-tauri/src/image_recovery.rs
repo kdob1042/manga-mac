@@ -534,7 +534,14 @@ mod tests {
         })
         .unwrap();
         let bytes = STANDARD
-            .decode(request["recovery"]["original"].as_str().unwrap().split_once(',').unwrap().1)
+            .decode(
+                request["recovery"]["original"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap()
+                    .1,
+            )
             .unwrap();
         let dir = directory(&root, "local-1").unwrap();
         let artifact = put(&dir, &bytes).unwrap();
@@ -545,9 +552,16 @@ mod tests {
         assert_eq!(store_remote(&db, &root, "local-1", &bytes).unwrap(), result);
         let connection = db.lock().unwrap();
         assert_eq!(recover(&connection, &root, "local-1").unwrap(), result);
-        let saved: Value = serde_json::from_str(&load(&connection, &root).unwrap().unwrap()).unwrap();
+        let saved: Value =
+            serde_json::from_str(&load(&connection, &root).unwrap().unwrap()).unwrap();
         assert_eq!(saved["panels"], project["panels"]);
-        assert!(store_remote(&std::sync::Mutex::new(Connection::open_in_memory().unwrap()), &root, "unknown", &bytes).is_err());
+        assert!(store_remote(
+            &std::sync::Mutex::new(Connection::open_in_memory().unwrap()),
+            &root,
+            "unknown",
+            &bytes
+        )
+        .is_err());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
