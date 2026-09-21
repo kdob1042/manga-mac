@@ -3,6 +3,7 @@ mod backup_commands;
 mod live_preview;
 mod llm;
 mod media;
+mod mflux;
 mod policy_transport;
 mod runway;
 pub mod storage;
@@ -644,63 +645,6 @@ async fn llm_request(
     };
     state.connections.request(request).await
 }
-fn engine_path() -> Result<PathBuf, String> {
-    let dir = std::env::current_exe()
-        .map_err(err)?
-        .parent()
-        .ok_or("App directory missing")?
-        .to_path_buf();
-    let bundled = dir.join("manga-engine");
-    if bundled.exists() {
-        return Ok(bundled);
-    }
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("binaries/manga-engine-aarch64-apple-darwin");
-    if cfg!(debug_assertions) && dev.exists() {
-        return Ok(dev);
-    }
-    Err("画像エンジンが同梱されていません。macOSビルドを使用してください".into())
-}
-async fn run_engine(input: Option<String>, model_id: &str) -> Result<String, String> {
-    let mut command = tokio::process::Command::new(engine_path()?);
-    command.env_clear();
-    for name in ["HOME", "TMPDIR", "PATH", "LANG"] {
-        if let Some(value) = std::env::var_os(name) {
-            command.env(name, value);
-        }
-    }
-    command
-        .kill_on_drop(true)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    if input.is_none() {
-        command.args(["--prepare", model_id]);
-    }
-    let mut child = command.spawn().map_err(err)?;
-    if let Some(body) = input {
-        child
-            .stdin
-            .take()
-            .ok_or("Engine stdin unavailable")?
-            .write_all(body.as_bytes())
-            .await
-            .map_err(err)?;
-    } else {
-        drop(child.stdin.take());
-    }
-    let out = tokio::time::timeout(Duration::from_secs(3600), child.wait_with_output())
-        .await
-        .map_err(|_| "画像処理が制限時間を超えました")?
-        .map_err(err)?;
-    if !out.status.success() {
-        return Err(String::from_utf8_lossy(&out.stderr)
-            .chars()
-            .take(4000)
-            .collect());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).to_string())
-}
 #[tauri::command]
 async fn prepare_engine(state: State<'_, AppState>) -> Result<String, String> {
     prepare_engine_for(None, state).await
@@ -715,7 +659,7 @@ async fn prepare_engine_for(
         .try_lock()
         .map_err(|_| "画像エンジンは処理中です")?;
     let selected = media::image_model(model_id.as_deref())?;
-    run_engine(None, &selected.model_id).await
+    mflux::prepare(&selected.model_id).await
 }
 
 #[tauri::command]
@@ -770,7 +714,7 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         storage::image_recovery::reserve(&mut db, &state.root, &request)?
     };
     request["output"] = destination;
-    run_engine(Some(request.to_string()), &selected.model_id).await?;
+    mflux::generate(&request, &selected.model_id, selected.steps).await?;
     let db = state.db.lock().map_err(err)?;
     let result = storage::image_recovery::recover(
         &db,
