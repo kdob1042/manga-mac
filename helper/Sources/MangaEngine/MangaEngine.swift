@@ -6,7 +6,7 @@ import MediaGenerationKit
 struct Reference: Decodable { let id: String; let name: String; let hash: String; let image: String }
 struct Output: Decodable { let directory: String; let request_hash: String }
 struct MediaSelection: Decodable { let adapter_id: String; let model_id: String }
-struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int?; let steps: Int?; let media: MediaSelection? }
+struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int?; let steps: Int?; let media: MediaSelection?; let output_kind: String?; let layer_count: Int? }
 
 @main struct MangaEngine {
   static func main() async {
@@ -24,6 +24,12 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
         let width = request.width, let height = request.height, let steps = request.steps,
         width > 0, height > 0, steps > 0
       else { throw NSError(domain: "Invalid native image descriptor", code: 11) }
+      let layered = request.output_kind == "ordered-rgba-layers"
+      guard request.output_kind == nil || request.output_kind == "image" || layered else { throw NSError(domain: "Unknown output kind", code: 12) }
+      if layered {
+        guard #available(macOS 15, *), request.original != nil, request.references.isEmpty,
+              let count = request.layer_count, (2...6).contains(count) else { throw NSError(domain: "Invalid layered inputs", code: 13) }
+      }
       let model = selection.model_id
       // Missing weights fail locally; only --prepare may download.
       try await MediaGenerationEnvironment.default.ensure(model, offline: true)
@@ -47,22 +53,40 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
       pipeline.configuration.height = height
       pipeline.configuration.steps = steps
       pipeline.configuration.seed = request.seed
+      if layered { pipeline.configuration.batchSize = request.layer_count! }
       let results = try await pipeline.generate(prompt: request.prompt, negativePrompt: "text, lettering, watermark", inputs: inputs)
-      guard results.count == 1, let first = results.first else { throw NSError(domain: "No generated image", code: 2) }
-      let output = temp.appendingPathComponent("result.png")
-      try first.write(to: output, type: .png)
-      // Publish durable bytes and a hash receipt before signaling completion.
-      // The native process supplies this reserved directory, never a UI path.
-      let bytes = try Data(contentsOf: output)
       let destination = URL(fileURLWithPath: request.output.directory, isDirectory: true)
-      let image = destination.appendingPathComponent("result.png")
-      try bytes.write(to: image, options: .withoutOverwriting)
-      let imageHandle = try FileHandle(forWritingTo: image)
-      try imageHandle.synchronize(); try imageHandle.close()
-      let hash = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      func publish(_ bytes: Data, name: String) throws -> String {
+        let image = destination.appendingPathComponent(name)
+        try bytes.write(to: image, options: .withoutOverwriting)
+        let handle = try FileHandle(forWritingTo: image)
+        try handle.synchronize(); try handle.close()
+        return SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+      }
+      var record: [String: Any] = ["request_hash": request.output.request_hash]
+      if layered {
+        guard results.count == request.layer_count else { throw NSError(domain: "Layer count mismatch", code: 14) }
+        var layers: [[String: Any]] = []
+        for (index, result) in results.enumerated() {
+          let shape = result.tensor.shape
+          guard shape.count == 4, shape[0] == 1, shape[1] == height, shape[2] == width, shape[3] == 4 else {
+            throw NSError(domain: "Expected ordered NHWC RGBA layers, not RGB batch or video", code: 15)
+          }
+          let bytes = try LayerPNG.encode(width: width, height: height) { y, x, c in Float(result.tensor[0, y, x, c]) }
+          let filename = "layer-\(index).png"
+          layers.append(["index": index, "filename": filename, "hash": try publish(bytes, name: filename)])
+        }
+        record["kind"] = "ordered-rgba-layers"
+        record["layers"] = layers
+      } else {
+        guard results.count == 1, let first = results.first else { throw NSError(domain: "Expected one RGB image", code: 2) }
+        let output = temp.appendingPathComponent("result.png")
+        try first.write(to: output, type: .png)
+        record["hash"] = try publish(Data(contentsOf: output), name: "result.png")
+      }
       let receipt = destination.appendingPathComponent("receipt.json")
-      let record = try JSONSerialization.data(withJSONObject: ["request_hash": request.output.request_hash, "hash": hash])
-      try record.write(to: receipt, options: .atomic)
+      let receiptData = try JSONSerialization.data(withJSONObject: record)
+      try receiptData.write(to: receipt, options: .atomic)
       let receiptHandle = try FileHandle(forWritingTo: receipt)
       try receiptHandle.synchronize(); try receiptHandle.close()
       let directoryFD = open(destination.path, O_RDONLY)

@@ -5,7 +5,7 @@ import {beginCompositor,finishCompositor,rasterBundle,reconcileBindings,operatio
 
 export default function CompositorControls({project,panel,current,commit,run,busy}) {
  const [state,setState]=useState(null),[layer,setLayer]=useState(''),[x,setX]=useState(0),[y,setY]=useState(0);
- const job=project.jobs.find(j=>j.kind==='compositor'&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
+ const job=project.jobs.find(j=>j.compositor&&['compositor','decompose'].includes(j.kind)&&j.panelId===panel.id&&['running','unknown'].includes(j.status));
  const observe=async value=>{
    const next=value.state??value;setState(next);
    if(job&&next.layers){const bindings=reconcileBindings(job.compositor.bindings,next,current.current.characters);await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'running',compositor:{...j.compositor,bindings}}:j)});}
@@ -20,7 +20,7 @@ export default function CompositorControls({project,panel,current,commit,run,bus
  };
  const selected=state?.layers?.find(l=>l.id===layer);
  return <details className="shot-controls"><summary>外部レイヤー編集（Compositor）</summary>
- <p>連携版CompositorとmacOS 26.5以降が必要です。レイヤー分解・AI描き直しはまだ利用できません。</p>
+ <p>連携版CompositorとmacOS 26.5以降が必要です。AIによるレイヤー描き直しはまだ利用できません。</p>
  <fieldset disabled={busy||!desktop()}>
  {!job&&<button disabled={!panel.image} onClick={()=>run('Compositorを接続',async()=>{
    const p=current.current, source=p.panels.find(item=>item.id===panel.id), next=await beginCompositor(p,source);

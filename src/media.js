@@ -4,7 +4,9 @@ import registry from './media-registry.json' with { type: 'json' };
 // matching adapter is implemented; mentioning a future model here would make
 // it look usable, so future adapters add their descriptor only when ready.
 export const mediaRegistry = registry;
-export const imageModels = registry.images.filter(item => item.status === 'implemented');
+const allImageModels = registry.images.filter(item => item.status === 'implemented');
+export const imageModels = allImageModels.filter(item => item.output?.kind !== 'ordered-rgba-layers');
+export const layeredModels = allImageModels.filter(item => item.output?.kind === 'ordered-rgba-layers');
 export const videoModels = registry.videos.filter(item => item.status === 'implemented');
 export const defaultImageModelId = registry.defaults.image;
 export const defaultVideoModelId = registry.defaults.video;
@@ -16,7 +18,7 @@ function model(list, id, label) {
 }
 
 export function imageModel(id = defaultImageModelId) {
-  return model(imageModels, id, '画像モデル');
+  return model(allImageModels, id, '画像モデル');
 }
 
 export function videoModel(id = defaultVideoModelId) {

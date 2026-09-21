@@ -777,8 +777,27 @@ fn media_models() -> Result<Value, String> {
     media::public_registry()
 }
 #[tauri::command]
-async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Result<String, String> {
+async fn generate_image(request: Value, state: State<'_, AppState>) -> Result<String, String> {
+    let result = generate_media(request, false, state).await?;
+    Ok(result["image"]
+        .as_str()
+        .ok_or("Missing image result")?
+        .to_string())
+}
+#[tauri::command]
+async fn generate_layers(request: Value, state: State<'_, AppState>) -> Result<Value, String> {
+    generate_media(request, true, state).await
+}
+async fn generate_media(
+    mut request: Value,
+    layered: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let selected = media::validate_image_request(&request)?;
+    if (selected.output_kind == "ordered-rgba-layers") != layered {
+        return Err("画像と多層出力の実行窓口が一致しません".into());
+    }
+    request["output_kind"] = serde_json::json!(selected.output_kind);
     let _guard = state.engine.lock().await;
     request["media"] = serde_json::json!({
         "registry_id": selected.registry_id.clone(),
@@ -821,10 +840,7 @@ async fn generate_image(mut request: Value, state: State<'_, AppState>) -> Resul
         &state.root,
         request["job"]["id"].as_str().ok_or("Missing job ID")?,
     )?;
-    Ok(result["image"]
-        .as_str()
-        .ok_or("Missing image result")?
-        .to_string())
+    Ok(result)
 }
 #[tauri::command]
 fn recover_image(job_id: String, state: State<'_, AppState>) -> Result<Value, String> {
@@ -1228,6 +1244,7 @@ fn main() {
             cancel_llm,
             llm_request,
             generate_image,
+            generate_layers,
             recover_image,
             prepare_engine,
             prepare_media_engine,
