@@ -123,7 +123,8 @@ export async function videoManifest(project, shot, connection, loadCapture) {
   const selected = videoModelForConnection(connection);
   if (typeof connection.id !== 'string' || !connection.id || !selected) throw Error('対応する動画接続が未設定です');
   const input = selected.input;
-  if (shot.duration !== input.duration_sec || !input.ratios.includes(shot.ratio)) throw Error('選択した動画モデルが尺・寸法に対応していません');
+  const durations = Array.isArray(input.durations_sec) ? input.durations_sec : [input.duration_sec];
+  if (!durations.includes(shot.duration) || !input.ratios.includes(shot.ratio)) throw Error('選択した動画モデルが尺・寸法に対応していません');
   if (shot.transition && !selected.capabilities.end_frame) throw Error('選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません');
   const start = await resolveStartImage(project, shot.startImage, loadCapture);
   const startDimensions = validateVideoFrame(start.image, shot.ratio);
