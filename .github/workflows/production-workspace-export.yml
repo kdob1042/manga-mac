@@ -1,0 +1,31 @@
+name: Production workspace export (temporary)
+on:
+  push:
+    branches: [issue/230-work-1]
+    paths: [.github/workflows/production-workspace-export.yml]
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Export tracked source and test dependencies only
+        run: |
+          mkdir -p /tmp/manga-workspace
+          git archive --format=tar HEAD | gzip -n > /tmp/manga-workspace/source.tar.gz
+          tar -czf /tmp/manga-workspace/node_modules.tar.gz node_modules
+          git rev-parse HEAD > /tmp/manga-workspace/COMMIT
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-test-workspace
+          path: /tmp/manga-workspace/
+          retention-days: 1
