@@ -348,14 +348,21 @@ pub fn recover(db: &Connection, root: &Path, id: &str) -> Result<Value> {
         return Err("Image output dimensions mismatch".into());
     }
     let bytes = if job["kind"] == "layer_edit" {
-        let target = context["target"]["image"].as_str().ok_or("Missing target RGBA")?;
-        let original = STANDARD.decode(target.split_once(',').ok_or("Invalid target")?.1).map_err(err)?;
+        let target = context["target"]["image"]
+            .as_str()
+            .ok_or("Missing target RGBA")?;
+        let original = STANDARD
+            .decode(target.split_once(',').ok_or("Invalid target")?.1)
+            .map_err(err)?;
         if hash(&original) != context["layer_edit"]["target_hash"] {
             return Err("Target RGBA changed".into());
         }
-        let rect: [f64; 4] = serde_json::from_value(context["layer_edit"]["rect"].clone()).map_err(err)?;
+        let rect: [f64; 4] =
+            serde_json::from_value(context["layer_edit"]["rect"].clone()).map_err(err)?;
         super::layer_colour::compose(&original, &bytes, rect)?
-    } else { bytes };
+    } else {
+        bytes
+    };
     let digest = hash(&bytes);
     // Canonical artifacts are the existing hash store; collecting twice is harmless.
     put(&root.join("artifacts"), &bytes)?;
@@ -462,7 +469,19 @@ mod tests {
     #[test]
     fn layer_colour_receipt_preserves_target_and_rejects_changed_reference_roles() {
         let (mut db, root, mut project, mut request) = setup();
-        let fixed = json!({"preset":"colour-only","colour":"#3366cc","rect":[0,0,1,1],"width":1,"height":1,"target_hash":request["recovery"]["original_hash"],"character_id":"person","source":{"session":"editor","layer":"layer"},"references":[{"id":"context","name":"Context","role":"context","hash":"context-hash"},{"id":"person","name":"Person","role":"character","hash":"person-hash"}]});
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/layered.json")).unwrap();
+        let original = fixture["layers"][0].clone();
+        let raw = STANDARD
+            .decode(original.as_str().unwrap().split_once(',').unwrap().1)
+            .unwrap();
+        request["recovery"]["original"] = original;
+        request["recovery"]["original_hash"] = json!(hash(&raw));
+        for key in ["width", "height"] {
+            request[key] = json!(256);
+            request["recovery"]["panel"]["generation"][key] = json!(256);
+        }
+        let fixed = json!({"preset":"colour-only","colour":"#3366cc","rect":[0,0,1,1],"width":256,"height":256,"target_hash":request["recovery"]["original_hash"],"character_id":"person","source":{"session":"editor","layer":"layer"},"references":[{"id":"context","name":"Context","role":"context","hash":"context-hash"},{"id":"person","name":"Person","role":"character","hash":"person-hash"}]});
         project["jobs"][0]["kind"] = json!("layer_edit");
         project["jobs"][0]["layer_edit"] = fixed.clone();
         let owner = json!({"id":"editor","kind":"compositor","status":"candidate","panelId":project["panels"][0]["id"],"compositor":{"bindings":{"layer":"person"}}});
