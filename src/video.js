@@ -148,30 +148,39 @@ export async function videoManifest(project, shot, connection, loadCapture) {
   const start = await resolveStartImage(project, shot.startImage, loadCapture);
   const startDimensions = validateVideoFrame(start.image, shot.ratio);
   const aspect = startDimensions.width / startDimensions.height;
-  validateVideoModelRequest(selected.id, {
-    duration: shot.duration,
-    ratio: shot.ratio,
-    prompt: shot.prompt,
-    endFrame: !!shot.transition,
-    aspect
-  });
+  const production = selected.status === 'implemented';
+  if (production) {
+    validateVideoModelRequest(selected.id, {
+      duration: shot.duration,
+      ratio: shot.ratio,
+      prompt: shot.prompt,
+      endFrame: !!shot.transition,
+      aspect
+    });
+  } else {
+    const durations = selected.input.durations_sec ?? [selected.input.duration_sec];
+    if (!durations.includes(shot.duration) || !selected.input.ratios.includes(shot.ratio)
+      || (shot.transition && !selected.capabilities.end_frame)) throw Error('選択した動画モデルが尺・寸法・終端画像に対応していません');
+  }
   const end = shot.transition ? await resolveStartImage(project, shot.endImage, loadCapture) : null;
   const endDimensions = end ? validateVideoFrame(end.image, shot.ratio) : null;
   if (endDimensions && (endDimensions.width !== startDimensions.width || endDimensions.height !== startDimensions.height)) {
     throw Error('始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください');
   }
-  const billing = videoEstimateCredits(selected.id, shot.duration, shot.ratio);
   const snapshot = project.snapshots.find(s => s.id === shot.snapshotId);
   const source = { snapshotId: shot.snapshotId, commit: snapshot.sha, sceneId: shot.sceneId, unitIds: [...shot.unitIds], ...(shot.sourceRefs ? { sourceRefs: structuredClone(shot.sourceRefs) } : {}) };
-  const manifest = { version: 2, scope: { type: 'videoShot', id: shot.id },
+  const manifest = { version: production ? 2 : 1, scope: { type: 'videoShot', id: shot.id },
     source, characterIds: [...shot.characterIds],
     sourceDependencies: end ? { from: start.sourceDependencies, to: end.sourceDependencies } : start.sourceDependencies,
     providerInputs: [{ role: 'start_frame', ...start.artifact, width: startDimensions.width, height: startDimensions.height, transform: { kind: 'identity' } }, ...(end ? [{ role: 'end_frame', ...end.artifact, width: endDimensions.width, height: endDimensions.height, transform: { kind: 'identity' } }] : [])],
     prompt: shot.prompt, duration: shot.duration, ratio: shot.ratio, connection: { ...connection },
-    request_profile: selected.request_profile,
-    audio: selected.request_defaults?.audio ?? false,
-    billing: { ...billing, model_id: selected.model_id, request_profile: selected.request_profile },
     base_revision: shot.adopted_revision ?? null };
+  if (production) {
+    const billing = videoEstimateCredits(selected.id, shot.duration, shot.ratio);
+    manifest.request_profile = selected.request_profile;
+    manifest.audio = selected.request_defaults?.audio ?? false;
+    manifest.billing = { ...billing, model_id: selected.model_id, request_profile: selected.request_profile };
+  }
   if (shot.transition) {
     const t = shot.transition;
     manifest.transition = { pageId: t.pageId, fromPanelId: t.fromPanelId, toPanelId: t.toPanelId,
