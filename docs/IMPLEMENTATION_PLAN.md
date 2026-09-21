@@ -573,6 +573,21 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 
 素材からの作業コピー作成はBlender標準のrelative path remapを使う。新しいGUIで標準blendを開く工程には、撮影時のpacking制約を課さない。依存の固定・サイズ検証は候補撮影時に行う。
 
+## 18. 画像・動画の軽量モデル切替基盤（Issue #213）
+
+画像と動画の生成先は、UIが直接選択した登録済みモデルを作品設定と生成要求へ固定する。共通のモデル定義は`src/media-registry.json`に置き、`status: "implemented"`の項目だけを`src/media.js`から選択肢として公開する。未実装モデル名を先にUIへ表示して利用可能に見せない。
+
+現時点の実装済みadapterは次の2つだけである。
+
+- 画像: `media-generation-kit` / FLUX.2 klein 4B（Mac内、Swift helper）。入力寸法・刻み・比率・step数はregistryから読み、`generate`・`edit`・`retake`・`finishing`で同じ候補／採用／Undo／receipt復旧経路を使う。
+- 動画: `runway` / Runway gen4.5（外部、5秒・無音・既存Runway REST adapter）。接続登録時のprovider/model/adapterとmanifestを固定し、入力比率・尺・終端画像能力をregistryで検査する。
+
+UIからnativeへ渡す生成入口は`src/media-runtime.js`へ集約し、画像は`generate_image`、動画は既存の`video_submit`／`video_task`へ送る。nativeの`src-tauri/src/media.rs`は同じregistryを読み、任意のmodel/provider/adapter/endpoint、未実装項目、対応外の寸法・操作を送信前に拒否する。cloud fallbackや旧Jobの現在選択モデルへの付替えは行わない。旧画像Jobは保存された入力・recoveryを、旧動画Jobはmanifestの接続・モデルを正本としてそのまま復旧する。
+
+Jevは演出・分類等の既存LLM接続として保持するが、画像・動画生成のadapter選択や自動fallbackには使わない。将来のQwen/Gemini/OpenAI/ComfyUI/LTX/Wan/Veo等は、実adapter・入力契約・native検証・実機受入を追加するまでregistryへ掲載せず、選択可能にも課金可能にもならない。
+
+受入では、registryと要求の一致、任意名の拒否、既存Jobのモデル固定、candidate／adopt／Undo／unknown復旧の維持をNodeで確認する。Rust／Swiftの実機ビルドとMac内FLUXの視覚・性能、Runwayの有料送信は別のMac環境で検証し、Linuxのfixture成功で代替しない。
+
 
 ## Tripo参照画像→Blender素材連携（#201、2026-09-20）
 
@@ -587,3 +602,11 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 - live_import_asset はmanaged assets直下のbasenameとartifact hashだけを受け、同じfile/scene/view layer/観測版を再確認し、手動制御へhandoffしたGUIの標準GLB importerだけを呼ぶ。任意path・任意Python・別Blenderへの接続は許可しない。
 
 実APIでの課金・生成形状・テクスチャ・人物同一性・Mac個人環境の速度は、Codexが対象Macで行う #201 の実地確認へ残す。初回実装は単一参照画像に限定し、multiviewやTripo上流addonの無検証同梱は行わない。上流SDKを利用する場合の固定情報は調査記録の公式SDK commit 4115894a0a603c5183c9ed6dc8662745562c8941（MIT）と一致させ、APIキーをScene propertyへ保存する公式Blender addonは採用しない。
+
+### #213 実装境界の補正（2026-09-21）
+
+- 既存FLUX.2 klein 4Bに同一SDKの6-bit重みを追加。モデル定義は一つとし、Swiftはnativeが解決したID・寸法・stepsを受け取る。実機推論・性能は未検証。
+- 通常推論は明示準備済み重みを必要とし、Macのプロセス境界でネットワークを禁止する。SDKの`.local`だけではカタログ通信まで禁止されないためである。準備コマンドだけ通信可能。
+- 参照は初期アプリ上限8枚。超過を省略せず拒否する。保存済みJobのmodel/adapterと実要求の一致をnativeでも検証。
+- 動画の再登録による資格情報ID変更は状態照会・回収で許すが、provider/model/adapter変更は拒否する。新規送信には開始時の接続IDも必要。旧taskを再送しない。
+- Qwen-Image-Layeredの多層出力とCompositorは#217で扱う。6-bit切替の検証を異なるモデル系列やRGBA対応の実証にしない。

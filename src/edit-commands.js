@@ -3,6 +3,7 @@ import { defaultLettering, validateLettering, setLettering, isCustomLetteringBox
 import { validateLayout, layoutWarnings, changeLayout, pagePanels } from './layout.js';
 import { validateCrop } from './image-crop.js';
 import { digest } from './revisions.js';
+import { defaultVideoModelId, videoModel } from './media.js';
 
 async function proposalBase(project) {
   return digest(new TextEncoder().encode(JSON.stringify([project.active,project.panels,project.layout,project.characters,project.style_references,project.output_locale,project.localizations,project.panelMotions,project.videoShots])));
@@ -92,7 +93,7 @@ export function validateEditPlan(project, plan, context) {
       if(!p.image)throw Error('採用済み作画が必要です');
       if(['resolution','finishing'].includes(op.kind) && !exact(op.args,[]))throw Error('操作の引数が不正です');
       if(op.kind==='upscale' && (!exact(op.args,['factor']) || ![2,4].includes(op.args.factor)))throw Error('補間拡大は2倍または4倍を指定してください');
-      if(op.kind==='video_prepare' && (!exact(op.args,['instruction','ratio']) || typeof op.args.instruction!=='string' || !op.args.instruction.trim() || op.args.instruction.length>1000 || !['960:960','1280:720','720:1280','1104:832','832:1104'].includes(op.args.ratio)))throw Error('動画の指示と対応寸法を指定してください');
+      if(op.kind==='video_prepare' && (!exact(op.args,['instruction','ratio']) || typeof op.args.instruction!=='string' || !op.args.instruction.trim() || op.args.instruction.length>1000 || !videoModel(project.mediaDefaults?.video ?? defaultVideoModelId).input.ratios.includes(op.args.ratio)))throw Error('動画の指示と対応寸法を指定してください');
       if(op.kind==='video_assign' && (!exact(op.args,['shotId']) || !context.videoShots?.some(s=>s.id===op.args.shotId)))throw Error('保存済みの採用動画を指定してください');
     } else {
       if (!exact(op.args,['instruction']) || typeof op.args.instruction !== 'string' || !op.args.instruction.trim() || op.args.instruction.length > 4000) throw Error('再生成の指示が不正です');
