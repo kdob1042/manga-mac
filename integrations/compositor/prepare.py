@@ -41,3 +41,7 @@ replace('Compositor/IO/CompositorApplicationDelegate.swift',
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [updater] in updater.startUpdater() }
         }''')
 shutil.copyfile(pathlib.Path(__file__).with_name('MangaBridge.swift'), root / 'Compositor/IO/MangaBridge.swift')
+# Xcode 26.6 cannot infer this upstream Task inside the long View modifier chain.
+replace('Compositor/ContentView.swift',
+        'case .success(let urls): Task { await session.importImages(urls) }',
+        'case .success(let urls): Task<Void, Never> { @MainActor in await session.importImages(urls) }')

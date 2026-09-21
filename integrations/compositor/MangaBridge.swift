@@ -13,6 +13,7 @@ import CryptoKit
     private var timer: Timer?
     private var documentID: UUID?
     private var completed: Set<String> = []
+    private var lastActivity = Date()
 
     init(directory: URL, session: EditorSession, isCurrent: @escaping () -> Bool) throws {
         let info = try FileManager.default.attributesOfItem(atPath: directory.path)
@@ -33,6 +34,9 @@ import CryptoKit
     }
     private func poll() async {
         guard !processing else { return }
+        if owner == "app", Date().timeIntervalSince(lastActivity) > 120 {
+            owner = "human"; session.isProjectBusy = false
+        }
         let requestURL = directory.appendingPathComponent("request.json")
         guard let data = try? Data(contentsOf: requestURL), data.count <= 96 * 1024 * 1024,
               let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -43,6 +47,7 @@ import CryptoKit
         guard !completed.contains(id), !FileManager.default.fileExists(atPath: responseURL.path) else { return }
         guard completed.count < 512 else { return }
         processing = true
+        lastActivity = Date()
         // Never repeat a mutation after an output-write failure. Its ID remains unresolved.
         completed.insert(id)
         defer { processing = false }
@@ -126,15 +131,18 @@ import CryptoKit
             try await ProjectStore.shared.save(snapshot, to: package)
             let png = try await ImageExporter.shared.pngData(snapshot)
             guard revision == session.mangaRevision else { throw BridgeError.stale }
-            var images: [String: String] = [:]
+            var images: [String: [String: String]] = [:]
             for layer in snapshot.manifest.layers {
                 for name in [layer.imageFile, layer.maskFile].compactMap({ $0 }) {
                     let bytes = try Data(contentsOf: package.appendingPathComponent("images").appendingPathComponent(name))
-                    images[name] = "data:image/png;base64," + bytes.base64EncodedString()
+                    images[name] = ["image": "data:image/png;base64," + bytes.base64EncodedString()]
                 }
             }
             let manifest = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snapshot.manifest))
-            return ["state": try state(), "bundle": ["manifest": manifest, "images": images],
+            let savedState = try state()
+            owner = "human"
+            session.isProjectBusy = false
+            return ["state": savedState, "bundle": ["manifest": manifest, "images": images],
                     "image": "data:image/png;base64," + png.base64EncodedString(),
                     "includes_unsaved_changes": true,
                     "upstream_revision": "c39da13b5db11bc8678ec04a7a748e1e0a589244"]

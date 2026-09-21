@@ -62,6 +62,7 @@ def main(app):
             state = request('open')['value']
             assert state['owner'] == 'app' and len(state['layers']) == 2
             baseline = request('snapshot', state)['value']
+            state = request('claim', request('state')['value'])['value']
             changed = request('transform', state, layer=ids[1], x=4, y=0, width=32, height=32, rotation=0, visible=True)
             assert changed['ok']
             assert not request('transform', state, layer=ids[1], x=5, y=0, width=32, height=32, rotation=0, visible=True)['ok']

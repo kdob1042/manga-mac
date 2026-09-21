@@ -624,8 +624,10 @@ session/document/revisionを照合し、状態取得、位置・寸法・回転�
 原稿・Job・人物対応・候補採用・公開データは引き続きmanga-macが所有する。
 
 接続口の実装・外部アプリfixture・native/UIへの接続・実機受入を別々に完了判定する。
-PR #220着手時点ではnative/UIへの接続、Codex操作権移譲、アプリ再起動復旧、Bの参照付きRGBA編集、
-Cの実推論は未完。接続口だけで制作画面から利用可能と表示しない。
+PR #220ではnative/UI接続と既存Jobへの候補保存、人物対応、確定snapshotの回収を追加する。
+素材は既存image artifactへ外出しし、採用・Undo・バックアップを再利用する。
+Codex操作権移譲、Bの参照付きRGBA編集、Cの実推論は未完。実アプリ接続・再起動復旧のCIを通すまで
+PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120秒でも書込み権を解放し、次の操作前に再観測する。
 
 Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、
 内部表現はAlpha[0,1]＋RGB[-1,1]で、SDK標準PNG writerはRGB専用。
