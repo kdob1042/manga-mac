@@ -1113,6 +1113,67 @@ mod tests {
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
     }
+    fn seedance_fixture(with_end: bool) -> (Value, String, Option<String>) {
+        let (mut manifest, start) = fixture();
+        manifest["version"] = json!(2);
+        manifest["connection"] = json!({"id":"seedance","provider":"runway","model":"seedance2_5","adapter_id":"runway"});
+        manifest["request_profile"] = json!("seedance-keyframes-v1");
+        manifest["audio"] = json!(false);
+        manifest["billing"] = json!({
+            "credits":150,
+            "rate":30,
+            "minimum":80,
+            "tier":"720p",
+            "checked_at":"2026-09-22",
+            "model_id":"seedance2_5",
+            "request_profile":"seedance-keyframes-v1"
+        });
+        if with_end {
+            let bytes = STANDARD.decode(start.split_once(',').unwrap().1).unwrap();
+            let hash = format!("{:x}", Sha256::digest(&bytes));
+            manifest["providerInputs"].as_array_mut().unwrap().push(json!({
+                "id":"b",
+                "hash":hash,
+                "size":bytes.len(),
+                "role":"end_frame",
+                "media_type":"image",
+                "transform":{"kind":"identity"}
+            }));
+            (manifest, start.clone(), Some(start))
+        } else {
+            (manifest, start, None)
+        }
+    }
+
+    #[test]
+    fn seedance_payload_uses_keyframes_and_never_gen_specific_fields() {
+        let (single, start, _) = seedance_fixture(false);
+        let body = payload_with_frames(&single, &start, None).unwrap();
+        assert_eq!(body["model"], "seedance2_5");
+        assert_eq!(body["promptImage"], json!([{"uri":start,"position":"first"}]));
+        assert_eq!(body["audio"], false);
+        assert!(body.get("outputFormat").is_none());
+        assert!(body.get("lastFrame").is_none());
+        assert!(body.get("resolution").is_none());
+
+        let (pair, first, last) = seedance_fixture(true);
+        let last = last.unwrap();
+        let body = payload_with_frames(&pair, &first, Some(&last)).unwrap();
+        assert_eq!(body["promptImage"][0]["position"], "first");
+        assert_eq!(body["promptImage"][1]["position"], "last");
+        assert_eq!(body["promptImage"][1]["uri"], last);
+
+        let mut invalid = pair.clone();
+        invalid["providerInputs"][0]["role"] = json!("end_frame");
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair.clone();
+        invalid["providerInputs"].as_array_mut().unwrap().push(invalid["providerInputs"][1].clone());
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair;
+        invalid["audio"] = json!(true);
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+    }
+
     #[test]
     fn provider_body_preserves_start_end_bytes_and_rejects_runway_fallback() {
         let (manifest, start, end) = transition_fixture();
@@ -1247,6 +1308,48 @@ mod tests {
             reserve(&project, &job, "c", 25).unwrap()["reserved_credits"],
             25
         );
+    }
+
+    #[test]
+    fn seedance_reservation_uses_tier_rate_and_minimum() {
+        let (manifest, _) = seedance_fixture(false);
+        let job = json!({
+            "id":"seedance-job",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "seedance", 149).is_err());
+        let remote = reserve(&project, &job, "seedance", 150).unwrap();
+        assert_eq!(remote["reserved_credits"], 150);
+        assert_eq!(remote["pricing"]["tier"], "720p");
+        assert_eq!(remote["pricing"]["minimum"], 80);
+        assert_eq!(remote["audio"], false);
+
+        let selected = media::video_model_from_connection(&json!({
+            "provider":"runway","model":"seedance2_5","adapter_id":"runway"
+        })).unwrap();
+        assert_eq!(media::video_pricing(&selected, 4, "854:480").unwrap()["credits"], 80);
     }
 
     #[test]
