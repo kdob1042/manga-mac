@@ -263,27 +263,6 @@ jobs:
           components: rustfmt, clippy
           targets: aarch64-apple-darwin
       - run: npm ci
-      - name: Identify native compiler cache
-        id: native-cache
-        run: |
-          echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        id: native-restore
-        with:
-          path: helper/.build
-          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
-      - name: Build native image engine
-        run: |
-          swift build -c release --package-path helper
-          mkdir -p src-tauri/binaries
-          cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-apple-darwin
-      # Save successful Swift output even if a later Rust regression fails.
-      # The exact compiler/input key and the following build/test gates stay required.
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        if: steps.native-restore.outputs.cache-hit != 'true'
-        with:
-          path: helper/.build
-          key: ${{ steps.native-restore.outputs.cache-primary-key }}
       - name: Install media probe
         run: command -v ffprobe || brew install ffmpeg
       # The Tauri context macro reads generated icons during native compilation.
@@ -324,25 +303,6 @@ jobs:
           toolchain: 1.98.1
           targets: aarch64-apple-darwin
       - run: npm ci
-      - name: Identify native compiler cache
-        id: native-cache
-        run: |
-          echo "compiler=$(swift --version | shasum -a 256 | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830
-        id: native-restore
-        with:
-          path: helper/.build
-          key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
-      - name: Build native image engine
-        run: |
-          swift build -c release --package-path helper
-          mkdir -p src-tauri/binaries
-          cp helper/.build/release/manga-engine src-tauri/binaries/manga-engine-aarch64-apple-darwin
-      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830
-        if: steps.native-restore.outputs.cache-hit != 'true'
-        with:
-          path: helper/.build
-          key: ${{ steps.native-restore.outputs.cache-primary-key }}
       # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon release app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
