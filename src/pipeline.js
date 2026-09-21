@@ -50,16 +50,22 @@ async function sha256(value) {
 export async function syncSource(repo, token, episodeId, previous, invokeCall = call, options = {}) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw Error('owner/repository の形式で指定してください');
   const library = options.library ?? null;
+  const branch = options.branch ?? library?.branch ?? previous?.sync?.source_branch ?? 'main';
+  if (!['dev','main'].includes(branch)) throw Error('原稿ブランチはdevまたはmainを選んでください');
   const pinnedSha = options.commit ?? library?.sha ?? null;
-  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: 'commits/main', token})).sha;
+  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: `commits/${branch}`, token})).sha;
   if (!/^[0-9a-f]{40}$/i.test(sha)) throw Error('取得commitが不正です');
   const workId = options.workId ?? library?.workId ?? null;
   const entryPath = options.entryPath ?? options.manifestPath ?? library?.entryPath ?? library?.manifestPath ?? '';
   const sourceRootOption = options.sourceRoot ?? library?.sourceRoot ?? '';
   if (workId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(workId)) throw Error('作品IDが不正です');
   if (options.sceneId && !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(options.sceneId)) throw Error('シーンIDが不正です');
-  if (previous?.sha === sha && previous.episodeId === episodeId && previous.repo === repo
+  const episodeIds = Array.isArray(options.episodeIds) ? [...options.episodeIds] : [episodeId];
+  if (!episodeIds.length || new Set(episodeIds).size !== episodeIds.length || episodeIds.some(id => typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$/.test(id))) throw Error('取り込む話を選んでください');
+  const previousEpisodes = previous?.episodeIds ?? (previous?.episodeId ? [previous.episodeId] : []);
+  if (previous?.sha === sha && JSON.stringify(previousEpisodes) === JSON.stringify(episodeIds) && previous.repo === repo
     && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
+    && (previous.sync?.source_branch ?? 'main') === branch
     && (previous.selectedSceneId ?? null) === (options.sceneId ?? null)
     && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
   const manifestFile = await readManifest(repo, sha, token, invokeCall, entryPath);
@@ -78,9 +84,10 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
       return invokeCall('github_file', {repo, path: sourcePath(legacySourceRoot, path), sha, token});
     }
   };
-  const ordered = orderedScenes(model, episodeId);
+  const ordered = episodeIds.flatMap(id => orderedScenes(model, id));
+  if (new Set(ordered.map(scene => scene.id)).size !== ordered.length) throw Error('複数話で場面IDが重複しています');
   const selected = options.sceneId ? ordered.filter(scene => scene.id === options.sceneId) : ordered;
-  if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは話に存在しません');
+  if (options.sceneId && selected.length !== 1) throw Error('選択したシーンは取込対象の話に存在しません');
   const scenes = [];
   for (const s of selected) {
     const text = await read(s.path);
@@ -104,16 +111,17 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     }
     references.push({ ...declaration, ...asset });
   }
+  const scope = episodeIds.join('+');
   const sceneSuffix = options.sceneId ? `:${options.sceneId}` : '';
   const snapshot = {
-    id: workId ? `${repo}@${sha}:${workId}:${episodeId}${sceneSuffix}` : `${repo}@${sha}:${episodeId}${sceneSuffix}`,
-    repo, sha, episodeId, manifest, scenes, settings, references,
+    id: workId ? `${repo}@${sha}:${workId}:${scope}${sceneSuffix}` : `${repo}@${sha}:${scope}${sceneSuffix}`,
+    repo, sha, episodeId: episodeIds[0], episodeIds, manifest, scenes, settings, references,
     ...(workId ? {workId} : {}),
     ...(options.sceneId ? {selectedSceneId: options.sceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),
     protocol: {version: 1, ...(model.format ? {format: model.format} : {}), manifest_schema_version: manifest.schema_version ?? model.schema_version},
-    sync: {source_commit: sha, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
-    ...(workId ? {library: {repository: repo, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
+    sync: {source_commit: sha, source_branch:branch, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
+    ...(workId ? {library: {repository: repo, branch, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
   return snapshot;
