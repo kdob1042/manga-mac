@@ -7,7 +7,7 @@ import { videoConnectionSupportsEndFrame } from '../src/video.js';
 test('the public registry exposes only implemented adapters and freezes defaults', () => {
   assert.equal(defaultImageModelId, 'flux-2-klein-4b-local');
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
-  assert.deepEqual(imageModels.map(model => model.adapter_id), ['media-generation-kit']);
+  assert.deepEqual(imageModels.map(model => model.adapter_id), ['mflux']);
   assert.deepEqual(videoModels.map(model => model.adapter_id), ['runway']);
   assert.throws(() => imageModel('qwen-image'), /未対応/);
   assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
