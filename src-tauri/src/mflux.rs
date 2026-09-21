@@ -50,16 +50,18 @@ pub async fn generate(request: &Value, model_id: &str, steps: u64) -> Result<Str
         let exe = executable(if edit { "mflux-generate-flux2-edit" } else { "mflux-generate-flux2" })?;
         let output = temp.join("result.png");
         let mut command = tokio::process::Command::new(exe);
-        command.args([
-            "--model", model_id,
-            "--prompt", request["prompt"].as_str().ok_or("promptがありません")?,
-            "--steps", "4",
-            "--quantize", "8",
-            "--seed", &request["seed"].as_u64().ok_or("seedがありません")?.to_string(),
-            "--width", &request["width"].as_u64().ok_or("画像幅がありません")?.to_string(),
-            "--height", &request["height"].as_u64().ok_or("画像高さがありません")?.to_string(),
-            "--output", output.to_str().ok_or("一時出力パスが不正です")?,
-        ]);
+        let seed = request["seed"].as_u64().ok_or("seedがありません")?.to_string();
+        let width = request["width"].as_u64().ok_or("画像幅がありません")?.to_string();
+        let height = request["height"].as_u64().ok_or("画像高さがありません")?.to_string();
+        command
+            .arg("--model").arg(model_id)
+            .arg("--prompt").arg(request["prompt"].as_str().ok_or("promptがありません")?)
+            .arg("--steps").arg("4")
+            .arg("--quantize").arg("8")
+            .arg("--seed").arg(seed)
+            .arg("--width").arg(width)
+            .arg("--height").arg(height)
+            .arg("--output").arg(&output);
         if edit {
             let mut paths = Vec::new();
             if let Some(uri) = original {
