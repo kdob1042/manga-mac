@@ -20,7 +20,7 @@ for(const stopA of [false,true,'fail'])test(stopA==='fail'?'A planning failure l
    throw Error('unexpected '+command);
   }};
  });
- await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('combobox',{name:'演出・コマ計画の接続先'}).selectOption('openai');await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();await page.getByText('原稿と漫画への反映状態',{exact:true}).click();
+ await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('combobox',{name:'演出・コマ計画の接続先'}).selectOption('openai');await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();await page.getByRole('button',{name:'原稿',exact:true}).click();
  const source=page.getByRole('region',{name:'原稿',exact:true}),candidates=page.getByRole('region',{name:'原稿反映の更新案'});
  await source.getByRole('checkbox').first().check();await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.keys(window.planGates))).toEqual(['new0']);
  await source.getByRole('checkbox').last().check();await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.keys(window.planGates))).toEqual(['new0','new8']);

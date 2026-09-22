@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { migrateProject } from '../src/revisions.js';
 import { beginVideoJob } from '../src/video.js';
-import { createPanelVideoShots, panelVideoRecipes } from '../src/video-batch.js';
+import { createPanelVideoShots, panelVideoRecipes, savedVideoBatches, runVideoBatch } from '../src/video-batch.js';
 
 const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 
@@ -79,4 +79,67 @@ test('each batch recipe freezes its own model, input hash and cost boundary when
   stale.jobs = stale.jobs.map(job => jobs.some(item => item.id === job.id) ? { ...job, status: 'abandoned' } : job);
   stale.panels[0].artwork_revision = null;
   await assert.rejects(beginVideoJob(stale, created.shotIds[0], connection), /採用作画版/);
+});
+
+async function batchRunner() {
+  const project = await fixture(3);
+  project.jobs = [];
+  const created = createPanelVideoShots(project, project.panels.map(panel => ({ panelId: panel.id, prompt: 'gentle motion' })), { batchId: 'saved-batch', duration: 5, ratio: '960:960' });
+  let saved = structuredClone(created.project), stopped = false;
+  const calls = [];
+  const options = {
+    batchId: created.batchId,
+    connection: { id: 'connection', provider: 'runway', model: 'gen4_turbo', adapter_id: 'runway' },
+    getProject: () => saved,
+    commit: async next => { saved = structuredClone(next); },
+    submit: async job => { calls.push(job.scope.id); saved.jobs.find(item => item.id === job.id).status = 'submitted'; },
+    refresh: async () => {},
+    shouldStop: () => stopped,
+  };
+  return { options, calls, stop: () => { stopped = true; }, resume: () => { stopped = false; }, ids: created.shotIds };
+}
+
+test('restored batches skip every attempted shot including completed and unknown requests', async () => {
+  const runner = await batchRunner(), project = runner.options.getProject();
+  project.jobs.push(...runner.ids.slice(0, 2).map((id, index) => ({ id: `existing-${index}`, scope: { type: 'videoShot', id }, status: index ? 'unknown' : 'candidate' })));
+  assert.equal(savedVideoBatches(project)[0].shots.filter(item => !item.job).length, 1);
+  await runVideoBatch(runner.options);
+  assert.deepEqual(runner.calls, runner.ids.slice(2));
+  await assert.rejects(runVideoBatch(runner.options), /未送信/);
+  assert.equal(runner.options.getProject().jobs.length, 3);
+});
+
+test('batch validates all pending inputs before committing or submitting any request', async () => {
+  const runner = await batchRunner();
+  runner.options.getProject().videoShots[2].duration = 99;
+  await assert.rejects(runVideoBatch(runner.options), /尺・寸法/);
+  assert.equal(runner.options.getProject().jobs.length, 0);
+  assert.deepEqual(runner.calls, []);
+});
+
+test('batch stops after the in-flight request and resumes only remaining recipes', async () => {
+  const runner = await batchRunner();
+  runner.options.onProgress = runner.stop;
+  assert.deepEqual(await runVideoBatch(runner.options), { submitted: 1, stopped: true });
+  assert.deepEqual(runner.calls, runner.ids.slice(0, 1));
+  runner.resume(); runner.options.onProgress = () => {};
+  await runVideoBatch(runner.options);
+  assert.deepEqual(runner.calls, runner.ids);
+});
+
+test('failed or unknown native result stops the batch even if submit resolves', async () => {
+  for (const status of ['failed', 'unknown', 'running']) {
+    const runner = await batchRunner();
+    runner.options.submit = async job => { runner.calls.push(job.scope.id); runner.options.getProject().jobs.find(item => item.id === job.id).status = status; };
+    await assert.rejects(runVideoBatch(runner.options), /直前の動画要求/);
+    assert.equal(runner.calls.length, 1);
+    assert.equal(runner.options.getProject().jobs.length, 1);
+  }
+});
+
+test('a failed durable save never reaches the native submit boundary', async () => {
+  const runner = await batchRunner();
+  runner.options.commit = async () => { throw Error('disk full'); };
+  await assert.rejects(runVideoBatch(runner.options), /disk full/);
+  assert.deepEqual(runner.calls, []);
 });

@@ -6,6 +6,8 @@ pub mod policy_transport;
 pub mod live_preview;
 #[path = "../../src-tauri/src/runway.rs"]
 pub mod runway;
+#[path = "../../src-tauri/src/local_video.rs"]
+pub mod local_video;
 #[path = "../../src-tauri/src/storage.rs"]
 pub mod storage;
 
