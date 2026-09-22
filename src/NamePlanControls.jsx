@@ -6,10 +6,11 @@ import { FORMAT, createNameCandidate, adoptNameCandidate, editNameCandidateLayou
 import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA } from './name-v2-ai.js';
 import { importNamePlan } from './name-import.js';
 import { askLLM } from './llm.js';
+import { fetchRepositoryNamePlan } from './name-repository.js';
 import { pagePNG } from './render.js';
 
 // Reuses the existing draft, Job, renderer, connection and atomic writer boundaries.
-export default function NamePlanControls({project,current,commit,run,busy,model,sceneIds,onSwitch,cancelled=()=>false}) {
+export default function NamePlanControls({project,current,commit,run,busy,model,sceneIds,onSwitch,cancelled=()=>false,sourceToken='',episodeId=''}) {
   const [instruction,setInstruction]=useState(''),[selection,setSelection]=useState(null),[chosen,setChosen]=useState('');
   const [preview,setPreview]=useState(null),[pageIndex,setPageIndex]=useState(0),[width,setWidth]=useState(430);
   const [edit,setEdit]=useState(null),[visionConsent,setVisionConsent]=useState(false),[message,setMessage]=useState('');
@@ -27,19 +28,28 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   const connected=!!model?.connectionId;
   const safeRun=(label,fn)=>run(label,async()=>{setMessage('');await fn();});
   const clear=()=>{setPreview(null);setEdit(null);onSwitch?.();};
+  async function stageRaw(raw,provenance=null) {
+    const base=current.current;let data;
+    if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_BYTES)throw Error('ネームJSONは4MiB以内で指定してください');
+    try{data=JSON.parse(raw);}catch{throw Error('ネームJSONを読み取れません');}
+    const id=crypto.randomUUID();
+    const entry={id,kind:'name_plan',status:'candidate',source_revision:base.active,at:new Date().toISOString(),...(provenance?{repositoryPlan:provenance}:{})};
+    if(data?.format===FORMAT)entry.nameCandidate=await createNameCandidate(base,data);
+    else {await importNamePlan(base,raw);entry.legacyNameRaw=raw;entry.base=await nameReadToken(base);}
+    if(current.current!==base)throw Error('ネーム確認中に作品が変わりました');
+    await commit({...base,jobs:[...base.jobs,entry]});setChosen(id);setPageIndex(0);setPreview(null);
+    setMessage(provenance?'同じGitHub版のネームを候補として保存しました。原稿と配置を確認してから採用してください。':'候補を保存しました。原稿と配置を確認してから採用してください。');
+  }
   async function readFile(file) {
     if(!file)return;
-    await safeRun('ネームファイルを検査',async()=>{
-      if(file.size>MAX_BYTES)throw Error('ネームJSONは4MiB以内で指定してください');
-      const raw=await file.text(),base=current.current;let data;
-      try{data=JSON.parse(raw);}catch{throw Error('ネームJSONを読み取れません');}
-      const id=crypto.randomUUID();
-      const entry={id,kind:'name_plan',status:'candidate',source_revision:base.active,at:new Date().toISOString()};
-      if(data?.format===FORMAT)entry.nameCandidate=await createNameCandidate(base,data);
-      else {await importNamePlan(base,raw);entry.legacyNameRaw=raw;entry.base=await nameReadToken(base);}
-      if(current.current!==base)throw Error('ファイル確認中に作品が変わりました');
-      await commit({...base,jobs:[...base.jobs,entry]});setChosen(id);setPageIndex(0);setPreview(null);
-      setMessage('候補を保存しました。原稿と配置を確認してから採用してください。');
+    await safeRun('ネームファイルを検査',async()=>{if(file.size>MAX_BYTES)throw Error('ネームJSONは4MiB以内で指定してください');await stageRaw(await file.text());});
+  }
+  async function readRepositoryPlan() {
+    await safeRun('GitHubのネームを取得',async()=>{
+      if(!snapshot)throw Error('原稿を先に取り込んでください');
+      const base=current.current, fetched=await fetchRepositoryNamePlan(snapshot,episodeId,sourceToken);
+      if(current.current!==base||current.current.active!==snapshot.id)throw Error('取得中に作品または原稿版が変わりました');
+      await stageRaw(fetched.raw,{repo:fetched.repo,path:fetched.path,commit:fetched.commit,episodeId:fetched.episodeId});
     });
   }
   async function generate(ids=selected,customInstruction=instruction) {
@@ -88,6 +98,8 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     </details>
     <button disabled={busy||!connected||!selected.length} onClick={()=>generate()}>選択原稿からネーム候補を作る</button>
     {!connected&&<small>演出AIの接続を登録すると生成できます。ファイル取込・座標計算にはAI接続は不要です。</small>}
+    <button disabled={busy||!snapshot||!episodeId} onClick={readRepositoryPlan}>同じGitHub版のネームを読み込む</button>
+    <small><code>{snapshot?.library?.root??snapshot?.sync?.source_root??''}/manga/{episodeId||'<episodeId>'}/name-plan.json</code> を原稿と同じcommitから取得します。取得だけでは採用・作画しません。</small>
     <label>ネームJSONを取り込む<input type="file" aria-label="ネームJSONを取り込む" accept=".json,application/json" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';readFile(file);}}/></label>
     {candidates.length>0&&<div><label>保存したネーム候補<select aria-label="保存したネーム候補" disabled={busy} value={job?.id??''} onChange={e=>{setChosen(e.target.value);setPageIndex(0);setPreview(null);}}>{candidates.map(j=><option key={j.id} value={j.id}>{j.nameCandidate?.file.title??'旧形式ネーム'} · {j.nameCandidate?.layout.pages.length??'?'}ページ</option>)}</select></label>
       {candidate&&<p>{candidate.layout.pages.length}ページ／{candidate.panels.length}コマ。掲載文字と絵による対応を分離済み。</p>}
