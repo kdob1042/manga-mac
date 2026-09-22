@@ -67,3 +67,89 @@ input[type="checkbox"] { width: auto; }
 
 .video-transition-option{display:grid;gap:4px}.video-transition-thumbnails{display:flex;gap:8px;max-width:360px}.video-transition-thumbnails img{width:160px;height:160px;object-fit:contain;background:#f3f3ef;border:1px solid #d6d9d2;border-radius:4px}
 .video-batch-row{display:grid;grid-template-columns:minmax(120px,180px) 1fr;gap:8px 14px;align-items:start;padding:14px;margin:12px 0;border:1px solid #d6d9d2;border-radius:8px;background:#fafbf8}.video-batch-row>.shot-preview{grid-row:2/6;max-height:180px;margin:0}.video-batch-row>label,.video-batch-row>p{margin:0}.video-batch-row>.video-source{max-height:100px;overflow:auto;white-space:pre-wrap}@media(max-width:760px){.video-batch-row{grid-template-columns:1fr}.video-batch-row>.shot-preview{grid-row:auto;max-height:240px}}
+
+/* Name planning stays in the existing draft workspace. */
+.name-plan-controls { margin-block: 1rem; padding-block: .6rem; border-top: 1px solid #ddd; }
+.name-plan-controls textarea { width: 100%; min-height: 6rem; resize: vertical; }
+.name-plan-controls button { margin: .25rem .2rem .25rem 0; }
+.name-plan-controls label { display: block; margin-block: .5rem; }
+.name-atom-list { max-height: 20rem; overflow: auto; }
+.name-atom-list label { display:flex; align-items:flex-start; gap:.4rem; }
+.name-atom-list span { white-space:pre-wrap; overflow-wrap:anywhere; }
+.name-proof-scroll { overflow:auto; max-height:70vh; max-width:100%; }
+.name-plan-controls small { display:block; line-height:1.5; }
+
+/* Each stage exposes its own tools; hidden panes retain unfinished input. */
+[hidden] { display: none !important; }
+button:focus-visible, summary:focus-visible, [role="button"]:focus-visible, select:focus-visible { outline: 3px solid #5b9270; outline-offset: 3px; }
+main { min-width: 0; }
+.startup-state { min-height: 100vh; display: grid; place-content: center; justify-items: center; padding: 32px; text-align: center; }
+.workflow-nav { display: flex; gap: 6px; margin: 0 30px; padding: 8px; background: #e9eee6; border-radius: 10px; }
+.workflow-nav button { flex: 1; border-color: transparent; background: transparent; font-size: 13px; }
+.workflow-nav button[aria-pressed="true"] { background: #fff; color: #294a36; border-color: #cbd7c5; font-weight: 700; box-shadow: 0 2px 6px #203a2710; }
+.workflow-nav button span { display: inline-grid; place-items: center; border-radius: 50%; width: 20px; height: 20px; margin-right: 7px; background: #dce5d7; font-size: 11px; }
+.stage-hint { margin: 12px 30px 20px; font-size: 12px; color: #61715c; line-height: 1.8; }
+.toolbar { min-height: 54px; height: auto; flex-wrap: wrap; padding: 12px 30px; }
+.toolbar[aria-label="制作する媒体"] { border-bottom: 1px solid #e1e5dc; }
+.toolbar[aria-label="制作する媒体"] button[aria-pressed="true"] { background: #e2ebde; border-color: #8da385; }
+.source-contract { font-size: 11px; margin: 12px 0; color: #71806a; }
+.source-contract summary { cursor: pointer; }
+.export-menu { position: relative; }
+.export-menu>summary { list-style: none; cursor: pointer; padding: 10px 18px; background: #365845; color: #fff; border: 1px solid #365845; border-radius: 7px; font-size: 12px; white-space: nowrap; }
+.export-menu>summary::after { content: ' ▾'; }
+.export-menu>summary::-webkit-details-marker { display: none; }
+.export-options { position: absolute; top: calc(100% + 8px); right: 0; min-width: 210px; padding: 8px; display: grid; gap: 6px; background: #fff; border: 1px solid #dce0d7; border-radius: 9px; box-shadow: 0 8px 26px #203a2720; z-index: 5; }
+.export-options button { text-align: left; }
+.export-options { width: min(340px, calc(100vw - 32px)); max-height: 75vh; overflow-y: auto; }
+.export-options label { display: grid; gap: 6px; font-size: 12px; }
+.export-options select { width: 100%; padding: 8px; border: 1px solid #d6d9d2; border-radius: 6px; }
+.export-options small { display: block; font-size: 11px; line-height: 1.5; color: #61715c; }
+.output-resolution { font-size: 12px; line-height: 1.6; border-block: 1px solid #eee; padding-block: 8px; }
+.output-resolution summary { cursor: pointer; }
+.output-resolution ul { padding-left: 0; list-style: none; max-height: 190px; overflow: auto; }
+.output-resolution li { padding-bottom: 8px; }
+.art-comparison-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; align-items: start; }
+.art-comparison-card { margin: 0; min-width: 0; }
+.art-comparison-card img { display: block; width: 100%; max-height: 420px; object-fit: contain; background: #f0f0ec; }
+.art-comparison-card figcaption { font-size: 12px; line-height: 1.7; margin-bottom: 6px; }
+.art-comparison-empty { min-height: 100px; display: grid; place-items: center; background: #f0f0ec; color: #61715c; font-size: 12px; }
+.art-reference-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+.art-reference-grid figure { margin: 12px 0 0; max-width: 160px; font-size: 12px; }
+.art-reference-grid img { display: block; max-width: 160px; height: 130px; object-fit: contain; }
+.panel-context { margin: 8px 0 16px; }
+.panel-context summary { cursor: pointer; font-size: 13px; }
+.panel-context .art-comparison-grid { margin-top: 12px; }
+.drawing-controls { margin: 20px 30px; padding: 20px; border: 1px solid #d6d9d2; border-radius: 10px; background: #fafbf8; }
+.drawing-controls h3 { margin-top: 0; font-size: 15px; }
+.drawing-controls>p { font-size: 12px; line-height: 1.8; }
+.drawing-controls>label { display: inline-flex; align-items: center; gap: 7px; margin: 6px 16px 12px 0; font-size: 12px; }
+.drawing-controls button { margin: 5px 8px 5px 0; }
+.drawing-controls details { margin-top: 12px; font-size: 12px; }
+.drawing-controls summary { cursor: pointer; }
+.finish-panel-select { display: flex; align-items: center; gap: 12px; margin: 24px 30px; font-size: 13px; }
+.finish-panel-select select { padding: 9px 12px; border: 1px solid #d6d9d2; border-radius: 6px; }
+section[aria-label="仕上げの作業"]>section { margin: 20px 30px; padding: 20px; border: 1px solid #d6d9d2; border-radius: 10px; }
+section[aria-label="仕上げの作業"]>section button { margin: 6px; }
+.source-reader>h2 { font-size: 16px; }
+section.source-reader { padding: 0 24px; }
+.thumbnail { content-visibility: auto; contain-intrinsic-size: auto 158px; }
+.composer { max-height: 35vh; overflow: auto; }
+.composer>label { font-size: 11px; }
+.settings select { max-width: 100%; }
+@media(max-width:760px) {
+  header { gap: 9px; padding: 0 14px; }
+  header small,.brand { display: none; }
+  header strong { font-size: 15px; }
+  header button { padding: 8px; }
+  aside { width: 160px; padding: 20px 12px; }
+  .toolbar { padding: 10px 14px; }
+  .workflow-nav { margin: 0 12px; gap: 0; padding: 4px; }
+  .workflow-nav button { padding: 10px 4px; font-size: 11px; }
+  .workflow-nav button span { display: none; }
+  .stage-hint { margin: 10px 16px; }
+  .composer { left: calc(160px + (100vw - 160px)/2); width: calc(100vw - 184px); padding: 10px; }
+  .input-row { flex-wrap: wrap; }
+  .input-row input { min-width: 120px; }
+  .page { width: calc(100% - 24px); padding: 12px; }
+  .drawing-controls { margin: 16px 12px; padding: 12px; }
+}

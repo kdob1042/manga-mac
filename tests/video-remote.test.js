@@ -9,7 +9,7 @@ const fixture = remote => ({ panels: [{ id: 'p' }], history: [{ panels: [] }], v
 test('empty project exposes shared artwork and video collections before first save', () => {
   const p = emptyProject();
   assert.deepEqual(p.artworks, []);
-  assert.deepEqual(restoreVideoResults(p), p);
+  assert.equal(restoreVideoResults(p), p);
 });
 
 test('local restart never bills credits or replays inference; saved artifact becomes one candidate', () => {
@@ -38,8 +38,24 @@ test('MV-06 restart restores submitted task state and reserved cost without prod
     assert.deepEqual(next.panels, p.panels);
     assert.deepEqual(next.history, p.history);
     assert.equal(next.videoShots[0].adopted_revision, null);
-    assert.deepEqual(restoreVideoResults(next), next);
+    assert.equal(restoreVideoResults(next), next);
   }
+});
+
+test('unchanged remote receipts avoid a project rewrite but changed costs are persisted', () => {
+  const original = fixture({ status: 'RUNNING', reserved_credits: 60 });
+  const restored = restoreVideoResults(original);
+  const before = structuredClone(restored);
+  assert.equal(restoreVideoResults(restored), restored);
+  assert.deepEqual(restored, before);
+
+  const withActual = { ...restored, jobs: restored.jobs.map(job => ({ ...job, remote: { ...job.remote, actual_credits: 42 } })) };
+  const changed = restoreVideoResults(withActual);
+  assert.notEqual(changed, withActual);
+  assert.equal(changed.jobs[0].cost.amount, 42);
+  assert.equal(changed.panels, withActual.panels);
+  assert.equal(withActual.jobs[0].cost.amount, null);
+  assert.equal(restoreVideoResults(changed), changed);
 });
 
 test('MV-07 native collection survives UI crash, attaches exactly once and remains a candidate', () => {

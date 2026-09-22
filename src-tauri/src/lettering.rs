@@ -1,5 +1,44 @@
 use serde_json::Value;
 use std::collections::HashSet;
+
+// AI proposals carry stable box IDs, never immutable source offsets. Resolve IDs
+// against the current saved boxes in JS before applying the strict save validator.
+pub fn validate_proposal(layout: &Value) -> Result<(), String> {
+    let fail = || "Invalid lettering proposal or source identity".to_string();
+    let mut geometry = layout.clone();
+    let boxes = geometry
+        .get_mut("boxes")
+        .and_then(Value::as_array_mut)
+        .ok_or_else(fail)?;
+    let mut source_mode = None;
+    for b in boxes {
+        if b.get("sourceRefs").is_some() {
+            return Err(fail());
+        }
+        if b["id"].as_str().is_some_and(|id| id.starts_with("custom:")) {
+            if b.get("unit_id").is_some() {
+                return Err(fail());
+            }
+            continue;
+        }
+        let id_only = b.get("unit_id").is_none();
+        if b.get("text").is_some()
+            || b[if id_only { "id" } else { "unit_id" }]
+                .as_str()
+                .is_none_or(|id| id.trim().is_empty())
+            || source_mode.is_some_and(|mode| mode != id_only)
+        {
+            return Err(fail());
+        }
+        source_mode = Some(id_only);
+        if id_only {
+            // Temporary shape adapter only; neither output nor saved refs change.
+            b["sourceRefs"] = serde_json::json!([]);
+        }
+    }
+    validate(&geometry, None)
+}
+
 pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
     let fail = || "Invalid lettering geometry or source references".to_string();
     if !["caption", "balloons"].contains(&layout["mode"].as_str().unwrap_or(""))
@@ -10,23 +49,52 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
         return Err(fail());
     }
     let boxes = layout["boxes"].as_array().ok_or_else(fail)?;
-    if boxes.len() > 1000 || ids.is_some_and(|ids| ids.len() != boxes.len()) {
+    let is_custom = |b: &Value| b.get("unit_id").is_none() && b.get("sourceRefs").is_none();
+    if boxes.len() > 1000
+        || ids.is_some_and(|ids| ids.len() != boxes.iter().filter(|b| !is_custom(b)).count())
+    {
         return Err(fail());
     }
     let mut seen = HashSet::new();
-    for (i, b) in boxes.iter().enumerate() {
+    let mut source_index = 0;
+    for b in boxes.iter() {
         let modern = b.get("sourceRefs").is_some();
-        let id = b[if modern { "id" } else { "unit_id" }]
+        let custom = is_custom(b);
+        let id = b[if modern || custom { "id" } else { "unit_id" }]
             .as_str()
             .ok_or_else(fail)?;
-        if !seen.insert(id)
-            || ids.is_some_and(|ids| ids[i] != id)
+        if custom {
+            if !id.starts_with("custom:")
+                || b["text"]
+                    .as_str()
+                    .is_none_or(|text| text.trim().is_empty() || text.encode_utf16().count() > 4000)
+            {
+                return Err(fail());
+            }
+        } else {
+            if b.get("text").is_some() || ids.is_some_and(|ids| ids[source_index] != id) {
+                return Err(fail());
+            }
+            source_index += 1;
+        }
+        let key = format!(
+            "{}:{id}",
+            if custom {
+                "custom"
+            } else if modern {
+                "ref"
+            } else {
+                "unit"
+            }
+        );
+        if !seen.insert(key)
             || b.as_object().is_none_or(|o| {
                 o.keys().any(|k| {
                     ![
                         "id",
                         "unit_id",
                         "sourceRefs",
+                        "text",
                         "x",
                         "y",
                         "width",
@@ -38,6 +106,8 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
                         "lineHeight",
                         "padding",
                         "locked",
+                        "writingMode",
+                        "fontFamily",
                     ]
                     .contains(&k.as_str())
                 })
@@ -46,7 +116,7 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
             return Err(fail());
         }
         if let Some(box_id) = b.get("id") {
-            if !modern && box_id.as_str() != Some(format!("letter:{id}").as_str()) {
+            if !modern && !custom && box_id.as_str() != Some(format!("letter:{id}").as_str()) {
                 return Err(fail());
             }
         }
@@ -59,6 +129,13 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
             if b[key].as_f64().is_none_or(|v| !(min..=max).contains(&v)) {
                 return Err(fail());
             }
+        }
+        if b.get("writingMode")
+            .is_some_and(|v| !["horizontal-tb", "vertical-rl"].contains(&v.as_str().unwrap_or("")))
+            || b.get("fontFamily")
+                .is_some_and(|v| !["gothic", "mincho"].contains(&v.as_str().unwrap_or("")))
+        {
+            return Err(fail());
         }
         if b["x"].as_f64().unwrap() + b["width"].as_f64().unwrap() > 1.00001
             || b["y"].as_f64().unwrap() + b["height"].as_f64().unwrap() > 1.00001
@@ -108,6 +185,57 @@ pub fn validate(layout: &Value, ids: Option<&Vec<&str>>) -> Result<(), String> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn source_id_proposals_do_not_relax_persistent_lettering_validation() {
+        let v = json!({"mode":"balloons","boxes":[
+            {"id":"box:source","x":0.1,"y":0.1,"width":0.4,"height":0.6,"writingMode":"vertical-rl","fontFamily":"mincho"},
+            {"id":"custom:p:1","text":"放課後","x":0.6,"y":0.1,"width":0.3,"height":0.2,"kind":"narration","shape":"rect"}
+        ]});
+        let original = v.clone();
+        assert!(validate_proposal(&v).is_ok());
+        assert!(validate_proposal(&json!(null)).is_err());
+        assert!(validate_proposal(&json!("invalid")).is_err());
+        assert_eq!(v, original);
+        assert!(validate(&v, None).is_err());
+        for (key, value) in [
+            ("sourceRefs", json!([])),
+            ("text", json!("原文を書き換え")),
+            ("fontFamily", json!("external")),
+            ("writingMode", json!("sideways")),
+            ("id", json!("")),
+        ] {
+            let mut invalid = v.clone();
+            invalid["boxes"][0][key] = value;
+            assert!(validate_proposal(&invalid).is_err());
+        }
+        let mut mixed = v;
+        mixed["boxes"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"unit_id":"u","x":0.1,"y":0.1,"width":0.3,"height":0.2}));
+        assert!(validate_proposal(&mixed).is_err());
+    }
+    #[test]
+    fn typography_and_custom_narration_preserve_source_order() {
+        let v = json!({"mode":"balloons","boxes":[
+            {"id":"letter:u1","unit_id":"u1","x":0.1,"y":0.1,"width":0.3,"height":0.2,"writingMode":"vertical-rl","fontFamily":"mincho"},
+            {"id":"custom:p:1","text":"放課後","x":0.1,"y":0.4,"width":0.3,"height":0.2,"kind":"narration","shape":"rect"},
+            {"id":"letter:u2","unit_id":"u2","x":0.1,"y":0.7,"width":0.3,"height":0.2}
+        ]});
+        assert!(validate(&v, Some(&vec!["u1", "u2"])).is_ok());
+        assert!(validate(&v, Some(&vec!["u2", "u1"])).is_err());
+        for (index, key, value) in [
+            (0, "fontFamily", json!("untrusted-font")),
+            (0, "writingMode", json!("sideways-lr")),
+            (0, "text", json!("replaced source")),
+            (1, "text", json!(" ")),
+            (1, "id", json!("not-custom")),
+        ] {
+            let mut invalid = v.clone();
+            invalid["boxes"][index][key] = value;
+            assert!(validate(&invalid, Some(&vec!["u1", "u2"])).is_err());
+        }
+    }
     #[test]
     fn preserves_units_and_rejects_bad_geometry_and_style() {
         let v = json!({"mode":"balloons","boxes":[{"id":"letter:u","unit_id":"u","x":0.1,"y":0.1,"width":0.4,"height":0.3,"shape":"ellipse","fontSize":24,"locked":true}]});

@@ -1,8 +1,10 @@
 import { ensureLayout, layoutWarnings, pagePanels } from './layout.js';
 import { pagePNG } from './render.js';
 import { call, desktop } from './bridge.js';
+import { outputSize } from './output.js';
 
-export async function exportCBZ(project) {
+export async function exportCBZ(project, options = {}) {
+  const output = outputSize(options);
   if (!project.panels.length) throw Error('書き出すページがありません');
   project = ensureLayout(project);
   const warnings = layoutWarnings(project.layout, project.panels);
@@ -21,6 +23,7 @@ export async function exportCBZ(project) {
           page,
           false,
           project.layout.imageCrops,
+          output,
         )
       ).split(',')[1],
       { base64: true },
@@ -29,6 +32,7 @@ export async function exportCBZ(project) {
     'provenance.json',
     JSON.stringify(
       {
+        output,
         layout: project.layout,
         locale: project.output_locale,
         sources: project.snapshots.map(({ repo, sha, id }) => ({

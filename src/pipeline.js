@@ -167,7 +167,7 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (panel.image) refs.push({ id: panel.artwork_revision ?? panel.id, name: 'Previous accepted expression / style', image: panel.image, hash: await imageHash(panel.image) });
     instruction = [...(panel.instructions ?? []), instruction].filter(Boolean).join('\n');
   }
-  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : capture?.settings?.resolution, selected.id);
+  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : (capture?.settings?.resolution ?? panel.generationResolution), selected.id);
   if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
     const { fitInput } = await import('./canvas-image.js');

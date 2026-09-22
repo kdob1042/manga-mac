@@ -22,6 +22,7 @@ test('reference finishing preserves crop and lettering, compares pages, persists
   await saveProject(p);
  });
  await page.reload();await page.locator('.panel').first().click();
+ await page.getByRole('navigation',{name:'漫画の制作工程'}).getByRole('button',{name:'仕上げ'}).click();
  const before=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('finish-project')));
  await expect(page.getByRole('status').filter({hasText:'必要サイズがエンジン上限'})).toBeVisible();
  await page.getByRole('button',{name:'元画像を参照して仕上げ候補を作る',exact:true}).click();
@@ -33,6 +34,7 @@ test('reference finishing preserves crop and lettering, compares pages, persists
  expect(request.recovery.panel.lettering).toEqual(before.panels[0].lettering);
  await page.screenshot({path:'test-results/placement-finishing.png',fullPage:true});
  await page.reload();await page.locator('.panel').first().click();
+ await page.getByRole('navigation',{name:'漫画の制作工程'}).getByRole('button',{name:'仕上げ'}).click();
  await page.getByRole('button',{name:'この仕上げ候補を採用',exact:true}).click();
  await expect(page.getByRole('button',{name:'この仕上げ候補を採用',exact:true})).toHaveCount(0);
  const after=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('finish-project')));

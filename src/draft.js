@@ -4,6 +4,7 @@ import { setLettering } from './lettering.js';
 import { panelHasText, sourceUnits } from './core.js';
 import { editBase } from './edit-commands.js';
 import { pagePanels, initialLayout, validateLayout, layoutWarnings } from './layout.js';
+import { tokenizeSnapshot, covers } from './source-refs.js';
 
 export function draftScenes(project, ids = project.draftScope?.sceneIds) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
@@ -14,9 +15,9 @@ export function draftScenes(project, ids = project.draftScope?.sceneIds) {
 }
 
 // A checkpoint is an immutable entry in the existing manga history, not a second workspace.
-const draftFields = ['sourceApplication','panels','layout','layoutHistory','layoutRedo','panelMotions','motionHistory','draftScope','characters','style_references','output_locale'];
+const draftFields = ['sourceApplication','panels','layout','layoutHistory','layoutRedo','panelMotions','motionHistory','draftScope','characters','style_references','output_locale','namePlan'];
 function checkpoint(project) {
-  const state = Object.fromEntries(draftFields.map(key => [key, structuredClone(project[key] ?? (key === 'sourceApplication' ? {version:1,units:[]} : key === 'draftScope' ? null : key === 'output_locale' ? 'ja' : []))]));
+  const state = Object.fromEntries(draftFields.map(key => [key, structuredClone(project[key] ?? (key === 'sourceApplication' ? {version:1,units:[]} : (key === 'draftScope' || key === 'namePlan') ? null : key === 'output_locale' ? 'ja' : []))]));
   return {...state, id:crypto.randomUUID(), draftCheckpoint:true, active:project.active,
     label:`${project.draftScope?.sceneIds?.join('・') ?? '原稿'} / ${new Date().toISOString()}`, at:new Date().toISOString()};
 }
@@ -36,7 +37,7 @@ export function startDraft(project, sceneIds, separate = false) {
     return {...project,draftScope:project.draftScope ?? scope};
   }
   assertSwitchable(project);
-  return {...project, history:[...project.history,checkpoint(project)], panels:[],...(project.sourceApplication?{sourceApplication:{version:1,units:[]}}:{}),layout:initialLayout([]),layoutHistory:[],layoutRedo:[],editRedo:[],panelMotions:[],motionHistory:[],draftScope:scope};
+  return {...project, history:[...project.history,checkpoint(project)], panels:[],...(project.sourceApplication?{sourceApplication:{version:1,units:[]}}:{}),layout:initialLayout([]),layoutHistory:[],layoutRedo:[],editRedo:[],panelMotions:[],motionHistory:[],draftScope:scope,namePlan:null};
 }
 export function restoreDraft(project, id) {
   assertSwitchable(project);
@@ -51,7 +52,7 @@ export function draftPageStatus(project, page) {
   const panels = pagePanels(project,page);
   if (!panels.length || panels.length !== page.slots.length) return '未割当';
   if (panels.some(p=>!p.image)) return '作画待ち';
-  if (panels.some(p=>panelHasText(p)&&!p.lettering)) return '文字配置待ち';
+  if (panels.some(p=>panelHasText(p)&&(!p.lettering||p.letteringStatus==='draft'))) return '文字配置待ち';
   return '見た目を確認';
 }
 // Sequential domain stages persisted in the existing jobs. Image jobs stay authoritative.
@@ -68,12 +69,12 @@ export async function prepareDraftLayout({current,commit,ask,cancelled}) {
     await commit({...next,jobs:next.jobs.map(j=>j.id===job.id?{...j,status:'complete'}:j)});
   }catch(e){await commit({...current(),jobs:current().jobs.map(j=>j.id===job.id?{...j,status:'failed'}:j)});throw e;}
 }
-export async function finishDraftLettering({current,commit,ask,cancelled,notify,check,recognize}) {
-  const ids=current().panels.map(p=>p.id);
+export async function finishDraftLettering({current,commit,ask,cancelled,notify,check,recognize,panelIds=null}) {
+  const ids=panelIds??current().panels.map(p=>p.id);
   for(const id of ids) {
     if(cancelled())return;
     const p=current(),panel=p.panels.find(p=>p.id===id);
-    if(!panel?.image || !panelHasText(panel) || panel.lettering)continue;
+    if(!panel?.image || !panelHasText(panel) || (panel.lettering && panel.letteringStatus!=='draft' && (panel.namePlanVersion!==2 || panel.letteringArtworkRevision===panel.artwork_revision)))continue;
     notify(`${id} の文字を配置中`);
     const job={id:crypto.randomUUID(),kind:'draft_lettering',panelId:id,status:'running',source_revision:panel.snapshotId};
     await commit({...p,jobs:[...p.jobs,job]});
@@ -88,17 +89,33 @@ export async function finishDraftLettering({current,commit,ask,cancelled,notify,
     }catch(e){await commit({...current(),jobs:current().jobs.map(j=>j.id===job.id?{...j,status:'failed'}:j)});throw e;}
   }
 }
+function validateSceneSource(project,snapshot,scene,panels) {
+  if(panels.some(p=>p.snapshotId!==snapshot.id))throw Error('初稿の原稿版が一致しません');
+  if(!panels.length)throw Error('初稿の原文参照・順序を確認してください');
+  if(panels.every(p=>Array.isArray(p.sourceRefs))) {
+    const expected=tokenizeSnapshot({...snapshot,scenes:[scene]}).map(u=>u.source);
+    const actual=panels.flatMap(p=>p.sourceRefs);
+    if(!covers(expected,actual,{exact:true}))throw Error('初稿の原文参照に欠落・重複があります');
+    for(let i=1;i<actual.length;i++)if(actual[i-1].sceneId!==actual[i].sceneId||actual[i-1].endCp>actual[i].startCp)throw Error('初稿の原文参照・順序を確認してください');
+    return;
+  }
+  if(JSON.stringify(panels.flatMap(p=>p.unitIds))!==JSON.stringify(sourceUnits(scene.id,scene.text).map(u=>u.id)))throw Error('初稿の原文参照・順序を確認してください');
+}
 export async function reviewDraft(project,render) {
+  if(project.namePlan?.format==='manga-mac/name-plan/v2') {
+    const {validateV2State}=await import('./name-v2.js');
+    validateV2State(project,{complete:true});
+    const pages=[];
+    for(const id of project.namePlan.pageIds){const page=project.layout.pages.find(p=>p.id===id);if(!page)throw Error('ネームページがありません');pages.push(await render(pagePanels(project,page),project.snapshots,project.localizations,project.output_locale,page,false,project.layout.imageCrops));}
+    return pages;
+  }
   const snapshot=project.snapshots.find(s=>s.id===project.active);
   if(!snapshot)throw Error('初稿の原作がありません');
   const scenes = draftScenes(project);
   if(project.panels.some(p=>!scenes.some(s=>s.id===p.sceneId)))throw Error('初稿の対象外のコマがあります');
   const warnings=layoutWarnings(project.layout,project.panels);
   if(warnings.length)throw Error(warnings.join(' / '));
-  for(const scene of scenes) {
-    const panels=project.panels.filter(p=>p.sceneId===scene.id);
-    if(panels.some(p=>p.snapshotId!==snapshot.id) || JSON.stringify(panels.flatMap(p=>p.unitIds))!==JSON.stringify(sourceUnits(scene.id,scene.text).map(u=>u.id)))throw Error('初稿の原文参照・順序を確認してください');
-  }
+  for(const scene of scenes) validateSceneSource(project,snapshot,scene,project.panels.filter(p=>p.sceneId===scene.id));
   const pages=[];
   for(const page of project.layout.pages) {
     const panels=pagePanels(project,page);

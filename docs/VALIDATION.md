@@ -1,8 +1,53 @@
 # 実装・検証記録
 
-仕様は[設計書](IMPLEMENTATION_PLAN.md)。作業と残件は[Issue #5](https://github.com/kdob1042/manga-mac/issues/5)。
+仕様は[設計書](IMPLEMENTATION_PLAN.md)、検証の実行方法は[開発案内](DEVELOPMENT.md)。本書は実施時点の証跡を残す履歴であり、現在の機能一覧ではない。
 
-## 現在の確認位置と再開方法（2026-09-16）
+## 現在の受入入口
+
+- 実装済み機能のMac・実LLM・GUI・推論・実APIの残確認は [Issue #266](https://github.com/kdob1042/manga-mac/issues/266) に集約する。
+- 未実装・不具合は元Issueまたは新規Issueで扱う。実機待ちへ移して実装完了としない。
+- 試験結果は対象SHA・環境・コマンド・証跡・未実施条件を追記する。CI、実アプリ操作、画質、性能、課金APIを分け、過去の失敗や未実行を最新結果で上書きしない。
+- 使用するDMGのSHAと現在のIssue・CIを照合する。以下の古い「未実装」「未検証」は、その記録の時点を示す。
+
+## 2026-09-22 制作品質改善（#269 / PR #270）
+
+対象はPR #248の`d037fdf8d78b0c31e4fefc4c793fa1bbd7a3aee8`へ文字・出力・画像比較を加えたPR #270の実装commit `31d9d73359533c658ee67f090ceb2f3a71ae6efa`（tree `ebba25a7b78de38bfef5b6aabf980491a8b43666`）。後続差分は開発案内と本検証記録のみ。CIはPR本文で照合する。
+
+- Node 387件、Vite build成功。出力幅・crop別の必要解像度、候補作成時の元版保持、前後コマ順、文字方向・書体のUndo、AI移動での書式保持を含む。
+- Chromium関連UI 18件成功（output-quality、workflow-ux、layout、image-recovery、typography、finishing、upscale）。v2の非正方形文字編集とPNGの画素一致、縦書き変更→保存→再読込→Undo、PNG/CBZ/Live文字層の一致を検証。PNG 800×1130・3200×4520を確認した。
+- Rust 1.98.1：storage 60件成功、既存の外部連携専用3件は対象外。文字属性・追加ナレーションのSQLite保存／再読込、原文差替え拒否を含む。LLM native 105件成功、既存外部連携5件は対象外。AI応答の文字枠IDを保存データと分けて検証し、原文offsetをAIに作らせない。cargo fmt、clippy（警告をエラー扱い）成功。
+- 独立レビューで、動画画面から解像度警告を押した際の漫画画面切替を補正。PNG以外／寸法取得範囲外は「寸法不明」と表示し、解像度十分と判定しない。
+- 実Mac/WKWebViewの書体・縦用字形、24GBでの高解像度出力時間・メモリは#266。Chromiumでの表示確認を実機受入とは扱わない。ルビ・縦中横・印刷入稿・PSD往復は今回の範囲外。
+
+### 追加の制作フロー確認（2026-09-22）
+
+対象commit `b60d204cd6272ca05ba8322a96cb8043afd3ca17`（tree `5d19f6500a22e37cb78821fbe899e19adb5629cf`）。後続差分はこの検証記録のみ。
+
+- Node 394件、Vite build成功。初期JSは578.26kB（gzip 188.18kB）、前回574.89kB（187.10kB）から微増。体感速度の改善率は主張しない。
+- Chromium全82件を確認。全体実行は81件成功、既存原稿切替テスト1件が保存待機前の読取りで失敗したため、初期化順序と保存完了待機をテスト側で補正し、同ファイル3件を再実行して成功。アプリの原稿切替処理は変更していない。
+- 新規8件のUI回帰で、候補の復元・破棄保存・旧版/破損候補拒否・採用ページ維持、別ページ/空ページ/遅延結果の仕上げ表示、画面外コマの選択解除、必須台詞欠落/作画版不一致のPNG・CBZ・Live拒否、draftと他ページPNGの利用を確認。
+- 独立レビューで候補プレビューを対象ページだけの逐次描画へ補正し、不正な保存候補でも破棄操作を残した。nativeコード・保存形式・依存関係は追加変更なし。
+- 実Mac/WKWebView・長い作品のメモリは#266に追加。最終GitHub CIとdev統合SHAはPR #270で照合する。
+
+### 最新devとの統合確認（2026-09-22）
+
+対象commit `9989e7cfca17d850342b7438ef0c97e0cd6c4a9f`（tree `95425a7f27d83cccace6f248401d57470cb45677`）。PR #270の追加改善へdev `10fb235553632ff121018eddfcd40c54ccd16547`（PR #272）を統合。後続差分はこの検証記録のみ。
+
+- 最終Node 399件・Vite build成功。Chromium全85件を確認：全体84件成功、原稿ライブラリ取込の保存待機不足1件をテスト側で補正し、動画8件＋原稿ライブラリ2件を再実行して10件成功。原稿取込の製品コードは変更していない。
+- 共通設定の即時継承・個別上書きを保持し、保存済みバッチの未送信分だけを再開。モデル変更後は保存バッチを残して承認を失効する。初回動画表示で選択コマが消える統合不具合を修正。
+- 独立レビューで未保存ショット編集をバッチ経路から実行できる不整合を検出し、対象を含むバッチだけ保存まで停止。保存後の再承認、応答不明時の再送防止、送信中の停止操作をUI回帰で確認。
+- 統合前head `f6dccee` の主要CI run `35712141405` はNode 394件・UI 82件・実Live exporter 1件・storage・LLM/依存監査・実Blenderを含め成功。最終headのCIとdevマージ結果はPR #270で照合する。
+- 実Mac/WKWebView、実API、24GB実機の品質・性能確認は#266。fixtureによる送信検証を実サービスの生成成功とは扱わない。
+
+### ローカル動画対応を含む最終統合（2026-09-22）
+
+対象commit `5b24afc091d18e438cfed6a033551f141506ca89`（tree `0bdf6ff8a4ecf1247048cb38bdd4a37c311e3787`）。dev `20f30124ae23a9800115af0c8a0a4348d989d02e`（PR #167）を追加統合。後続差分はこの検証記録のみ。
+
+- 最終Node **402件**、Chromium **全87件**、Vite build成功。全UIを一括で再実行し、失敗なし。ローカル動画の単発・3コマ逐次実行のIPC fixtureも含む。
+- 競合解消では既存の共通設定継承・モデル切替処理を保持し、LTXの応答不明時の案内を追加。導入手順・設計本文を簡素化した文書へ取り込み、native/runtime/registry本体は最新devと同一であることを確認した。独立レビューで欠落なし。
+- native統合チェックは最終GitHub CI、実Macでのビルドはdevマージ後のCI、実推論・実機品質は#266へ分けて記録する。
+
+## 2026-09-16時点の確認位置
 
 以下の段階別記録は**実施当時の履歴**。古い「Rustがない」「CIが開始しない」「未実行」の記述は、後の実行結果を取り消さない。最新の統合状態とCIへのリンクはIssue #5/#9の最新進捗コメントも確認する。完了前のIssue全体のチェックは付けない。
 
@@ -11,15 +56,9 @@
 - 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
 - CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[`main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
 
-### 次の担当の着手順
+当時のCI・ブランチ手順は[開発案内](DEVELOPMENT.md)へ集約した。最新devを起点に、既存の未コミット変更・他PRの修正を上書きせず、変更領域の必須チェックと対応するMac配布結果を確認する。
 
-1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。通常のmain→dev履歴同期は行わず、main固有のhotfixだけ必要に応じてdev向けPRで反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
-2. 変更分類に応じた最小チェックを実行する。フロントエンドは`npm ci && npm test && npm run build`、UI変更だけがある場合は追加で`npx playwright install --with-deps chromium`後`npm run test:ui`、Live変更は`live-e2e`を追加する。
-3. Rust系は変更領域のcrateだけを対象にする。storage変更はstorage試験、LLM変更はllm試験、Blender変更はBlender試験を実行する。共通Rust・依存関係・未知の変更では全系統と依存監査を実行し、実Blender変更時だけ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
-4. native/Tauri変更を`dev`へマージした後だけ、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは、変更領域または昇格条件により不要なためである。
-5. `main`へのマージ後は、pushの`macOS release package`と`Manga-Mac-Apple-Silicon-unsigned` artifactを確認する。これは配布物生成であり、実Mac受入はINSTALL_MACと正本§11/12で別に記録する。
-
-### 未完タスクの実装入口と合格条件
+### 当時の未完タスクと合格条件
 
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
@@ -549,6 +588,15 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - Rust PNG fixture: 低alpha=1、透明画素のhidden RGB、半透明の範囲外画素をPNG decode→色合成→encode→decodeで完全保持。Canvasを通さない。
 - 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
 - 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。
+
+
+## #248とUX整理の統合確認（2026-09-22）
+
+対象はネーム取込 `d5da6f7` とUX整理 `faaa970` の統合。ネーム制作後のページ位置を保って仕上げへ進み、JSON / GitHub取込・明示採用・ブラウザ確認を維持する。ネーム操作は詳細の初回展開時に読み込み、閉じても入力を保持する。
+
+- `npm test`: 374件成功。`npm run build`: 成功。NamePlanControlsとLayoutEditorは遅延chunkを維持。
+- Chromiumの関連UI: 21件成功。JSON取込、同SHAのGitHub取込、候補採用・再起動、作画・文字・CBZ、初回読込と入力保持、工程切替、配置、原稿反映、画像復旧を確認。検証用worktreeのport 5175で実行した。
+- 実LLM・画像推論・Mac GUI・実APIは未実行。上記は人工応答を含むブラウザ / Node検証であり、#266の実機受入は残る。
 
 ## 2026-09-22: 動画バッチ再開・停止（Issue #271 / PR #272）
 

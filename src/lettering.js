@@ -22,6 +22,35 @@ export function wrapText(text, measure, width) {
   }
   return lines;
 }
+export const LETTERING_WRITING_MODES = ['horizontal-tb', 'vertical-rl'];
+export const LETTERING_FONTS = ['gothic', 'mincho'];
+export function letteringFont(style = {}) {
+  if (style.fontFamily === 'mincho') return '"Hiragino Mincho ProN", "Yu Mincho", serif';
+  if (style.fontFamily === 'gothic') return '"Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif';
+  return 'sans-serif'; // Preserve the appearance of saved projects.
+}
+
+// Full-em upright cells; no ruby or horizontal-in-vertical number composition.
+// Unlike horizontal hanging punctuation, a column must fit its finite height.
+export function verticalColumns(text, capacity) {
+  if (!Number.isInteger(capacity) || capacity < 1) throw Error('縦書きの高さが足りません。文字枠を広げてください');
+  const segmenter = new Intl.Segmenter('ja', { granularity: 'grapheme' });
+  const columns = [];
+  for (const paragraph of text.split('\n')) {
+    const glyphs = [...segmenter.segment(paragraph)].map(item => item.segment);
+    if (!glyphs.length) columns.push([]);
+    for (let start = 0; start < glyphs.length;) {
+      let end = Math.min(start + capacity, glyphs.length);
+      if (end < glyphs.length) {
+        while (end > start && (prohibitedStart.has(glyphs[end]) || prohibitedEnd.has(glyphs[end - 1]))) end--;
+        if (end === start) throw Error('禁則を保って縦書きに収まりません。文字枠を広げてください');
+      }
+      columns.push(glyphs.slice(start, end));
+      start = end;
+    }
+  }
+  return columns;
+}
 export const LETTERING_KINDS = ['balloon', 'thought', 'narration', 'plain'];
 
 export function letteringKind(box) {
@@ -33,6 +62,7 @@ export function letteringKind(box) {
 }
 
 export function defaultLettering(panel) {
+  if(panel.requiredText)return {mode:'balloons',boxes:panel.requiredText.map((ref,i)=>({id:`box:${panel.id}:${i}`,sourceRefs:[ref],x:.55,y:.03+i*.9/Math.max(1,panel.requiredText.length),width:.42,height:Math.min(.28,.85/Math.max(1,panel.requiredText.length))}))};
   if(panel.sourceRefs)return {mode:'caption',boxes:panel.sourceRefs.map((ref,i)=>({id:`box:${panel.id}:${i}`,sourceRefs:[ref],x:.55,y:.03+i*.9/Math.max(1,panel.sourceRefs.length),width:.42,height:Math.min(.28,.85/Math.max(1,panel.sourceRefs.length))}))};
   const count = panel.unitIds.length;
   return { mode: 'caption', boxes: panel.unitIds.map((id, i) => ({ id: `letter:${id}`, unit_id: id, x: 0.55, y: 0.03 + i * 0.9 / Math.max(1, count), width: 0.42, height: Math.min(0.28, 0.85 / Math.max(1, count)) })) };
@@ -58,7 +88,9 @@ export function validateLettering(panel, layout) {
     if (!custom && !sourceRefsMode && box.id !== undefined && box.id !== `letter:${box.unit_id}`) throw Error('文字枠IDは原文参照から変更できません');
     const key = custom ? `custom:${box.id}` : sourceRefsMode ? `ref:${box.id}` : `unit:${box.unit_id}`;
     if (seen.has(key) || [box.x, box.y, box.width, box.height].some(n => !Number.isFinite(n)) || box.x < 0 || box.y < 0 || box.width < .08 || box.height < .06 || box.x + box.width > 1.00001 || box.y + box.height > 1.00001) throw Error('文字枠がコマ外、または原文の対応が不正です');
-    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','text','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked'].includes(k))) throw Error('文字枠の未対応項目です');
+    if (Object.keys(box).some(k => !['id','unit_id','sourceRefs','text','x','y','width','height','kind','shape','tail','fontSize','lineHeight','padding','locked','writingMode','fontFamily'].includes(k))) throw Error('文字枠の未対応項目です');
+    if (box.writingMode !== undefined && !LETTERING_WRITING_MODES.includes(box.writingMode)) throw Error('未対応の文字方向です');
+    if (box.fontFamily !== undefined && !LETTERING_FONTS.includes(box.fontFamily)) throw Error('未対応の書体です');
     if (box.kind !== undefined && !LETTERING_KINDS.includes(box.kind)) throw Error('未対応の文字枠種別です');
     if (box.shape !== undefined && !['round','rect','ellipse'].includes(box.shape)) throw Error('未対応の吹き出し形状です');
     if (box.kind === 'narration' && box.shape !== undefined && box.shape !== 'rect') throw Error('ナレーションの形状は四角形です');
@@ -83,6 +115,6 @@ export function setLettering(project, panelId, layout) {
     const identity=boxes=>boxes.filter(b=>!isCustomLetteringBox(b)).map(b=>({id:b.id,sourceRefs:b.sourceRefs}));
     if(JSON.stringify(identity(layout.boxes))!==JSON.stringify(identity((panel.lettering??defaultLettering(panel)).boxes)))throw Error('文字配置だけの編集で原文対応は変更できません');
   }
-  const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout) } : p);
+  const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout), ...(p.namePlanVersion===2?{letteringStatus:'ready',letteringArtworkRevision:p.artwork_revision??null}:{}) } : p);
   return { ...project, history: [...project.history, { panels: project.panels, layout: project.layout, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), edit: true, after: {panels,layout:project.layout}, label: '文字配置', at: new Date().toISOString() }], panels, editRedo: [] };
 }

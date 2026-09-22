@@ -41,7 +41,7 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
 
 test('generic sources use declarations at a pinned commit across A B A, and reject unknown schema without adoption',async({page})=>{
  await page.addInitScript(()=>{
-  window.activeRepo='example/one';window.badSchema=false;window.reads=[];
+  window.activeRepo=localStorage.getItem('chosen')||'example/one';window.badSchema=false;window.reads=[];
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
    const repo=window.activeRepo,second=repo==='example/two';
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:repo,repo,episode:'P01'}]};
@@ -61,11 +61,12 @@ test('generic sources use declarations at a pinned commit across A B A, and reje
  });
  await page.goto('/');
  for(const repo of ['example/one','example/two','example/one']){
-  await page.evaluate(repo=>{window.activeRepo=repo;localStorage.setItem('chosen',repo);},repo);
+  await page.evaluate(repo=>localStorage.setItem('chosen',repo),repo);
   // A reload is the native workspace switch boundary; fixture storage remains keyed by repository.
-  if(repo==='example/two') await page.addInitScript(()=>{window.activeRepo=localStorage.getItem('chosen')||'example/one';});
   await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
+  await expect(page.getByRole('region',{name:'原稿の取込差分'}).or(page.getByRole('status').filter({hasText:'更新なし'}))).toBeVisible();
   if(await page.getByRole('button',{name:'取り込む',exact:true}).count())await page.getByRole('button',{name:'取り込む',exact:true}).click();
+  await expect.poll(()=>page.evaluate(repo=>JSON.parse(localStorage.getItem(repo))?.snapshots.at(-1)?.repo,repo)).toBe(repo);
   const saved=await page.evaluate(repo=>JSON.parse(localStorage.getItem(repo)),repo);expect(saved.snapshots.at(-1).repo).toBe(repo);expect(saved.snapshots.at(-1).sync.source_commit).toBe('c'.repeat(40));expect(saved.snapshots.at(-1).sync.manifest_sha256).toMatch(/^[a-f0-9]{64}$/);expect(saved.snapshots.at(-1).scenes[0].tags).toEqual(['駅']);
  }
  await page.evaluate(()=>{window.badSchema=true;window.__TAURI_INTERNALS__.invoke=new Proxy(window.__TAURI_INTERNALS__.invoke,{apply:async(target,self,args)=>args[0]==='github_get'?JSON.stringify({sha:'e'.repeat(40)}):target(...args)});});

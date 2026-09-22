@@ -6,6 +6,20 @@ import { defaultLettering, setLettering } from '../src/lettering.js';
 import { editBase, editContext, executeLocalEdits, validateEditPlan, undoEdit, planEdit } from '../src/edit-commands.js';
 function fixture(){return ensureLayout({...emptyProject(),panels:Array.from({length:6},(_,i)=>({id:`p${i}`,unitIds:[`u${i}`],image:`art${i}`,characterIds:[]}))});}
 function candidate(p,operations){return {base:editBase(p),context:editContext(p,0,null,null),plan:{reason:'対象だけ変更',operations}};}
+test('moving text retains omitted writing direction and font, with explicit changes reversible',async()=>{
+ const p=fixture(),panel=p.panels[0];panel.lettering=defaultLettering(panel);panel.lettering.mode='balloons';
+ Object.assign(panel.lettering.boxes[0],{writingMode:'vertical-rl',fontFamily:'mincho'});
+ const args=defaultLettering(panel);args.mode='balloons';args.boxes[0].x=.2;
+ delete args.boxes[0].id; // Legacy AI responses may only return the immutable unit ID.
+ const planned=await planEdit(p,editContext(p,0,panel.id,null),'1コマ目の文字を左へ',async()=>JSON.stringify({reason:'移動',operations:[{kind:'lettering',panelId:panel.id,args}]}));
+ const changed=executeLocalEdits(p,planned);
+ assert.equal(changed.panels[0].lettering.boxes[0].writingMode,'vertical-rl');
+ assert.equal(changed.panels[0].lettering.boxes[0].fontFamily,'mincho');
+ assert.deepEqual(undoEdit(changed).panels,p.panels);
+ args.boxes[0].writingMode='horizontal-tb';
+ const explicit=await planEdit(p,editContext(p,0,panel.id,null),'1コマ目の文字を横書きに',async()=>JSON.stringify({reason:'変更',operations:[{kind:'lettering',panelId:panel.id,args}]}));
+ assert.equal(explicit.plan.operations[0].args.boxes[0].writingMode,'horizontal-tb');
+});
 test('compound lettering/crop share a single reversible persisted manga edit and preserve art/video/source',()=>{
  const p=fixture(),layout=defaultLettering(p.panels[2]);layout.mode='balloons';layout.boxes[0].x=.2;
  const c=candidate(p,[{kind:'lettering',panelId:'p2',args:layout},{kind:'crop',panelId:'p2',args:{x:.3,y:.5,zoom:1.2}}]);

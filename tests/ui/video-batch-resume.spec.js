@@ -141,6 +141,9 @@ test('model and saved recipe cost changes require fresh batch approval', async (
   await page.getByLabel(batchApproval).check();
   await page.getByRole('navigation', { name: '動画ショット一覧' }).getByRole('button').first().click();
   await page.getByLabel('このショットの尺', { exact: true }).selectOption('10');
+  await expect(executeButton(page)).toBeDisabled();
+  await expect(page.getByRole('region', { name: '動画バッチ実行確認' })).toContainText('このバッチに含まれるショットの変更を保存してください。');
+  expect(await submissions(page)).toEqual([]);
   await page.getByRole('button', { name: '指示を保存する', exact: true }).click();
   await expect(page.getByLabel(batchApproval)).not.toBeChecked();
   await expect(executeButton(page)).toBeDisabled();

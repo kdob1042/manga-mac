@@ -1,24 +1,45 @@
-import React, {useEffect,useRef,useState} from 'react';
+import React, {useEffect,useMemo,useRef,useState} from 'react';
 import {template,validQuad,changeLayout,undoLayout,layoutWarnings,pagePanels,bounds,PAGE,layoutSplice,applyLayoutSplices,reflowLayoutInterval,artPoints,inside} from './layout.js';
 import {defaultCrop,containCrop,coverCrop,cropRect,panCrop} from './image-crop.js';
 import { imageOf } from './canvas-image.js';
 import { pagePNG } from './render.js';
-import {proposeLayout,adoptLayoutProposal,layoutBase} from './layout-ai.js';
+import {proposeLayout,layoutBase,savedLayoutCandidates,adoptSavedLayoutCandidate,discardLayoutCandidate} from './layout-ai.js';
 import {askLLM} from './llm';
-export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled,onSelect}) {
-  const [draft,setDraft]=useState(null),[active,setActive]=useState(null),[preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(''),[count,setCount]=useState(6),[instruction,setInstruction]=useState(''),[candidate,setCandidate]=useState(null),[candidatePreview,setCandidatePreview]=useState(null),[zoom,setZoom]=useState(100),[whole,setWhole]=useState(false);
+export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled,onSelect,active:visible=true}) {
+  const [draft,setDraft]=useState(null),[active,setActive]=useState(null),[preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(''),[count,setCount]=useState(6),[instruction,setInstruction]=useState(''),[candidateSelection,setCandidateSelection]=useState(null),[candidatePreview,setCandidatePreview]=useState(null),[zoom,setZoom]=useState(100),[whole,setWhole]=useState(false);
+  const [proposalOpen,setProposalOpen]=useState(false),[candidateError,setCandidateError]=useState('');
   const [rangeCount,setRangeCount]=useState(1);
   const rangeLength=Math.min(rangeCount,Math.max(1,project.layout.pages.length-pageIndex));
   const svg=useRef(),gesture=useRef(null),draftRef=useRef(null);
   const [imageMode,setImageMode]=useState(false),[dimensions,setDimensions]=useState({});
   const layout=draft??project.layout,page=layout?.pages[pageIndex];
+  const candidates=useMemo(()=>savedLayoutCandidates(project),[project.jobs]);
+  const candidate=(candidateSelection?.pageId===page?.id?candidates.find(value=>value.jobId===candidateSelection.jobId):null)
+    ?? candidates.findLast(value=>value.scope.includes(page?.id)) ?? null;
+  const base=useMemo(()=>layoutBase(project),[project.layout,project.active,project.panels]);
+  const range=candidate?.range;
+  useEffect(()=>{
+    setCandidateError('');
+    if(!visible||!proposalOpen||!candidate||candidate.invalidReason||candidate.base!==base)return;
+    let stopped=false;
+    (async()=>{
+      const images=[];
+      for(const target of candidate.range.pages){
+        if(stopped)return;
+        images.push(await pagePNG(pagePanels(project,target),project.snapshots,project.localizations,project.output_locale,target,true,candidate.layout.imageCrops));
+      }
+      if(!stopped)setCandidatePreview({jobId:candidate.jobId,base,images});
+    })().catch(error=>{if(!stopped){setCandidatePreview(null);setCandidateError(error.message);}});
+    return()=>{stopped=true;};
+  },[visible,proposalOpen,candidate,base,project.snapshots,project.localizations,project.output_locale]);
   useEffect(()=>{setDraft(null);draftRef.current=null;setActive(null);gesture.current=null;},[pageIndex,project.layout]);
   useEffect(()=>{
+    if(!visible)return;
     let stopped=false;setPreviewError('');
     if(page)pagePNG(pagePanels(project,page),project.snapshots,project.localizations,project.output_locale,page,true,layout.imageCrops).then(src=>{if(!stopped)setPreview(src);}).catch(e=>{if(!stopped){setPreview(null);setPreviewError(e.message);}});
     return()=>{stopped=true;};
-  },[page,project,layout.imageCrops]);
-  useEffect(()=>{let stopped=false;Promise.all(project.panels.filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[project.panels]);
+  },[visible,page,project,layout.imageCrops]);
+  useEffect(()=>{if(!visible)return;let stopped=false;Promise.all(pagePanels(project,page).filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[visible,page,project.panels]);
   function cancelDrag(){gesture.current=null;draftRef.current=null;setDraft(null);}
   useEffect(()=>{const key=e=>{if(e.key==='Escape')cancelDrag();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   function position(e){const r=svg.current.getBoundingClientRect();return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height];}
@@ -78,7 +99,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
       for(const target of proposal.layout.pages.slice(frozen.layout.pages.findIndex(p=>p.id===scope[0]),frozen.layout.pages.findIndex(p=>p.id===scope[0])+proposal.replacementCount))previews.push(await pagePNG(pagePanels(frozen,target),frozen.snapshots,frozen.localizations,frozen.output_locale,target,true,proposal.layout.imageCrops));
       const result={...proposal,jobId:job.id};
       await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'candidate',layout_candidate:result}:j)});
-      setCandidate(result);setCandidatePreview(previews);
+      setCandidateSelection({pageId:page?.id,jobId:job.id});setCandidatePreview({jobId:job.id,base:proposal.base,images:previews});
     } catch(e) {await commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'failed'}:j)});throw e;}
   }
   return <section className="layout-editor" aria-label="コマ割り編集">
@@ -101,9 +122,10 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     </svg></div>}
     {slot&&<label>選択枠のコマ<select aria-label="選択枠のコマ" disabled={busy} value={slot.panelId??''} onChange={e=>update(l=>{const value=e.target.value||null; l.pages.forEach(p=>p.slots.forEach(s=>{if(value&&s.panelId===value)s.panelId=null;}));l.pages[pageIndex].slots.find(s=>s.id===slot.id).panelId=value;},'コマ割当を移動',{pageIds:project.layout.pages.filter(p=>p.id===page.id||p.slots.some(s=>s.panelId===e.target.value)).map(p=>p.id)})}><option value="">未割当</option>{project.panels.map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><small>既存コマを選ぶと元の枠から移動します。絵や原文は保持します。</small></label>}
     {slot&&!imageMode&&<div className="toolbar"><button aria-pressed={!!slot.overflow} disabled={busy} onClick={()=>update(l=>{const s=l.pages[pageIndex].slots.find(s=>s.id===slot.id);if(s.overflow)delete s.overflow;else s.overflow={points:structuredClone(s.points)};},slot.overflow?'枠破りを解除':'枠破り')}>枠破り</button>{slot.overflow&&<label>重ね順<input aria-label="重ね順" type="number" min="0" max="15" disabled={busy} value={slot.overflow.z??0} onChange={e=>update(l=>{const s=l.pages[pageIndex].slots.find(s=>s.id===slot.id);if(!s.overflow)return;s.overflow={...s.overflow,z:Math.max(0,Math.min(15,Math.floor(Number(e.target.value)||0)))};},'はみ出しの重ね順')}/></label>}</div>}
-    <details><summary>演出AIでこのページを配置</summary><p>既存コマの割当と形状を提案します。原文の分割や作画は行いません。</p><label><input type="checkbox" checked={whole} onChange={e=>setWhole(e.target.checked)}/>全ページを対象（ページ分割・6コマ配置も変更）</label><textarea aria-label="コマ割りの指示" value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder="最初のコマを横長の大ゴマに。最後の境界を斜めに"/><button disabled={busy||!page||!model.connectionId} onClick={()=>run('AIコマ割りを提案中',propose)}>コマ割りを提案</button>{!model.connectionId&&<small>接続・人物設定で演出AIを登録してください。ローカル／クラウド共通です。</small>}
-      {project.jobs.filter(j=>j.kind==='layout'&&j.status==='candidate'&&j.layout_candidate).map(j=><button key={j.id} disabled={busy} onClick={()=>run('保存済み案を表示',async()=>{const c=j.layout_candidate;setCandidate(c);const previews=[];for(const p of c.layout.pages)previews.push(await pagePNG(pagePanels(project,p),project.snapshots,project.localizations,project.output_locale,p,true,c.layout.imageCrops));setCandidatePreview(previews);})}>保存済みのコマ割り案を表示</button>)}
-      {candidate&&<div><p>{candidate.reason}</p><p>変更対象: {candidate.scope.length}ページ。本文・作画・人物は保持。</p>{candidatePreview?.map((src,i)=><img key={i} className="page-proof" src={src} alt={`AIコマ割り候補 ${i+1}`}/>)}<button disabled={busy||candidate.base!==layoutBase(project)} onClick={()=>run('AI案を採用',async()=>{const next=adoptLayoutProposal(current.current,candidate);await commit({...next,jobs:next.jobs.map(j=>j.id===candidate.jobId?{...j,status:'complete'}:j)});setCandidate(null);setPage(0);})}>このコマ割りを採用</button><button onClick={()=>setCandidate(null)}>候補を破棄</button>{candidate.base!==layoutBase(project)&&<p>作品が変更されたため、この候補は採用できません。</p>}</div>}
+    <details onToggle={event=>setProposalOpen(event.currentTarget.open)}><summary>演出AIでこのページを配置</summary><p>既存コマの割当と形状を提案します。原文の分割や作画は行いません。</p><label><input type="checkbox" checked={whole} onChange={e=>setWhole(e.target.checked)}/>全ページを対象（ページ分割・6コマ配置も変更）</label><textarea aria-label="コマ割りの指示" value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder="最初のコマを横長の大ゴマに。最後の境界を斜めに"/><button disabled={busy||!page||!model.connectionId} onClick={()=>run('AIコマ割りを提案中',propose)}>コマ割りを提案</button>{!model.connectionId&&<small>接続・人物設定で演出AIを登録してください。ローカル／クラウド共通です。</small>}
+      {candidates.length>1&&<label>保存したコマ割り候補<select aria-label="保存したコマ割り候補" disabled={busy} value={candidate?.jobId??''} onChange={event=>{setCandidateSelection({pageId:page?.id,jobId:event.target.value});setCandidateError('');}}><option value="" disabled>候補を選ぶ</option>{candidates.map(value=><option key={value.jobId} value={value.jobId}>{value.range?.label??'対象不明'} · {value.reason}{value.invalidReason?'（確認不可）':value.base!==base?'（旧版）':''}</option>)}</select></label>}
+      {candidates.length===1&&!candidate&&<button disabled={busy} onClick={()=>setCandidateSelection({pageId:page?.id,jobId:candidates[0].jobId})}>保存済みのコマ割り案を表示（{candidates[0].range?.label??'対象不明'}）</button>}
+      {candidate&&<div><p>{candidate.reason}</p>{range&&<p>変更対象: {range.label}。本文・作画・人物は保持。</p>}{!candidate.invalidReason&&candidatePreview?.jobId===candidate.jobId&&candidatePreview.base===base&&candidatePreview.images.map((src,i)=><img key={i} className="page-proof" src={src} alt={`AIコマ割り候補 ${i+1}`}/>)}{(candidate.invalidReason||candidateError)&&<p role="alert">候補を表示できません: {candidate.invalidReason??candidateError}</p>}<button disabled={busy||!!candidate.invalidReason||candidate.base!==base} onClick={()=>run('AI案を採用',async()=>{const at=range.first;await commit(adoptSavedLayoutCandidate(current.current,candidate.jobId));setCandidateSelection(null);setCandidatePreview(null);onSelect?.(null);setPage(at);})}>このコマ割りを採用</button><button disabled={busy} onClick={()=>run('コマ割り候補を破棄',async()=>{await commit(discardLayoutCandidate(current.current,candidate.jobId));setCandidateSelection(null);setCandidatePreview(null);setCandidateError('');})}>候補を破棄</button>{!candidate.invalidReason&&candidate.base!==base&&<p>作品が変更されたため、この候補は採用できません。現在の版から再提案するか、候補を破棄してください。</p>}</div>}
     </details>
   </section>;
 }
