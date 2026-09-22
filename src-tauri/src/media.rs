@@ -290,9 +290,7 @@ pub fn video_pricing(model: &VideoModel, duration: u64, ratio: &str) -> Result<V
         .get("minimum_credits")
         .and_then(Value::as_u64)
         .unwrap_or(0);
-    let (tier, rate) = if let Some(rate) = pricing
-        .get("credits_per_second")
-        .and_then(Value::as_u64)
+    let (tier, rate) = if let Some(rate) = pricing.get("credits_per_second").and_then(Value::as_u64)
     {
         ("default".to_string(), rate)
     } else {
@@ -391,8 +389,14 @@ mod tests {
         assert!(model.end_frame);
         assert_eq!(model.max_prompt_utf16, 15000);
         assert_eq!(video_pricing(&model, 4, "854:480").unwrap()["credits"], 80);
-        assert_eq!(video_pricing(&model, 5, "1280:720").unwrap()["credits"], 150);
-        assert_eq!(video_pricing(&model, 5, "1920:1080").unwrap()["credits"], 340);
+        assert_eq!(
+            video_pricing(&model, 5, "1280:720").unwrap()["credits"],
+            150
+        );
+        assert_eq!(
+            video_pricing(&model, 5, "1920:1080").unwrap()["credits"],
+            340
+        );
         assert!(video_pricing(&model, 3, "1280:720").is_err());
         assert!(video_pricing(&model, 5, "1000:1000").is_err());
     }
