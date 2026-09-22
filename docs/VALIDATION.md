@@ -11,7 +11,7 @@
 
 ## 2026-09-22 制作品質改善（#269 / PR #270）
 
-対象はPR #248の`d037fdf8d78b0c31e4fefc4c793fa1bbd7a3aee8`へ文字・出力・画像比較を加えたPR #270の作業版。最終SHA／CIはPR本文で照合する。
+対象はPR #248の`d037fdf8d78b0c31e4fefc4c793fa1bbd7a3aee8`へ文字・出力・画像比較を加えたPR #270の実装commit `31d9d73359533c658ee67f090ceb2f3a71ae6efa`（tree `ebba25a7b78de38bfef5b6aabf980491a8b43666`）。後続差分は開発案内と本検証記録のみ。CIはPR本文で照合する。
 
 - Node 387件、Vite build成功。出力幅・crop別の必要解像度、候補作成時の元版保持、前後コマ順、文字方向・書体のUndo、AI移動での書式保持を含む。
 - Chromium関連UI 18件成功（output-quality、workflow-ux、layout、image-recovery、typography、finishing、upscale）。v2の非正方形文字編集とPNGの画素一致、縦書き変更→保存→再読込→Undo、PNG/CBZ/Live文字層の一致を検証。PNG 800×1130・3200×4520を確認した。
