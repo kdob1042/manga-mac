@@ -2,7 +2,9 @@
 
 `#263` の反復処理を Node 22 以降で実行するための入口です。Tauri、manga-macの起動、SQLite、画像・動画生成は使いません。依存パッケージの追加もありません。コードの配置がmanga-macリポジトリ内であることと、アプリを実行することは別です。作品RepoからこのCLIを呼び出せます。
 
-設計正本は `../../docs/IMPLEMENTATION_PLAN.md`、責務の変更と残る統合は [#265](https://github.com/kdob1042/manga-mac/issues/265) を参照してください。この文書は実行方法とAPI境界だけを記載します。
+**制作Skillの正本は作品Repo側です。** 現在は `kdob1042/story-library/skills/manga-director/SKILL.md` を使います。manga-mac側にはSkillや作品固有ルールを置かず、共通実行エンジン・契約・validator接続だけを持たせます。
+
+設計正本は `../../docs/IMPLEMENTATION_PLAN.md`、責務の変更と残る統合は [#265](https://github.com/kdob1042/manga-mac/issues/265) を参照してください。この文書は共通エンジンの実行方法とAPI境界だけを記載します。
 
 ## 現在の到達点
 
@@ -46,7 +48,7 @@ sceneは`text`を直接持つこともできます。`path`は`--root`からの�
 
 - `planName(request, {signal})`: #255の1回生成を呼び、生の共有name-planを返します。入力には現在のsnapshot、対象scene IDs、read-only文脈、前案とそのsnapshot、演出指示があります。
 - `validateName({plan, snapshot, selectedSceneIds}, {signal})`: #253の実検証器を呼び、`{ok, contract:'name-plan/v2', validatorVersion, pageIds, panelIds}`を返します。モデルの自己申告を検証結果にしてはいけません。
-- `complete(messages, {signal})`: 明示設定したホストでreviewだけを1回実行し、JSONオブジェクトまたはJSON文字列を返します。reviewの実行プロンプトは`review.mjs`にあります。計画用の演出カードは#255の所有です。
+- `complete(messages, {signal})`: 明示設定したホストでreviewだけを1回実行し、JSONオブジェクトまたはJSON文字列を返します。`review.mjs`は共通出力契約のreview promptを保持しますが、作品側の制作方針はstory-libraryのSkillを正本とします。計画用の演出カードは#255の所有です。
 
 adapterはユーザーが明示選択する通常の実行コードであり、サンドボックスではありません。原稿やAI応答からadapterのパスを選んではいけません。各callbackはAbortSignalを尊重し、自動再試行・別providerへのfallbackを行わず、既存の送信許可と費用上限を守る必要があります。認証情報はhostの環境に置き、原稿入力や返却値に混ぜないでください。停止した外部要求の結果が不明な場合、再送前にホスト側で確認します。
 
