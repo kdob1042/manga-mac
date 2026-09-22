@@ -34,7 +34,7 @@ export async function loadProject() {
   normalized=await refreshNameBindings(normalized);
   const restored = restoreVideoResults(normalized);
   // Persist recovered artifact references before playback asks native storage for them.
-  if (JSON.stringify(restored) !== JSON.stringify(normalized)) return saveProject(restored);
+  if (restored !== normalized) return saveProject(restored);
   return restored;
 }
 function idb(mode, action) {

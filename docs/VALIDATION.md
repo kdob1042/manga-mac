@@ -1,8 +1,15 @@
 # 実装・検証記録
 
-仕様は[設計書](IMPLEMENTATION_PLAN.md)。作業と残件は[Issue #5](https://github.com/kdob1042/manga-mac/issues/5)。
+仕様は[設計書](IMPLEMENTATION_PLAN.md)、検証の実行方法は[開発案内](DEVELOPMENT.md)。本書は実施時点の証跡を残す履歴であり、現在の機能一覧ではない。
 
-## 現在の確認位置と再開方法（2026-09-16）
+## 現在の受入入口
+
+- 実装済み機能のMac・実LLM・GUI・推論・実APIの残確認は [Issue #266](https://github.com/kdob1042/manga-mac/issues/266) に集約する。
+- 未実装・不具合は元Issueまたは新規Issueで扱う。実機待ちへ移して実装完了としない。
+- 試験結果は対象SHA・環境・コマンド・証跡・未実施条件を追記する。CI、実アプリ操作、画質、性能、課金APIを分け、過去の失敗や未実行を最新結果で上書きしない。
+- 使用するDMGのSHAと現在のIssue・CIを照合する。以下の古い「未実装」「未検証」は、その記録の時点を示す。
+
+## 2026-09-16時点の確認位置
 
 以下の段階別記録は**実施当時の履歴**。古い「Rustがない」「CIが開始しない」「未実行」の記述は、後の実行結果を取り消さない。最新の統合状態とCIへのリンクはIssue #5/#9の最新進捗コメントも確認する。完了前のIssue全体のチェックは付けない。
 
@@ -11,15 +18,9 @@
 - 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
 - CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[`main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
 
-### 次の担当の着手順
+当時のCI・ブランチ手順は[開発案内](DEVELOPMENT.md)へ集約した。最新devを起点に、既存の未コミット変更・他PRの修正を上書きせず、変更領域の必須チェックと対応するMac配布結果を確認する。
 
-1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。通常のmain→dev履歴同期は行わず、main固有のhotfixだけ必要に応じてdev向けPRで反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
-2. 変更分類に応じた最小チェックを実行する。フロントエンドは`npm ci && npm test && npm run build`、UI変更だけがある場合は追加で`npx playwright install --with-deps chromium`後`npm run test:ui`、Live変更は`live-e2e`を追加する。
-3. Rust系は変更領域のcrateだけを対象にする。storage変更はstorage試験、LLM変更はllm試験、Blender変更はBlender試験を実行する。共通Rust・依存関係・未知の変更では全系統と依存監査を実行し、実Blender変更時だけ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
-4. native/Tauri変更を`dev`へマージした後だけ、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは、変更領域または昇格条件により不要なためである。
-5. `main`へのマージ後は、pushの`macOS release package`と`Manga-Mac-Apple-Silicon-unsigned` artifactを確認する。これは配布物生成であり、実Mac受入はINSTALL_MACと正本§11/12で別に記録する。
-
-### 未完タスクの実装入口と合格条件
+### 当時の未完タスクと合格条件
 
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
@@ -549,3 +550,12 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - Rust PNG fixture: 低alpha=1、透明画素のhidden RGB、半透明の範囲外画素をPNG decode→色合成→encode→decodeで完全保持。Canvasを通さない。
 - 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
 - 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。
+
+
+## #248とUX整理の統合確認（2026-09-22）
+
+対象はネーム取込 `d5da6f7` とUX整理 `faaa970` の統合。ネーム制作後のページ位置を保って仕上げへ進み、JSON / GitHub取込・明示採用・ブラウザ確認を維持する。ネーム操作は詳細の初回展開時に読み込み、閉じても入力を保持する。
+
+- `npm test`: 374件成功。`npm run build`: 成功。NamePlanControlsとLayoutEditorは遅延chunkを維持。
+- Chromiumの関連UI: 21件成功。JSON取込、同SHAのGitHub取込、候補採用・再起動、作画・文字・CBZ、初回読込と入力保持、工程切替、配置、原稿反映、画像復旧を確認。検証用worktreeのport 5175で実行した。
+- 実LLM・画像推論・Mac GUI・実APIは未実行。上記は人工応答を含むブラウザ / Node検証であり、#266の実機受入は残る。

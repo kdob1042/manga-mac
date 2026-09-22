@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {writeFileSync} from 'node:fs';
 
-async function setup(page) {
+async function setup(page,openControls=true) {
   await page.goto('/');
   await page.evaluate(async()=>{
     const {emptyProject}=await import('/src/core.js');const {fileFixture}=await import('/tests/name-plan-fixture.mjs');
@@ -9,7 +9,7 @@ async function setup(page) {
     const p={...emptyProject(),...f.project,title:'ネーム統合確認',contentToken:'browser-fixture'};
     await (await import('/src/bridge.js')).saveProject(p);
   });
-  await page.reload();await page.getByText('制作する場面・保存した原稿',{exact:true}).click();
+  await page.reload();if(openControls)await page.getByText('制作する場面・保存した原稿',{exact:true}).click();
   return page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js'),{fileFixture}=await import('/tests/name-plan-fixture.mjs'),{createNameFile}=await import('/src/name-v2.js');const f=await fileFixture(2,'# Scene\n\n彼は手を振る。\n\n「また明日」');return createNameFile(await loadProject(),f.plan,null,{producer:'fixture',model:'',editedBy:[]});});
 }
 test('actual UI imports, previews printed text and persists adoption without AI calls',async({page})=>{
@@ -54,4 +54,21 @@ test('whole-page splash proof uses same renderer at mobile widths',async({page})
  });
  expect(result.panels).toBe(1);expect(result.points[0][0]).toBeLessThan(.05);writeFileSync('test-results/name-plan-splash.png',Buffer.from(result.png.split(',')[1],'base64'));
  for(const width of [375,430,1024]){await page.setViewportSize({width,height:900});await page.setContent(`<img alt="仮ネーム" src="${result.png}" style="width:100%;height:auto">`);await expect(page.getByAltText('仮ネーム')).toBeVisible();}
+});
+
+
+test('name controls load on first expansion and retain the draft when closed',async({page})=>{
+  const requests=[];
+  page.on('request',request=>{if(request.url().includes('/src/NamePlanControls.jsx'))requests.push(request.url());});
+  await setup(page,false);
+  expect(requests).toEqual([]);
+  const disclosure=page.getByText('制作する場面・保存した原稿',{exact:true});
+  await disclosure.click();
+  const instruction=page.getByLabel('ネームの演出指示',{exact:true});
+  await instruction.fill('最後の表情に一拍。');
+  expect(requests.length).toBeGreaterThan(0);
+  await disclosure.click();
+  await expect(instruction).toBeHidden();
+  await disclosure.click();
+  await expect(instruction).toHaveValue('最後の表情に一拍。');
 });

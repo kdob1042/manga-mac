@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultImageModelId, defaultVideoModelId, imageModels, videoModels, imageModel, videoModel, videoConnection } from '../src/media.js';
+import { defaultImageModelId, defaultVideoModelId, imageModels, videoModels, imageModel, videoModel, videoConnection, videoEstimateCredits, validateVideoModelRequest } from '../src/media.js';
 import { imageRequest, generationSize } from '../src/image-input.js';
 import { videoConnectionSupportsEndFrame } from '../src/video.js';
 
@@ -9,9 +9,9 @@ test('the public registry exposes only implemented adapters and freezes defaults
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
   assert.ok(imageModels.length >= 2);
   assert.ok(imageModels.every(model => ['media-generation-kit','runway-image'].includes(model.adapter_id)));
-  assert.equal(videoModels.length,2);
+  assert.equal(videoModels.length,3);
   assert.ok(videoModels.every(model=>model.adapter_id==='runway'));
-  assert.deepEqual(videoModels.map(model=>model.model_id),['gen4.5','gen4_turbo']);
+  assert.deepEqual(videoModels.map(model=>model.model_id),['gen4.5','gen4_turbo','seedance2_5']);
   assert.throws(() => imageModel('qwen-image'), /未対応/);
   assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
 });
@@ -43,6 +43,19 @@ test('Runway stays one provider while model capabilities and pricing vary by des
   assert.equal(gen45.pricing.credits_per_second, 12);
   assert.equal(turbo.pricing.credits_per_second, 5);
   assert.deepEqual(videoConnection('runway-gen4-turbo', 'connection:2'), { id: 'connection:2', provider: 'runway', model: 'gen4_turbo', adapter_id: 'runway' });
+});
+
+test('Seedance exposes end-frame, duration, aspect and tiered pricing without changing Gen contracts', () => {
+  const seedance = videoModel('runway-seedance-2-5');
+  assert.equal(seedance.request_profile, 'seedance-keyframes-v1');
+  assert.equal(seedance.capabilities.end_frame, true);
+  assert.equal(seedance.input.max_prompt_utf16, 15000);
+  assert.deepEqual(videoEstimateCredits(seedance.id, 4, '854:480'), { credits: 80, rate: 20, minimum: 80, tier: '480p', checked_at: '2026-09-22' });
+  assert.equal(videoEstimateCredits(seedance.id, 5, '1280:720').credits, 150);
+  assert.equal(videoEstimateCredits(seedance.id, 5, '1920:1080').credits, 340);
+  assert.doesNotThrow(() => validateVideoModelRequest(seedance.id, { duration: 30, ratio: '1080:1920', prompt: 'x'.repeat(15000), endFrame: true, aspect: 1080 / 1920 }));
+  assert.throws(() => validateVideoModelRequest(seedance.id, { duration: 3, ratio: '1280:720', prompt: 'x' }), /尺/);
+  assert.throws(() => validateVideoModelRequest('runway-gen4-5', { duration: 5, ratio: '960:960', prompt: 'x', endFrame: true }), /終端/);
 });
 
 test('both native model definitions produce distinct pinned requests and enforce reference limits', () => {

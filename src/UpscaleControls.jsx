@@ -2,9 +2,9 @@ import { prepareInterpolation } from './panel-actions';
 import React,{useEffect,useState} from 'react';
 import { imageOf } from './canvas-image.js';
 import {adoptUpscale,discardUpscale,requiredScale,placementKey} from './upscale.js';
-export default function UpscaleControls({project,panel,current,commit,run,busy}) {
+export default function UpscaleControls({project,panel,current,commit,run,busy,active=true}) {
   const [size,setSize]=useState(null),[factor,setFactor]=useState(2);
-  useEffect(()=>{let stopped=false;setSize(null);if(panel.image)imageOf(panel.image).then(im=>{if(!stopped)setSize([im.width,im.height]);}).catch(()=>{});return()=>{stopped=true;};},[panel.image]);
+  useEffect(()=>{if(!active)return;let stopped=false;setSize(null);if(panel.image)imageOf(panel.image).then(im=>{if(!stopped)setSize([im.width,im.height]);}).catch(()=>{});return()=>{stopped=true;};},[active,panel.image]);
   const jobs=project.jobs.filter(j=>j.kind==='upscale'&&j.panelId===panel.id&&['candidate','unknown'].includes(j.status));
   const prepare=()=>prepareInterpolation(()=>current.current,commit,panel.id,factor);
   let scale=null;try{if(size)scale=requiredScale(project,panel.id,...size);}catch{}

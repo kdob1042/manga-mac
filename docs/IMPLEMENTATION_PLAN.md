@@ -1,29 +1,29 @@
 # Manga Mac 設計・実装計画 v4.0
 
-更新日：2026-09-19。設計の正本：本リポジトリの `main` にある本書。
+更新日：2026-09-22。設計の正本：本書。開発時は最新 `dev`、配布版の確認は対応する `main` の版を参照する。
 
-**Blenderで舞台・人物・カメラを扱い、撮影結果を画像AIで漫画化する。アプリは漫画データと工程を管理する。Blenderの既存機能・データを別実装に置き換えない。**
+通常制作は原稿選択→ネーム確定→参照付き2D作画→仕上げ→出力。Blenderは構図・撮影、Compositorはレイヤー編集に使う。アプリは原稿対応・ページ・候補採用・履歴を管理し、外部アプリの素材台帳・描画・編集エンジンを再実装しない。
 
-従来のv2/v3計画の「GitHubの完成脚本を保護する」「参照画像を実入力に使う」「非破壊の局所編集」「Mac用デスクトップアプリ」は継承する。3Dを後回しにする方針、独自3D素材台帳・Scene Graph・3Dビューワーを作る案は本書で置き換える。外部で配布した旧設計資料より本書を優先し、仕様を複数文書へ重複転載しない。
+## 0. 本書の読み方
 
-## 0. 設計改訂時の背景と範囲
+確定仕様は本書、操作は[USAGE](USAGE.md)、導入は[INSTALL_MAC](INSTALL_MAC.md)、コードと設定の入口は[DEVELOPMENT](DEVELOPMENT.md)、試験の実施履歴は[VALIDATION](VALIDATION.md)。変更領域の節だけを読む。過去の設計案・未マージPRを現在の実装として扱わない。
 
-以下の表は2026-09-14の設計改訂時点の記録。以後の実装状況はREADME、実行済み検証と残件はVALIDATIONを参照する。設計上の機能と実機検証済みの機能を区別する。
+| 変更対象 | 読む節 |
+| --- | --- |
+| 原稿の版・範囲・ネーム・完了状態 | §4、§6、末尾「原稿からセクション完了まで」 |
+| コマ・画像・文字の編集 | §7–8、§16 |
+| 保存・移行・復旧・費用 | §9–11 |
+| 動画 | §12 |
+| バックアップ | §14 |
+| Blender・Codex・3D素材 | §2–3、§15、Live Blender、Tripo |
+| 画像モデル・レイヤー・Compositor | §18と関連節 |
+| 配信用出力・転送 | Live Manga配信用出力 |
 
-| 項目 | 本書作成時の状態 |
-|---|---|
-| Tauri 2 + React/JavaScript + Rust、Swift画像ヘルパー | 初期実装あり。対象Mac実機の品質・性能は未検証 |
-| GitHub mainのSHA固定取得、原文保持、参照付き2D生成、矩形編集、保存・Undo・PNG/CBZ | 初期実装あり。現状は[README](../README.md)参照 |
-| 演出LLMの接続先選択 | ローカル／外部APIを選択。顔推定専用AIは2026-09-16の方針変更で廃止 |
-| 画像生成 | 現状はローカルSwiftヘルパーのみ。外部LLMの選択と画像生成先は別 |
-| Blender接続、3D素材利用、撮影パック、3D由来の漫画化 | 本書で定義する未実装項目 |
-| 外部画像API、3D生成サービス、正式な日本語吹き出し組版 | 未実装の拡張。導入・実機検証前に完成扱いしない |
-
-当初の設計改訂は文書のみ。以後の段階実装でも、既存2D制作経路・保存データ・API設定・ビルド構成を削除しない。目標経路は3D＋2Dの併用とし、既存2D経路は既存作品の互換性と比較試験のために保持する。3D機能の失敗を黙って2D生成へすり替えない。
+モデルID・寸法・単価は `src/media-registry.json`、プロトコルは各 `contracts/`、依存版はlockファイルを正本とする。本書は選択理由・責務・検証条件を説明し、値の変更時は正本と整合させる。実装済みでも実機の画質・性能・実APIの受入を意味しない。
 
 ## 1. 製品の不変条件
 
-- 脚本は外部で完成し、原作リポジトリのmainが正本。アプリは同一commitの本文・設計・設定を読み取り専用で取得し、台詞・話者・順序・明示設定を創作／改変しない。原作へのpushやPR作成機能は持たない。
+- 脚本は外部で執筆し、原作リポジトリを正本とする。アプリは明示選択したdev/mainの同一commitから本文・設計・設定を読み取り専用で取得し、台詞・話者・順序・明示設定を創作／改変しない。原作へのpushやPR作成機能は持たない。
 - 開発コードの正本は本リポジトリ。開発変更はdevから作業ブランチ→PR→devへ集約し、検証したまとまりをdev→mainのPRで反映する。原作の読み取り専用運用とは区別する。
 - 通常体験は「対象脚本を選ぶ→漫画候補を作る→必要箇所へ自然言語で指示→出力」。手描き、毎コマのプロンプト、ノード配線、Blender操作の習得を必須にしない。
 - 3D形状・空間・ポーズ・カメラの確定値はBlender、原作はSourceSnapshot、漫画のページ・採用画像・工程履歴はアプリがそれぞれ唯一の正本。
@@ -54,7 +54,7 @@
 
 ```mermaid
 flowchart TB
-  Source[GitHub mainの完成脚本] -->|同一commit・読み取り専用| App[漫画アプリ: Tauri UI / Rust工程管理]
+  Source[GitHub dev / mainの原稿] -->|同一commit・読み取り専用| App[漫画アプリ: Tauri UI / Rust工程管理]
   App <-->|原作対応・ページ・採用版・履歴| DB[(作品SQLite / 不変成果物)]
   App -->|自然言語| LLM[選択した演出LLM]
   LLM -->|型付き操作案| Gate[権限・対象・基準版・予算の検証]
@@ -73,6 +73,8 @@ flowchart TB
 Blenderと画像AIが独立に作品を更新せず、成果物の採用はアプリが管理する。同じPC内の受け渡しは認可されたファイル参照・ハッシュを基本とし、3Dファイルや巨大画像を毎回UI経由でコピーしない。外部画像APIへは必要な画像を送り、通常はblendファイル自体を送らない。
 
 ### フロントエンドの実装責務
+
+実装入口と設定の正本は [開発案内](DEVELOPMENT.md) を参照する。設定・動画・ネーム画面は必要時に読み込む。動画とネームは初回表示後に閉じても接続・入力状態を維持する。バックアップスケジュールは画面の遅延読込から独立させる。
 
 - `main.jsx` は画面状態とユーザー操作を接続する。初稿の逐次工程は `production.js` に集約し、現在の作品取得・保存・停止判定・外部サービスを呼出側から渡す。既存Jobの保存、失敗時のunknown、採用済み作画を保持する順序は変えない。
 - `canvas-image.js` は画像読込・入力寸法調整・マスク合成、`render.js` はページと文字のCanvas描画を担当する。描画処理から保存・IPC・ZIP圧縮を呼ばない。
@@ -139,7 +141,7 @@ CatalogのUUIDは分類のIDであり、個別素材の一意IDとして代用�
 
 ### 原稿の手動取込み（#107）
 
-GitHubへの更新確認は「GitHub側の更新を確認」の明示操作のみ。起動時・定期の自動確認は行わない。場面／設定／参照画像の追加・変更・削除とmanifest変更の概要を一時表示し、「取り込む」で同一commitの不変SourceSnapshotをactiveにする。未取込みの候補はメモリ内だけに保持し、再起動・対象作品／話変更で破棄する。確認失敗・保存失敗では既存正本と漫画を維持する。旧snapshotは既存漫画の出所・履歴として保持し、最新正本はactiveの1版とする。漫画への反映状態のdiffとは別処理である。
+GitHubへの更新確認はライブラリの「原稿の更新を確認」または設定の「GitHub側の更新を確認」の明示操作のみ。起動時・定期の自動確認は行わない。場面／設定／参照画像の追加・変更・削除とmanifest変更の概要を一時表示し、「取り込む」で同一commitの不変SourceSnapshotをactiveにする。未取込みの候補はメモリ内だけに保持し、再起動・対象作品／話変更で破棄する。確認失敗・保存失敗では既存正本と漫画を維持する。旧snapshotは既存漫画の出所・履歴として保持し、最新正本はactiveの1版とする。漫画への反映状態のdiffとは別処理である。
 
 ### 原稿範囲と漫画への反映（#114 確定契約・段階実装）
 
@@ -181,11 +183,11 @@ SourceManuscriptは#114のChangeSetを読み、反映済み・未反映・削除
 
 ## 5. 1ページを作る作業とデータの流れ
 
-例は人工の4コマ会話：雨の駅の全景→人物Aの発言→人物Bの小さな笑顔→二人の横顔。ユーザー作品の脚本を変更する指定ではない。
+この節は任意のBlender経路の例。通常の2D制作は末尾「原稿からセクション完了まで」に従う。人工の4コマ会話（雨の駅の全景→人物Aの発言→人物Bの小さな笑顔→二人の横顔）を使い、ユーザー作品の脚本は変えない。
 
 | 手順 | ユーザーに見える操作 | 内部の処理・渡すデータ | 保存するもの |
 |---|---|---|---|
-| 1. 対象を選ぶ | 原作の場面を選び「漫画にする」 | アプリが同一SHAの原作を取得、コマ・台詞ID・画面比率を計画 | 原作取得版、ページ・コマ、原文対応 |
+| 1. 対象を選ぶ | 取込み済み原稿の範囲を選び、ネームを確認・確定 | 保存済みの同一SHA原稿を参照し、コマ・台詞ID・画面比率を計画 | 原作取得版、ページ・コマ、原文対応 |
 | 2. 素材を使う | 必要時だけ人物と素材を対応付け | アプリがBlender既存ライブラリを参照。既存素材を優先し、不足時だけ生成・取り込み | CharacterBinding、素材参照。中身はBlender |
 | 3. 舞台・構図 | 4コマのプレビュー。「2コマ目を寄って」 | 型付き配置／ポーズ／カメラ操作→Blender。既存機能でプレビュー生成 | 作業用blend、ShotBinding、操作結果 |
 | 4. 撮影 | 自動、または構図を選択 | Blenderが確定カメラから所定解像度で描画 | 版固定済み撮影パック |
@@ -296,7 +298,7 @@ Jevは任意・初期未設定の判断専用接続。2026-09-17に[公式API](h
 
 ## 8. UIとプレビュー
 
-主画面はページ一覧・漫画プレビュー・選択対象・自然言語欄・Undo・出力。コマ内で「Blenderプレビュー／撮影原本／漫画原稿」を切り替える。素材棚はBlender情報への薄い窓口、2D参照棚はアプリの漫画情報として分ける。
+主画面は「原稿」「コマ割り編集」「作画」「仕上げ」の工程で切り替える。出力は上部の「書き出す」へ集約し、設定と動画は必要時に開く。仕上げでは出力と同じページを表示する。原稿の更新確認はライブラリから直接行い、毎回設定を開かせない。コマ内で「Blenderプレビュー／撮影原本／漫画原稿」を切り替える。素材棚はBlender情報への薄い窓口、2D参照棚はアプリの漫画情報として分ける。
 
 初期はBlender生成画像の更新表示で構図確認する。独自WebGLビューワー、独自ギズモ・カメラ投影、Blender全UIの埋め込みを必須にしない。直接3D操作が必要な場合は標準ビューポート／Asset Browserを開く。プレビューの応答速度は実測し、MCP接続だけで動画並みの操作感を保証しない。
 
@@ -330,7 +332,7 @@ Jevは任意・初期未設定の判断専用接続。2026-09-17に[公式API](h
 | `helper/` | 既存ローカル画像生成を保持。BlenderのPython実行はBlender側へ任せる |
 | SQLite内の作品JSON | スキーマ版を付けて移行。旧2Dコマは `capture_revision = null` としてそのまま開く |
 
-撮影画像・blend・マスク等の大きな成果物は不変ファイルへ分離し、DBは参照と履歴を保持する。既存JSON内画像の移行はバックアップ・ハッシュ照合・失敗時ロールバックを備える。今回は文書だけを変更し、移行処理は未実装。
+撮影画像・blend・マスク等の大きな成果物は不変ファイルへ分離し、DBは参照と履歴を保持する。既存JSON内画像の移行はバックアップ・ハッシュ照合・失敗時ロールバックを備える。移行実装と回帰試験は `src-tauri/src/storage.rs` / `tests/storage`、実施結果は検証記録を参照する。
 
 BlenderはまずMacに別途インストールされた対応版を検出し、既存MCP／必要な接続拡張を設定する。独立アプリの同居を認める。BlenderやTripoの同梱を既成事実にせず、版互換性・配布条件・更新方法を確認する。Tripoは任意で、利用には通信とAPI認証が必要。[B8]
 
@@ -374,25 +376,25 @@ Linuxの契約／既存UI試験、macOSビルド、実Blender接続、実画像A
 
 schema 4へv1/v2/v3を互換移行し、既存panels/history/jobsと作品言語データを保持する。`videoRevisions`と`videoHistory`は動画用の版・Undoだけを担い、制作要求は既存jobsのscope=`videoShot`へ追加する。動画操作で漫画historyを変更しない。旧schemaのアプリへ戻す際は移行前の作品フォルダを復元し、version番号だけを書き換えない。
 
-開始画像は既存ArtworkRevisionまたは固定CaptureRevisionから実bytesを解決・hash照合する。jobのmanifestへ原作commit、対象範囲、作成元版、接続ID/モデル、実入力hash、変換、指示、出力条件、基準採用版を固定する。`sourceDependencies`は開始画像の出所、`providerInputs`は実送信する開始画像1枚のみ。旧画像に存在しない人物参照版は捏造しない。現段階は画像変換を行わずidentityを記録する。変換を追加する場合は派生画像の実hashと変換矩形を別途固定する。
+開始画像は既存ArtworkRevisionまたは固定CaptureRevisionから実bytesを解決・hash照合する。jobのmanifestへ原作commit、対象範囲、作成元版、接続ID/モデル、実入力hash、変換、指示、出力条件、基準採用版を固定する。`sourceDependencies`は入力画像の出所、`providerInputs`は選択モデルへ実送信する開始画像と対応時の終端画像を順序付きで保持する。旧画像に存在しない人物参照版は捏造しない。現段階は画像変換を行わずidentityを記録する。変換を追加する場合は派生画像の実hashと変換矩形を別途固定する。
 
-クラウド動画はRunway Dev APIをproviderとして使い、実モデルは`src/media-registry.json`のdescriptorで選択する。2026-09-21時点の初期登録は `gen4.5` と `gen4_turbo`。両者はimage_to_videoを同じRunway adapterから呼び、2〜10秒の対応尺、許可ratio、終端画像能力、credits単価をdescriptorで送信前検証する。promptTextは1000 UTF-16 code units以内、画像は5MB以内という既存入力境界を維持する。未登録モデル、未対応の終端画像/depth/pose等を黙って格下げ・fallbackしない。
+クラウド動画はRunway Dev APIをproviderとして使い、実モデルは`src/media-registry.json`のdescriptorで選択する。実装済みは `gen4.5`、`gen4_turbo`、`seedance2_5`。Gen系は開始画像1枚、2〜10秒、prompt 1000 UTF-16 unitsの既存契約を維持する。Seedance 2.5は`seedance-keyframes-v1`の閉じたrequest profileで、開始画像1枚または同一ページ隣接コマのfirst/last、4〜30秒、480p/720p/1080p、prompt 15000 UTF-16 units、`audio:false`を扱う。provider adapterはRunwayで1本のまま、modelごとの尺・ratio・入力aspect・終端画像能力・prompt上限・request profile・料金をdescriptorで送信前検証する。未登録モデルや未対応入力を一般参照や別モデルへ黙って格下げ・fallbackしない。
 
-V-Aの実装は共通参照解決・manifest・保存移行まで。実API送信/動画ファイル保存/再生UIは後続V-B/Cであり、未接続の生成ボタンは表示しない。有料POST前にjobを永続化し、再起動でrunningはunknownへ変更する。未確定要求を再POSTせず、確定済taskを照会する。原作/入力/採用版の変更後に届く結果は候補に留める。試行上限は同じ採用版で3回、取下げでリセットしない。実行許可・予算・資格情報・task永続化はRust接続境界で追加検証するまで外部送信しない。
+未接続のモデルへ新規生成を送信しない。有料POST前にjobを永続化し、再起動でrunningはunknownへ変更する。未確定要求を再POSTせず、確定済taskを照会する。原作/入力/採用版の変更後に届く結果は候補に留める。試行上限は同じ採用版で3回、取下げでリセットしない。実行許可・予算・資格情報・task永続化をRust接続境界でも検証してから送信する。
 
 V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、作品JSONにはartifact/hash/MIME/sizeのみを持つ。署名URL/秘密/巨大base64は保存しない。上限128MiB、64KiBバッファでstream→一時ファイル→sync→MP4コンテナ境界/hash再検証→hash名へのno-clobber公開→DB参照保存とする。コンテナ境界確認はcodecの完全decodeではなく、再生時はOSの既存decoderで確認する。受領結果は最初も候補とし、採用前に基準manifestと実ファイルを再検証。videoHistoryのUndoは対象shotの採用ポインタのみを復元する。
 
 再生は[Tauri asset protocol](https://v2.tauri.app/reference/config/#assetprotocolconfig)を利用し、初期scopeは空。DBに記録されたrevision IDから正規ファイル/hashを照合して、その一ファイルのみallow_fileする。任意パス・フォルダの公開は行わない。MP4書出しはRust側でファイルcopyと再hashを行い、画像用base64 exportを経由しない。JSONバックアップには動画本体がないため、mediaディレクトリを含む作品フォルダ全体を保管する。
 
-### V-Cの接続候補
+### Runway接続と復旧
 
 Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
 
-APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratioは保存済みmanifestとregistryから解決する。開始画像はRustで既存作画/固定撮影から再解決し、実bytes・hashを照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)で5MBはbase64化後のData URI全体の上限であることを確認済み。PNG/8192px以下かつ選択モデルで許可したratioと厳密一致する入力だけを送信し、モデルごとの入力aspect制約はregistryで公開するratioへ反映してサービス側の暗黙cropへ依存しない。任意model ID・任意endpoint・任意JSON payloadは受け付けない。
+APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratio/request profileは保存済みmanifestとregistryから解決する。Gen系mapperは従来の`promptImage`文字列と`outputFormat:mp4`を維持する。Seedance mapperは検証済みPNGを`promptImage:[{uri,position:first},{uri,position:last}]`へ変換し、開始画像のみならfirst 1件だけを送る。Seedanceへ`lastFrame`、`outputFormat`、別`resolution`を混ぜず、無音契約のため`audio:false`を明示する。開始／終端画像はRustで既存作画/固定撮影から再解決し、実bytes・hash・寸法・順序を照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)を基に、アプリ独自上限はencoded Data URI 5MB以下・PNG/8192px以下を維持し、モデル別aspectと登録ratioを適用する。自動cropや任意model ID・任意endpoint・任意JSON mapperは使わない。
 
 POST前に既存job.remoteへunknown・予約費用・送信日時をSQLite commitする。受信task IDを即保存。古いUI保存でremoteの削除/巻戻しを許さず、送信後のmanifest等を固定する。新規POSTは同じjobで一回だけ。再起動は既存taskのGETに戻し、取得完了artifactがUI保存前に残った場合も候補として一度だけ再接続する。API成功とローカル保存・採用を分ける。
 
-[公式料金](https://docs.dev.runwayml.com/guides/pricing/)を2026-09-21に再確認し、初期登録ではGen-4.5を12 credits/秒、Gen-4 Turboを5 credits/秒としてdescriptorへ固定する。予約額は`credits_per_second × duration`で送信前に計算し、固定60 creditsを全モデルへ流用しない。利用者の作品累計予約上限、失敗・成否不明・取消時に枠を勝手に戻さない既存ルール、実績超過時の停止は維持する。
+[公式料金](https://docs.dev.runwayml.com/guides/pricing/)を2026-09-22に再確認する。Gen-4.5は12 credits/秒、Gen-4 Turboは5 credits/秒。Seedance 2.5は最低80 credits/生成に加え、480p=20、720p=30、1080p=68 credits/秒で、`max(minimum, rate[tier] × duration)`を用いる。ratio→tier対応、単価、最低料金、確認日をregistryに固定し、Job作成時のbilling snapshotとnative送信直前の再計算が一致しない場合は再承認を要求する。予約額を実請求額とは表示しない。作品累計予約上限、失敗・成否不明・取消時に枠を勝手に戻さない既存ルール、実績超過時の停止は維持する。
 
 task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求中/成否不明を区別する。手動照会は5秒以上間隔をあけ、自動pollや自動再POSTは行わない。公式DELETEは実行中の取消と完了結果の削除を兼ねるため、画面でその影響を明示してから呼ぶ。ローカルの照会停止を取消完了と表示しない。
 
@@ -402,7 +404,7 @@ task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求
 
 V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作らない撮影準備は既存shot_batchesへscope_type=videoSourceとして保存し、同じShotControlsから接続済みGUIを明示割当し、GUIで撮影した版を保存する。camera/frame・素材・ポーズは同じGUIで編集する。撮影版は共通capturesへ保存し、既存開始画像解決器へ渡す。再撮影しても保存済み動画ショットの開始画像参照・採用動画・漫画履歴は変更しない。旧撮影を使う漫画・動画と、同一base_sessionの保存版変更に影響する撮影を読取り専用で表示する。ファイル名から素材の同一性を推定せず、別接続で再登録した素材の対応は自動推定しない。MV-11の実Blender両媒体受入は残件。受入MV-01〜11はIssue #9を参照し、共通テスト・HTTP fixture・Mac再生・実API・実Blenderを別々に判定する。
 
-選択コマの動画バッチは、漫画画面のページ内選択を動画画面へ渡し、採用済みArtworkRevisionを開始画像に固定した通常の`videoShots`をコマごとに作る。共通の尺・比率・演出方針を一括適用した後も、動きの指示はshot単位で編集可能とする。作成元panel IDとbatch IDは追跡用であり、原文・画像・人物を複製しない。原稿対応または採用作画版が変わったレシピは送信前に拒否する。実行確認では件数・model・最大予約creditsを表示し、明示確認後に既存`beginVideoJob`とmedia runtimeへ1件ずつ渡す。全件分を未送信running Jobとして先行保存せず、各Jobを保存してからその1件だけPOSTする。結果は従来どおり候補であり、自動採用・バッチUndo・第二のキューを追加しない。
+選択コマの動画バッチは、漫画画面のページ内選択を動画画面へ渡し、採用済みArtworkRevisionを開始画像に固定した通常の`videoShots`をコマごとに作る。共通の尺・比率・演出方針は個別上書きしていないコマへ即時反映する。shot単位の編集は保持し、明示的に共通設定へ戻せる。計画を保存するまで生成は許可しない。作成元panel IDとbatch IDは追跡用であり、原文・画像・人物を複製しない。原稿対応または採用作画版が変わったレシピは送信前に拒否する。実行確認では件数・model・最大予約creditsを表示し、明示確認後に既存`beginVideoJob`とmedia runtimeへ1件ずつ渡す。全件分を未送信running Jobとして先行保存せず、各Jobを保存してからその1件だけPOSTする。結果は従来どおり候補であり、自動採用・バッチUndo・第二のキューを追加しない。
 
 ## 13. 参照資料と未確定事項
 
@@ -417,7 +419,7 @@ V-Dは既存Blender撮影の共通解決を利用する。漫画コマを作ら�
 - [B7: Python threading limitations](https://docs.blender.org/api/current/info_gotchas_threading.html)
 - [B8: Tripo公式Blender拡張](https://github.com/VAST-AI-Research/tripo-3d-for-blender)
 
-未確定：採用Blenderと接続拡張の組合せ・固定版、Asset Browser操作のAPI到達範囲、プレビュー応答性能、外部画像APIの採用先、生成3Dのリグ品質、漫画化の一致率、24GB実機の同時常駐可否。これらは段階0〜4の実測で決め、既存機能があるという理由だけで自動化の品質まで保証しない。
+未受入：実モデルでの漫画化・生成3Dのリグ品質、プレビュー応答性能、24GBでのメモリ・常駐可否、実API接続。対応版・採用adapterの定義とは別に実測し、既存機能があることだけで自動化の品質を保証しない。
 
 ## 14. 作品のクラウドバックアップ（Issue #34）
 
@@ -435,7 +437,7 @@ SQLite Online Backup APIを既存DB mutex内で実行し、原稿・構造契約
 
 パス逸脱・リンク・特殊ファイル・未知形式・欠損は拒否する。作業領域はアプリ専用UUIDディレクトリと所有ロックで限定し、再起動後に孤立領域を回収する。resticパスワードはmacOS Keychainへ保管し、子プロセスへ匿名pipeで渡す。シェル文字列や継承環境へ秘密を入れない。rclone OAuthは専用設定ファイル（利用者のみ読書き可）を明示指定する。復元パスワードはMac外にも保管する。採用版の公式archive SHA-256と導入方法はscripts/install-backup-tools.sh、配布ライセンス・手順はINSTALL_MAC、実行結果はVALIDATIONに記録する。
 
-## 14. 自動演出と顔推定廃止（2026-09-16、#46 / #47）
+## 15. 自動演出と顔推定廃止（2026-09-16、#46 / #47）
 
 通常フローは既存演出LLMで構造化した1操作を計画→現行Blenderアダプタで実行→保存版から状態を読み返す、を1コマ12操作以内で行い、撮影→既存画像生成へ接続する。BlenderのObject transform、mathutilsのカメラ方向、Light datablock、既存Pose Libraryと素材appendを利用する。新しいScene Graph、素材台帳、MCPサーバー、任意Python実行機構は追加しない。
 
@@ -539,7 +541,7 @@ HTTPは127.0.0.1のみ、固定`/mcp`、Origin拒否、64桁ランダムtoken、
 
 Live観測（B: #177）は概要100 object単位→対象詳細へ分割し、bpyのevaluated depsgraphからworld行列を読む。pointer IDはepoch内だけ有効。viewportとcamera renderを別種として返し、画像にinstance/epoch/revisionを添える。変更handlerに加え、読取時の構造fingerprintを使う。frame・selection・制約・custom property・pose・cameraを再読取する。GPU不可のviewportは上流のwindow grabへfallbackし、methodを明示する。画像を読めないモデルに視覚評価済みとは報告しない。
 
-Live C（#178）ではコマをlive状態へ明示割当した場合のみ`directPanel`がlive経路を使う。未割当ではGUI接続と対象割当を案内し、自動的に別のBlenderを起動しない。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
+`directPanel`は対象コマをlive状態へ明示割当して同じGUIを使う。未接続のコマは後述の#197の起動・接続経路で準備する。別作業への接続があれば明示切断を求め、背後で別Blenderを描画用に起動しない。live判断はobserve/act/confirm/ready/blocked、最大12 step。推論後再読取→版一致→許可操作→再観測→実値照合を行う。任意の自然言語は自動視覚合格にせず候補確認へ戻す。失敗分類は観測不足・対象不明・未対応・モデル判断・実行失敗/応答不明・見た目未達を分ける。
 
 Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明示。引継ぎ時にアプリ内の計画世代を即失効し、Blender側もmanualへ移行・観測版を更新する。再開は新規runで再観測し、名前/ID/人物対応不明なら停止。外部Computer Use providerは同梱しない。
 
@@ -549,11 +551,11 @@ Live D（#179）はAI操作中→手動/外部Computer Use→再開待ちを明�
 
 manga-mac自身のlive自然言語演出は維持する。「MacのCodexへ渡す」は未送信計画を失効させ、MCPクライアントの占有を解放する。native接続はyielded状態となり、observe/act/resume/candidateを拒否する。Codexは同じloopback MCPを別client IDでclaimできる。画面操作だけの場合はclaim不要だが、同じGUIを対象とする。Codexがreleaseし画面操作を終えた後、利用者が「操作権を戻し、再観測する」を選ぶ。別clientが占有中なら復帰を拒否する。file/scene/view layer/epoch変更時は再接続・再割当が必要。
 
-MCPの排他はこの接続経路の書込みを制御するもので、OSのマウス・キーボードをロックしない。CodexのComputer Useと人の手動操作を終えてからmanga-macへ戻す。独自Computer Use providerやCodexの自動起動・自動接続設定は持たない。実Codexの画面操作受入は#187で追跡する。
+MCPの排他はこの接続経路の書込みを制御するもので、OSのマウス・キーボードをロックしない。CodexのComputer Useと人の手動操作を終えてからmanga-macへ戻す。独自Computer Use providerやCodexの自動起動・自動接続設定は持たない。実Codexの画面操作受入は#266に集約する（元#187）。
 
 ### GUI作業フォルダと最終制作フロー（#197 / #199）
 
-目標は参照画像・原稿→必要モデル／Scene作成→同じSceneの複数アングル撮影→候補採用である。manga-macで完結できない工程は、同じGUIをMacのCodexまたは人へ引き継ぎ、再観測して戻す。モデル生成プロバイダ接続と複数アングルの一括制作は #199 の未実装工程であり、GUI接続だけで完了とはしない。
+3D経路は参照画像・原稿→モデル／Scene作成→同じSceneの複数アングル撮影→候補採用。アプリで対応しない編集は同じGUIをCodexまたは人へ引き継ぎ、再観測して戻す。角度候補は次節、任意の参照画像生成はTripo節で定義し、GUI接続・モデル生成・実機品質を別々に受け入れる。
 
 #197 は「書類/Manga Mac/3D/<作品キー>/assets」「work/<コマ・撮影キー>/working.blend」「exports」をアプリが作る。素材の内容・分類・タグ・カタログはBlender標準が正本。原稿版の更新でも作品の素材フォルダは変えない。コマと動画撮影の作業ファイルは分離する。
 
@@ -571,7 +573,7 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 
 各候補保存後の観測版をnativeから返し、次の撮影前に照合する。手動変更・取消・Codexへの引継ぎがあれば残りを止め、完成済み候補は残す。採用は別操作。原文・他コマ・旧採用版を変えない。角度候補は画像比較で選ぶもので、自然言語の演出意図を自動で満たしたとは宣言しない。
 
-参照画像からのモデル生成サービスの接続は #201 の未実装工程。標準素材の利用やCodex/人によるモデル・Scene作成を先に同じ経路で扱う。Tripo等は任意の後続接続であり、勝手な素材送信・課金・アドオン導入は行わない。
+標準素材、Codex/人によるScene作成、任意のTripo生成は同じBlender素材経路へ合流する。Tripoの境界は後述し、無断の素材送信・課金・アドオン導入は行わない。
 
 素材からの作業コピー作成はBlender標準のrelative path remapを使う。新しいGUIで標準blendを開く工程には、撮影時のpacking制約を課さない。依存の固定・サイズ検証は候補撮影時に行う。
 
@@ -579,10 +581,11 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 
 画像と動画の生成先は、UIが直接選択した登録済みモデルを作品設定と生成要求へ固定する。共通のモデル定義は`src/media-registry.json`に置き、`status: "implemented"`の項目だけを`src/media.js`から選択肢として公開する。未実装モデル名を先にUIへ表示して利用可能に見せない。
 
-現時点の実装済みadapterは次の2つだけである。
+実装済みadapterは次の3系統。利用可能なモデルと操作はregistryから取得する。
 
-- 画像: `media-generation-kit` / FLUX.2 klein 4B（Mac内、Swift helper）。入力寸法・刻み・比率・step数はregistryから読み、`generate`・`edit`・`retake`・`finishing`で同じ候補／採用／Undo／receipt復旧経路を使う。
-- 動画: `runway` provider / Runway Gen-4.5・Gen-4 Turbo（外部、無音・既存Runway REST adapter）。provider adapterは1本だけとし、model ID・対応尺・比率・終端画像能力・credits単価をregistryで固定する。新しいRunway提供モデルは、公式API契約とrequest mappingを確認した上でdescriptorを追加し、上位UI・Job・保存処理へモデル別分岐を増やさない。
+- ローカル画像: `media-generation-kit` / FLUX.2 klein 4B（通常・6-bit）と分解専用Qwen Image Layered。通常作画と分解の選択肢を分け、対応寸法・操作を検査する。候補／採用／Undo／receipt復旧は既存経路を使う。
+- クラウド画像: `runway-image` / Gen-4 Image。送信許可・費用予約・task IDを既存Jobへ保存する。対応操作と制限は末尾の原稿制作節で定義する。
+- 動画: `runway` provider / Runway Gen-4.5・Gen-4 Turbo・Seedance 2.5（外部、無音・既存Runway REST adapter）。provider adapterは1本だけとし、model ID・request profile・対応尺・比率・入力aspect・prompt上限・終端画像能力・料金式をregistryで固定する。同じRunway資格情報はnativeメモリ内のモデル別bindingへ明示承認して再利用できるが、旧Jobは保存済みmodel/bindingを正本として回収する。モデル切替時に不適合な尺・ratio・終端・promptを自動修正せず、理由を表示して新しい送信を停止する。
 
 UIからnativeへ渡す生成入口は`src/media-runtime.js`へ集約し、画像は`generate_image`、動画は既存の`video_submit`／`video_task`へ送る。nativeの`src-tauri/src/media.rs`は同じregistryを読み、任意のmodel/provider/adapter/endpoint、未実装項目、対応外の寸法・操作を送信前に拒否する。cloud fallbackや旧Jobの現在選択モデルへの付替えは行わない。旧画像Jobは保存された入力・recoveryを、旧動画Jobはmanifestの接続・モデルを正本としてそのまま復旧する。
 
@@ -647,7 +650,7 @@ PRをDraftに保つ。保存時には操作権を人間へ戻す。無操作120�
 
 Qwen-Image-Layeredは採用SDKの公開Result.tensorから多層出力を取得できるが、
 内部表現はAlpha[0,1]＋RGB[-1,1]で、SDK標準PNG writerはRGB専用。
-RGBA変換・レイヤー順／枚数・receipt・入力canvas役割を実装／検証するまではregistryへ有効登録しない。
+有効登録にはRGBA変換・レイヤー順／枚数・receipt・入力canvas役割の検証を必須とし、実推論の品質受入とは区別する。
 参照編集のRGB出力を透明レイヤーにそのまま差し替えない。ComfyUI/MFLUXへの退避は追加しない。
 
 ### 参照付きレイヤー局所色編集（#224、Bの初期preset）
@@ -688,7 +691,7 @@ Compositorの同一sessionを引き続き使う。推論後にprocess instance/d
 
 通常ページも共通rendererの実枠・マスク・cropを表示し、原画像の局所編集は詳細へ置く。セクションはwork・episode・scene IDで識別する。完了承認を既存作品DBに保存し、本文・実依存人物・採用作画・文字・該当枠／cropの版で局所的に失効させる。全体commit/contentTokenや未採用候補だけでは失効しない。完了操作は未割当・未作画・未解決差分・未確定Jobを検査し、外部送信や公開は起動しない。解除・Undo・次の未完了セクションへ移動できる。
 
-Node／native／ブラウザfixtureとMac上の実原稿・実推論・GUI操作は別判定。実Macの通し制作、Runway実送信、実Computer Useの証拠は #164/#187/#201/#228 と #230 の統合受入で管理する。
+Node／native／ブラウザfixtureとMac上の実原稿・実推論・GUI操作は別判定。実装済み機能の実Mac通し制作、Runway実送信、実Computer Useの残確認は [#266](https://github.com/kdob1042/manga-mac/issues/266) へ集約する。未実装・不具合は元Issueまたは新規Issueで扱い、実機待ちへまとめない。
 
 ## 23. ネームAI v2と決定論的組版（#252–#262）
 

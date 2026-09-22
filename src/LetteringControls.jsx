@@ -9,7 +9,7 @@ import { proposeLettering } from './lettering-ai';
 import { askLLM } from './llm';
 import { editBase, executeLocalEdits, editContext } from './edit-commands';
 
-export default function LetteringControls({ panel, current, commit, run, busy, model, pageIndex=0 }) {
+export default function LetteringControls({ panel, current, commit, run, busy, model, pageIndex=0, active=true }) {
   const [layout,setLayout]=useState(()=>structuredClone(panel.lettering??defaultLettering(panel)));
   const [index,setIndex]=useState(0),[problem,setProblem]=useState('');
   const canvas=useRef(null),drag=useRef(null),box=layout.boxes[index];
@@ -49,6 +49,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
   }
 
   useEffect(()=>{
+    if(!active)return;
     let stale=false;
     async function paint() {
       const ctx=canvas.current?.getContext('2d');if(!ctx)return;
@@ -73,7 +74,7 @@ export default function LetteringControls({ panel, current, commit, run, busy, m
     }
     if(layout.mode==='balloons')paint().catch(e=>{if(!stale)setProblem(e.message);});
     return ()=>{stale=true;};
-  },[layout,panel.image]);
+  },[active,layout,panel.image]);
 
   function point(e){const r=e.currentTarget.getBoundingClientRect();return [Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))];}
   function reset(){if(drag.current){setLayout(drag.current.before);drag.current=null;}}
