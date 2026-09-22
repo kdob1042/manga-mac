@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createNameCandidate, adoptNameCandidate, validateV2State, refreshNameMetadata, patchNameLayout, setNameLock, localNamePlan, requiredTextForSource, canFinalizeNameRef, nameReadToken } from '../src/name-v2.js';
+import { createNameCandidate, createNameFile, adoptNameCandidate, validateV2State, refreshNameMetadata, patchNameLayout, setNameLock, localNamePlan, requiredTextForSource, canFinalizeNameRef, nameReadToken } from '../src/name-v2.js';
 import { generateNameCandidate, proposeNameEdit, applyNameEdit, runNameVisualQA } from '../src/name-v2-ai.js';
-import { sourceParagraphs, orderedCoverage } from '../contracts/name-plan/source.mjs';
+import { sourceParagraphs, orderedCoverage, sourceDescriptor } from '../contracts/name-plan/source.mjs';
 import { fileFixture, split, leaf } from './name-plan-fixture.mjs';
 
 test('real v2 adapter imports native panels/layout, adopts and survives JSON persistence', async () => {
@@ -12,6 +12,31 @@ test('real v2 adapter imports native panels/layout, adopts and survives JSON per
   assert.ok(p.panels.every(panel => panel.requiredText.length === 0 && panel.lettering.boxes.length === 0 && panel.namePlanVersion === 2));
   assert.equal(p.sourceApplication.units.length, 0); assert.equal(p.history.at(-1).draftCheckpoint, true);
   const restored = refreshNameMetadata(JSON.parse(JSON.stringify(p))); assert.equal(restored.namePlan.geometryOverride, false); validateV2State(restored);
+});
+test('portable source character IDs map to app-local IDs only after import', async () => {
+  const f = await fileFixture(1), localId = 'local-random-character';
+  f.snapshot.characters = [{ id: 'kamiya-yu', name: '神谷 勇', description: '短髪' }];
+  f.snapshot.references = [{ characterId: 'kamiya-yu', name: '神谷 勇', path: 'yu.jpg', hash: 'b'.repeat(64) }];
+  f.project.characters = [{ id: localId, name: '神谷 勇', description: '短髪', hash: 'b'.repeat(64), source: { repo: f.snapshot.repo, scope: `${f.snapshot.repo}#${f.snapshot.workId}`, character_id: 'kamiya-yu' } }];
+  f.plan.panels[0].characterIds = ['kamiya-yu'];
+  f.file.source = await sourceDescriptor(f.project, f.snapshot, f.atoms);
+  const candidate = await createNameCandidate(f.project, f.file);
+  assert.deepEqual(candidate.file.plan.panels[0].characterIds, ['kamiya-yu']);
+  assert.deepEqual(candidate.panels[0].characterIds, [localId]);
+
+  const internalPlan = structuredClone(f.plan);
+  internalPlan.panels[0].characterIds = [localId];
+  const written = await createNameFile(f.project, internalPlan, f.atoms.map(atom => atom.id), { producer: 'fixture', model: '', editedBy: [] });
+  assert.deepEqual(written.plan.panels[0].characterIds, ['kamiya-yu']);
+
+  const sameFileHash = written.source.referencesHash;
+  f.project.characters[0].id = 'another-local-id';
+  const rewritten = await createNameFile(f.project, { ...structuredClone(written.plan), panels: written.plan.panels.map(panel => ({ ...panel, characterIds: ['kamiya-yu'] })) }, f.atoms.map(atom => atom.id), { producer: 'fixture', model: '', editedBy: [] });
+  assert.equal(rewritten.source.referencesHash, sameFileHash);
+
+  const unknown = structuredClone(f.file);
+  unknown.plan.panels[0].characterIds = ['not-in-work'];
+  await assert.rejects(() => createNameCandidate(f.project, unknown), /未登録|対象原稿|人物/);
 });
 test('printed dialogue vs visual prose and reference metadata are carried to production fields', async () => {
   const f = await fileFixture(2, '# 場面\n\n彼は笑う。「また明日😀」\n\n![参考](art.png)');

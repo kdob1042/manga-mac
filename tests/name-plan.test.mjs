@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { FORMAT, validatePlan, parseNameFile, MAX_BYTES, canonical, treeLeaves } from '../contracts/name-plan/schema.mjs';
-import { atomize, sourceParagraphs, resolveRef, orderedCoverage, bindSource } from '../contracts/name-plan/source.mjs';
+import { atomize, sourceParagraphs, resolveRef, orderedCoverage, bindSource, sourceDescriptor, sourceCharacterIdentity } from '../contracts/name-plan/source.mjs';
 import { compileNameLayout, validQuad, overlaps } from '../contracts/name-plan/layout.mjs';
 import { CARDS, buildNamePrompt } from '../contracts/name-plan/policy.mjs';
 import { diagnosePlan, validateQA } from '../contracts/name-plan/qa.mjs';
@@ -82,9 +82,23 @@ test('quoted text cannot be classified away', () => {
   assert.throws(() => validatePlan(f.plan, f.atoms, []), /原文/);
 });
 test('changed source/settings/references and different work are rejected', async () => {
-  for (const mutate of [f => f.project.snapshots[0].scenes[0].text += '変化', f => f.project.snapshots[0].settings = ['changed'], f => f.project.characters = [{ id: 'c1', name: 'changed', hash: 'a' }], f => f.file.source.workId = 'other']) {
+  for (const mutate of [f => f.project.snapshots[0].scenes[0].text += '変化', f => f.project.snapshots[0].settings = ['changed'], f => f.project.snapshots[0].characters = [{ id: 'c1', name: 'changed' }], f => f.file.source.workId = 'other']) {
     const f = await fileFixture(); mutate(f); await assert.rejects(() => bindSource(f.file, f.project));
   }
+});
+test('source character identity is portable across app-local IDs and follows source reference changes', async () => {
+  const f = fixture(1);
+  f.snapshot.characters = [{ id: 'hero', name: '勇', description: '短髪' }];
+  f.snapshot.references = [{ characterId: 'hero', name: '勇', path: 'hero.jpg', hash: 'b'.repeat(64) }];
+  f.project.characters = [{ id: 'local-random-a', name: '勇', description: 'アプリ側表現', hash: 'b'.repeat(64) }];
+  const first = await sourceDescriptor(f.project, f.snapshot, f.atoms);
+  f.project.characters[0].id = 'local-random-b';
+  f.project.characters[0].description = '変えてもファイル来歴には影響しない';
+  const second = await sourceDescriptor(f.project, f.snapshot, f.atoms);
+  assert.equal(first.referencesHash, second.referencesHash);
+  assert.deepEqual(sourceCharacterIdentity(f.snapshot), [{ id: 'hero', name: '勇', description: '短髪', hash: 'b'.repeat(64) }]);
+  f.snapshot.references[0].hash = 'c'.repeat(64);
+  assert.notEqual((await sourceDescriptor(f.project, f.snapshot, f.atoms)).referencesHash, first.referencesHash);
 });
 test('different commit with identical source is accepted as rebind, not silently edited', async () => {
   const f = await fileFixture(); f.project.snapshots[0].sha = 'b'.repeat(40); assert.equal((await bindSource(f.file, f.project)).descriptor.commit, 'b'.repeat(40));

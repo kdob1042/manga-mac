@@ -94,15 +94,37 @@ export function selectAtoms(all, ids) {
   if (canonical(selected.map(atom => atom.id)) !== canonical(ids)) fail('selection', '原稿選択の欠落・重複・順序変更があります');
   return selected;
 }
+export function sourceCharacterIdentity(snapshot) {
+  const references = new Map();
+  for (const reference of snapshot.references ?? []) {
+    const id = reference?.characterId ?? reference?.id;
+    if (!id) continue;
+    if (references.has(id)) fail('character', '人物参照IDが重複しています');
+    references.set(id, reference);
+  }
+  const seen = new Set();
+  return (snapshot.characters ?? []).map(character => {
+    if (!character?.id || seen.has(character.id)) fail('character', '原稿の人物IDが不正または重複しています');
+    seen.add(character.id);
+    const reference = references.get(character.id);
+    return {
+      id: character.id,
+      name: character.name ?? '',
+      description: character.description ?? '',
+      hash: reference?.hash ?? character.hash ?? character.sourceHash ?? '',
+    };
+  });
+}
+export const sourceCharacterIds = snapshot => sourceCharacterIdentity(snapshot).map(character => character.id);
+
 export async function sourceDescriptor(project, snapshot, atoms, contextAtomIds = []) {
   const contexts = contextAtomIds.length ? atomize(snapshot).filter(atom => contextAtomIds.includes(atom.id)) : [];
   const sceneIds = [...new Set([...atoms, ...contexts].map(atom => atom.source.sceneId))];
   const settingsHash = await sha256(snapshot.settings ?? []);
-  const referenceIdentity = (project.characters ?? []).map(({ id, name, description, hash, sourceHash }) => ({ id, name: name ?? '', description: description ?? '', hash: hash ?? sourceHash ?? '' }));
   return {
     repo: snapshot.repo, workId: snapshot.workId ?? project.workId, branch: snapshot.sync?.source_branch ?? 'main', commit: snapshot.sha,
     scenes: await Promise.all(snapshot.scenes.filter(scene => sceneIds.includes(scene.id)).map(async scene => ({ id: scene.id, sha256: await sha256(scene.text) }))),
-    selectedAtomIds: atoms.map(atom => atom.id), settingsHash, referencesHash: await sha256(referenceIdentity),
+    selectedAtomIds: atoms.map(atom => atom.id), settingsHash, referencesHash: await sha256(sourceCharacterIdentity(snapshot)),
   };
 }
 export async function bindSource(file, project) {

@@ -1,6 +1,6 @@
 import { validateLayout, layoutWarnings } from './layout.js';
 import { FORMAT, POLICY_VERSION, parseNameFile, validatePlan, fileSchema, validateSchema, canonical, sha256, fail, treeLeaves } from '../contracts/name-plan/schema.mjs';
-import { bindSource, atomize, sourceDescriptor, intersects, clipRefs, orderedCoverage, resolveRef, sourceParagraphs, requiredTextForSource } from '../contracts/name-plan/source.mjs';
+import { bindSource, atomize, sourceDescriptor, sourceCharacterIds, intersects, clipRefs, orderedCoverage, resolveRef, sourceParagraphs, requiredTextForSource } from '../contracts/name-plan/source.mjs';
 import { compileNameLayout } from '../contracts/name-plan/layout.mjs';
 import { diagnosePlan } from '../contracts/name-plan/qa.mjs';
 export { FORMAT, requiredTextForSource };
@@ -8,6 +8,42 @@ const same = (a, b) => canonical(a) === canonical(b);
 const printed = presentation => ['dialogue', 'thought', 'narration'].includes(presentation);
 const stripImage = ({ image, ...panel }) => ({ ...panel, imagePresent: !!image });
 const charIdentity = project => (project.characters ?? []).map(({ id, name, description, hash }) => ({ id, name: name ?? '', description: description ?? '', hash: hash ?? '' }));
+const sourceScope = snapshot => snapshot.workId ? `${snapshot.repo}#${snapshot.workId}` : snapshot.repo;
+function sourceCharacterBinding(project, snapshot) {
+  const expectedScope = sourceScope(snapshot), allowed = new Set(sourceCharacterIds(snapshot)), result = new Map();
+  for (const character of project.characters ?? []) {
+    const source = character.source, sourceId = source?.character_id;
+    if (!sourceId || !allowed.has(sourceId) || source.repo !== snapshot.repo || (source.scope ?? source.repo) !== expectedScope) continue;
+    if (result.has(sourceId) && result.get(sourceId) !== character.id) fail('character', `原稿人物${sourceId}のアプリ内対応が重複しています`);
+    result.set(sourceId, character.id);
+  }
+  return result;
+}
+function projectCharacterIds(project, snapshot, ids) {
+  const bindings = sourceCharacterBinding(project, snapshot);
+  return ids.map(id => {
+    const local = bindings.get(id);
+    if (!local) fail('character', `原稿人物${id}の基準画・アプリ内対応がありません`);
+    return local;
+  });
+}
+function portableCharacterPlan(project, snapshot, plan) {
+  const allowed = new Set(sourceCharacterIds(snapshot)), byProjectId = new Map((project.characters ?? []).map(character => [character.id, character]));
+  const expectedScope = sourceScope(snapshot);
+  const sourceIdFor = id => {
+    const character = byProjectId.get(id);
+    if (character) {
+      const source = character.source;
+      if (source?.repo === snapshot.repo && (source.scope ?? source.repo) === expectedScope && allowed.has(source.character_id)) return source.character_id;
+      if (!allowed.has(id)) fail('character', `人物${id}は原稿側の固定人物IDへ変換できません`);
+    }
+    if (allowed.has(id)) return id;
+    fail('character', `人物${id}は対象原稿にありません`);
+  };
+  const portable = structuredClone(plan);
+  portable.panels = portable.panels.map(panel => ({ ...panel, characterIds: panel.characterIds.map(sourceIdFor) }));
+  return portable;
+}
 export async function nameReadToken(project) {
   return sha256({ workId: project.workId ?? null, active: project.active, panels: project.panels.map(stripImage), layout: project.layout ?? null, application: project.sourceApplication ?? null, name: project.namePlan?.format===FORMAT?{fileHash:project.namePlan.fileHash,status:project.namePlan.status,locks:project.namePlan.locks,geometryOverride:project.namePlan.geometryOverride}:null, characters: charIdentity(project), settings: project.snapshots.find(s => s.id === project.active)?.settings ?? [] });
 }
@@ -36,7 +72,7 @@ function initialMetrics(plan, atoms, coverage) {
 }
 export async function createNameCandidate(project, raw, { textMetrics, profile, namespace } = {}) {
   const file = typeof raw === 'string' ? parseNameFile(raw) : validateSchema(structuredClone(raw), fileSchema);
-  const bound = await bindSource(file, project), validated = validatePlan(file.plan, bound.atoms, project.characters.map(c => c.id), bound.contextAtoms);
+  const bound = await bindSource(file, project), validated = validatePlan(file.plan, bound.atoms, sourceCharacterIds(bound.snapshot), bound.contextAtoms);
   const fileHash = await sha256(file), ns = namespace ?? `np${fileHash.slice(0, 12)}`;
   if(typeof ns!=='string'||!/^[A-Za-z0-9][A-Za-z0-9:_-]{0,39}$/.test(ns))fail('namespace','ネームの内部識別子が不正です');
   const plan = localNamePlan(file, ns);
@@ -47,7 +83,7 @@ export async function createNameCandidate(project, raw, { textMetrics, profile, 
     const basis = refs[0] ?? contextRefs[0];
     const requiredText = panel.atomIds.filter(id => printed(validated.coverage.get(id).presentation)).map(id => ({ ...validated.atomMap.get(id).source }));
     const lettering = boxesFor(panel, validated.atomMap, validated.coverage);
-    return { id: panel.id, snapshotId: bound.snapshot.id, sceneId: basis.sceneId, sourceRefs: refs, contextRefs, requiredText, unitIds: [], characterIds: [...panel.characterIds], prompt: `${panel.prompt}\n構図: ${panel.shotIntent}\n保護する要素: ${panel.protect.join('、')}\n視線: ${panel.gaze}\nNo text, no lettering, no balloons.`, nameIntent: panel.shotIntent, namePlanVersion: 2, image: null, artwork_revision: null, capture_revision: null, status: 'planned', instructions: [], attempts: 0, lettering, letteringStatus: 'draft', letteringArtworkRevision: null };
+    return { id: panel.id, snapshotId: bound.snapshot.id, sceneId: basis.sceneId, sourceRefs: refs, contextRefs, requiredText, unitIds: [], characterIds: projectCharacterIds(project, bound.snapshot, panel.characterIds), prompt: `${panel.prompt}\n構図: ${panel.shotIntent}\n保護する要素: ${panel.protect.join('、')}\n視線: ${panel.gaze}\nNo text, no lettering, no balloons.`, nameIntent: panel.shotIntent, namePlanVersion: 2, image: null, artwork_revision: null, capture_revision: null, status: 'planned', instructions: [], attempts: 0, lettering, letteringStatus: 'draft', letteringArtworkRevision: null };
   });
   const sourcePolicy = bound.atoms.map(atom => {
     const entry = validated.coverage.get(atom.id);
@@ -190,7 +226,7 @@ export async function patchNameLayout(project, pageId, nextTree) {
   const convert = node => node.type === 'leaf' ? { ...node, panelId: reverse.get(node.panelId) } : { ...node, children: node.children.map(convert) };
   if (!same(treeLeaves(nextTree), oldIds)) fail('scope', '配置だけの変更ではコマや原稿順を変えられません');
   file.plan.pages[index].tree = convert(nextTree);
-  const rebound = await bindSource(file, project); validatePlan(file.plan, rebound.atoms, project.characters.map(c => c.id), rebound.contextAtoms);
+  const rebound = await bindSource(file, project); validatePlan(file.plan, rebound.atoms, sourceCharacterIds(rebound.snapshot), rebound.contextAtoms);
   const compiled = compileNameLayout(localNamePlan(file, state.namespace), state.profile, state.metrics, state.locks);
   const nextPages = project.layout.pages.map(page => page.id === pageId ? compiled.layout.pages.find(p => p.id === pageId) : page);
   const next = { ...project, history: [...project.history, nameCheckpoint(project, 'ネーム配置変更前')], layout: { ...project.layout, pages: nextPages }, layoutRedo: [], editRedo: [], namePlan: { ...state, file, fileHash: await sha256(file), compiledLayout: { ...state.compiledLayout, pages: state.compiledLayout.pages.map(page => page.id === pageId ? compiled.layout.pages.find(p => p.id === pageId) : page) }, qa: { ...state.qa, visual: 'stale' } } };
@@ -205,9 +241,11 @@ export function setNameLock(project, pageId, locked) {
 }
 export async function createNameFile(project, plan, selectedAtomIds, provenance) {
   const snapshot = project.snapshots.find(snapshot => snapshot.id === project.active), all = atomize(snapshot);
+  if (!snapshot) fail('source', '原稿を先に取り込んでください');
   const atoms = selectedAtomIds?.length ? all.filter(atom => selectedAtomIds.includes(atom.id)) : all;
-  validatePlan(plan, atoms, project.characters.map(character => character.id), all);
-  return { format: FORMAT, title: project.title ?? 'ネーム', stage: 'name-only', readingDirection: 'rtl', source: await sourceDescriptor(project, snapshot, atoms, plan.panels.flatMap(panel => panel.contextAtomIds)), policyVersion: POLICY_VERSION, provenance, plan };
+  const portable = portableCharacterPlan(project, snapshot, plan);
+  validatePlan(portable, atoms, sourceCharacterIds(snapshot), all);
+  return { format: FORMAT, title: project.title ?? 'ネーム', stage: 'name-only', readingDirection: 'rtl', source: await sourceDescriptor(project, snapshot, atoms, portable.panels.flatMap(panel => panel.contextAtomIds)), policyVersion: POLICY_VERSION, provenance, plan: portable };
 }
 export function canFinalizeNameRef(project, ref) {
   if (project.namePlan?.format !== FORMAT) return true;
