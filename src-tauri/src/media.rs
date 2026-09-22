@@ -21,6 +21,7 @@ pub struct ImageModel {
 
 #[derive(Clone)]
 pub struct VideoModel {
+    pub locality: String,
     pub adapter_id: String,
     pub provider: String,
     pub model_id: String,
@@ -259,6 +260,10 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
         return Err("動画モデル定義が不正です".into());
     }
     Ok(VideoModel {
+        locality: value["locality"]
+            .as_str()
+            .ok_or("動画実行先の定義が不正です")?
+            .into(),
         adapter_id: value["adapter_id"]
             .as_str()
             .ok_or("動画adapter定義が不正です")?
@@ -315,7 +320,7 @@ pub fn video_pricing(model: &VideoModel, duration: u64, ratio: &str) -> Result<V
             .ok_or("動画料金定義が不正です")?;
         (tier, rate)
     };
-    if rate == 0 {
+    if rate == 0 && model.locality != "local" {
         return Err("動画料金定義が不正です".into());
     }
     let calculated = rate.checked_mul(duration).ok_or("Invalid cost")?;

@@ -597,3 +597,11 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - 動画UI: 6成功（既存3＋再開/通信断/停止/モデル・尺変更3）。3コマの2件目で応答消失後、再起動して3件目だけ送信するIPC fixtureで重複要求0件を確認。
 - `npm run build`、`git diff --check`: 成功。既存のchunkサイズ警告あり。
 - 実Runway課金・LTX実推論・Mac実再生/24GB性能は未実施。実機残確認は #266、LTX接続統合は #166 / PR #167。
+
+## 2026-09-22: LTX共有バッチ統合（Issue #166 / PR #167）
+
+- PR #167の旧実装を現行devへ統合し、`ltx-2-5-mlx-local`を共有registry/runtime・動画接続画面へ接続。既存videoShots/jobs/候補・採用経路を共用。
+- Node全体: 257成功。動画UI: 9成功（バッチ回帰6＋ローカル単発/3コマ逐次/既存復旧3）。3コマすべての候補保存、cloud IPC 0件、再起動後の再送0件を確認。
+- Rust native fixture: 100成功／既存の外部依存4件ignored。ローカル7件、Runway13件を含む。2ショットを疑似CLI→実FFmpeg→不変artifact保存で逐次処理し、同一Job再実行・古い原稿範囲/採用作画の拒否を確認。
+- `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`: 成功。
+- LTX実モデル推論・Mac実再生・24GB性能は未実施。CLI/モデル自動取得なし。Mac実機受入は #266 に集約。
