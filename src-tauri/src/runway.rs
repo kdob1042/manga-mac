@@ -191,11 +191,9 @@ pub fn payload_with_frames(
     {
         return Err("選択した動画モデルが尺・寸法・指示に対応していません".into());
     }
-    let (rw, rh) = ratio
-        .split_once(':')
-        .ok_or("動画寸法定義が不正です")?;
-    let aspect = rw.parse::<f64>().map_err(|_| failure())?
-        / rh.parse::<f64>().map_err(|_| failure())?;
+    let (rw, rh) = ratio.split_once(':').ok_or("動画寸法定義が不正です")?;
+    let aspect =
+        rw.parse::<f64>().map_err(|_| failure())? / rh.parse::<f64>().map_err(|_| failure())?;
     if aspect < selected.min_aspect_ratio || aspect > selected.max_aspect_ratio {
         return Err("選択した動画モデルが入力画像の縦横比に対応していません".into());
     }
@@ -252,8 +250,7 @@ pub fn payload_with_frames(
             let mut frames = vec![json!({"uri":start_image,"position":"first"})];
             if inputs.len() == 2 {
                 let end = end_image.ok_or_else(failure)?;
-                let (_, end_width, end_height) =
-                    frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+                let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
                 if start_width != end_width || start_height != end_height {
                     return Err(
                         "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
@@ -291,7 +288,9 @@ fn validate_billing_snapshot(
         || saved["model_id"].as_str() != Some(selected.model_id.as_str())
         || saved["request_profile"].as_str() != Some(selected.request_profile.as_str())
     {
-        return Err("動画料金・送信契約が保存後に変更されています。内容を再確認してください".into());
+        return Err(
+            "動画料金・送信契約が保存後に変更されています。内容を再確認してください".into(),
+        );
     }
     Ok(expected)
 }
@@ -326,9 +325,7 @@ fn reserve(
     } else {
         media::video_pricing(&selected, duration, ratio)?
     };
-    let credits = pricing["credits"]
-        .as_u64()
-        .ok_or("Invalid cost")?;
+    let credits = pricing["credits"].as_u64().ok_or("Invalid cost")?;
     let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     if jobs.iter().any(|j| {
         j["remote"]["actual_credits"].as_u64().unwrap_or(0)
@@ -1131,14 +1128,17 @@ mod tests {
         if with_end {
             let bytes = STANDARD.decode(start.split_once(',').unwrap().1).unwrap();
             let hash = format!("{:x}", Sha256::digest(&bytes));
-            manifest["providerInputs"].as_array_mut().unwrap().push(json!({
-                "id":"b",
-                "hash":hash,
-                "size":bytes.len(),
-                "role":"end_frame",
-                "media_type":"image",
-                "transform":{"kind":"identity"}
-            }));
+            manifest["providerInputs"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "id":"b",
+                    "hash":hash,
+                    "size":bytes.len(),
+                    "role":"end_frame",
+                    "media_type":"image",
+                    "transform":{"kind":"identity"}
+                }));
             (manifest, start.clone(), Some(start))
         } else {
             (manifest, start, None)
@@ -1150,7 +1150,10 @@ mod tests {
         let (single, start, _) = seedance_fixture(false);
         let body = payload_with_frames(&single, &start, None).unwrap();
         assert_eq!(body["model"], "seedance2_5");
-        assert_eq!(body["promptImage"], json!([{"uri":start,"position":"first"}]));
+        assert_eq!(
+            body["promptImage"],
+            json!([{"uri":start,"position":"first"}])
+        );
         assert_eq!(body["audio"], false);
         assert!(body.get("outputFormat").is_none());
         assert!(body.get("lastFrame").is_none());
@@ -1168,7 +1171,10 @@ mod tests {
         assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
         invalid = pair.clone();
         let duplicate = invalid["providerInputs"][1].clone();
-        invalid["providerInputs"].as_array_mut().unwrap().push(duplicate);
+        invalid["providerInputs"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
         assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
         invalid = pair;
         invalid["audio"] = json!(true);
@@ -1349,8 +1355,12 @@ mod tests {
 
         let selected = media::video_model_from_connection(&json!({
             "provider":"runway","model":"seedance2_5","adapter_id":"runway"
-        })).unwrap();
-        assert_eq!(media::video_pricing(&selected, 4, "854:480").unwrap()["credits"], 80);
+        }))
+        .unwrap();
+        assert_eq!(
+            media::video_pricing(&selected, 4, "854:480").unwrap()["credits"],
+            80
+        );
     }
 
     #[test]
