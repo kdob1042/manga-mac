@@ -3,7 +3,7 @@ import {validateSourcePatch} from './source-application.js';
 import {makeSourceCandidate} from './source-replan.js';
 // Native persists the prepared plan on the existing Job before any AI runs.
 export async function prepareSourceUpdate(project,selection,invoke,opId=crypto.randomUUID()) {
- const changes=buildChangeSet(project);
+ const changes=buildChangeSet(project,project.active,selection.budget);
  if(selection.workId&&selection.workId!==project.workId)throw Error('対象作品が変わりました');
  if(selection.changeSetId!==changes.id||selection.baseContentToken!==changes.baseContentToken||selection.targetSnapshotId!==changes.targetSnapshotId)throw Error('原稿または漫画が変わりました。差分を選び直してください');
  if(!selection.selectedBlockIds?.length)throw Error('反映する原稿差分を選んでください');
@@ -15,7 +15,7 @@ export async function prepareSourceUpdate(project,selection,invoke,opId=crypto.r
 const signature=e=>JSON.stringify(['kind','oldUnitIds','newRefs','beforeUnitId','afterUnitId','targetStart'].map(key=>e[key]));
 export function rebaseExpected(project,prepared){
  if(project.workId!==prepared.identity.workId||project.active!==prepared.identity.targetSnapshotId)throw Error('対象作品または原稿版が変わりました');
- const changes=buildChangeSet(project),selected=prepared.expected.sourceEdits.map(old=>changes.blocks.find(b=>signature(b)===signature(old)));
+ const changes=buildChangeSet(project,project.active,prepared.selection?.budget),selected=prepared.expected.sourceEdits.map(old=>changes.blocks.find(b=>signature(b)===signature(old)));
  if(selected.some(b=>!b))throw Error('対象範囲の依存が変わりました。候補を確認し、再計画してください');
  const expected=buildExpectedApplication(project,changes,selected.map(b=>b.id));
  // Generated panels keep their already verified immutable references/identities.
@@ -32,7 +32,11 @@ export async function refreshSourceCandidate(project,candidate,invoke){
  const prepared={...old,identity:{...old.identity,baseContentToken:project.contentToken},expected,plan};
  const ids=new Set(old.plan.scope.panelIds);
  const panels=project.panels.filter(p=>!ids.has(p.id)).concat(candidate.patch.panels.filter(p=>ids.has(p.id)||p.id.startsWith(`source:${old.identity.opId}:panel:`)));
- return makeSourceCandidate(project,prepared,panels,candidate.redrawPanelIds,candidate.reason);
+ const updated=makeSourceCandidate(project,prepared,panels,candidate.redrawPanelIds,candidate.reason);
+ // Unchanged content permits refreshing the native read set, not replanning the user's geometry.
+ if (project.contentToken===old.identity.baseContentToken) updated.patch.layout=structuredClone(candidate.patch.layout);
+ else if (candidate.nameConfirmed || candidate.manualLayout) throw Error('別の制作変更がありました。確定ネームを保持しています。対象範囲を再確認してください');
+ return {...candidate,...updated};
 }
 export async function commitSourceUpdate(project,prepared,patch,invoke){
  if(project.workId!==prepared.identity.workId)throw Error('対象作品が変わりました');

@@ -12,7 +12,7 @@ export function sourceRunKeys(project,edits){
  return [...new Set([...scope.contentPanelIds,...readPanels].map(id=>`panel:${id}`).concat(pageIds.map(id=>`page:${id}`),edits.flatMap(e=>e.oldUnitIds.map(id=>`unit:${id}`)),edits.map(e=>`boundary:${e.beforeUnitId??''}:${e.afterUnitId??''}`)))];
 }
 export function sourceRunGroups(project,selection){
- const changes=buildChangeSet(project);
+ const changes=buildChangeSet(project,project.active,selection.budget);
  if(selection.workId&&selection.workId!==project.workId||selection.changeSetId!==changes.id||selection.baseContentToken!==project.contentToken||selection.targetSnapshotId!==project.active)throw Error('原稿または作品が変わりました');
  buildExpectedApplication(project,changes,selection.selectedBlockIds);
  const groups=[];

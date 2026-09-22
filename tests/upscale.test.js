@@ -8,9 +8,12 @@ test('bounded interpolation dimensions and crop-aware required output pixels',as
  assert.deepEqual(upscaleSize(768,512,4),{width:3072,height:2048});
  for(const a of [[1025,1025,4],[768,768,3],[0,2,2],[NaN,768,2]])assert.throws(()=>upscaleSize(...a));
  const p=await migrateProject(fixture),id=p.panels[0].id;
- assert.ok(requiredScale(p,id,768,768)<1);
+ assert.equal(requiredScale(p,id,768,768),1030/768);
  p.layout.imageCrops={[id]:{zoom:2,x:.5,y:.5}};
  assert.equal(requiredScale(p,id,768,768),1030/768*2);
+ const {containCrop}=await import('../src/image-crop.js');
+ p.layout.imageCrops={[id]:containCrop()};
+ assert.ok(requiredScale(p,id,768,768)<1);
 });
 test('upscale candidates preserve placement, source and lettering; reject stale placement and support original image undo',async()=>{
  const p=await migrateProject(fixture),panel=p.panels[0],j=await beginUpscale(p,panel.id,768,768,2);

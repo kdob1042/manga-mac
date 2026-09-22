@@ -11,7 +11,7 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
  const token=project.contentToken;
  const id=JSON.stringify([project.workId,token,targetSnapshotId]);
  const result={id,workId:project.workId,targetSnapshotId,baseContentToken:token,budget,blocks:[]};
- if(equal(oldKeys,newKeys))return result;
+ if(equal(oldKeys,newKeys)&&!budget.replanApplied)return result;
  const coarse=old.length+fresh.length>(budget.maxUnits??4000);
  const diff=coarse?undefined:diffArrays(oldKeys,newKeys,{timeout:budget.timeout??100,maxEditLength:budget.maxEditLength??2000});
  // Only globally unique matches anchor changed regions. Repeated text inside a
@@ -22,7 +22,7 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
  const ranges=[];
  if(diff)for(const [oe,ne] of anchors){ranges.push([os,oe,ns,ne]);os=oe+1;ns=ne+1;}
  else ranges.push(...coarseSceneRanges(old,fresh));
- if(!old.length){ranges.length=0;let start=0;for(let i=1;i<=fresh.length;i++)if(i===fresh.length||fresh[i].source.sceneId!==fresh[start].source.sceneId){ranges.push([0,0,start,i]);start=i;}}
+ if(!old.length){ranges.length=0;for(let i=0;i<fresh.length;i++)ranges.push([0,0,i,i+1]);}
  for(const [os,oe,ns,ne] of ranges){const before=old.slice(os,oe),after=fresh.slice(ns,ne);
   if(!equal(before.map(key),after.map(key))){const index=result.blocks.length;
    result.blocks.push({id:`${id}:${index}`,groupId:`${id}:group:${index}`,kind:before.length?(after.length?'replace':'delete'):'insert',oldUnitIds:before.map(u=>u.id),newRefs:after.map(u=>u.source),beforeUnitId:os>0?old[os-1].id:null,afterUnitId:oe<old.length?old[oe].id:null,start:os,end:oe,targetStart:ns,...(!diff?{diagnostic:'coarse_diff'}:before.concat(after).some(u=>(oldCount.get(key(u))??0)>1||(newCount.get(key(u))??0)>1)?{diagnostic:'ambiguous_alignment'}:{})});
@@ -35,7 +35,19 @@ export function buildChangeSet(project,targetSnapshotId=project.active,budget={}
   const deletion=result.blocks.find(b=>b.kind==='delete'&&equal(b.oldUnitIds.map(id=>key(old.find(u=>u.id===id))),texts.map(key)));
   if(deletion){insertion.kind='move';insertion.oldUnitIds=deletion.oldUnitIds;insertion.moveStart=deletion.start;insertion.moveEnd=deletion.end;deletion.merged=true;}
  }
- result.blocks=result.blocks.filter(b=>!b.merged);return result;
+ result.blocks=result.blocks.filter(b=>!b.merged);
+ if(budget.replanApplied){
+  const touched=new Set(result.blocks.flatMap(b=>b.oldUnitIds));
+  for(const [at,u] of fresh.entries()){
+   if(result.blocks.some(b=>b.newRefs.some(r=>equal(r,u.source))))continue;
+   const matches=old.map((v,i)=>({v,i})).filter(({v})=>key(v)===key(u)&&!touched.has(v.id));
+   if(matches.length!==1)continue;
+   const {v,i}=matches[0],blockId=`${id}:replan:${i}`;
+   result.blocks.push({id:blockId,groupId:blockId,kind:'replace',replan:true,oldUnitIds:[v.id],newRefs:[u.source],beforeUnitId:i?old[i-1].id:null,afterUnitId:old[i+1]?.id??null,start:i,end:i+1,targetStart:at});
+  }
+  result.blocks.sort((a,b)=>a.targetStart-b.targetStart);
+ }
+ return result;
 }
 export function buildExpectedApplication(project,changeset,selectedBlockIds){
  const current=buildChangeSet(project,changeset.targetSnapshotId,changeset.budget);

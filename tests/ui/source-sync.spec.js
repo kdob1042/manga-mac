@@ -75,7 +75,7 @@ test('generic sources use declarations at a pinned commit across A B A, and reje
  await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();await expect(page.getByRole('alert').filter({hasText:'schema 5 は未対応'})).toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('example/one'))).toBe(before);
 });
 
-test('story-source/v1 imports the common manifest, source-relative files and fixed person IDs',async({page})=>{
+test('story-source/v1 imports the common work entry, work-root files and fixed person IDs',async({page})=>{
  await page.addInitScript(()=>{
   const repo='example/story',sha='f'.repeat(40),image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
   const manifest={format:'story-source/v1',work:{title:'共通作品'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md',tags:['駅']}]}],settings:[{id:'WORLD',path:'settings/world.md'}],characters:[{id:'yu',name:'人物A',image:'assets/yu.png',description:'固定参照'}]};

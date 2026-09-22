@@ -148,6 +148,11 @@ jobs:
       - name: Actual Blender camera render and save/reopen
         if: needs.classify.outputs.run_blender_render == 'true'
         run: python blender/test_real.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
+      - name: Actual GUI live MCP and manual handoff
+        if: needs.classify.outputs.run_blender_render == 'true'
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb xauth libegl1 libgl1
+          xvfb-run -a python blender/test_live_gui.py "$BLENDER_BIN" "$BLENDER_FIXTURES"
       - name: Validate committed Blender test lock
         run: |
           cargo metadata --locked --manifest-path src-tauri/Cargo.toml --format-version 1 > /dev/null
@@ -267,6 +272,10 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Test RGBA helper codec without model weights
+        run: |
+          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
+          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
@@ -281,12 +290,14 @@ jobs:
           key: ${{ steps.native-restore.outputs.cache-primary-key }}
       - name: Install media probe
         run: command -v ffprobe || brew install ffmpeg
+      # The Tauri context macro reads generated icons during native compilation.
+      - name: Prepare native icons
+        run: npm run icons
       - name: Native regression and static checks
         run: |
-          npm run icons
-          npm run build
           cargo test --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin
           cargo clippy --locked --manifest-path src-tauri/Cargo.toml --target aarch64-apple-darwin --all-targets -- -D warnings
+      # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon validation app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -326,6 +337,10 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
+      - name: Test RGBA helper codec without model weights
+        run: |
+          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
+          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
@@ -336,10 +351,7 @@ jobs:
         with:
           path: helper/.build
           key: ${{ steps.native-restore.outputs.cache-primary-key }}
-      - name: Prepare release bundle
-        run: |
-          npm run icons
-          npm run build
+      # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon release app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

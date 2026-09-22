@@ -42,7 +42,8 @@ jobs:
         id: generation
         run: |
           umask 077
-          helper/.build/release/manga-engine --prepare > "$RUNNER_TEMP/opening/prepare.log" 2>&1
+          sample_model=$(node samples/opening-preview/run.mjs --model-id)
+          helper/.build/release/manga-engine --prepare "$sample_model" > "$RUNNER_TEMP/opening/prepare.log" 2>&1
           node samples/opening-preview/run.mjs "$RUNNER_TEMP/opening/input/input.json" "$RUNNER_TEMP/opening/output" helper/.build/release/manga-engine > "$RUNNER_TEMP/opening/generation.log" 2>&1
           echo 'Production helper images and preview package verified'
       - name: Transfer to nonproduction Preview

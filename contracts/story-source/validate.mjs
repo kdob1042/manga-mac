@@ -266,8 +266,8 @@ function checkHeading(content, path, issues) {
 }
 
 /**
- * Validate a manifest together with a source-relative file listing or a map
- * of source-relative paths to file contents.  Binary image format/hash checks
+ * Validate a manifest together with a work-root-relative file listing or a map
+ * of work-root-relative paths to file contents.  Binary image format/hash checks
  * remain at the Rust storage boundary; this function only verifies declaration
  * coverage and text headings.
  */

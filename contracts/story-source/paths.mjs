@@ -1,8 +1,9 @@
 /**
  * Path and position helpers for the canonical story-source/v1 contract.
  *
- * Manifest paths are relative to the repository's `source/` directory.  The
- * helpers deliberately do not touch the filesystem; callers can use the
+ * Declared manuscript, setting, and asset paths are relative to the work
+ * root. The entry file is work.json; its location is not a path base.
+ * The helpers deliberately do not touch the filesystem; callers can use the
  * returned paths with GitHub Contents or a local source checkout.
  */
 
@@ -35,7 +36,7 @@ export function sourcePath(value, label = 'パス') {
 
 export function resolveSourcePath(sourceRoot, relativePath) {
   if (typeof sourceRoot !== 'string' || !sourceRoot) throw new Error('sourceルートが不正です');
-  const safe = safeRelativePath(relativePath, 'source相対パス');
+  const safe = safeRelativePath(relativePath, '作品相対パス');
   // The relative path has already rejected absolute and parent segments. Keep
   // this helper platform-neutral so the same contract can be bundled into the
   // desktop UI and used by a Node-based manuscript builder.

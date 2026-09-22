@@ -8,7 +8,7 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  await page.reload();await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
  await page.getByRole('button',{name:'画像トリミング',exact:true}).click();
  const slot=page.getByTestId('layout-slot-0');
- await slot.click({position:{x:60,y:45}});await page.getByRole('button',{name:'このコマを全面表示にする'}).click();
+ await slot.click({position:{x:60,y:45}});await page.getByRole('button',{name:'画像を中央・等倍に戻す'}).click();
  const load=()=>page.evaluate(async()=>await (await import('/src/bridge.js')).loadProject());
  const p=await load(),id=p.panels[0].id;expect(p.layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5});
  await slot.click({position:{x:60,y:45}});await page.getByLabel('画像の拡大率',{exact:true}).selectOption('2');
@@ -27,5 +27,47 @@ test('crop pan, cancel, undo, reload and shared PNG/CBZ preserve original and le
  const png=await pagePNG(panels,p.snapshots,[],'ja',pg,false,p.layout.imageCrops);
  return {sameText:before===after,png:png.split(',')[1],cbz:Array.from(new Uint8Array(await (await exportCBZ(p)).arrayBuffer()))};});
  expect(result.sameText).toBe(true);const zip=await JSZip.loadAsync(result.cbz);expect(await zip.file('001.png').async('base64')).toBe(result.png);
- await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();await page.screenshot({path:'test-results/image-crop.png',fullPage:true});
+ await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
+ await page.getByRole('button',{name:'画像トリミング',exact:true}).click();
+ await slot.click({position:{x:60,y:45}});
+ await page.getByRole('button',{name:'画像全体を枠内に収める'}).click();
+ await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5,fit:'contain'});
+ await slot.click({position:{x:60,y:45}});
+ await page.getByRole('button',{name:'このコマを全面表示にする'}).click();
+ await expect.poll(async()=>(await load()).layout.imageCrops[id]).toEqual({zoom:1,x:.5,y:.5});
+ await page.screenshot({path:'test-results/image-crop.png',fullPage:true});
+});
+test('unset crop covers the panel; contain leaves margins inside the frame',async({page})=>{
+ await page.goto('/');
+ const sample=await page.evaluate(async fixture=>{
+  const {saveProject,loadProject}=await import('/src/bridge.js');
+  const color=()=>{const canvas=document.createElement('canvas');canvas.width=768;canvas.height=768;const ctx=canvas.getContext('2d');ctx.fillStyle='#0000ff';ctx.fillRect(0,0,768,768);return canvas.toDataURL('image/png');};
+  fixture.panels=[{...fixture.panels[0],id:'blue',unitIds:[],sourceRefs:[],image:color()}];
+  fixture.history=[];fixture.jobs=[];
+  await saveProject(fixture);
+  let p=await loadProject();
+  const {template,pagePanels,PAGE}=await import('/src/layout.js');
+  const {containCrop}=await import('/src/image-crop.js');
+  p.layout.pages=[{id:'one',slots:template(4,['blue']).slice(0,1)}];
+  p.layout.knownPanelIds=['blue'];
+  await saveProject(p);
+  p=await loadProject();
+  const {pagePNG}=await import('/src/render.js');
+  const pg=p.layout.pages[0],panels=pagePanels(p,pg);
+  const decode=async(data)=>{
+   const img=new Image();img.src=data;await img.decode();
+   const c=document.createElement('canvas');c.width=PAGE.width;c.height=PAGE.height;c.getContext('2d').drawImage(img,0,0);
+   return (x,y)=>Array.from(c.getContext('2d').getImageData(x|0,y|0,1,1).data);
+  };
+  const cover=await decode(await pagePNG(panels,p.snapshots,[], 'ja',pg,true));
+  const contain=await decode(await pagePNG(panels,p.snapshots,[], 'ja',pg,true,{blue:containCrop()}));
+  const bottom=[820+360,60+1030-40],center=[820+360,60+400];
+  return {coverBottom:cover(...bottom),containBottom:contain(...bottom),coverCenter:cover(...center),containCenter:contain(...center)};
+ },legacy);
+ expect(sample.coverCenter[2]).toBeGreaterThan(200);
+ expect(sample.containCenter[2]).toBeGreaterThan(200);
+ expect(sample.coverBottom[2]).toBeGreaterThan(200);
+ expect(sample.coverBottom[0]).toBeLessThan(80);
+ expect(sample.containBottom[0]).toBeGreaterThan(200);
+ expect(sample.containBottom[1]).toBeGreaterThan(200);
 });

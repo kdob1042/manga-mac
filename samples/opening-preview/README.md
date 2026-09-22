@@ -37,9 +37,11 @@ Macでアプリ本体の `MangaEngine`、`imageRequest`、原文参照、自由�
 npm ci
 npx playwright install chromium
 swift build -c release --package-path helper
-helper/.build/release/manga-engine --prepare
+helper/.build/release/manga-engine --prepare "$(node samples/opening-preview/run.mjs --model-id)"
 node samples/opening-preview/run.mjs /private/path/input.json /private/path/new-output helper/.build/release/manga-engine
 ```
+
+準備と生成は `src/media-registry.json` の既定ローカル画像モデルを共用し、制作記録にもモデルIDを残します。`--model-id` はIDを表示するだけで、ダウンロードや推論を開始しません。既定モデルがクラウド等へ変わった場合、このsampleは停止します。
 
 出力先は未作成ディレクトリを指定します。既存結果は上書きしません。`panel-N/result.png` とreceipt、各段階のcheckpoint、`project.json`、`prepared.json`、`assets/`、確認用 `page.png` が残ります。`project.json` はこのスクリプトの制作記録であり、アプリのネイティブ保存ファイルではありません。生成失敗時はcheckpointまで残り、自動再生成はしません。
 

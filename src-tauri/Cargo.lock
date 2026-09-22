@@ -1969,6 +1969,7 @@ dependencies = [
  "bytes",
  "http",
  "libc",
+ "png 0.18.1",
  "reqwest 0.12.28",
  "rig-core",
  "rusqlite",

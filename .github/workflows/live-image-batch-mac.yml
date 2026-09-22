@@ -1,0 +1,61 @@
+name: Live local image batch on Apple Silicon
+
+on:
+  pull_request:
+    branches: [dev]
+    paths:
+      - '.github/workflows/live-image-batch-mac.yml'
+      - 'scripts/live-image-batch.mjs'
+      - 'helper/**'
+      - 'src/media-registry.json'
+      - 'src/production.js'
+      - 'src/revisions.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-image-batch-${{ github.event.pull_request.number || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  generate-three-panels:
+    name: FLUX 6-bit three-panel batch
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build MediaGenerationKit helper
+        run: swift build -c release --package-path helper
+      - name: Record Apple Silicon environment
+        run: |
+          mkdir -p live-image-batch-results
+          { sw_vers; uname -a; sysctl -n hw.model; sysctl -n hw.memsize; } | tee live-image-batch-results/environment.txt
+      - name: Prepare FLUX.2 klein 4B 6-bit weights
+        timeout-minutes: 45
+        run: |
+          /usr/bin/time -l helper/.build/release/manga-engine --prepare flux_2_klein_4b_q6p.ckpt > live-image-batch-results/prepare.stdout.log 2> live-image-batch-results/prepare.stderr.log
+          grep -q '^ready$' live-image-batch-results/prepare.stdout.log
+      - name: Generate three selected panels sequentially
+        timeout-minutes: 35
+        env:
+          MANGA_ENGINE: ${{ github.workspace }}/helper/.build/release/manga-engine
+          IMAGE_BATCH_ARTIFACTS: ${{ github.workspace }}/live-image-batch-results
+        run: node scripts/live-image-batch.mjs
+      - name: Verify artifacts
+        run: |
+          test "$(find live-image-batch-results -name result.png | wc -l | tr -d ' ')" = 3
+          test "$(find live-image-batch-results -name receipt.json | wc -l | tr -d ' ')" = 3
+          node -e 'const s=require("./live-image-batch-results/summary.json"); if(!s.passed||s.batch.completed!==3||s.batch.maxConcurrency!==1)process.exit(1)'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: live-image-batch-results
+          path: live-image-batch-results/
+          if-no-files-found: error

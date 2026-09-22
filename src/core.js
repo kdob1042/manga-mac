@@ -1,4 +1,5 @@
 import {textForRefs} from './source-refs.js';
+import { defaultImageModelId, defaultVideoModelId } from './media.js';
 // Pure domain logic. Source text is never produced by a language model.
 export function orderedScenes(manifest, episodeId) {
   if (!Array.isArray(manifest.episodes) || !Array.isArray(manifest.scenes)) throw Error('manifest の形式が不正です');
@@ -19,6 +20,7 @@ export function sourceUnits(sceneId, text) {
   });
 }
 export function panelHasText(panel) {
+  if (panel?.lettering?.mode === 'balloons' && panel.lettering.boxes?.some(box => typeof box.text === 'string' && box.text.trim())) return true;
   if (Array.isArray(panel?.sourceRefs)) return panel.sourceRefs.length > 0;
   return Array.isArray(panel?.unitIds) && panel.unitIds.length > 0;
 }
@@ -53,4 +55,4 @@ export function sourceForPanel(panel, snapshot) {
 export function revise(project, panels, label) {
   return { ...project, panels, history: [...project.history, { panels: project.panels, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), label, at: new Date().toISOString() }] };
 }
-export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', videoShots: [], videoRevisions: [], videoHistory: [] });
+export const emptyProject = () => ({ version: 4, title: '新しい作品', snapshots: [], active: null, panels: [], artworks: [], characters: [], history: [], jobs: [], localizations: [], output_locale: 'ja', mediaDefaults: { image: defaultImageModelId, video: defaultVideoModelId }, videoShots: [], videoRevisions: [], videoHistory: [] });

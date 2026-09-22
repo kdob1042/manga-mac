@@ -6,12 +6,20 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {emptyProject, sourceUnits, validatePlan} from '../../src/core.js';
 import {generationSize, imageRequest} from '../../src/image-input.js';
+import {defaultImageModelId, imageModel} from '../../src/media.js';
 import {layoutWarnings} from '../../src/layout.js';
 import {legacyPanelRefs} from '../../src/source-refs.js';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const readJSON = async p => JSON.parse(await fs.readFile(p, 'utf8'));
 const saveJSON = (p, value) => fs.writeFile(p, JSON.stringify(value, null, 2), {mode:0o600, flag:'wx'});
+function sampleImageModel() {
+  const model = imageModel(defaultImageModelId);
+  if (model.locality !== 'local' || model.adapter_id !== 'media-generation-kit' || !model.operations.includes('generate')) {
+    throw Error('The opening sample requires the registered local MediaGenerationKit image model');
+  }
+  return model;
+}
 function helper(executable, input) {
   return new Promise((resolve, reject) => {
     const child = spawn(executable, [], {stdio:['pipe','ignore','pipe'],timeout:15*60*1000,killSignal:'SIGKILL'});
@@ -25,6 +33,7 @@ function helper(executable, input) {
 }
 
 export async function produce(inputFile, outputDirectory, executable) {
+  const model = sampleImageModel();
   const {chromium}=await import('playwright');
   const preflight=await chromium.launch(process.env.CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.CHROMIUM_EXECUTABLE_PATH}:{});
   await preflight.close();
@@ -46,6 +55,7 @@ export async function produce(inputFile, outputDirectory, executable) {
   })}))};
   validatePlan(plan,units,characters);
   const project = {...emptyProject(),title:input.title,workId:input.workId,revision:1};
+  project.mediaDefaults.image = model.id;
   const snapshot = {id:`sample@${hash(text)}`,sha:hash(text),episodeId:input.episodeId,settings:[],scenes:[{id:'opening',text,tags:[]}]};
   project.snapshots=[snapshot];project.active=snapshot.id;project.characters=characters;
   project.panels=plan.panels.map((p,i) => ({...p,id:`opening:p${i}`,snapshotId:snapshot.id,sceneId:'opening',image:null,status:'planned',lettering:{mode:'caption'},instructions:[],attempts:0}));
@@ -59,9 +69,9 @@ export async function produce(inputFile, outputDirectory, executable) {
   await fs.mkdir(out,{mode:0o700}); // Refuse to overwrite a previous production attempt.
   await saveJSON(path.join(out,'plan.json'),project);
   for (const [i,panel] of project.panels.entries()) {
-    const [width,height]=generationSize(input.panels[i].resolution ?? [[768,384],[512,768],[512,512]][i]);
+    const [width,height]=generationSize(input.panels[i].resolution ?? [[768,384],[512,768],[512,512]][i], model.id);
     const references=panel.characterIds.map(id=>characters.find(c=>c.id===id));
-    const request=imageRequest({panel,references,width,height,seed:input.seed+i,instruction:input.instruction ?? ''});
+    const request=imageRequest({panel,references,width,height,seed:input.seed+i,instruction:input.instruction ?? '',modelId:model.id});
     const requestHash=hash(JSON.stringify(request)), directory=path.join(out,`panel-${i}`);
     await fs.mkdir(directory,{mode:0o700});
     await helper(path.resolve(executable),{...request,output:{directory,request_hash:requestHash}});
@@ -115,7 +125,10 @@ export async function render(directory) {
 
 if(process.argv[1] && path.resolve(process.argv[1])===fileURLToPath(import.meta.url)) {
   const [input,output,engine]=process.argv.slice(2);
-  if(input==='--render'&&output) await render(output);
-  else if(!input||!output||!engine) {console.error('Usage: node samples/opening-preview/run.mjs INPUT.json NEW_OUTPUT_DIR MANGA_ENGINE | --render OUTPUT_DIR');process.exitCode=1;}
+  const usage='Usage: node samples/opening-preview/run.mjs INPUT.json NEW_OUTPUT_DIR MANGA_ENGINE | --render OUTPUT_DIR | --model-id | --help';
+  if(input==='--help') console.log(usage);
+  else if(input==='--model-id') console.log(sampleImageModel().model_id);
+  else if(input==='--render'&&output) await render(output);
+  else if(!input||!output||!engine) {console.error(usage);process.exitCode=1;}
   else await produce(input,output,engine);
 }

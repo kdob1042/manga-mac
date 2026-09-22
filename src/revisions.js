@@ -1,5 +1,6 @@
 import { ensureLayout } from './layout.js';
 import { placementKey } from './placement.js';
+import { defaultImageModelId, defaultVideoModelId, imageExecution, imageModel, videoModel } from './media.js';
 // Manga revisions only: Blender remains the owner of 3D state.
 export async function digest(bytes) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -18,6 +19,12 @@ export async function migrateProject(input, recover = false) {
   p.panelMotions ??= []; p.motionHistory ??= [];
   if (![p.panelMotions, p.motionHistory].every(Array.isArray)) throw Error('コマ動画の保存データが不正です');
   p.localizations ??= []; p.output_locale ??= 'ja';
+  if (p.mediaDefaults == null) p.mediaDefaults = { image: defaultImageModelId, video: defaultVideoModelId };
+  if (typeof p.mediaDefaults !== 'object' || Array.isArray(p.mediaDefaults)) throw Error('メディア既定値が不正です');
+  p.mediaDefaults.image ??= defaultImageModelId;
+  p.mediaDefaults.video ??= defaultVideoModelId;
+  imageModel(p.mediaDefaults.image);
+  videoModel(p.mediaDefaults.video);
   if (!['ja', 'en'].includes(p.output_locale) || !Array.isArray(p.localizations)) throw Error('作品の言語版が不正です');
   for (const localization of p.localizations) {
     if (localization.locale !== 'en' || typeof localization.snapshot_id !== 'string' || !Array.isArray(localization.units)) throw Error('作品の英訳版が不正です');
@@ -48,22 +55,27 @@ export async function migrateProject(input, recover = false) {
   if (recover) p.jobs = p.jobs.map(j => j.status === 'running' ? { ...j, status: 'unknown' } : j);
   return ensureLayout(p);
 }
-function inputState(project, panel) {
-  return { active: project.active, panel, styles: project.style_references ?? [], characters: panel.characterIds.map(id => project.characters.find(c => c.id === id)) };
+function inputState(project, panel, media = null) {
+  return { active: project.active, panel, styles: project.style_references ?? [], characters: panel.characterIds.map(id => project.characters.find(c => c.id === id)), ...(media ? { media } : {}) };
 }
-export async function beginJob(project, panel, kind = 'generate') {
+export async function beginJob(project, panel, kind = 'generate', imageModelId = null, resolveExecution = imageExecution) {
+  const media = ['generate', 'edit', 'retake', 'decompose', 'layer_edit'].includes(kind)
+    ? resolveExecution(imageModelId ?? project.mediaDefaults?.image ?? defaultImageModelId)
+    : null;
   if (project.jobs.filter(j => !j.notSubmitted && j.panelId === panel.id && j.base_revision === (panel.artwork_revision ?? null) && j.source_revision === panel.snapshotId && j.kind === kind).length >= 3) throw Error('同じ基準版での試行上限です。既存候補を確認してください');
   if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');
-  return { id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
-    base_revision: panel.artwork_revision ?? null, input_hash: await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel)))),
-    status: 'running', attempts: 1, cost: { kind: 'local', amount: null, currency: null }, started_at: Date.now(), at: new Date().toISOString() };
+  const cloud=media?.adapter_id==='runway-image';
+  if(cloud&&!project.mediaDefaults?.imageConnection)throw Error('クラウド静止画の接続・予算を登録してください');
+  return { ...(cloud?{cloud_connection:project.mediaDefaults.imageConnection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
+    base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), input_hash: await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel, media)))),
+    status: 'running', attempts: 1, cost: { kind: cloud?'cloud':'local', amount: cloud?5:null, currency: cloud?'credits':null }, started_at: Date.now(), at: new Date().toISOString() };
 }
 export async function finishJob(project, job, generated, cancelled = false, candidateOnly = false) {
   const currentJob = project.jobs.find(j => j.id === job.id);
   if (!currentJob || currentJob.status !== 'running') throw Error('制作要求は有効ではありません');
   const panel = project.panels.find(p => p.id === job.panelId);
   const hash = await imageHash(generated.image);
-  const valid = !cancelled && !candidateOnly && panel && job.input_hash === await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel))));
+  const valid = !cancelled && !candidateOnly && panel && job.input_hash === await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel, job.media ?? null))));
   const id = `artwork:${job.id}`;
   const result = { ...generated, artwork_revision: id, capture_revision: generated.capture_revision ?? null };
   const artwork = { id, hash, parent_revision: job.base_revision, capture_revision: result.capture_revision, job_id: job.id, panel: result };
@@ -77,7 +89,7 @@ export async function adoptCandidate(project, jobId) {
   const job = project.jobs.find(j => j.id === jobId), panel = project.panels.find(p => p.id === job?.panelId);
   if (job?.placement_key && job.placement_key !== placementKey(project,job.panelId)) throw Error('配置が変わったため、この候補は採用できません');
   const artwork = project.artworks.find(a => a.id === job?.output_revision);
-  if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel)))) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
+  if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await digest(new TextEncoder().encode(JSON.stringify(inputState(project, panel, job.media ?? null)))) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
   return { ...project, panels: project.panels.map(p => p.id === panel.id ? structuredClone(artwork.panel) : p),
     history: [...project.history, { panels: project.panels, label: '作画候補を採用', at: new Date().toISOString() }],
     jobs: project.jobs.map(j => j.id === jobId ? { ...j, status: 'complete' } : j) };

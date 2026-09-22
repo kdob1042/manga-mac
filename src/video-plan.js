@@ -9,6 +9,7 @@ export function motionFromPlan(project, shot, plan) {
   const units = sourceUnits(scene.id, scene.text).filter(u => shot.unitIds.includes(u.id));
   const panels = validatePlan(plan, units, project.characters);
   if (panels.length !== 1 || JSON.stringify(panels[0].characterIds) !== JSON.stringify(shot.characterIds)) throw Error('動画案の原作範囲・人物が一致しません');
+  if (typeof panels[0].prompt !== 'string' || panels[0].prompt.length > 1000) throw Error('動画案の指示が長すぎます');
   return validateVideoShot(project, { ...shot, prompt: panels[0].prompt }).prompt;
 }
 
