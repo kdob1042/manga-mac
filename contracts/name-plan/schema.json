@@ -87,7 +87,6 @@
         "repo",
         "workId",
         "branch",
-        "commit",
         "scenes",
         "selectedAtomIds",
         "settingsHash",
