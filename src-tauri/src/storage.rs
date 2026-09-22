@@ -1,3 +1,5 @@
+#[path = "acceptance.rs"]
+pub mod acceptance;
 #[path = "backup.rs"]
 pub mod backup;
 #[path = "draft.rs"]
@@ -652,6 +654,7 @@ fn preserve_remote_jobs(old: &Value, next: &mut Value, native_source_write: bool
                 "panelId",
                 "kind",
                 "input_hash",
+                "input_hash_version",
                 "scope",
                 "base_revision",
                 "source_revision",
@@ -872,6 +875,46 @@ mod tests {
         let db = Connection::open(dir.join("test.sqlite3")).unwrap();
         assert_eq!(raw_project(&db).unwrap()["jobs"][0]["remote"], remote);
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn submitted_job_hash_version_is_immutable_and_legacy_hashes_stay_unversioned() {
+        for transport in ["remote", "local_image"] {
+            for version in [None, Some(2)] {
+                let (mut db, dir) = setup();
+                let mut project = fixture();
+                project["jobs"] = json!([{
+                    "id":"image-job", "scope":{"type":"panel","id":"panel"},
+                    "manifest":{"prompt":"fixture"}, "input_hash":"original-raw-hash",
+                    "status":"running"
+                }]);
+                project["jobs"][0][transport] = json!({"status":"PENDING"});
+                if let Some(version) = version {
+                    project["jobs"][0]["input_hash_version"] = json!(version);
+                }
+                save(&mut db, &dir, &project.to_string()).unwrap();
+                // An ordinary resave never migrates an in-flight legacy hash.
+                save(&mut db, &dir, &project.to_string()).unwrap();
+                let before = raw_project(&db).unwrap();
+                assert_eq!(before["jobs"][0]["input_hash"], "original-raw-hash");
+                assert_eq!(
+                    before["jobs"][0].get("input_hash_version"),
+                    project["jobs"][0].get("input_hash_version")
+                );
+                let mut changed = project.clone();
+                changed["jobs"][0]["input_hash_version"] =
+                    json!(if version.is_some() { 1 } else { 2 });
+                assert!(save(&mut db, &dir, &changed.to_string()).is_err());
+                if version.is_some() {
+                    changed["jobs"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("input_hash_version");
+                    assert!(save(&mut db, &dir, &changed.to_string()).is_err());
+                }
+                assert_eq!(raw_project(&db).unwrap(), before);
+                fs::remove_dir_all(dir).unwrap();
+            }
+        }
     }
     #[test]
     fn video_stream_roundtrip_export_and_restart() {

@@ -47,6 +47,7 @@ test('failed project load can retry without starting an empty replacement projec
   await page.addInitScript(data=>{
     let attempts=0;window.saved=0;
     window.__TAURI_INTERNALS__={invoke:async command=>{
+      if(command==='acceptance_context')return null;
       if(command==='load_project'){if(!attempts++)throw Error('一時的な読込エラー');return JSON.stringify(data);}
       if(command==='source_library')return {active:null,entries:[]};
       if(command==='backup_status')return {config:null,status:{},restored:[]};
@@ -67,6 +68,7 @@ test('source library failure keeps saved artwork editable and offers an independ
   await page.addInitScript(data=>{
     let libraryAttempts=0;
     window.__TAURI_INTERNALS__={invoke:async command=>{
+      if(command==='acceptance_context')return null;
       if(command==='load_project')return JSON.stringify(data);
       if(command==='save_project')return;
       if(command==='source_library'){if(!libraryAttempts++)throw Error('一覧の読込エラー');return {active:null,entries:[]};}
@@ -113,6 +115,7 @@ test('library retry restores the saved work and second episode before importing 
     const catalog={format:'story-library/v1',authorityUntil:'M8',works:[{id:'work-a',title:'作品A',root:'works/work-a',formats:['manga'],manuscriptFormat:'story-source/v1',readAdapters:['story-source/v1'],authority:'origin',origin:{repository:'owner/a',ref:'main',commit:sha,manifestPath:'manifest.json',accessible:true},importStatus:'imported'}]};
     const manifest={format:'story-source/v1',work:{title:'作品A'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'}]},{id:'P02',title:'第二話',scenes:[{id:'P02-01',path:'manuscript/p02/p02-01.md'},{id:'P02-02',path:'manuscript/p02/p02-02.md'}]}],settings:[],characters:[]};
     window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
       if(command==='load_project')return JSON.stringify(project);
       if(command==='save_project'){project=JSON.parse(args.data);window.savedProject=project;return;}
       if(command==='source_library'){if(!attempts++)throw Error('一覧の一時エラー');return {active:'primary',entries:[entry]};}

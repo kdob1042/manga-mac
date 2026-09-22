@@ -10,6 +10,7 @@ const legacy = JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json', imp
 test('local registration routes only to MLX and stores a candidate before explicit adoption', async ({ page }) => {
   await page.addInitScript(legacy => {
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       const project = () => JSON.parse(sessionStorage.getItem('fixture-project') || JSON.stringify(legacy));
       if (command === 'source_library') return { active: 'primary', entries: [{ id: 'primary', name: 'Fixture', repo: 'example/story', episode: 'P01' }] };
       if (command === 'load_project') return JSON.stringify(project());
@@ -78,6 +79,7 @@ test('three local batch recipes use the shared runtime sequentially and recover 
   await page.addInitScript(initial => {
     let running = false;
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       const load = () => JSON.parse(sessionStorage.getItem('local-batch') || JSON.stringify(initial));
       if (command === 'source_library') return { active: 'primary', entries: [{ id: 'primary', name: 'Fixture', repo: 'example/story', episode: 'P01' }] };
       if (command === 'load_project') return JSON.stringify(load());

@@ -10,6 +10,7 @@ for(const stopA of [false,true,'fail'])test(stopA==='fail'?'A planning failure l
   let p=JSON.parse(localStorage.getItem('parallel-fixture')),revision=0;window.parallelCalls=[];window.planGates={};window.initialMiddle=JSON.stringify(p.panels.slice(1,8));
   const content=p=>JSON.stringify([p.panels,p.layout,p.sourceApplication,p.active]);const save=next=>{next.contentToken=content(next)===content(p)?p.contentToken:`t${++revision}`;p=next;window.parallelSaved=p;localStorage.setItem('parallel-fixture',JSON.stringify(p));};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.parallelCalls.push(command);
    if(command==='load_project')return JSON.stringify(p);if(command==='save_project'){save(JSON.parse(args.data));return;}
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'test/repo',episode:'P01'}]};if(command==='backup_status')return {config:null,status:{},restored:[]};if(command==='register_llm')return 'external';if(command==='remove_llm')return;

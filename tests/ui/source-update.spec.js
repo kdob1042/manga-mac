@@ -13,6 +13,7 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
   const content=p=>JSON.stringify([p.panels,p.layout,p.sourceApplication,p.active]);
   function save(next){if(content(next)!==content(project))next.contentToken=`t${++revision}`;else next.contentToken=project.contentToken;next.sourcePatchReceipts={...next.sourcePatchReceipts,...project.sourcePatchReceipts};project=next;localStorage.setItem('source-fixture',JSON.stringify(project));window.sourceSaved=project;}
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.sourceCalls.push(command);
    if(command==='load_project')return JSON.stringify(project);
    if(command==='save_project'){save(JSON.parse(args.data));return;}

@@ -4,6 +4,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
    let project={version:4,title:'初稿試験',active:'source',snapshots:[{id:'source',sha:'fixture',settings:[],scenes:[{id:'s',text:Array.from({length:6},(_,i)=>`本文${i}。`).join('\n\n')}]}],panels:Array.from({length:6},(_,i)=>({id:`p${i}`,sceneId:'s',snapshotId:'source',unitIds:[`s:u${i}`],characterIds:[],prompt:'Library',image:null,status:'planned',instructions:[],attempts:0})),characters:[],history:[],jobs:[],artworks:[],localizations:[],output_locale:'ja'};
    let lettering=0,failed=false;window.calls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
      window.calls.push({command,args});
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});

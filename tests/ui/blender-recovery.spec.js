@@ -10,6 +10,7 @@ for (const action of ['adopt', 'abandon']) {
         jobs: [{ id: '00000000-0000-4000-8000-000000000099', status: 'unknown', expected_revision: 0 }],
       };
       window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
         window.nativeCalls.push({ command, args });
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
         if (command === 'load_project') return null;

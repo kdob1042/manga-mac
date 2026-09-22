@@ -95,6 +95,7 @@ test('selected manga panels become editable video recipes before any batch submi
 for (const scope of ['common', 'individual']) test(`video model changes invalidate saved ${scope} batch settings and allow repairs`, async ({ page }) => {
   await page.addInitScript(fixture => {
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       if (command === 'source_library') return { active:'primary', entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}] };
       if (command === 'load_project') return sessionStorage.getItem('video-model-project') || JSON.stringify({...fixture,mediaDefaults:{video:'runway-seedance-2-5'}});
       if (command === 'save_project') { sessionStorage.setItem('video-model-project',args.data); return; }

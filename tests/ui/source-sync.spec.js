@@ -9,6 +9,7 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
   const initial={version:4,title:'A',snapshots:[snapshot],active:snapshot.id,panels:[],artworks:[],characters:[],history:[],jobs:[],localizations:[],output_locale:'ja',videoShots:[],videoRevisions:[],videoHistory:[]};
   window.checks=0;window.failSync=false;window.failSave=false;
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'A',repo,episode:'P01'}]};
    if(command==='source_register')return {entries:[args],id:'primary'};
    if(command==='load_project')return localStorage.getItem('saved')||JSON.stringify(initial);
@@ -43,6 +44,7 @@ test('generic sources use declarations at a pinned commit across A B A, and reje
  await page.addInitScript(()=>{
   window.activeRepo=localStorage.getItem('chosen')||'example/one';window.badSchema=false;window.reads=[];
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    const repo=window.activeRepo,second=repo==='example/two';
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:repo,repo,episode:'P01'}]};
    if(command==='load_project')return localStorage.getItem(repo);
@@ -81,6 +83,7 @@ test('story-source/v1 imports the common work entry, work-root files and fixed p
   const repo='example/story',sha='f'.repeat(40),image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
   const manifest={format:'story-source/v1',work:{title:'共通作品'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md',tags:['駅']}]}],settings:[{id:'WORLD',path:'settings/world.md'}],characters:[{id:'yu',name:'人物A',image:'assets/yu.png',description:'固定参照'}]};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'共通作品',repo,episode:'P01'}]};
    if(command==='load_project')return localStorage.getItem('saved');
    if(command==='save_project'){localStorage.setItem('saved',args.data);return;}

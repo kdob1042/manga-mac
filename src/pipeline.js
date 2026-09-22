@@ -6,7 +6,7 @@ import { executeImage } from './media-runtime.js';
 import { askLLM } from './llm.js';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core.js';
 import { referenceDeclarations, normalizeSourceManifest } from './source-protocol.js';
-import { defaultImageModelId, imageModel } from './media.js';
+import { defaultImageModelId, imageModel, validateImageDimensions } from './media.js';
 
 const STORY_SOURCE_FORMAT = 'story-source/v1';
 
@@ -145,7 +145,7 @@ export async function planScene(scene, snapshot, characters, model, ask = askLLM
   }
   return validatePlan(plan, units, characters).map((p, i) => ({ ...p, id: `${scene.id}:p${i}`, sceneId: scene.id, snapshotId: snapshot.id, status: 'planned', image: null, instructions: [], attempts: 0 }));
 }
-export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null, inputMode = 'capture') {
+export async function generatePanel(panel, characters, original = null, instruction = '', job = null, capture = null, styles = [], edit = null, permit=null, imageModelId = null, inputMode = 'capture', options = {}) {
   const selected = imageModel(imageModelId ?? job?.media?.registry_id ?? defaultImageModelId);
   if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
@@ -167,7 +167,11 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (panel.image) refs.push({ id: panel.artwork_revision ?? panel.id, name: 'Previous accepted expression / style', image: panel.image, hash: await imageHash(panel.image) });
     instruction = [...(panel.instructions ?? []), instruction].filter(Boolean).join('\n');
   }
-  const [width, height] = job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : (capture?.settings?.resolution ?? panel.generationResolution), selected.id);
+  if (options.resolution !== undefined) {
+    if (inputMode !== 'direct' || original || capture || job?.finishing || !Array.isArray(options.resolution) || options.resolution.length !== 2) throw Error('生成寸法の指定は新規の直接作画だけで利用できます');
+    validateImageDimensions(selected.id, ...options.resolution);
+  }
+  const [width, height] = options.resolution ?? (job?.finishing ? [job.finishing.width,job.finishing.height] : generationSize(original ? [panel.generation?.width ?? 768, panel.generation?.height ?? 768] : (capture?.settings?.resolution ?? panel.generationResolution), selected.id));
   if(job?.finishing && (!original || job.finishing.parent_hash !== await imageHash(original))) throw Error('仕上げの元画像が変わりました');
   if (source) {
     const { fitInput } = await import('./canvas-image.js');

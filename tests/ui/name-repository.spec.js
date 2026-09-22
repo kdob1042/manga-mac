@@ -5,6 +5,7 @@ async function setup(page) {
   await page.addInitScript(() => {
     window.repositoryCalls = [];
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       if (command === 'source_library') return { active: 'primary', entries: [{ id: 'primary', name: 'ネーム試験', repo: 'fixture/stories', episode: 'P01', work_id: 'example' }] };
       if (command === 'load_project') return localStorage.getItem('repository-project');
       if (command === 'save_project') { localStorage.setItem('repository-project', args.data); return; }

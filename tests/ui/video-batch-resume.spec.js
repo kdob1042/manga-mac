@@ -31,6 +31,7 @@ async function openBatch(page, mode = 'success') {
   const initial = await savedBatch();
   await page.addInitScript(({ initial, mode }) => {
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       const load = () => JSON.parse(sessionStorage.getItem('batch-project') || JSON.stringify(initial));
       if (command === 'load_project') return JSON.stringify(load());
       if (command === 'save_project') { sessionStorage.setItem('batch-project', args.data); return; }

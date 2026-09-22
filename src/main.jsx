@@ -458,4 +458,17 @@ function App() {
 
     </div></div>;
 }
-createRoot(document.getElementById('root')).render(<App/>);
+const AcceptanceHarness = React.lazy(() => import('./AcceptanceHarness.jsx'));
+function Bootstrap() {
+  const [mode, setMode] = useState(() => desktop() ? { loading: true } : { context: null });
+  useEffect(() => {
+    if (!desktop()) return;
+    call('acceptance_context').then(context => setMode({ context }))
+      .catch(error => setMode({ error: error.message ?? String(error) }));
+  }, []);
+  // An isolation failure must never fall through to the ordinary project UI.
+  if (mode.error) return <main role="alert">起動先を確認できません: {mode.error}</main>;
+  if (mode.loading) return <main role="status">起動先を確認中…</main>;
+  return mode.context ? <React.Suspense fallback={<main role="status">確認画面を準備中…</main>}><AcceptanceHarness context={mode.context}/></React.Suspense> : <App/>;
+}
+createRoot(document.getElementById('root')).render(<Bootstrap/>);

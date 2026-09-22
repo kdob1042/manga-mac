@@ -1,0 +1,25 @@
+// Package diagnostics beside the DMG. Does not download, sign, or launch the app.
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {copyFile, mkdir, readFile, readdir, stat, writeFile} from 'node:fs/promises';
+import path from 'node:path';
+const root=process.cwd();
+const bundle=path.resolve(process.argv[2]??'src-tauri/target/aarch64-apple-darwin/release/bundle');
+const destination=path.resolve(process.argv[3]??'mac-acceptance-kit');
+const hash=async file=>createHash('sha256').update(await readFile(file)).digest('hex');
+const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim();
+const app=path.join(bundle,'macos','Manga Mac.app','Contents','MacOS');
+const entries=await readdir(app);
+const binary=path.join(app,'manga-mac');
+const helpers=entries.filter(name=>/^manga-engine(?:-aarch64-apple-darwin)?$/.test(name));
+if(helpers.length!==1)throw Error('Expected exactly one bundled manga-engine');
+const dmgs=(await readdir(path.join(bundle,'dmg'))).filter(name=>name.endsWith('.dmg'));
+if(!dmgs.length)throw Error('DMG missing');
+await stat(binary);
+await mkdir(destination,{recursive:false});
+const files=[binary,path.join(app,helpers[0]),...dmgs.map(name=>path.join(bundle,'dmg',name))];
+const provenance={schema:'manga-mac/build-provenance/v1',appSha:git('rev-parse','HEAD'),sourceDirty:!!git('status','--porcelain','--untracked-files=no'),registrySha256:await hash('src/media-registry.json'),helperPackageSha256:await hash('helper/Package.resolved'),files:await Promise.all(files.map(async file=>({file:path.relative(bundle,file),sha256:await hash(file)})))};
+await writeFile(path.join(destination,'build-provenance.json'),JSON.stringify(provenance,null,2)+'\n');
+for(const name of ['mac-acceptance-preflight.sh','mac-acceptance-smoke.sh'])await copyFile(path.join(root,'scripts',name),path.join(destination,name));
+await writeFile(path.join(destination,'README.txt'),'Macでターミナルから実行:\n  sh mac-acceptance-preflight.sh\n  sh mac-acceptance-smoke.sh\n\n確認画面の「最小制作確認を実行」を押すまで画像生成しません。未取得モデルは通常アプリで明示ダウンロードしてください。\n終了後、表示された同じ --session UUID で再起動して復元を確認します。通常作品の保存先は使用しません。\n診断結果のコピーだけをIssue #266へ記録し、作品データや接続情報は貼らないでください。\n詳細: docs/INSTALL_MAC.md の「実機確認を始める」\n');
+console.log('Mac acceptance kit and build provenance saved.');

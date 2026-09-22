@@ -741,3 +741,13 @@ Node／native／ブラウザfixtureとMac上の実原稿・実推論・GUI操作
 保存は既存project.namePlan・panels・sourceApplication・Job・draft checkpointに加算。原稿・人物設定・画像版・policy/compiler版を照合し、変更時は旧漫画を保持して再確認状態にする。APIキーは保存しない。実行中／応答不明要求の自動再送、モデルの自動取得、クラウドfallback、公開転送はしない。
 
 検証はNode契約、実productionへの結合、UI、native保存、Macビルド、実モデル／対象Macの視覚受入を分ける。最新結果はVALIDATIONとPRを参照する。実機の未実行をCIの成功で置き換えない。
+
+### 実機診断・隔離した最小制作確認（#273、実機結果は#266）
+
+診断は本体の `--acceptance-preflight` でTauri・作品DBの起動前に実行する。OS・CPU・RAM・空き容量、組込みcommitと実行バイナリ／helper／registryのhashを読取り専用で返す。接続・モデル状態を調べるための通信やprepareは行わず、未実施をNOT_RUNとする。モデルhashの期待値と実測を区別する。
+
+`--acceptance-session UUID` は通常データディレクトリの隣に専用領域を作り、fixture marker・リンク拒否・排他ロック・元ビルドの照合で通常作品から分離する。通常制作画面は起動しない。人工原稿を既存v2候補・採用・決定論的compilerへ通して全面1コマを作り、既存producePanels／画像要求／renderer／SQLiteを再利用し、明示ボタンで取得済みのlocal 6-bitモデル1枚だけを256px・4stepsで生成する。未確定要求はreceipt回収を使い、同じJobの生成を再送しない。再起動合格はこの起動より前の保存済みhashとの一致を必要とする。
+
+診断bundleは許可した段階名・状態・hash・数値だけを保存し、秘密・原稿・人物画像・自由文エラーを含めない。画面上のエラー全文は共有用bundleと分離する。Mac配布成果物へ同じSHAのスクリプトとDMG／app／helper／registry hashのmanifestを添える。通常導入にNode/Pythonを要求しない。手順はINSTALL_MACへ集約する。v2の実LLMによる候補生成、P01、視覚品質とピークメモリは別の実機受入であり、このfixture成功で合格扱いしない。
+
+画像要求の入力hashは新規Jobから`input_hash_version: 2`でobject key順に依存しない値を使う。native JSON保存・回収でのキー整列に耐え、本文・人物・モデル等の実値変更は従来どおり候補採用を拒否する。旧unversioned Jobのhashは書き換えず、送信済みJobのhash版も不変にする。

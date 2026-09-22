@@ -14,6 +14,7 @@ test('shot UI creates three angle candidates, then exports a brief before yieldi
   const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(atob(png.split(',')[1]),c=>c.charCodeAt(0))))].map(b=>b.toString(16).padStart(2,'0')).join('');
   const state=()=>({...target,revision,objects:[{id:'actor',name:'Actor',type:'MESH'},{id:'cam',name:'Camera',type:'CAMERA'}],next_offset:null,control:'manual'});
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.workflowCalls.push({command,action:args?.action});
    if(command==='blender_live')return {...state(),evaluated_world:[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]};
    if(command==='blender_live_candidate'){revision++;number++;return {session_id:`s${number}`,request_id:`r${number}`,preview:png,live_observation:state(),state:{dependencies_pinned:true,checkpoint:{hash:'a'.repeat(64)},image:{hash},state:{scene:'Scene'},scenes:[{name:'Scene',objects:['Actor','Camera']}]}};}

@@ -2,6 +2,7 @@ import {test,expect} from '@playwright/test';
 test('registers a second source and switches through isolated persisted works',async({page})=>{
  await page.addInitScript(()=>{
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    const entries=JSON.parse(localStorage.getItem('sources')||'[{"id":"primary","name":"作品A","repo":"owner/a","episode":"P01"}]');
    const active=localStorage.getItem('active')||'primary';
    if(command==='source_library')return {active,entries};
@@ -54,6 +55,7 @@ test('story-library work entry supports work to second episode to second scene i
   ],settings:[],characters:[]};
   let entry={id:'primary',name:'原稿ライブラリ',repo,episode:'P01'};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[entry]};
    if(command==='load_project')return localStorage.getItem('story-library-project');
    if(command==='save_project'){localStorage.setItem('story-library-project',args.data);return;}

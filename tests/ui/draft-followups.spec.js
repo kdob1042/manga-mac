@@ -5,6 +5,7 @@ async function setup(page) {
   let project=JSON.parse(localStorage.getItem('fixture-project')||'null')??{version:4,title:'引継ぎ試験',active:'source',snapshots:[{id:'source',sha:'fixture',settings:[],scenes:[{id:'a',text:'旧稿の本文。'},{id:'b',text:'次の場面。'}]}],panels:[{id:'old-panel',sceneId:'a',snapshotId:'source',unitIds:['a:u0'],characterIds:[],prompt:'Library',image,status:'review',instructions:[],attempts:0}],characters:[],history:[],jobs:[],artworks:[],localizations:[],output_locale:'ja'};
   window.calls=[];window.saved=project;
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.calls.push({command,args});
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
    if(command==='load_project')return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});

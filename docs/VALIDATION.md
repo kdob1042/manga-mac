@@ -657,3 +657,12 @@ head `f7ef799` で、単一の明示焦点距離を利用者の指示全体か�
 続いてdev `20f3012`へ同期。競合は本記録の末尾追記だけで、#271/#166と#46の記録を両方保持した。同期後はNode 295件、Vite build、関連Chromium UI 4件（演出・未確定の採用/取り下げ・角度候補と引継ぎ）が成功。Chromiumは既存の共有環境から指定し、上記の取得失敗を解消した。実LLM／実Mac受入を行ったことにはしない。
 
 最終同期先devは `47075b7`（#210/#248/#270統合後）。短縮READMEと新しい文書分担を保持し、「変更不要」の操作説明はUSAGEのBlender節へ移した。最新のNode 440件、Vite build、関連Chromium UI 4件が成功。#46の処理・回帰コードは `f7ef799` と同一。
+
+## 2026-09-22: 隔離したMac実機準備（Issue #273 / PR #274）
+
+- dev `617ca96` の制作UI・ネームv2・LTX・Live演出修正を統合。到着日の手順は[Mac導入ガイド](INSTALL_MAC.md#実機確認を始める266)に集約。
+- Node全体457件、Vite build成功。統合前のChromium全UI90件と、Live演出修正の関連UI4件が成功。最新統合headの全体確認はGitHub CIを参照。UIのnative I/O・画像推論はfixture、本番のv2 validator/compiler/production・日本語Canvas描画を使用する。
+- Rust storage 71件成功・既存外部依存3件ignored。隔離保存・排他・通常DB拒否・旧ビルド拒否・実PNG decode、v2人工fixtureのsave_checked→SQLite→load、掲載atom範囲の保持／改竄拒否を確認。Clippy・Rustfmt成功。
+- 保存JSONのキー順が画像入力hashを変える問題を修正。新規Jobは版付きの安定hash、旧Jobは旧hashを保持。実値変更と送信済みhash版変更の拒否を検証。
+- 再起動合格には前回起動時の保存基準を必須とし、同じ起動内の生成で合格にしない。応答不明時は既存receipt回収のみで生成0回、成功済み作画を再利用する。
+- Mac/TauriビルドはCIの別判定。実FLUX推論、実Mac再起動、実LLM、P01、視覚品質・ピークメモリは未実施。#266はopen維持し、人工fixture／Linux試験を実機証跡にしない。

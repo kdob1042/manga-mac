@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { migrateProject, beginJob, finishJob, imageHash } from '../src/revisions.js';
+import { migrateProject, beginJob, finishJob, adoptCandidate, digest, imageHash } from '../src/revisions.js';
 import { sourceForPanel } from '../src/core.js';
 const legacy = JSON.parse(readFileSync(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 test('LEGACY-01 migration is lossless and idempotent; Undo keeps source and exact pixels', async () => {
@@ -77,4 +77,42 @@ test('duplicate translated unit IDs are rejected during project reload', async (
   const p = await migrateProject(legacy);
   p.localizations = [{ locale: 'en', snapshot_id: 'source', units: [{id:'u',text:'One'},{id:'u',text:'Two'}] }];
   await assert.rejects(migrateProject(p));
+});
+
+// serde_json's default map order differs from JavaScript insertion order.
+const nativeRoundtrip = value => JSON.parse(JSON.stringify(value, (_key, item) =>
+  item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]])) : item));
+
+test('image job and recovered candidate survive native key ordering without weakening stale-input checks', async () => {
+  const p = nativeRoundtrip(await migrateProject(legacy));
+  const job = await beginJob(p, p.panels[0]);
+  assert.equal(job.input_hash_version, 2);
+  const running = nativeRoundtrip({ ...p, jobs: [job] });
+  const completed = await finishJob(running, running.jobs[0], p.panels[0]);
+  assert.equal(completed.jobs[0].status, 'complete');
+  const candidate = nativeRoundtrip(await finishJob(running, running.jobs[0], p.panels[0], false, true));
+  assert.equal((await adoptCandidate(candidate, job.id)).jobs[0].status, 'complete');
+  for (const change of [
+    { panels: [{ ...candidate.panels[0], prompt: 'changed' }] },
+    { active: 'different-source' },
+    { characters: candidate.characters.map(character => ({ ...character, hash: 'changed' })) },
+    { jobs: [{ ...candidate.jobs[0], media: { ...job.media, model_id: 'different-model' } }] },
+  ]) await assert.rejects(adoptCandidate({ ...candidate, ...change }, job.id), /基準版/);
+});
+
+test('unversioned image jobs keep the legacy hash contract and reject unknown versions', async () => {
+  const p = await migrateProject(legacy), job = await beginJob(p, p.panels[0]);
+  delete job.input_hash_version;
+  job.input_hash = await digest(new TextEncoder().encode(JSON.stringify({
+    active: p.active, panel: p.panels[0], styles: p.style_references ?? [],
+    characters: p.panels[0].characterIds.map(id => p.characters.find(c => c.id === id)), media: job.media,
+  })));
+  const running = { ...p, jobs: [job] };
+  assert.equal((await finishJob(running, job, p.panels[0])).jobs[0].status, 'complete');
+  const candidate = await finishJob(running, job, p.panels[0], false, true);
+  assert.equal((await adoptCandidate(candidate, job.id)).jobs[0].status, 'complete');
+  const unknown = { ...job, input_hash_version: 99 };
+  await assert.rejects(finishJob({ ...p, jobs: [unknown] }, unknown, p.panels[0]), /未対応/);
+  await assert.rejects(adoptCandidate({ ...candidate, jobs: [{ ...candidate.jobs[0], input_hash_version: 99 }] }, job.id), /未対応/);
 });
