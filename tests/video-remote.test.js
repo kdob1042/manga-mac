@@ -12,6 +12,22 @@ test('empty project exposes shared artwork and video collections before first sa
   assert.deepEqual(restoreVideoResults(p), p);
 });
 
+test('local restart never bills credits or replays inference; saved artifact becomes one candidate', () => {
+  const p = fixture({ provider: 'ltx-mlx', status: 'unknown' });
+  p.jobs[0].manifest = { connection: { id: 'local', provider: 'ltx-mlx', model: 'ltx-2.5' } };
+  p.jobs[0].cost = { kind: 'local', amount: null, currency: null };
+  const unknown = restoreVideoResults(p);
+  assert.equal(unknown.jobs[0].status, 'unknown');
+  assert.equal(unknown.jobs[0].cost.kind, 'local');
+  unknown.jobs[0].remote = { provider: 'ltx-mlx', status: 'SUCCEEDED', artifact };
+  const candidate = restoreVideoResults(unknown);
+  assert.equal(candidate.jobs[0].status, 'candidate');
+  assert.equal(candidate.jobs[0].cost.kind, 'local');
+  assert.equal(candidate.videoRevisions.length, 1);
+  assert.equal(candidate.videoShots[0].adopted_revision, null);
+  assert.deepEqual(restoreVideoResults(candidate), candidate);
+});
+
 test('MV-06 restart restores submitted task state and reserved cost without producing a new job', () => {
   for (const status of ['PENDING', 'THROTTLED', 'RUNNING', 'FAILED', 'CANCELLED', 'unknown', 'cancel_requested', 'SUCCEEDED']) {
     const p = fixture({ status, task_id: 'stored-task', reserved_credits: 60 });

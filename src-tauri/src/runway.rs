@@ -39,7 +39,7 @@ fn update(
     storage::update_remote_job(&mut connection, id, f)
 }
 
-fn frame_bytes(
+pub(crate) fn frame_bytes(
     input: &Value,
     image: &str,
     ratio: &str,
@@ -271,7 +271,7 @@ pub fn payload_with_frames(
     }
 }
 
-fn validate_billing_snapshot(
+pub(crate) fn validate_billing_snapshot(
     selected: &media::VideoModel,
     manifest: &Value,
     duration: u64,
@@ -341,12 +341,68 @@ fn reserve(
     if spent.saturating_add(credits) > budget {
         return Err("作品の動画予算上限です。接続設定を確認してください".into());
     }
+    validate_pending_job(project, job, connection_id)?;
+    Ok(json!({
+        "status":"unknown", "reserved_credits":credits, "submitted_at":now(),
+        "pricing":pricing, "model":selected.model_id,
+        "request_profile":selected.request_profile, "audio":false
+    }))
+}
+
+// Shared version/retry boundary for native video adapters, independent of billing.
+pub(crate) fn validate_pending_job(
+    project: &Value,
+    job: &Value,
+    connection_id: &str,
+) -> Result<(), String> {
+    if job.get("remote").is_some()
+        || job["status"] != "running"
+        || job["manifest"]["connection"]["id"] != connection_id
+        || job["scope"]["type"] != "videoShot"
+    {
+        return Err("送信済み・未確定要求は再実行できません".into());
+    }
+    let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     let shot = project["videoShots"]
         .as_array()
         .ok_or("Missing video shots")?
         .iter()
         .find(|s| s["id"] == job["scope"]["id"])
         .ok_or("Missing shot")?;
+    if !shot["sourcePanelId"].is_null() || !shot["batchId"].is_null() {
+        let panel_id = shot["sourcePanelId"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("動画レシピの作成元が不正です")?;
+        if !shot["batchId"].as_str().is_some_and(|id| !id.is_empty()) {
+            return Err("動画レシピの作成元が不正です".into());
+        }
+        let panel = project["panels"]
+            .as_array()
+            .and_then(|panels| panels.iter().find(|panel| panel["id"] == panel_id))
+            .ok_or("動画化したコマがありません")?;
+        let artwork = project["artworks"]
+            .as_array()
+            .and_then(|artworks| {
+                artworks.iter().find(|artwork| {
+                    artwork["id"] == shot["startImage"]["id"]
+                        && artwork["hash"] == shot["startImage"]["hash"]
+                })
+            })
+            .ok_or("動画化したコマの採用作画版がありません")?;
+        if shot["startImage"]["kind"] != "artwork"
+            || panel["snapshotId"] != shot["snapshotId"]
+            || panel["sceneId"] != shot["sceneId"]
+            || panel["unitIds"] != shot["unitIds"]
+            || panel["sourceRefs"] != shot["sourceRefs"]
+            || panel["characterIds"] != shot["characterIds"]
+            || panel["artwork_revision"] != artwork["id"]
+            || panel["image"].is_null()
+            || panel["image"] != artwork["panel"]["image"]
+        {
+            return Err("動画化したコマの原稿・採用作画版が変わっています".into());
+        }
+    }
     let snapshot = project["snapshots"]
         .as_array()
         .ok_or("Missing source")?
@@ -425,15 +481,7 @@ fn reserve(
     }) {
         return Err("先に未確定要求を確認してください".into());
     }
-    Ok(json!({
-        "status":"unknown",
-        "reserved_credits":credits,
-        "submitted_at":now(),
-        "pricing":pricing,
-        "model":selected.model_id,
-        "request_profile":selected.request_profile,
-        "audio":false
-    }))
+    Ok(())
 }
 
 async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {

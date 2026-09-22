@@ -9,9 +9,9 @@ test('the public registry exposes only implemented adapters and freezes defaults
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
   assert.ok(imageModels.length >= 2);
   assert.ok(imageModels.every(model => ['media-generation-kit','runway-image'].includes(model.adapter_id)));
-  assert.equal(videoModels.length,3);
-  assert.ok(videoModels.every(model=>model.adapter_id==='runway'));
-  assert.deepEqual(videoModels.map(model=>model.model_id),['gen4.5','gen4_turbo','seedance2_5']);
+  assert.equal(videoModels.length,4);
+  assert.ok(videoModels.every(model=>['runway', 'ltx-mlx'].includes(model.adapter_id)));
+  assert.deepEqual(videoModels.filter(model=>model.provider==='runway').map(model=>model.model_id),['gen4.5','gen4_turbo','seedance2_5']);
   assert.throws(() => imageModel('qwen-image'), /未対応/);
   assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
 });
@@ -72,4 +72,16 @@ test('cloud image descriptor pins dimensions, cost, connection and ordered refer
  const request=imageRequest({panel:{prompt:'scene'},references,width:720,height:720,seed:1,instruction:'',modelId:selected.id,job:{id:'j',cloud_connection:'approved'}});
  assert.equal(request.cloud_connection,'approved');assert.deepEqual(request.references,references);
  assert.throws(()=>imageRequest({panel:{},references:Array(4).fill(references[0]),width:720,height:720,seed:1,modelId:selected.id}),/最大3枚/);
+});
+
+
+test('local video uses one registered preset with no cloud billing or end frame', () => {
+  const model = videoModel('ltx-2-5-mlx-local');
+  const connection = videoConnection(model.id, 'local');
+  assert.deepEqual(connection, { id: 'local', provider: 'ltx-mlx', model: 'ltx-2.5', adapter_id: 'ltx-mlx' });
+  assert.equal(videoEstimateCredits(model.id, 5, '512:512').credits, 0);
+  assert.doesNotThrow(() => validateVideoModelRequest(model.id, { duration: 5, ratio: '512:320', prompt: 'Camera moves', aspect: 1.6 }));
+  for (const patch of [{ duration: 4 }, { ratio: '960:960' }, { endFrame: true }, { prompt: 'x'.repeat(1001) }]) {
+    assert.throws(() => validateVideoModelRequest(model.id, { duration: 5, ratio: '512:512', prompt: 'Camera moves', ...patch }));
+  }
 });

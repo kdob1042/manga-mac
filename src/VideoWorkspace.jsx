@@ -56,6 +56,13 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const localVideo = selectedVideoModel.locality === 'local';
   const videoRatios = selectedVideoModel.input.ratios;
   const videoDurations = selectedVideoModel.input.durations_sec ?? [selectedVideoModel.input.duration_sec];
+  useEffect(() => {
+    const defaultDuration = selectedVideoModel.input.default_duration_sec ?? videoDurations[0];
+    setRatio(value => videoRatios.includes(value) ? value : videoRatios[0]);
+    setDuration(value => videoDurations.includes(value) ? value : defaultDuration);
+    setBatchRatio(value => videoRatios.includes(value) ? value : videoRatios[0]);
+    setBatchDuration(value => videoDurations.includes(value) ? value : defaultDuration);
+  }, [videoModelId]);
   const connectionId = videoConnections[videoModelId] ?? '';
   const reusableConnectionId = Object.entries(videoConnections).find(([modelId, id]) =>
     id && videoModel(modelId).provider === selectedVideoModel.provider && videoModel(modelId).adapter_id === selectedVideoModel.adapter_id)?.[1] ?? '';
@@ -331,7 +338,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
           <button disabled={busy || !jobConnectionId(j) || j.remote.status !== 'SUCCEEDED'} onClick={() => run('動画を取得・検証中', () => task(j.id, 'collect'))}>生成済み動画を取得</button>
           {['submitted', 'cancel_requested'].includes(j.status) && <><label><input type="checkbox" checked={acceptDeletion} onChange={e => setAcceptDeletion(e.target.checked)}/>取消時に完了していた結果はサービス上から削除されることを了承する</label><button disabled={busy || !jobConnectionId(j) || !acceptDeletion} onClick={() => run('動画の取消・削除を要求', () => task(j.id, 'cancel'))}>サービスへ取消・削除を要求</button></>}
         </>}
-        {['unknown', 'submitted', 'output_pending', 'cancel_requested'].includes(j.status) && !j.output_revision && !j.remote?.artifact && <details><summary>要求・取得を手動で解決する</summary><p>応答消失・期限切れ・task削除等で続行できない場合は、まず同じアカウントのRunway側で要求を確認してください。ローカルで採用せず解決しても、リモート生成は停止せず、料金と予約枠は戻りません。再生成は別の有料要求です。</p><label><input type="checkbox" checked={checkedTask === j.id} onChange={e => setCheckedTask(e.target.checked ? j.id : '')}/>サービス側を確認し、この結果を採用しないことを確認しました</label><button disabled={busy || checkedTask !== j.id} onClick={() => run('未確定要求を解決', async () => { await commit(resolveVideoTask(current.current, j.id, checkedTask === j.id)); setCheckedTask(''); })}>採用せずローカルで解決する</button></details>}
+        {['unknown', 'submitted', 'output_pending', 'cancel_requested'].includes(j.status) && !j.output_revision && !j.remote?.artifact && <details><summary>要求・取得を手動で解決する</summary><p>{j.manifest?.connection?.provider === 'ltx-mlx' ? '応答が失われた場合は、MacのアクティビティモニタでLTXのCLIが停止したことを確認してください。この操作はプロセスを停止しません。結果を採用せず解決し、再生成は別の要求として明示実行します。' : '応答消失・期限切れ・task削除等で続行できない場合は、まず同じアカウントのRunway側で要求を確認してください。ローカルで採用せず解決しても、リモート生成は停止せず、料金と予約枠は戻りません。再生成は別の有料要求です。'}</p><label><input type="checkbox" checked={checkedTask === j.id} onChange={e => setCheckedTask(e.target.checked ? j.id : '')}/> {j.manifest?.connection?.provider === 'ltx-mlx' ? 'CLIの停止を確認し、この結果を採用しないことを確認しました' : 'サービス側を確認し、この結果を採用しないことを確認しました'}</label><button disabled={busy || checkedTask !== j.id} onClick={() => run('未確定要求を解決', async () => { await commit(resolveVideoTask(current.current, j.id, checkedTask === j.id)); setCheckedTask(''); })}>採用せずローカルで解決する</button></details>}
       </article>)}
       <button disabled={busy || !desktop() || !project.videoHistory.some(h => h.shot_id === shot.id)} onClick={() => run('動画の採用を元に戻す', async () => { await commit(await undoVideo(current.current, shot.id, verify)); setPlayback(null); })}>この動画の採用を元に戻す</button>
       {project.videoRevisions.filter(v => v.shot_id === shot.id).map(v => {
