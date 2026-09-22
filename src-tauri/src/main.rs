@@ -2,6 +2,7 @@
 mod backup_commands;
 mod live_preview;
 mod llm;
+mod local_video;
 mod media;
 mod policy_transport;
 mod runway;
@@ -21,12 +22,14 @@ use tauri::{Manager, State};
 use tokio::io::AsyncWriteExt;
 struct AppState {
     base: PathBuf,
+    acceptance: Mutex<Option<storage::acceptance::Session>>,
     _workspace_gate: std::fs::File,
     root: PathBuf,
     connections: llm::Connections,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
+    local_video: Mutex<Option<(String, local_video::Registration)>>,
     live_blender: blender_live::Live,
     blender_gui: blender_gui::Launcher,
     compositor_gate: tokio::sync::Mutex<()>,
@@ -317,6 +320,9 @@ fn source_register(
 }
 #[tauri::command]
 fn save_project(data: String, state: State<AppState>) -> Result<(), String> {
+    if state.acceptance.lock().map_err(err)?.is_some() {
+        storage::acceptance::fixture_project(&data)?;
+    }
     let mut db = state.db.lock().map_err(err)?;
     storage::save_checked(&mut db, &state.root, &data)
 }
@@ -660,6 +666,58 @@ fn video_job_model(
     Ok(selected)
 }
 
+#[tauri::command]
+fn register_local_video(
+    input: local_video::Registration,
+    state: State<AppState>,
+) -> Result<String, String> {
+    if !cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        return Err("LTX-2.5 MLXはApple Silicon Mac専用です".into());
+    }
+    let config = local_video::validate_config(input)?;
+    let id = uuid::Uuid::new_v4().to_string();
+    *state.local_video.lock().map_err(err)? = Some((id.clone(), config));
+    Ok(id)
+}
+#[tauri::command]
+fn remove_local_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    let mut slot = state.local_video.lock().map_err(err)?;
+    if slot.as_ref().is_some_and(|(id, _)| id == &connection_id) {
+        *slot = None;
+    }
+    Ok(())
+}
+#[tauri::command]
+async fn local_video_submit(
+    job_id: String,
+    connection_id: String,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _video = state.video.try_lock().map_err(|_| "動画処理中です")?;
+    let _engine = state
+        .engine
+        .try_lock()
+        .map_err(|_| "他のAI・Blender処理中です")?;
+    let config = state
+        .local_video
+        .lock()
+        .map_err(err)?
+        .as_ref()
+        .filter(|(id, _)| id == &connection_id)
+        .map(|(_, config)| config.clone())
+        .ok_or("ローカル動画接続を登録してください")?;
+    let (image, end) = video_input_images(&state, &job_id)?;
+    local_video::submit(
+        &state.db,
+        &state.root,
+        &job_id,
+        &connection_id,
+        &config,
+        &image,
+        end.as_deref(),
+    )
+    .await
+}
 #[tauri::command]
 async fn video_submit(
     job_id: String,
@@ -1243,28 +1301,118 @@ async fn blender_live_candidate(input: Value, state: State<'_, AppState>) -> Res
     Ok(saved)
 }
 
+#[tauri::command]
+fn acceptance_context(state: State<AppState>) -> Result<Option<Value>, String> {
+    Ok(state
+        .acceptance
+        .lock()
+        .map_err(err)?
+        .as_ref()
+        .map(|s| s.context()))
+}
+#[tauri::command]
+fn acceptance_record_stage(
+    stage: String,
+    status: String,
+    evidence: Value,
+    state: State<AppState>,
+) -> Result<Value, String> {
+    state
+        .acceptance
+        .lock()
+        .map_err(err)?
+        .as_mut()
+        .ok_or("Not an acceptance session")?
+        .record(&stage, &status, evidence)
+}
+#[tauri::command]
+fn acceptance_export(image: String, state: State<AppState>) -> Result<Value, String> {
+    state
+        .acceptance
+        .lock()
+        .map_err(err)?
+        .as_ref()
+        .ok_or("Not an acceptance session")?
+        .export_png(&image)
+}
+#[tauri::command]
+fn acceptance_finish(state: State<AppState>) -> Result<Value, String> {
+    state
+        .acceptance
+        .lock()
+        .map_err(err)?
+        .as_ref()
+        .ok_or("Not an acceptance session")?
+        .finish()
+}
 fn main() {
+    // Parse before creating Tauri or touching any application data directory.
+    let mode = match storage::acceptance::parse_args(&std::env::args().skip(1).collect::<Vec<_>>())
+    {
+        Ok(mode) => mode,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
+    let acceptance_id = match mode {
+        storage::acceptance::Mode::Preflight => {
+            let report = storage::acceptance::preflight(engine_path().ok().as_deref());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).expect("diagnostic JSON")
+            );
+            std::process::exit(if storage::acceptance::preflight_passed(&report) {
+                0
+            } else {
+                2
+            });
+        }
+        storage::acceptance::Mode::Session(id) => Some(id),
+        storage::acceptance::Mode::Normal => None,
+    };
     tauri::Builder::default()
-        .setup(|app| {
-            let dir = app.path().app_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let base = dir.canonicalize()?;
-            let dir = backup_commands::initial_root(&base).map_err(std::io::Error::other)?;
-            let workspace_gate =
-                storage::backup::gate(&dir, ".workspace.lock").map_err(std::io::Error::other)?;
-            storage::backup::recover_work(&base, &dir).map_err(std::io::Error::other)?;
-            let _ = runway::cleanup_downloads(&dir);
+        .setup(move |app| {
+            let normal = app.path().app_data_dir()?;
+            let (base, dir, workspace_gate, acceptance) = if let Some(id) = &acceptance_id {
+                let report = storage::acceptance::preflight(engine_path().ok().as_deref());
+                if !storage::acceptance::preflight_passed(&report) {
+                    return Err(std::io::Error::other(
+                        "Acceptance preflight failed; run --acceptance-preflight",
+                    )
+                    .into());
+                }
+                let (session, gate) = storage::acceptance::Session::open(&normal, id, report)
+                    .map_err(std::io::Error::other)?;
+                (
+                    session.root.clone(),
+                    session.root.clone(),
+                    gate,
+                    Some(session),
+                )
+            } else {
+                std::fs::create_dir_all(&normal)?;
+                let base = normal.canonicalize()?;
+                let dir = backup_commands::initial_root(&base).map_err(std::io::Error::other)?;
+                let gate = storage::backup::gate(&dir, ".workspace.lock")
+                    .map_err(std::io::Error::other)?;
+                storage::backup::recover_work(&base, &dir).map_err(std::io::Error::other)?;
+                let _ = runway::cleanup_downloads(&dir);
+                (base, dir, gate, None)
+            };
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
             blender::initialize(&db).map_err(std::io::Error::other)?;
             app.manage(AppState {
                 base,
+                acceptance: Mutex::new(acceptance),
                 _workspace_gate: workspace_gate,
                 root: dir,
                 connections: llm::Connections::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
+                local_video: Mutex::new(None),
                 live_blender: blender_live::Live::default(),
                 blender_gui: blender_gui::Launcher::default(),
                 compositor_gate: tokio::sync::Mutex::new(()),
@@ -1272,6 +1420,10 @@ fn main() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            acceptance_context,
+            acceptance_record_stage,
+            acceptance_export,
+            acceptance_finish,
             backup_commands::backup_status,
             backup_commands::backup_setup,
             backup_commands::backup_disable,
@@ -1311,6 +1463,9 @@ fn main() {
             reuse_video_connection,
             remove_video,
             video_submit,
+            register_local_video,
+            remove_local_video,
+            local_video_submit,
             video_task,
             register_tripo,
             remove_tripo,

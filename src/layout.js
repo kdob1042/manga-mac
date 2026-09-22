@@ -28,6 +28,7 @@ function letteringPageQuads(slot,panel){
  const ox=box.x+(box.width-720*scale)/2,oy=box.y+(box.height-1030*scale)/2;
  const quad=(x,y,w,h)=>[[x/PAGE.width,y/PAGE.height],[(x+w)/PAGE.width,y/PAGE.height],[(x+w)/PAGE.width,(y+h)/PAGE.height],[x/PAGE.width,(y+h)/PAGE.height]];
  const layout=panel.lettering??defaultLettering(panel);
+ if(panel.namePlanVersion===2 && layout.mode==='balloons')return layout.boxes.map(b=>quad(box.x+b.x*box.width,box.y+b.y*box.height,b.width*box.width,b.height*box.height));
  if(layout.mode==='balloons')return layout.boxes.map(b=>quad(ox+(2+b.x*716)*scale,oy+(2+b.y*716)*scale,b.width*716*scale,b.height*716*scale));
  return [quad(ox+10*scale,oy+736*scale,700*scale,280*scale)];
 }

@@ -41,6 +41,7 @@ test('interrupted edit recovers a masked candidate once, never adopts or regener
 test('unknown image UI collects saved output and keeps adopted image across reload', async ({ page }) => {
   await page.addInitScript(legacy => {
     window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+      if (command === 'acceptance_context') return null;
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if (command === 'load_project') return sessionStorage.getItem('image-project') || JSON.stringify(legacy);
       if (command === 'save_project') { sessionStorage.setItem('image-project',args.data); return; }
@@ -53,9 +54,13 @@ test('unknown image UI collects saved output and keeps adopted image across relo
     } };
   }, legacy);
   await page.goto('/');
+  // Wait for startup migration before replacing persisted data for recovery.
+  // Otherwise its asynchronous save can erase the newly inserted job.
+  await expect(page.locator('.art')).toBeVisible();
   await page.evaluate(async legacy => {
-    const { migrateProject,beginJob,imageHash }=await import('/src/revisions.js');
-    const p=await migrateProject(legacy), panel=p.panels[0], job=await beginJob(p,panel,'retake');
+    const { beginJob,imageHash }=await import('/src/revisions.js');
+    const { loadProject }=await import('/src/bridge.js');
+    const p=await loadProject(), panel=p.panels[0], job=await beginJob(p,panel,'retake');
     const image=legacy.history[0].panels[0].image;
     p.jobs=[job];
     sessionStorage.setItem('image-project',JSON.stringify(p));

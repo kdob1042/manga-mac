@@ -11,6 +11,7 @@ test('production opens its GUI and waits for visual confirmation without backgro
     const png = (color, width=768, height=768) => { const c=document.createElement('canvas');c.width=width;c.height=height;const ctx=c.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,width,height);return c.toDataURL('image/png'); };
     const imageHash = async image => [...new Uint8Array(await crypto.subtle.digest('SHA-256',Uint8Array.from(atob(image.split(',')[1]), c=>c.charCodeAt(0))))].map(b=>b.toString(16).padStart(2,'0')).join('');
     window.__TAURI_INTERNALS__ = { invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
       calls.push({command,args});
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
       if(command==='load_project') return JSON.stringify({...project,workId:'fixture-work',contentToken:project.contentToken??'fixture-token'});

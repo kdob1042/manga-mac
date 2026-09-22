@@ -66,3 +66,15 @@ test('unknown image requests block draft switching, invalid layouts block restor
  const p=fixture();p.jobs=[{id:'j',panelId:'p0',kind:'generate',status:'unknown'}];assert.throws(()=>startDraft(p,['a'],true),/未確定/);
  p.jobs=[];const next=startDraft(p,['a'],true);const h=next.history.at(-1);h.layout.pages[0].slots[0].points[0]=[2,2];assert.throws(()=>restoreDraft(next,h.id),/凸四角形/);
 });
+
+test('sourceRefs storyboard completes draft review without legacy unitIds',async()=>{
+ const snapshot={id:'refs',scenes:[{id:'a',text:'# scene\n\n一。\n\n二。'}]};
+ const {tokenizeSnapshot}=await import('../src/source-refs.js');
+ const refs=tokenizeSnapshot(snapshot).map(u=>u.source);
+ let p=ensureLayout({...emptyProject(),active:'refs',snapshots:[snapshot],draftScope:{id:'d',snapshotId:'refs',sceneIds:['a']},panels:refs.map((ref,i)=>({id:`r${i}`,sceneId:'a',snapshotId:'refs',sourceRefs:[ref],contextRefs:[],unitIds:[],characterIds:[],image:`art${i}`,prompt:'x'}))});
+ p.panels=p.panels.map(panel=>({...panel,lettering:defaultLettering(panel)}));
+ const outputs=await reviewDraft(p,async panels=>panels.map(x=>x.id).join(','));
+ assert.deepEqual(outputs,['r0,r1']);
+ p.panels[1].sourceRefs=[structuredClone(p.panels[0].sourceRefs[0])];
+ await assert.rejects(()=>reviewDraft(p,async()=>assert.fail()),/原文/);
+});

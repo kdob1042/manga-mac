@@ -8,8 +8,9 @@ import { sourceResolver } from './source-refs.js';
 const hashPattern = /^[0-9a-f]{64}$/;
 const hashValue = value => digest(new TextEncoder().encode(JSON.stringify(value)));
 export function videoFrameDimensions(image) {
-  if (!image.startsWith('data:image/png;base64,')) throw Error('動画入力はPNGの作画画像に対応しています');
-  const bytes = Uint8Array.from(atob(image.split(',')[1].slice(0, 44)), c => c.charCodeAt(0));
+  const prefix = 'data:image/png;base64,';
+  if (!image.startsWith(prefix)) throw Error('動画入力はPNGの作画画像に対応しています');
+  const bytes = Uint8Array.from(atob(image.slice(prefix.length, prefix.length + 44)), c => c.charCodeAt(0));
   if (bytes.length < 24 || bytes.slice(0, 8).join(',') !== '137,80,78,71,13,10,26,10' || String.fromCharCode(...bytes.slice(12, 16)) !== 'IHDR') throw Error('PNGの画像寸法を確認できません');
   const view = new DataView(bytes.buffer), width = view.getUint32(16), height = view.getUint32(20);
   if (!width || !height || width > 8192 || height > 8192) throw Error('画像の寸法が動画入力の上限に適合しません');

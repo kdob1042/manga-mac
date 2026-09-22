@@ -31,6 +31,7 @@ async function openBatch(page, mode = 'success') {
   const initial = await savedBatch();
   await page.addInitScript(({ initial, mode }) => {
     window.__TAURI_INTERNALS__ = { invoke: async (command, args) => {
+      if (command === 'acceptance_context') return null;
       const load = () => JSON.parse(sessionStorage.getItem('batch-project') || JSON.stringify(initial));
       if (command === 'load_project') return JSON.stringify(load());
       if (command === 'save_project') { sessionStorage.setItem('batch-project', args.data); return; }
@@ -141,6 +142,9 @@ test('model and saved recipe cost changes require fresh batch approval', async (
   await page.getByLabel(batchApproval).check();
   await page.getByRole('navigation', { name: '動画ショット一覧' }).getByRole('button').first().click();
   await page.getByLabel('このショットの尺', { exact: true }).selectOption('10');
+  await expect(executeButton(page)).toBeDisabled();
+  await expect(page.getByRole('region', { name: '動画バッチ実行確認' })).toContainText('このバッチに含まれるショットの変更を保存してください。');
+  expect(await submissions(page)).toEqual([]);
   await page.getByRole('button', { name: '指示を保存する', exact: true }).click();
   await expect(page.getByLabel(batchApproval)).not.toBeChecked();
   await expect(executeButton(page)).toBeDisabled();

@@ -7,6 +7,7 @@ test('startup migration saves once, preserves artwork and layout, and does not e
   const {loadProject}=await import('/src/bridge.js');const {migrateProject}=await import('/src/revisions.js');
   const before=await migrateProject(legacy);let stored=JSON.stringify(before),saves=0,fail=false;const original=stored;
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='load_project'){const p=JSON.parse(stored);if(p.version===5){p.workId='native-work';p.contentToken='native-token';}return JSON.stringify(p);}
    if(command==='save_project'){saves++;if(fail)throw Error('injected save failure');stored=args.data;return;}
    throw Error(command);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { call, desktop, loadProject } from './bridge';
 import { sourceUnits, sourceForPanel } from './core';
@@ -26,10 +26,11 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const [transitionPairIds, setTransitionPairIds] = useState([]), [transitionPrompt, setTransitionPrompt] = useState(''), [transitionRatio, setTransitionRatio] = useState('960:960'), [transitionDuration, setTransitionDuration] = useState(5);
   const [batchPanelIds, setBatchPanelIds] = useState([]), [batchPrompt, setBatchPrompt] = useState(''), [batchRatio, setBatchRatio] = useState('960:960'), [batchDuration, setBatchDuration] = useState(5);
   const [batchRows, setBatchRows] = useState({}), [batchId, setBatchId] = useState(''), [batchApproval, setBatchApproval] = useState('');
+  const [savedBatchDraft, setSavedBatchDraft] = useState('');
   const [batchRunning, setBatchRunning] = useState(false), [batchStopping, setBatchStopping] = useState(false);
-  const batchStop = useRef(false), batchLock = useRef(false);
-  const sources = videoSources(project), captureSource = sources.find(s => s.id === captureSourceId);
-  const pairOptions = adjacentPanelPairs(project), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
+  const batchStop = useRef(false), batchLock = useRef(false), batchSource = useRef(project.active);
+  const sources = useMemo(() => videoSources(project), [project.shot_batches]), captureSource = sources.find(s => s.id === captureSourceId);
+  const pairOptions = useMemo(() => adjacentPanelPairs(project), [project]), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
   useEffect(() => {
     const available = new Set(pairOptions.filter(pair => pair.valid).map(pair => pair.id));
     setTransitionPairIds(ids => ids.filter(id => available.has(id)));
@@ -43,11 +44,15 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     if (!requestedPanelIds.length) return;
     const ids = [...new Set(requestedPanelIds)];
     setBatchPanelIds(ids);
-    setBatchRows(Object.fromEntries(ids.map(panelId => [panelId, { enabled: true, prompt: '', duration: batchDuration, ratio: batchRatio }])));
-    setBatchApproval('');
+    setBatchRows(Object.fromEntries(ids.map(panelId => [panelId, { enabled: true }])));
+    setSavedBatchDraft(''); setBatchApproval('');
   }, [requestedPanelIds.join('|')]);
-  useEffect(() => { setBatchPanelIds([]); setBatchRows({}); setBatchId(''); setBatchApproval(''); }, [project.active]);
-  const batches = savedVideoBatches(project);
+  useEffect(() => {
+    if (batchSource.current === project.active) return;
+    batchSource.current = project.active;
+    setBatchPanelIds([]); setBatchRows({}); setBatchId(''); setBatchApproval(''); setSavedBatchDraft('');
+  }, [project.active]);
+  const batches = useMemo(() => savedVideoBatches(project), [project.videoShots, project.jobs, project.active]);
   const savedBatch = batches.find(item => item.id === batchId) ?? batches.at(-1);
   const pendingBatch = savedBatch?.shots.filter(item => !item.job) ?? [];
   const [checkedTask, setCheckedTask] = useState('');
@@ -55,7 +60,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const selectedVideoModel = videoModel(videoModelId);
   const localVideo = selectedVideoModel.locality === 'local';
   const videoRatios = selectedVideoModel.input.ratios;
-  const videoDurations = selectedVideoModel.input.durations_sec ?? [selectedVideoModel.input.duration_sec];
+  const videoDurations = useMemo(() => selectedVideoModel.input.durations_sec ?? [selectedVideoModel.input.duration_sec], [selectedVideoModel]);
   const connectionId = videoConnections[videoModelId] ?? '';
   const reusableConnectionId = Object.entries(videoConnections).find(([modelId, id]) =>
     id && videoModel(modelId).provider === selectedVideoModel.provider && videoModel(modelId).adapter_id === selectedVideoModel.adapter_id)?.[1] ?? '';
@@ -70,12 +75,18 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     } catch (error) { return error instanceof Error ? error.message : String(error); }
   };
   useEffect(() => { setVideoModelId(project.mediaDefaults?.video ?? defaultVideoModelId); }, [project.mediaDefaults?.video]);
+  useEffect(() => {
+    const defaultDuration = selectedVideoModel.input.default_duration_sec ?? videoDurations[0];
+    for (const update of [setDuration, setBatchDuration, setTransitionDuration]) update(value => videoDurations.includes(value) ? value : defaultDuration);
+    for (const update of [setRatio, setBatchRatio, setTransitionRatio]) update(value => videoRatios.includes(value) ? value : videoRatios[0]);
+    setBatchApproval('');
+  }, [selectedVideoModel, videoDurations, videoRatios]);
   useEffect(() => () => {
     batchStop.current = true;
     for (const [id, command] of connectionRefs.current) call(command, { connectionId: id }).catch(() => {});
   }, []);
-  const images = [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
-    ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))];
+  const images = useMemo(() => [...project.artworks.map(a => ({ key: `artwork|${a.id}`, kind: 'artwork', id: a.id, hash: a.hash, label: `作画 ${a.panel.sceneId} / ${a.id.slice(-8)}` })),
+    ...(project.captures ?? []).map(c => ({ key: `capture|${c.id}`, kind: 'capture', id: c.id, hash: c.image.hash, label: `撮影 ${c.id.slice(-8)}` }))], [project.artworks, project.captures]);
   const shot = project.videoShots.find(s => s.id === selected);
   const currentEstimate = shot ? estimate(shot.duration, shot.ratio) : draftEstimate;
   const estimateDuration = shot?.duration ?? duration;
@@ -86,6 +97,15 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   useEffect(() => { setBatchApproval(''); }, [batchFingerprint]);
   const transitionSupported = !shot?.transition || videoConnectionSupportsEndFrame(activeConnection);
   const shotRequestError = shot ? requestError(shot.duration, shot.ratio, shot.prompt, !!shot.transition) : '';
+  const shotEdited = !!shot && (editPrompt !== shot.prompt || editRatio !== shot.ratio || editDuration !== shot.duration);
+  const editedPendingBatch = shotEdited && pendingBatch.some(item => item.shot.id === selected);
+  const batchItems = useMemo(() => batchPanelIds.map(panelId => {
+    const row = { panelId, enabled: true, prompt: batchPrompt, duration: batchDuration, ratio: batchRatio, ...batchRows[panelId] };
+    return { row, recipe: panelVideoRecipe(project, panelId, row.ratio) };
+  }), [project, batchPanelIds, batchRows, batchPrompt, batchDuration, batchRatio]);
+  const batchDraftFingerprint = JSON.stringify({ model: videoModelId, items: batchItems.map(({ row, recipe }) => ({ row, artwork: recipe.artwork?.id, hash: recipe.artwork?.hash, snapshot: recipe.panel?.snapshotId })) });
+  const enabledBatchItems = batchItems.filter(item => item.row.enabled);
+  const canSaveBatch = batchDraftFingerprint !== savedBatchDraft && enabledBatchItems.length > 0 && enabledBatchItems.every(({ row, recipe }) => recipe.valid && row.prompt.trim() && !requestError(row.duration, row.ratio, row.prompt));
   useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setEditDuration(shot?.duration ?? selectedVideoModel.input.default_duration_sec ?? videoDurations[0]); setAcceptDeletion(false); setCheckedTask(''); }, [selected, shot?.prompt, shot?.ratio, shot?.duration, selectedVideoModel.input.default_duration_sec, videoDurations]);
   async function prepareCapture() {
     const p = current.current;
@@ -112,15 +132,16 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     setBatchApproval('');
   }
   async function saveBatchRecipes() {
-    const rows = batchPanelIds.map(panelId => ({ panelId, ...(batchRows[panelId] ?? {}), duration: batchRows[panelId]?.duration ?? batchDuration, ratio: batchRows[panelId]?.ratio ?? batchRatio }));
+    const rows = batchItems.map(({ row }) => row);
     const created = createPanelVideoShots(current.current, rows, { duration: batchDuration, ratio: batchRatio });
     await commit(created.project);
-    setBatchId(created.batchId); setBatchApproval('');
+    setBatchId(created.batchId); setBatchApproval(''); setSavedBatchDraft(batchDraftFingerprint);
     setSelected(created.shotIds[0]); setPlayback(null);
     onPanelsConsumed?.();
     notify(`${created.shotIds.length}コマの動画レシピを保存しました。内容と費用を確認してからバッチ実行してください。`);
   }
   async function generateBatch() {
+    if (editedPendingBatch) throw Error('このバッチに含まれるショットの変更を保存してください。');
     if (batchLock.current || !activeConnection || !batchApproved) throw Error('動画接続とバッチ実行の確認が必要です');
     batchLock.current = true; batchStop.current = false;
     setBatchApproval(''); setBatchRunning(true); setBatchStopping(false);
@@ -160,7 +181,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   }
   return <section className="video-workspace" aria-label="動画制作">
     {batchRunning && <button disabled={batchStopping} onClick={() => { batchStop.current = true; setBatchStopping(true); }}>次のコマから停止</button>}
-    <h2>動画ショット</h2><p>同じ原作・作画・撮影画像から、選択モデルが対応する尺の無音ショットを準備します。</p>
+    <h2>動画ショット</h2><p>動きを決める → 生成 → 再生して採用</p>
     <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
       <label>動画の生成先<select aria-label="動画の生成先" value={videoModelId} onChange={e => run('動画モデルを選択', async () => { const next = e.target.value; setVideoModelId(next); setApproved(false); setBatchApproval(''); const descriptor = videoModel(next); const nextRatio = descriptor.input.ratios[0], nextDuration = descriptor.input.default_duration_sec ?? descriptor.input.durations_sec[0]; setRatio(nextRatio); setDuration(nextDuration); setBatchRatio(nextRatio); setBatchDuration(nextDuration); await commit({ ...current.current, mediaDefaults: { ...current.current.mediaDefaults, video: next } }); })}>{videoModels.map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
       <p>{selectedVideoModel.display_name} · 選択した接続の対応機能・入力条件を送信前に検証します。A→Bは終端画像対応の接続だけで実行します。</p>
@@ -196,7 +217,8 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
       </>}
     </fieldset></details>
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
-      <legend>ショットを追加</legend>
+      <legend>動画を準備</legend>
+      <details open={!selected && !batchPanelIds.length && !transitionPairIds.length}><summary>画像から新しいショットを追加</summary>
       <label>原作の場面<select aria-label="原作の場面" value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
       <details><summary>開いているBlender GUIから動画用に撮影</summary>
         <p>接続・人物設定で開いた素材から専用ショットを作ります。漫画のコマは不要です。別のコマ・動画のカメラやフレームは変更しません。</p>
@@ -227,32 +249,33 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         await commit(next); setSelected(next.videoShots.at(-1).id); setPlayback(null);
       })}>ショットを保存</button>
       <small>選択した場面の原文全体を参照します。台詞音声は生成しません。</small>
+      </details>
       <details open={batchPanelIds.length > 0}>
         <summary>選択コマの動画レシピ・バッチ生成</summary>
-        <p>漫画画面で選択したコマに、共通設定とコマ別の動きを保存します。保存だけでは動画を生成しません。</p>
+        <p>共通設定を各コマへ反映します。必要なコマだけ個別に変更できます。保存後に費用を確認して生成します。</p>
         {!batchPanelIds.length && <p>漫画画面でコマを選び、「選択コマを動画化」を押してください。</p>}
         {!!batchPanelIds.length && <>
-          <label>共通の動き<textarea aria-label="共通の動き" maxLength={selectedVideoModel.input.max_prompt_utf16} value={batchPrompt} onChange={e => { setBatchPrompt(e.target.value); setBatchApproval(''); }} placeholder="控えめで自然な動き。カメラがゆっくり寄る。"/></label>
-          <label>共通の寸法<select aria-label="共通の動画寸法" value={batchRatio} onChange={e => { setBatchRatio(e.target.value); setBatchApproval(''); }}>{videoRatios.map(value => <option key={value}>{value}</option>)}</select></label>
-          <label>共通の尺<select aria-label="共通の動画尺" value={batchDuration} onChange={e => { setBatchDuration(Number(e.target.value)); setBatchApproval(''); }}>{videoDurations.map(seconds => <option key={seconds} value={seconds}>{seconds}秒</option>)}</select></label>
-          <button disabled={!batchPrompt.trim()} onClick={() => {
-            setBatchRows(rows => Object.fromEntries(batchPanelIds.map(panelId => [panelId, rows[panelId]?.enabled === false ? rows[panelId] : { ...rows[panelId], prompt: batchPrompt, duration: batchDuration, ratio: batchRatio }])));
-            setBatchApproval('');
-          }}>共通設定を選択コマへ適用</button>
-          {batchPanelIds.map(panelId => {
-            const row = batchRows[panelId] ?? { enabled: true, prompt: '', duration: batchDuration, ratio: batchRatio };
-            const recipe = panelVideoRecipe(project, panelId, row.ratio ?? batchRatio);
+          <label>共通の動き<textarea aria-label="共通の動き" maxLength={selectedVideoModel.input.max_prompt_utf16} value={batchPrompt} onChange={e => { setBatchPrompt(e.target.value); setSavedBatchDraft(''); setBatchApproval(''); }} placeholder="控えめで自然な動き。カメラがゆっくり寄る。"/></label>
+          <label>共通の寸法<select aria-label="共通の動画寸法" value={batchRatio} onChange={e => { setBatchRatio(e.target.value); setSavedBatchDraft(''); setBatchApproval(''); }}>{videoRatios.map(value => <option key={value}>{value}</option>)}</select></label>
+          <label>共通の尺<select aria-label="共通の動画尺" value={batchDuration} onChange={e => { setBatchDuration(Number(e.target.value)); setSavedBatchDraft(''); setBatchApproval(''); }}>{videoDurations.map(seconds => <option key={seconds} value={seconds}>{seconds}秒</option>)}</select></label>
+          {batchItems.map(({ row, recipe }) => {
+            const overrides = batchRows[recipe.panelId] ?? {};
             return <article className="video-batch-row" key={recipe.panelId}>
               <label><input type="checkbox" checked={row.enabled !== false} onChange={e => updateBatchRow(recipe.panelId, { enabled: e.target.checked })}/>{recipe.panelId}</label>
               {recipe.artwork?.panel?.image && <img className="shot-preview" src={recipe.artwork.panel.image} alt={`${recipe.panelId}の開始画像`}/>}
               <p className="video-source">{recipe.source ?? '原文を確認できません'}</p>
               {!recipe.valid && <p role="alert">{recipe.reason}</p>}
-              <label>{recipe.panelId}の動き<textarea aria-label={`${recipe.panelId}の動き`} maxLength={selectedVideoModel.input.max_prompt_utf16} disabled={!recipe.valid || row.enabled === false} value={row.prompt} onChange={e => updateBatchRow(recipe.panelId, { prompt: e.target.value })}/></label>
-              <label>尺<select aria-label={`${recipe.panelId}の尺`} disabled={!recipe.valid || row.enabled === false} value={row.duration ?? batchDuration} onChange={e => updateBatchRow(recipe.panelId, { duration: Number(e.target.value) })}>{videoDurations.map(seconds => <option key={seconds} value={seconds}>{seconds}秒</option>)}</select></label>
-              <label>寸法<select aria-label={`${recipe.panelId}の寸法`} disabled={!recipe.valid || row.enabled === false} value={row.ratio ?? batchRatio} onChange={e => updateBatchRow(recipe.panelId, { ratio: e.target.value })}>{videoRatios.map(value => <option key={value}>{value}</option>)}</select></label>
+              <label>{recipe.panelId}の動き<textarea aria-label={`${recipe.panelId}の動き`} maxLength={selectedVideoModel.input.max_prompt_utf16} disabled={row.enabled === false} value={row.prompt} onChange={e => updateBatchRow(recipe.panelId, { prompt: e.target.value })}/></label>
+              <label>尺<select aria-label={`${recipe.panelId}の尺`} disabled={row.enabled === false} value={row.duration} onChange={e => updateBatchRow(recipe.panelId, { duration: Number(e.target.value) })}>{!videoDurations.includes(row.duration)&&<option value={row.duration} disabled>{row.duration}秒（モデル非対応）</option>}{videoDurations.map(seconds => <option key={seconds} value={seconds}>{seconds}秒</option>)}</select></label>
+              <label>寸法<select aria-label={`${recipe.panelId}の寸法`} disabled={row.enabled === false} value={row.ratio} onChange={e => updateBatchRow(recipe.panelId, { ratio: e.target.value })}>{!videoRatios.includes(row.ratio)&&<option value={row.ratio} disabled>{row.ratio}（モデル非対応）</option>}{videoRatios.map(value => <option key={value}>{value}</option>)}</select></label>
+              {row.enabled && requestError(row.duration, row.ratio, row.prompt) && <p role="alert">{requestError(row.duration, row.ratio, row.prompt)}</p>}
+              {['prompt', 'duration', 'ratio'].some(key => Object.hasOwn(overrides, key)) && <button onClick={() => {
+                setBatchRows(rows => ({ ...rows, [recipe.panelId]: { enabled: row.enabled } }));
+                setSavedBatchDraft(''); setBatchApproval('');
+              }}>共通設定に戻す</button>}
             </article>;
           })}
-          <button disabled={!batchPanelIds.some(panelId => batchRows[panelId]?.enabled !== false && batchRows[panelId]?.prompt?.trim()) || batchPanelIds.some(panelId => batchRows[panelId]?.enabled !== false && !panelVideoRecipe(project, panelId, batchRows[panelId]?.ratio ?? batchRatio).valid)} onClick={() => run('動画レシピを保存', saveBatchRecipes)}>選択コマの動画レシピを保存</button>
+          <button disabled={!canSaveBatch} onClick={() => run('動画レシピを保存', saveBatchRecipes)}>選択コマの動画レシピを保存</button>
         </>}
       </details>
       {!!batches.length && <section aria-label="動画バッチ実行確認">
@@ -261,10 +284,11 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         {savedBatch.shots.map(({ shot: item, job }) => <p key={item.id}><button onClick={() => { setSelected(item.id); setPlayback(null); }}>{item.sourcePanelId} · {item.duration}秒</button> · {job ? videoStatusLabel(job) : '未送信'}</p>)}
         <small>送信済み・結果不明・失敗した要求は再送しません。各コマを開いて状態や候補を確認できます。再生成は各ショットから明示実行してください。</small>
         {batchRequestError && <p role="alert">{batchRequestError}</p>}
+        {editedPendingBatch && <p role="status">このバッチに含まれるショットの変更を保存してください。</p>}
         <label><input type="checkbox" disabled={!pendingBatch.length || !!batchRequestError} checked={batchApproved} onChange={e => setBatchApproval(e.target.checked ? batchFingerprint : '')}/>件数・モデル・費用を確認し、1件ずつ送信する</label>
-        <button className="primary" disabled={!desktop() || !activeConnection || !batchApproved || !pendingBatch.length || !!batchRequestError} onClick={() => run('動画バッチを逐次送信中', generateBatch)}>保存したレシピをバッチ実行</button>
+        <button className="primary" disabled={!desktop() || !activeConnection || !batchApproved || !pendingBatch.length || !!batchRequestError || editedPendingBatch} onClick={() => run('動画バッチを逐次送信中', generateBatch)}>保存したレシピをバッチ実行</button>
       </section>}
-      <details>
+      <details open={transitionPairIds.length > 0}>
         <summary>隣接コマ間の動画（A→B・任意選択）</summary>
         <p>同じページで読書順に隣り合うコマだけを対象にします。未選択のままなら何も保存・実行しません。</p>
         <p>{transitionPairIds.length}件選択中</p>
@@ -316,12 +340,13 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
       <label>このショットの寸法<select aria-label="このショットの寸法" disabled={busy} value={editRatio} onChange={e => setEditRatio(e.target.value)}>{videoRatios.map(r => <option key={r}>{r}</option>)}</select></label>
       <label>このショットの尺<select aria-label="このショットの尺" disabled={busy} value={editDuration} onChange={e => setEditDuration(Number(e.target.value))}>{videoDurations.map(seconds => <option key={seconds} value={seconds}>{seconds}秒</option>)}</select></label>
       <button disabled={busy || !model?.connectionId} onClick={() => run('動きの案を作成中', async () => { setEditPrompt(await draftVideoMotion(current.current, shot, model)); notify('動きの案を作りました。内容を確認して「指示を保存する」で反映できます。'); })}>演出LLMで動きの案を作る</button>
-      <button disabled={busy || !editPrompt.trim() || (editPrompt === shot.prompt && editRatio === shot.ratio && editDuration === shot.duration)} onClick={() => run('動きの指示を保存', async () => {
+      <button disabled={busy || !editPrompt.trim() || !shotEdited} onClick={() => run('動きの指示を保存', async () => {
         const next = validateVideoShot(current.current, { ...shot, prompt: editPrompt, ratio: editRatio, duration: editDuration });
         await commit({ ...current.current, videoShots: current.current.videoShots.map(s => s.id === shot.id ? next : s) });
       })}>指示を保存する</button>
       {shotRequestError && <p role="alert">{shotRequestError}</p>}
-      <button className="primary" disabled={busy || !desktop() || !activeConnection || !transitionSupported || !!shotRequestError} onClick={() => run('動画要求を送信中', generate)}>{shot.duration}秒の動画を生成する</button>
+      {shotEdited && <p role="status">変更した指示を保存すると生成できます。</p>}
+      <button className="primary" disabled={busy || !desktop() || !activeConnection || !transitionSupported || !!shotRequestError || shotEdited} onClick={() => run('動画要求を送信中', generate)}>{shot.duration}秒の動画を生成する</button>
       {!connectionId && <p>動画API接続を登録すると生成・状態照会を利用できます。</p>}
       {shot.transition && activeConnection && !transitionSupported && <p role="alert">現在の接続・モデルは終端画像に対応していないため、このA→Bショットは送信しません。</p>}
       {project.jobs.filter(j => j.scope?.type === 'videoShot' && j.scope.id === shot.id).map(j => <article key={j.id}>
@@ -331,7 +356,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
           <button disabled={busy || !jobConnectionId(j) || j.remote.status !== 'SUCCEEDED'} onClick={() => run('動画を取得・検証中', () => task(j.id, 'collect'))}>生成済み動画を取得</button>
           {['submitted', 'cancel_requested'].includes(j.status) && <><label><input type="checkbox" checked={acceptDeletion} onChange={e => setAcceptDeletion(e.target.checked)}/>取消時に完了していた結果はサービス上から削除されることを了承する</label><button disabled={busy || !jobConnectionId(j) || !acceptDeletion} onClick={() => run('動画の取消・削除を要求', () => task(j.id, 'cancel'))}>サービスへ取消・削除を要求</button></>}
         </>}
-        {['unknown', 'submitted', 'output_pending', 'cancel_requested'].includes(j.status) && !j.output_revision && !j.remote?.artifact && <details><summary>要求・取得を手動で解決する</summary><p>応答消失・期限切れ・task削除等で続行できない場合は、まず同じアカウントのRunway側で要求を確認してください。ローカルで採用せず解決しても、リモート生成は停止せず、料金と予約枠は戻りません。再生成は別の有料要求です。</p><label><input type="checkbox" checked={checkedTask === j.id} onChange={e => setCheckedTask(e.target.checked ? j.id : '')}/>サービス側を確認し、この結果を採用しないことを確認しました</label><button disabled={busy || checkedTask !== j.id} onClick={() => run('未確定要求を解決', async () => { await commit(resolveVideoTask(current.current, j.id, checkedTask === j.id)); setCheckedTask(''); })}>採用せずローカルで解決する</button></details>}
+        {['unknown', 'submitted', 'output_pending', 'cancel_requested'].includes(j.status) && !j.output_revision && !j.remote?.artifact && <details><summary>要求・取得を手動で解決する</summary><p>{j.manifest?.connection?.provider === 'ltx-mlx' ? '応答が失われた場合は、MacのアクティビティモニタでLTXのCLIが停止したことを確認してください。この操作はプロセスを停止しません。結果を採用せず解決し、再生成は別の要求として明示実行します。' : '応答消失・期限切れ・task削除等で続行できない場合は、まず同じアカウントのRunway側で要求を確認してください。ローカルで採用せず解決しても、リモート生成は停止せず、料金と予約枠は戻りません。再生成は別の有料要求です。'}</p><label><input type="checkbox" checked={checkedTask === j.id} onChange={e => setCheckedTask(e.target.checked ? j.id : '')}/> {j.manifest?.connection?.provider === 'ltx-mlx' ? 'CLIの停止を確認し、この結果を採用しないことを確認しました' : 'サービス側を確認し、この結果を採用しないことを確認しました'}</label><button disabled={busy || checkedTask !== j.id} onClick={() => run('未確定要求を解決', async () => { await commit(resolveVideoTask(current.current, j.id, checkedTask === j.id)); setCheckedTask(''); })}>採用せずローカルで解決する</button></details>}
       </article>)}
       <button disabled={busy || !desktop() || !project.videoHistory.some(h => h.shot_id === shot.id)} onClick={() => run('動画の採用を元に戻す', async () => { await commit(await undoVideo(current.current, shot.id, verify)); setPlayback(null); })}>この動画の採用を元に戻す</button>
       {project.videoRevisions.filter(v => v.shot_id === shot.id).map(v => {

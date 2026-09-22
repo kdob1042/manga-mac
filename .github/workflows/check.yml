@@ -300,11 +300,14 @@ jobs:
       # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon validation app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
+      - name: Package acceptance commands and build provenance
+        run: node scripts/package-mac-acceptance.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Manga-Mac-Apple-Silicon-validation
           path: |
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            mac-acceptance-kit/
           if-no-files-found: error
 
   release:
@@ -354,9 +357,12 @@ jobs:
       # tauri.conf.json owns the single icons/frontend preparation before packaging.
       - name: Build unsigned Apple Silicon release app and DMG
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
+      - name: Package acceptance commands and build provenance
+        run: node scripts/package-mac-acceptance.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Manga-Mac-Apple-Silicon-unsigned
           path: |
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            mac-acceptance-kit/
           if-no-files-found: error

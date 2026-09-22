@@ -5,7 +5,8 @@ import { videoModelForConnection } from './media.js';
 // This is called after IPC AND on restart; it never starts a network request.
 export function restoreVideoResults(project) {
   let next = project;
-  for (const original of project.jobs.filter(j => j.scope?.type === 'videoShot' && j.remote)) {
+  for (const original of project.jobs) {
+    if (original.scope?.type !== 'videoShot' || !original.remote) continue;
     const remote = original.remote;
     if (remote.artifact && !original.output_revision) {
       next = collectVideoResult({ ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status: 'output_pending' } : j) }, original.id, remote.artifact);
@@ -15,8 +16,14 @@ export function restoreVideoResults(project) {
     const status = ({ PENDING: 'submitted', THROTTLED: 'submitted', RUNNING: 'submitted', SUCCEEDED: 'output_pending', FAILED: 'failed', CANCELLED: 'cancelled', cancel_requested: 'cancel_requested', unknown: 'unknown' })[remote.status];
     if (!status) throw Error('未対応の動画サービス状態です');
     const model = videoModelForConnection(original.manifest?.connection);
-    next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status,
-      cost: model?.locality === 'local' ? { kind: 'local', amount: null, currency: null } : { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
+    const cost = model?.locality === 'local'
+      ? { kind: 'local', amount: null, currency: null }
+      : { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits };
+    // An unchanged receipt must not rewrite a project containing large images.
+    const sameCost = original.cost && Object.keys(original.cost).length === Object.keys(cost).length
+      && Object.keys(cost).every(key => Object.hasOwn(original.cost, key) && original.cost[key] === cost[key]);
+    if (original.status === status && sameCost) continue;
+    next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status, cost } : j) };
   }
   return next;
 }

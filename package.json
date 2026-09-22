@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
-    "test": "node --test tests/*.test.js contracts/story-source/tests/*.test.mjs",
+    "test": "node --test tests/*.test.js tests/name-plan*.test.mjs contracts/story-source/tests/*.test.mjs",
     "tauri": "tauri",
     "test:ui": "playwright test",
     "icons": "tauri icon assets/icon.svg"

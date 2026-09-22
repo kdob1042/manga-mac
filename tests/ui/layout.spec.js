@@ -45,6 +45,7 @@ test('AI layout uses registered router and explicit adoption without regeneratin
  await page.addInitScript(fixture=>{
    let project={...fixture,jobs:[],history:[]};window.nativeCalls=[];
    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
      window.nativeCalls.push(command);
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};
      if(command==='load_project')return JSON.stringify(project);

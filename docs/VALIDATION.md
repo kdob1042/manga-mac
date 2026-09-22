@@ -1,8 +1,53 @@
 # 実装・検証記録
 
-仕様は[設計書](IMPLEMENTATION_PLAN.md)。作業と残件は[Issue #5](https://github.com/kdob1042/manga-mac/issues/5)。
+仕様は[設計書](IMPLEMENTATION_PLAN.md)、検証の実行方法は[開発案内](DEVELOPMENT.md)。本書は実施時点の証跡を残す履歴であり、現在の機能一覧ではない。
 
-## 現在の確認位置と再開方法（2026-09-16）
+## 現在の受入入口
+
+- 実装済み機能のMac・実LLM・GUI・推論・実APIの残確認は [Issue #266](https://github.com/kdob1042/manga-mac/issues/266) に集約する。
+- 未実装・不具合は元Issueまたは新規Issueで扱う。実機待ちへ移して実装完了としない。
+- 試験結果は対象SHA・環境・コマンド・証跡・未実施条件を追記する。CI、実アプリ操作、画質、性能、課金APIを分け、過去の失敗や未実行を最新結果で上書きしない。
+- 使用するDMGのSHAと現在のIssue・CIを照合する。以下の古い「未実装」「未検証」は、その記録の時点を示す。
+
+## 2026-09-22 制作品質改善（#269 / PR #270）
+
+対象はPR #248の`d037fdf8d78b0c31e4fefc4c793fa1bbd7a3aee8`へ文字・出力・画像比較を加えたPR #270の実装commit `31d9d73359533c658ee67f090ceb2f3a71ae6efa`（tree `ebba25a7b78de38bfef5b6aabf980491a8b43666`）。後続差分は開発案内と本検証記録のみ。CIはPR本文で照合する。
+
+- Node 387件、Vite build成功。出力幅・crop別の必要解像度、候補作成時の元版保持、前後コマ順、文字方向・書体のUndo、AI移動での書式保持を含む。
+- Chromium関連UI 18件成功（output-quality、workflow-ux、layout、image-recovery、typography、finishing、upscale）。v2の非正方形文字編集とPNGの画素一致、縦書き変更→保存→再読込→Undo、PNG/CBZ/Live文字層の一致を検証。PNG 800×1130・3200×4520を確認した。
+- Rust 1.98.1：storage 60件成功、既存の外部連携専用3件は対象外。文字属性・追加ナレーションのSQLite保存／再読込、原文差替え拒否を含む。LLM native 105件成功、既存外部連携5件は対象外。AI応答の文字枠IDを保存データと分けて検証し、原文offsetをAIに作らせない。cargo fmt、clippy（警告をエラー扱い）成功。
+- 独立レビューで、動画画面から解像度警告を押した際の漫画画面切替を補正。PNG以外／寸法取得範囲外は「寸法不明」と表示し、解像度十分と判定しない。
+- 実Mac/WKWebViewの書体・縦用字形、24GBでの高解像度出力時間・メモリは#266。Chromiumでの表示確認を実機受入とは扱わない。ルビ・縦中横・印刷入稿・PSD往復は今回の範囲外。
+
+### 追加の制作フロー確認（2026-09-22）
+
+対象commit `b60d204cd6272ca05ba8322a96cb8043afd3ca17`（tree `5d19f6500a22e37cb78821fbe899e19adb5629cf`）。後続差分はこの検証記録のみ。
+
+- Node 394件、Vite build成功。初期JSは578.26kB（gzip 188.18kB）、前回574.89kB（187.10kB）から微増。体感速度の改善率は主張しない。
+- Chromium全82件を確認。全体実行は81件成功、既存原稿切替テスト1件が保存待機前の読取りで失敗したため、初期化順序と保存完了待機をテスト側で補正し、同ファイル3件を再実行して成功。アプリの原稿切替処理は変更していない。
+- 新規8件のUI回帰で、候補の復元・破棄保存・旧版/破損候補拒否・採用ページ維持、別ページ/空ページ/遅延結果の仕上げ表示、画面外コマの選択解除、必須台詞欠落/作画版不一致のPNG・CBZ・Live拒否、draftと他ページPNGの利用を確認。
+- 独立レビューで候補プレビューを対象ページだけの逐次描画へ補正し、不正な保存候補でも破棄操作を残した。nativeコード・保存形式・依存関係は追加変更なし。
+- 実Mac/WKWebView・長い作品のメモリは#266に追加。最終GitHub CIとdev統合SHAはPR #270で照合する。
+
+### 最新devとの統合確認（2026-09-22）
+
+対象commit `9989e7cfca17d850342b7438ef0c97e0cd6c4a9f`（tree `95425a7f27d83cccace6f248401d57470cb45677`）。PR #270の追加改善へdev `10fb235553632ff121018eddfcd40c54ccd16547`（PR #272）を統合。後続差分はこの検証記録のみ。
+
+- 最終Node 399件・Vite build成功。Chromium全85件を確認：全体84件成功、原稿ライブラリ取込の保存待機不足1件をテスト側で補正し、動画8件＋原稿ライブラリ2件を再実行して10件成功。原稿取込の製品コードは変更していない。
+- 共通設定の即時継承・個別上書きを保持し、保存済みバッチの未送信分だけを再開。モデル変更後は保存バッチを残して承認を失効する。初回動画表示で選択コマが消える統合不具合を修正。
+- 独立レビューで未保存ショット編集をバッチ経路から実行できる不整合を検出し、対象を含むバッチだけ保存まで停止。保存後の再承認、応答不明時の再送防止、送信中の停止操作をUI回帰で確認。
+- 統合前head `f6dccee` の主要CI run `35712141405` はNode 394件・UI 82件・実Live exporter 1件・storage・LLM/依存監査・実Blenderを含め成功。最終headのCIとdevマージ結果はPR #270で照合する。
+- 実Mac/WKWebView、実API、24GB実機の品質・性能確認は#266。fixtureによる送信検証を実サービスの生成成功とは扱わない。
+
+### ローカル動画対応を含む最終統合（2026-09-22）
+
+対象commit `5b24afc091d18e438cfed6a033551f141506ca89`（tree `0bdf6ff8a4ecf1247048cb38bdd4a37c311e3787`）。dev `20f30124ae23a9800115af0c8a0a4348d989d02e`（PR #167）を追加統合。後続差分はこの検証記録のみ。
+
+- 最終Node **402件**、Chromium **全87件**、Vite build成功。全UIを一括で再実行し、失敗なし。ローカル動画の単発・3コマ逐次実行のIPC fixtureも含む。
+- 競合解消では既存の共通設定継承・モデル切替処理を保持し、LTXの応答不明時の案内を追加。導入手順・設計本文を簡素化した文書へ取り込み、native/runtime/registry本体は最新devと同一であることを確認した。独立レビューで欠落なし。
+- native統合チェックは最終GitHub CI、実Macでのビルドはdevマージ後のCI、実推論・実機品質は#266へ分けて記録する。
+
+## 2026-09-16時点の確認位置
 
 以下の段階別記録は**実施当時の履歴**。古い「Rustがない」「CIが開始しない」「未実行」の記述は、後の実行結果を取り消さない。最新の統合状態とCIへのリンクはIssue #5/#9の最新進捗コメントも確認する。完了前のIssue全体のチェックは付けない。
 
@@ -11,15 +56,9 @@
 - 有料APIは0回。実Macの24GB品質/性能、クリーン導入、署名/公証は未実施。
 - CI運用更新（PR #40/#41）：`dev`マージ後の[run #163](https://github.com/kdob1042/manga-mac/actions/runs/35087400692)でLinux 4ジョブと`macOS validation`、[`main`マージ後のrun #165](https://github.com/kdob1042/manga-mac/actions/runs/35089253557)で`macOS release package`がそれぞれ成功。検証用・配布用のApple Silicon DMG artifactも生成済み。これはCI確認であり、実Macでの視覚・性能・クリーン導入受入とは別。
 
-### 次の担当の着手順
+当時のCI・ブランチ手順は[開発案内](DEVELOPMENT.md)へ集約した。最新devを起点に、既存の未コミット変更・他PRの修正を上書きせず、変更領域の必須チェックと対応するMac配布結果を確認する。
 
-1. `git fetch origin`後、main/devと未マージPRを確認し、最新devから作業ブランチを作る。PRはdevへ集約し、検証したまとまりをdev→mainへ反映する。通常のmain→dev履歴同期は行わず、main固有のhotfixだけ必要に応じてdev向けPRで反映する。`AGENTS.md`と正本の該当節を読む。未コミット変更・他PRの修正を上書きしない。
-2. 変更分類に応じた最小チェックを実行する。フロントエンドは`npm ci && npm test && npm run build`、UI変更だけがある場合は追加で`npx playwright install --with-deps chromium`後`npm run test:ui`、Live変更は`live-e2e`を追加する。
-3. Rust系は変更領域のcrateだけを対象にする。storage変更はstorage試験、LLM変更はllm試験、Blender変更はBlender試験を実行する。共通Rust・依存関係・未知の変更では全系統と依存監査を実行し、実Blender変更時だけ固定binary/checksum・BLENDER_BIN/BLENDER_FIXTURESを使う。
-4. native/Tauri変更を`dev`へマージした後だけ、pushの`macOS validation`（Swift/Tauri arm64ビルド、Rust回帰試験、検証用DMG）を確認する。PR側でMacジョブがskipされるのは、変更領域または昇格条件により不要なためである。
-5. `main`へのマージ後は、pushの`macOS release package`と`Manga-Mac-Apple-Silicon-unsigned` artifactを確認する。これは配布物生成であり、実Mac受入はINSTALL_MACと正本§11/12で別に記録する。
-
-### 未完タスクの実装入口と合格条件
+### 当時の未完タスクと合格条件
 
 | ID | 着手先・手順 | 合格条件／必要環境 |
 |---|---|---|
@@ -401,6 +440,26 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - Vite production build成功。初期JSは535.84 kB → 437.31 kB、gzipは171.84 kB → 140.21 kB。JSZip 97.15 kBをCBZ要求時へ遅延。Mac起動時間／推論性能の実測ではない。
 - crop画像のページ描画で同一画像を二度読み込む処理を一回へ統合。ページ内の原文索引を再利用し、割当チェックの反復includesをSetへ変更。
 - Macビルド、実Blender接続、実機画像品質・性能は今回未実施。既存のbridge／canvas-imageへの静的・動的import混在によるVite警告は残る。
+# #46 追加回帰確認（2026-09-18）
+
+自然言語の追加指示に対する未変更readyと、操作応答だけ成功して保存済みカメラが変わらないケースを固定応答で再現。追加指示は元の数値レンズ目標を完了根拠に使わず、開始時の観測可能なシーン状態と比較する。カメラ操作は保存状態を別途読み戻し、復旧時も同じ照合を行う。未反映操作の自動再送はしない。
+
+ローカルNode試験179件・Webビルド成功。新規回帰は未変更ready、未反映カメラと再開、訂正後の実値変更、旧数値目標による誤完了、no-op操作と再開の5件。これは固定応答・模擬Blender状態の試験であり、実LLM・実Blender・Mac UI・画像モデルの一連の制作成功ではない。
+
+未完了：自然言語の意味と最終構図の適合、カメラ以外の各操作の個別読戻し照合、変更不要の厳密な判定、実モデル代表ケース、#93の制作→修正→採用/Undo→保存/再読込→PNG/CBZ、非公開live-mangaへの転送。実行環境はLinuxで、Macアプリへの操作接続・利用者の画像モデル実行環境は確認できていない。#46/#93はopenのまま維持する。
+
+### 実モデル初回: run 35310917179
+
+commit `128ca0c6a1507d099a339650fd117f64fe125858`、Qwen2.5 3B instruct Q4_K_M、Ollama 0.34.1、Blender 4.5.13で本番directPanel/Rust adapterを実行。人工立方体の45/55/65mmは保存状態と撮影結果を確認した。75mmでは35mmのままreadyが2回返り、完了検査が停止した（LLM計10要求）。これは不一致停止の実証であり、4コマ制作の合格ではない。自然言語修正は前提失敗により未到達。
+
+同runのMac helperでは実撮影PNGからFLUX.2 klein 4B q8pの256×256生成が成功し、PNG寸法・request hash・結果hash照合を通過した（準備を含め287.79秒）。ただしGitHub artifact保存が通信timeoutとなり、成果画像の目視確認は未実施。ジョブ全体は失敗。Mac GUI・人物品質・制作一式の合格ではない。
+
+### 実モデル再検証: run 35311668822
+
+commit `552981e6a38130c9ec0d1aa37bcd05112e5a6634`で、既知の数値目標が未達なら応答schemaからreadyを除く案を試した。Node回帰では通過したが、同じ実3Bモデルは全4件をblockedとし、理由は「既に45mm」等の実状態に反する内容になった。改善と認定せずschema制限は撤回し、保存状態の読戻しと独立した完了検査を維持した。関連Node13件成功。
+
+全撮影失敗時に検証スクリプトが未定義capturesを参照する問題も検出。空配列として扱い、個別失敗を先にreportへ保存するよう修正した。実モデル試験は個別失敗を残したまま撮影済みコマへの自然言語修正も継続するが、今回は前提撮影に成功せず未到達。自動再試行は続けず、以後の実モデルworkflowは明示dispatchとする。#46/#93は未合格。
+
 
 ## Live Blender A/B（#176/#177）
 
@@ -550,6 +609,27 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
 - 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。
 
+### PR #149 再開：現行Live Blenderの変更証跡（2026-09-22）
+
+基準はdev `1f5767d01f60558a9c2fb9bbc9d8f9576a0ec229`。旧PR head `5da1efcf2f69fd9b9131b9ef98e94d98c2af93fb`のheadless演出を復活させず、現行live経路へ修正を適用する。
+
+- camera / constraint / transform / rotation / aim の操作前後の実値を比較。同値操作、虚偽のchanged、未適用の正常応答、読戻し中の版・操作権・対象変更を固定応答で検証した。
+- API障害・不正応答では次の確認操作を表示する。原稿・既存コマを保持し、自動撮影・自動採用・操作再送は行わない。
+- ローカルNode **271件成功**。関連Chromium UI **4件成功**（演出、未確定要求の採用／取り下げ、複数アングルと引継ぎ）。Vite build成功。fixtureの結果であり、実Blender・実LLM・対象Macでの受入ではない。
+- 旧headless専用の `direction-real.yml`、`tests/direction/`、`direction_bridge` を廃止。旧試験結果は上記旧headと既存Actionsに残り、現行版の実演出成功の証拠には使わない。現行GUI接続の機械検証は既存 `blender/test_live_gui.py` を使う。
+- `samples/opening-preview` と暗号化入力・公開証明書は保持。明示prepareに必要なmodel IDを生成と同じregistryから解決するよう補正し、CLI構文・読取り専用のモデル解決を確認した。モデル取得・推論・秘密設定・Preview転送は今回実行していない。
+
+#46は未完了。自然言語要求を満たした「変更不要」の厳密な判定と、現行live経路での代表実LLMケースが残る。実Macの画質・操作・メモリ受入は #266、サンプルの実Preview転送は #214 を参照する。
+
+
+## #248とUX整理の統合確認（2026-09-22）
+
+対象はネーム取込 `d5da6f7` とUX整理 `faaa970` の統合。ネーム制作後のページ位置を保って仕上げへ進み、JSON / GitHub取込・明示採用・ブラウザ確認を維持する。ネーム操作は詳細の初回展開時に読み込み、閉じても入力を保持する。
+
+- `npm test`: 374件成功。`npm run build`: 成功。NamePlanControlsとLayoutEditorは遅延chunkを維持。
+- Chromiumの関連UI: 21件成功。JSON取込、同SHAのGitHub取込、候補採用・再起動、作画・文字・CBZ、初回読込と入力保持、工程切替、配置、原稿反映、画像復旧を確認。検証用worktreeのport 5175で実行した。
+- 実LLM・画像推論・Mac GUI・実APIは未実行。上記は人工応答を含むブラウザ / Node検証であり、#266の実機受入は残る。
+
 ## 2026-09-22: 動画バッチ再開・停止（Issue #271 / PR #272）
 
 - 対象: dev `1f5767d` 起点。保存済みbatchId/jobsから未送信分を復元、モデル・接続・レシピ変更で確認失効、未送信分停止を追加。
@@ -557,3 +637,32 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - 動画UI: 6成功（既存3＋再開/通信断/停止/モデル・尺変更3）。3コマの2件目で応答消失後、再起動して3件目だけ送信するIPC fixtureで重複要求0件を確認。
 - `npm run build`、`git diff --check`: 成功。既存のchunkサイズ警告あり。
 - 実Runway課金・LTX実推論・Mac実再生/24GB性能は未実施。実機残確認は #266、LTX接続統合は #166 / PR #167。
+
+## 2026-09-22: LTX共有バッチ統合（Issue #166 / PR #167）
+
+- PR #167の旧実装を現行devへ統合し、`ltx-2-5-mlx-local`を共有registry/runtime・動画接続画面へ接続。既存videoShots/jobs/候補・採用経路を共用。
+- Node全体: 257成功。動画UI: 9成功（バッチ回帰6＋ローカル単発/3コマ逐次/既存復旧3）。3コマすべての候補保存、cloud IPC 0件、再起動後の再送0件を確認。
+- Rust native fixture: 100成功／既存の外部依存4件ignored。ローカル7件、Runway13件を含む。2ショットを疑似CLI→実FFmpeg→不変artifact保存で逐次処理し、同一Job再実行・古い原稿範囲/採用作画の拒否を確認。
+- `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`: 成功。
+- LTX実モデル推論・Mac実再生・24GB性能は未実施。CLI/モデル自動取得なし。Mac実機受入は #266 に集約。
+
+## 2026-09-22: #46 の変更不要判定
+
+head `f7ef799` で、単一の明示焦点距離を利用者の指示全体から導出し、同じ版・操作権・撮影カメラの読戻しと照合する判定を追加。相対／複合／否定指示、旧prompt、モデルの理由文は「変更不要」の証拠にしない。明示目標と違う値への実操作は要求未達として表示する。
+
+- Node 287件、Vite build、diff check成功。独立レビューで読戻し中の取消競合を修正し、再レビューでブロッカーなし。追加回帰16件。
+- 最新差分のChromium再実行は配布zip取得失敗で未実施。先行headのUI成功とは別記録。
+- 実LLM／実GUIの代表ケースは `LIVE_DIRECTION_ACCEPTANCE.md` の現行経路で #266 に記録する。未実施を成功とせず、任意自然言語の見た目は確認待ちに戻す。
+
+続いてdev `20f3012`へ同期。競合は本記録の末尾追記だけで、#271/#166と#46の記録を両方保持した。同期後はNode 295件、Vite build、関連Chromium UI 4件（演出・未確定の採用/取り下げ・角度候補と引継ぎ）が成功。Chromiumは既存の共有環境から指定し、上記の取得失敗を解消した。実LLM／実Mac受入を行ったことにはしない。
+
+最終同期先devは `47075b7`（#210/#248/#270統合後）。短縮READMEと新しい文書分担を保持し、「変更不要」の操作説明はUSAGEのBlender節へ移した。最新のNode 440件、Vite build、関連Chromium UI 4件が成功。#46の処理・回帰コードは `f7ef799` と同一。
+
+## 2026-09-22: 隔離したMac実機準備（Issue #273 / PR #274）
+
+- dev `617ca96` の制作UI・ネームv2・LTX・Live演出修正を統合。到着日の手順は[Mac導入ガイド](INSTALL_MAC.md#実機確認を始める266)に集約。
+- Node全体457件、Vite build成功。統合前のChromium全UI90件と、Live演出修正の関連UI4件が成功。最新統合headの全体確認はGitHub CIを参照。UIのnative I/O・画像推論はfixture、本番のv2 validator/compiler/production・日本語Canvas描画を使用する。
+- Rust storage 71件成功・既存外部依存3件ignored。隔離保存・排他・通常DB拒否・旧ビルド拒否・実PNG decode、v2人工fixtureのsave_checked→SQLite→load、掲載atom範囲の保持／改竄拒否を確認。Clippy・Rustfmt成功。
+- 保存JSONのキー順が画像入力hashを変える問題を修正。新規Jobは版付きの安定hash、旧Jobは旧hashを保持。実値変更と送信済みhash版変更の拒否を検証。
+- 再起動合格には前回起動時の保存基準を必須とし、同じ起動内の生成で合格にしない。応答不明時は既存receipt回収のみで生成0回、成功済み作画を再利用する。
+- Mac/TauriビルドはCIの別判定。実FLUX推論、実Mac再起動、実LLM、P01、視覚品質・ピークメモリは未実施。#266はopen維持し、人工fixture／Linux試験を実機証跡にしない。

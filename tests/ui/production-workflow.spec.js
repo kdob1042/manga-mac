@@ -5,9 +5,12 @@ test('production page uses real geometry, source preview, selected panel and per
  await page.goto('/');
  await page.evaluate(async fixture=>{const {saveProject}=await import('/src/bridge.js');await saveProject(fixture);},legacy);
  await page.reload();
+ await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
  await expect(page.getByRole('region',{name:'コマ割り編集'})).toBeVisible();
  await page.getByTestId('layout-slot-0').click({position:{x:50,y:50}});
+ await page.getByRole('button',{name:'作画',exact:true}).click();
  await expect(page.getByRole('button',{name:/このコマの再生成候補を作る/})).toBeVisible();
+ await page.getByRole('button',{name:'仕上げ',exact:true}).click();
  await expect(page.getByRole('region',{name:'セクションの完了管理'})).toBeVisible();
  await page.getByRole('button',{name:'接続・人物設定'}).click();
  await page.getByLabel('画像生成モデル',{exact:true}).selectOption('runway-gen4-image');

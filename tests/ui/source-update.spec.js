@@ -13,6 +13,7 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
   const content=p=>JSON.stringify([p.panels,p.layout,p.sourceApplication,p.active]);
   function save(next){if(content(next)!==content(project))next.contentToken=`t${++revision}`;else next.contentToken=project.contentToken;next.sourcePatchReceipts={...next.sourcePatchReceipts,...project.sourcePatchReceipts};project=next;localStorage.setItem('source-fixture',JSON.stringify(project));window.sourceSaved=project;}
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.sourceCalls.push(command);
    if(command==='load_project')return JSON.stringify(project);
    if(command==='save_project'){save(JSON.parse(args.data));return;}
@@ -41,7 +42,7 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
   }};
  });
  await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();
- await page.getByText('原稿と漫画への反映状態',{exact:true}).click();const source=page.getByRole('region',{name:'原稿',exact:true});await expect(source.getByRole('checkbox')).toHaveCount(initialDraft?4:2);if(initialDraft)await source.getByRole('button',{name:'未反映・削除対象をすべて選択'}).click();else await source.getByRole('checkbox').first().check();
+ await page.getByRole('button',{name:'原稿',exact:true}).click();const source=page.getByRole('region',{name:'原稿',exact:true});await expect(source.getByRole('checkbox')).toHaveCount(initialDraft?4:2);if(initialDraft)await source.getByRole('button',{name:'未反映・削除対象をすべて選択'}).click();else await source.getByRole('checkbox').first().check();
  await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();const candidate=page.getByRole('region',{name:'原稿反映の更新案'});await expect(candidate).toBeVisible();await expect(candidate).toContainText('更新案を確認できます');
 
  if(initialDraft){
@@ -63,5 +64,5 @@ for(const initialDraft of [false,true])test(initialDraft?'first draft uses sourc
  expect(await page.evaluate(()=>window.sourceSaved.panels.map(p=>p.image))).toEqual(images);expect(await page.evaluate(()=>window.sourceCalls.filter(c=>c==='generate_image').length)).toBe(0);
  await page.getByRole('button',{name:'↶ 元に戻す',exact:true}).click();await expect(source.getByRole('checkbox')).toHaveCount(2);
  await page.getByRole('button',{name:'↷ やり直す',exact:true}).click();await expect(source.getByRole('checkbox')).toHaveCount(1);
- await page.reload();await page.getByText('原稿と漫画への反映状態',{exact:true}).click();await expect(page.getByRole('region',{name:'原稿',exact:true}).getByRole('checkbox')).toHaveCount(1);
+ await page.reload();await page.getByRole('button',{name:'原稿',exact:true}).click();await expect(page.getByRole('region',{name:'原稿',exact:true}).getByRole('checkbox')).toHaveCount(1);
 });

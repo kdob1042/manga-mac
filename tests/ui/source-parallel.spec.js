@@ -10,6 +10,7 @@ for(const stopA of [false,true,'fail'])test(stopA==='fail'?'A planning failure l
   let p=JSON.parse(localStorage.getItem('parallel-fixture')),revision=0;window.parallelCalls=[];window.planGates={};window.initialMiddle=JSON.stringify(p.panels.slice(1,8));
   const content=p=>JSON.stringify([p.panels,p.layout,p.sourceApplication,p.active]);const save=next=>{next.contentToken=content(next)===content(p)?p.contentToken:`t${++revision}`;p=next;window.parallelSaved=p;localStorage.setItem('parallel-fixture',JSON.stringify(p));};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    window.parallelCalls.push(command);
    if(command==='load_project')return JSON.stringify(p);if(command==='save_project'){save(JSON.parse(args.data));return;}
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'test/repo',episode:'P01'}]};if(command==='backup_status')return {config:null,status:{},restored:[]};if(command==='register_llm')return 'external';if(command==='remove_llm')return;
@@ -20,7 +21,7 @@ for(const stopA of [false,true,'fail'])test(stopA==='fail'?'A planning failure l
    throw Error('unexpected '+command);
   }};
  });
- await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('combobox',{name:'演出・コマ計画の接続先'}).selectOption('openai');await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();await page.getByText('原稿と漫画への反映状態',{exact:true}).click();
+ await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('combobox',{name:'演出・コマ計画の接続先'}).selectOption('openai');await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();await page.getByRole('button',{name:'原稿',exact:true}).click();
  const source=page.getByRole('region',{name:'原稿',exact:true}),candidates=page.getByRole('region',{name:'原稿反映の更新案'});
  await source.getByRole('checkbox').first().check();await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.keys(window.planGates))).toEqual(['new0']);
  await source.getByRole('checkbox').last().check();await source.getByRole('button',{name:'選択箇所を漫画に反映',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.keys(window.planGates))).toEqual(['new0','new8']);

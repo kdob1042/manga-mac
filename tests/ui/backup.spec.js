@@ -4,6 +4,7 @@ test('backup setup is opt-in, secrets clear, and restore does not open or overwr
     let config = null; let restored = [];
     window.calls = [];
     window.__TAURI_INTERNALS__ = { invoke: async (command,args) => {
+      if (command === 'acceptance_context') return null;
       // Record command shape only: tests do not persist password payloads/screenshots.
       window.calls.push(command);
       if (command === 'source_library') return {active:'primary',entries:[{id:'primary',name:'Fixture',repo:'example/story',episode:'P01'}]};

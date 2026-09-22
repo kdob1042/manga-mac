@@ -411,6 +411,60 @@
         "real_api": "not_run"
       },
       "requires_connection": true
+    },
+    {
+      "id": "ltx-2-5-mlx-local",
+      "display_name": "LTX-2.5 MLX（Mac内・実推論未検証）",
+      "adapter_id": "ltx-mlx",
+      "provider": "ltx-mlx",
+      "model_id": "ltx-2.5",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "image_to_video"
+      ],
+      "request_profile": "distilled-low-ram-v1",
+      "capabilities": {
+        "end_frame": false,
+        "native_audio": false
+      },
+      "input": {
+        "durations_sec": [
+          5
+        ],
+        "default_duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "ratios": [
+          "512:512",
+          "512:320",
+          "320:512"
+        ],
+        "max_prompt_utf16": 1000,
+        "min_aspect_ratio": 0.625,
+        "max_aspect_ratio": 1.6
+      },
+      "pricing": {
+        "unit": "local",
+        "credits_per_second": 0,
+        "minimum_credits": 0,
+        "usd_per_credit": 0
+      },
+      "requires_connection": true,
+      "request_defaults": {
+        "audio": false
+      },
+      "runtime": {
+        "cli": "ltx-2-mlx",
+        "upstream_revision": "3d08a953957fbc4269093d4da2f88db5bc12f86b",
+        "preset": "distilled-low-ram-v1",
+        "frames": 121,
+        "fps": 24,
+        "seed": 42
+      },
+      "validation": {
+        "contract": "fixture-passed",
+        "inference": "not_run"
+      }
     }
   ]
 }

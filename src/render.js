@@ -9,12 +9,48 @@ import {
   overflowDrawOrder,
 } from './layout.js';
 import { panelArtRect } from './page-art.js';
-import { wrapText, validateLettering, letteringKind, isCustomLetteringBox } from './lettering.js';
+import { wrapText, verticalColumns, letteringFont, validateLettering, letteringKind, isCustomLetteringBox } from './lettering.js';
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
+import { nameLetteringProblems } from './name-v2.js';
+import { outputSize } from './output.js';
 export function lines(ctx, text, width) {
   return wrapText(text, (value) => ctx.measureText(value).width, width);
+}
+const verticalImages = new Map();
+let verticalImagePixels = 0;
+const xml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
+async function drawVertical(ctx, columns, box, size, lineHeight, font) {
+  const transform = ctx.getTransform();
+  const scale = Math.max(1, Math.hypot(transform.a, transform.b), Math.hypot(transform.c, transform.d));
+  const glyphs = columns.flatMap((column, col) => column.map((glyph, row) =>
+    `<text x="${box.width - size / 2 - col * size * lineHeight}" y="${row * size}">${xml(glyph)}</text>`)).join('');
+  // Native SVG text shaping supplies vertical Japanese glyphs. No HTML, external
+  // fonts or assets are loaded; draw at the destination density, including export.
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(box.width * scale)}" height="${Math.ceil(box.height * scale)}" viewBox="0 0 ${box.width} ${box.height}"><g font-family="${xml(font)}" font-size="${size}" fill="#111" style="writing-mode:vertical-rl;text-orientation:upright" dominant-baseline="central">${glyphs}</g></svg>`;
+  let pending = verticalImages.get(svg)?.pending;
+  if (!pending) {
+    pending = imageOf(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+    const pixels = Math.ceil(box.width * scale) * Math.ceil(box.height * scale);
+    // Keep a small preview cache; full-page high-resolution exports stay transient.
+    if (pixels <= 4_000_000) {
+      while (verticalImages.size >= 8 || verticalImagePixels + pixels > 8_000_000) {
+        const oldest = verticalImages.keys().next().value;
+        verticalImagePixels -= verticalImages.get(oldest).pixels;
+        verticalImages.delete(oldest);
+      }
+      verticalImages.set(svg, {pending, pixels});
+      verticalImagePixels += pixels;
+      pending.catch(() => {
+        if (verticalImages.get(svg)?.pending === pending) {
+          verticalImagePixels -= pixels;
+          verticalImages.delete(svg);
+        }
+      });
+    }
+  }
+  ctx.drawImage(await pending, box.x, box.y, box.width, box.height);
 }
 export function drawLettering(ctx, text, box, balloon, style = {}) {
   const padding = style.padding ?? 12,
@@ -30,11 +66,19 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     width: box.width - inset * 2,
     height: box.height - inset * 2,
   };
+  const vertical = style.writingMode === 'vertical-rl';
   let size = style.fontSize ?? 24,
     wrapped;
   const minimum = style.fontSize ?? 14;
   for (; size >= minimum; size--) {
-    ctx.font = `${size}px sans-serif`;
+    ctx.font = `${size}px ${letteringFont(style)}`;
+    if (vertical) {
+      const capacity = Math.floor((textBox.height - padding * 2) / size);
+      if (capacity < 1) continue;
+      wrapped = verticalColumns(text, capacity);
+      if ((wrapped.length - 1) * size * lineHeight + size <= textBox.width - padding * 2) break;
+      continue;
+    }
     wrapped = lines(ctx, text, textBox.width - padding * 2);
     if (
       wrapped.length * size * lineHeight <= textBox.height - padding * 2 &&
@@ -55,7 +99,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     if (kind === 'balloon' && style.tail) {
       ctx.beginPath();
       ctx.moveTo(box.x + box.width * 0.4, box.y + box.height * 0.5);
-      ctx.lineTo(2 + style.tail[0] * 716, 2 + style.tail[1] * 716);
+      ctx.lineTo(style.tailPoint?.[0] ?? 2 + style.tail[0] * 716, style.tailPoint?.[1] ?? 2 + style.tail[1] * 716);
       ctx.lineTo(box.x + box.width * 0.6, box.y + box.height * 0.5);
       ctx.closePath();
       ctx.fill();
@@ -87,6 +131,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
   }
   ctx.fillStyle = '#111';
   ctx.textBaseline = 'top';
+  if (vertical) return drawVertical(ctx, wrapped, {x:textBox.x+padding,y:textBox.y+padding,width:textBox.width-padding*2,height:textBox.height-padding*2}, size, lineHeight, letteringFont(style));
   wrapped.forEach((line, i) =>
     ctx.fillText(
       line,
@@ -131,7 +176,19 @@ function enterComposition(ctx,slot) {
   ctx.scale(scale, scale);
   return scale;
 }
+export async function drawNameLettering(ctx,p,slot,snapshots,localizations,locale) {
+  if(!panelHasText(p))return;
+  const frame=contentBox(slot.points),layout=validateLettering(p,p.lettering);
+  if(layout.mode!=='balloons')throw Error(`コマ ${p.id} の掲載文字を枠内に配置してください。全文captionへは戻しません`);
+  for(const [index,box] of layout.boxes.entries()) {
+    if((box.fontSize??48)<32)throw Error(`コマ ${p.id} の文字が小さすぎます。枠・ページを見直してください`);
+    for(const other of layout.boxes.slice(index+1))if(box.x<other.x+other.width&&box.x+box.width>other.x&&box.y<other.y+other.height&&box.y+box.height>other.y)throw Error(`コマ ${p.id} の文字枠が重なっています`);
+    const text=isCustomLetteringBox(box)?box.text:textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null);
+    await drawLettering(ctx,text,{x:frame.x+box.x*frame.width,y:frame.y+box.y*frame.height,width:box.width*frame.width,height:box.height*frame.height},true,{...box,fontSize:box.fontSize??48,tailPoint:box.tail?[frame.x+box.tail[0]*frame.width,frame.y+box.tail[1]*frame.height]:null});
+  }
+}
 async function drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText) {
+  if(p.namePlanVersion===2)return drawNameLettering(ctx,p,slot,snapshots,localizations,locale);
   const box = contentBox(slot.points);
   const scale = Math.min(box.width / 720, box.height / 1030);
   if (panelHasText(p) && !(draft && p.previewLetteringPending) && scale * 14 < 6)
@@ -167,7 +224,7 @@ async function drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft
         : box.sourceRefs
           ? textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null)
           : textForUnits([box.unit_id]);
-      drawLettering(
+      await drawLettering(
         ctx,
         unitText,
         {
@@ -181,7 +238,7 @@ async function drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft
       );
     }
   } else
-    drawLettering(
+    await drawLettering(
       ctx,
       text,
       { x: x + 10, y: y + 736, width: 700, height: 280 },
@@ -200,6 +257,7 @@ export async function pageLayers(
   page = null,
   draft = false,
   imageCrops = {},
+  output = {},
 ) {
   page ??= initialLayout(panels).pages[0] ?? { id: 'empty', slots: [] };
   validateLayout({ version: 1, pages: [page] }, panels);
@@ -208,9 +266,11 @@ export async function pageLayers(
     if (warnings.length) throw Error(warnings.join(' / '));
   }
   const canvas = document.createElement('canvas');
-  canvas.width = 1600;
-  canvas.height = 2260;
+  const size = outputSize(output);
+  canvas.width = size.width;
+  canvas.height = size.height;
   const ctx = canvas.getContext('2d');
+  ctx.scale(size.width / PAGE.width, size.height / PAGE.height);
   if (layer !== 'overlay') {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, 1600, 2260);
@@ -221,6 +281,10 @@ export async function pageLayers(
     const p = panels.find((p) => p.id === slot.panelId);
     if (!p && !draft) throw Error('未割当の枠があります');
     if (p && !p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
+    if (p && !draft) {
+      const problems = nameLetteringProblems(p);
+      if (problems.length) throw Error(`コマ ${page.slots.indexOf(slot) + 1}: ${problems.map(problem => problem.message).join(' / ')}`);
+    }
     prepared.push({
       slot,
       p,
@@ -243,7 +307,13 @@ export async function pageLayers(
       if (layer !== 'art') strokeFrame(ctx,slot.points);
       continue;
     }
-    if (!p.image) {
+    if (!p.image && p.namePlanVersion===2) {
+      const frame=contentBox(slot.points);
+      ctx.fillStyle='#f6f5f1';ctx.fillRect(frame.x,frame.y,frame.width,frame.height);
+      ctx.fillStyle='#777';ctx.font='22px sans-serif';
+      const intent=lines(ctx,`仮ネーム · ${p.nameIntent??p.id}`,Math.max(1,frame.width-32));
+      intent.slice(0,3).forEach((line,i)=>ctx.fillText(line,frame.x+16,frame.y+frame.height-70+i*24));
+    } else if (!p.image) {
       ctx.save();
       enterComposition(ctx,slot);
       ctx.fillStyle = '#f2f0eb';
@@ -259,7 +329,7 @@ export async function pageLayers(
       }
       ctx.restore();
     }
-    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
+    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length && p.namePlanVersion!==2)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
     if (layer !== 'art') strokeFrame(ctx,slot.points);
   }
@@ -282,6 +352,7 @@ export const pagePNG = (
   page = null,
   draft = false,
   imageCrops = {},
+  output = {},
 ) =>
   pageLayers(
     panels,
@@ -292,4 +363,5 @@ export const pagePNG = (
     page,
     draft,
     imageCrops,
+    output,
   );

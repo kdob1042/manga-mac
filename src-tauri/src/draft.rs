@@ -25,7 +25,14 @@ pub fn validate(project: &Value) -> Result<(), String> {
                         .iter()
                         .map(|v| v.as_str().ok_or("Invalid draft unit"))
                         .collect::<Result<Vec<_>, _>>()?;
-                    super::lettering::validate(lettering, Some(&units))?;
+                    super::lettering::validate(
+                        lettering,
+                        if panel.get("sourceRefs").is_some() {
+                            None
+                        } else {
+                            Some(&units)
+                        },
+                    )?;
                 }
             }
         }

@@ -19,7 +19,7 @@ function geometry(project,id,size) {
   if(!slot)throw Error('対象のコマ枠がありません');
   const home=contentBox(slot.points),art=contentBox(artPoints(slot));
   const letterScale=Math.min(home.width/720,home.height/1030);
-  const letters={x:home.x+(home.width-720*letterScale)/2+2*letterScale,y:home.y+(home.height-1030*letterScale)/2+2*letterScale,width:716*letterScale,height:716*letterScale};
+  const letters=project.panels.find(panel=>panel.id===id)?.namePlanVersion===2?{...home}:{x:home.x+(home.width-720*letterScale)/2+2*letterScale,y:home.y+(home.height-1030*letterScale)/2+2*letterScale,width:716*letterScale,height:716*letterScale};
   const crop=project.layout.imageCrops?.[id],b=bounds(artPoints(slot));
   const cover=coverCrop(crop);
   const artScale=Math.min(art.width/720,art.height/1030);

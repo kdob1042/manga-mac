@@ -1,0 +1,2199 @@
+{
+  "schema": "manga-mac/test-fixture/acceptance-name-v2/v1",
+  "purpose": "Native save/load contract fixture. The 1px image is synthetic storage data, not inference or visual acceptance evidence.",
+  "producer": [
+    "createNameFile",
+    "createNameCandidate",
+    "adoptNameCandidate",
+    "setLettering",
+    "finalizeNameApplication"
+  ],
+  "before": {
+    "version": 5,
+    "title": "最小制作確認",
+    "snapshots": [
+      {
+        "id": "acceptance-source",
+        "repo": "acceptance/fixture",
+        "sha": "0000000000000000000000000000000000000000",
+        "scenes": [
+          {
+            "id": "acceptance-scene",
+            "text": "こんにちは。文字と保存の確認です。",
+            "sourceHash": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+          }
+        ],
+        "settings": [],
+        "references": []
+      }
+    ],
+    "active": "acceptance-source",
+    "panels": [
+      {
+        "id": "acceptance:p1:a04ed67a",
+        "snapshotId": "acceptance-source",
+        "sceneId": "acceptance-scene",
+        "sourceRefs": [
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          }
+        ],
+        "contextRefs": [],
+        "requiredText": [
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          }
+        ],
+        "unitIds": [],
+        "characterIds": [],
+        "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+        "nameIntent": "木と小道を見せる",
+        "namePlanVersion": 2,
+        "image": null,
+        "artwork_revision": null,
+        "capture_revision": null,
+        "status": "planned",
+        "instructions": [],
+        "attempts": 0,
+        "lettering": {
+          "mode": "balloons",
+          "boxes": [
+            {
+              "id": "box:acceptance:p1:a04ed67a:0",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                }
+              ],
+              "x": 0.05,
+              "y": 0.03,
+              "width": 0.9,
+              "height": 0.275,
+              "kind": "narration",
+              "shape": "rect",
+              "fontSize": 48,
+              "lineHeight": 1.25,
+              "padding": 10,
+              "tail": null
+            },
+            {
+              "id": "box:acceptance:p1:a04ed67a:1",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "x": 0.05,
+              "y": 0.32000000000000006,
+              "width": 0.9,
+              "height": 0.275,
+              "kind": "narration",
+              "shape": "rect",
+              "fontSize": 48,
+              "lineHeight": 1.25,
+              "padding": 10,
+              "tail": null
+            }
+          ]
+        },
+        "letteringStatus": "draft",
+        "letteringArtworkRevision": null
+      }
+    ],
+    "artworks": [],
+    "characters": [],
+    "history": [
+      {
+        "panels": [],
+        "layout": {
+          "version": 1,
+          "pages": [],
+          "knownPanelIds": []
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "draftScope": null,
+        "namePlan": null,
+        "layoutHistory": [],
+        "layoutRedo": [],
+        "panelMotions": [],
+        "motionHistory": [],
+        "characters": [],
+        "style_references": [],
+        "output_locale": "ja",
+        "id": "f2f81bb2-dd95-4807-8af1-33a22d49ecfa",
+        "active": "acceptance-source",
+        "draftCheckpoint": true,
+        "label": "ネーム採用前の原稿",
+        "at": "2026-09-22T10:12:00.068Z"
+      }
+    ],
+    "jobs": [
+      {
+        "id": "96c08278-c824-4d88-ae3c-2ecafe874b1e",
+        "kind": "draft_layout",
+        "status": "complete",
+        "source_revision": "acceptance-source",
+        "draft_id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+        "origin": "name-plan-v2"
+      }
+    ],
+    "localizations": [],
+    "output_locale": "ja",
+    "mediaDefaults": {
+      "image": "flux-2-klein-4b-q6-local",
+      "video": "runway-gen4-5"
+    },
+    "videoShots": [],
+    "videoRevisions": [],
+    "videoHistory": [],
+    "acceptanceFixture": "manga-mac/acceptance-fixture/v1",
+    "workId": "acceptance-fixture-v1",
+    "layout": {
+      "version": 1,
+      "pages": [
+        {
+          "id": "acceptance:page1:edf0fdc5",
+          "slots": [
+            {
+              "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+              "panelId": "acceptance:p1:a04ed67a",
+              "points": [
+                [
+                  0.0375,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.9734513274
+                ],
+                [
+                  0.0375,
+                  0.9734513274
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "knownPanelIds": [
+        "acceptance:p1:a04ed67a"
+      ]
+    },
+    "sourceApplication": {
+      "version": 1,
+      "units": []
+    },
+    "draftScope": {
+      "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "snapshotId": "acceptance-source",
+      "sceneIds": [
+        "acceptance-scene"
+      ]
+    },
+    "layoutHistory": [],
+    "layoutRedo": [],
+    "editRedo": [],
+    "namePlan": {
+      "format": "manga-mac/name-plan/v2",
+      "status": "adopted",
+      "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "namespace": "acceptance",
+      "file": {
+        "format": "manga-mac/name-plan/v2",
+        "title": "最小制作確認",
+        "stage": "name-only",
+        "readingDirection": "rtl",
+        "source": {
+          "repo": "acceptance/fixture",
+          "workId": "acceptance-fixture-v1",
+          "branch": "main",
+          "commit": "0000000000000000000000000000000000000000",
+          "scenes": [
+            {
+              "id": "acceptance-scene",
+              "sha256": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+            }
+          ],
+          "selectedAtomIds": [
+            "acceptance-scene:u0:a0",
+            "acceptance-scene:u0:a1"
+          ],
+          "settingsHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "referencesHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "policyVersion": "name-director/2.0.0",
+        "provenance": {
+          "producer": "acceptance-fixture",
+          "model": "",
+          "editedBy": []
+        },
+        "plan": {
+          "workGoal": {
+            "readerQuestion": "確認用の木はどう見えるか",
+            "emotionalArc": [
+              "導入",
+              "確認"
+            ],
+            "payoff": "木と文字が同じページにある"
+          },
+          "coverage": [
+            {
+              "atomId": "acceptance-scene:u0:a0",
+              "presentation": "narration",
+              "reason": "確認用原稿の全文を表示する"
+            },
+            {
+              "atomId": "acceptance-scene:u0:a1",
+              "presentation": "narration",
+              "reason": "確認用原稿の全文を表示する"
+            }
+          ],
+          "beats": [
+            {
+              "id": "b1",
+              "atomIds": [
+                "acceptance-scene:u0:a0",
+                "acceptance-scene:u0:a1"
+              ],
+              "function": "setup",
+              "tempo": "normal",
+              "readerBefore": "確認前",
+              "readerAfter": "確認済み"
+            }
+          ],
+          "panels": [
+            {
+              "id": "p1",
+              "atomIds": [
+                "acceptance-scene:u0:a0",
+                "acceptance-scene:u0:a1"
+              ],
+              "contextAtomIds": [],
+              "beatIds": [
+                "b1"
+              ],
+              "characterIds": [],
+              "role": "standard",
+              "shot": "medium",
+              "shotIntent": "木と小道を見せる",
+              "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.",
+              "silentReason": "",
+              "protect": [
+                "木"
+              ],
+              "gaze": "neutral"
+            }
+          ],
+          "pages": [
+            {
+              "id": "page1",
+              "purpose": "保存・文字・出力を確認する",
+              "entryBeatId": "b1",
+              "exit": {
+                "kind": "pause",
+                "note": "確認を終える",
+                "payoffBeatIds": []
+              },
+              "tree": {
+                "type": "leaf",
+                "panelId": "p1"
+              }
+            }
+          ]
+        }
+      },
+      "fileHash": "99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "snapshotId": "acceptance-source",
+      "draftId": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "panelIds": [
+        "acceptance:p1:a04ed67a"
+      ],
+      "pageIds": [
+        "acceptance:page1:edf0fdc5"
+      ],
+      "sourcePolicy": [
+        {
+          "atomId": "acceptance-scene:u0:a0",
+          "source": {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          "kind": "prose",
+          "presentation": "narration",
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 0,
+              "endCp": 6
+            }
+          ],
+          "reason": "確認用原稿の全文を表示する"
+        },
+        {
+          "atomId": "acceptance-scene:u0:a1",
+          "source": {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          },
+          "kind": "prose",
+          "presentation": "narration",
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "reason": "確認用原稿の全文を表示する"
+        }
+      ],
+      "compilerVersion": "name-layout/2.0.0",
+      "profile": {
+        "width": 1600,
+        "height": 2260,
+        "margin": 60,
+        "gutter": 28,
+        "minWidth": 128,
+        "minHeight": 110
+      },
+      "metrics": {
+        "acceptance:p1:a04ed67a": {
+          "minWidth": 320,
+          "minHeight": 399.99999999999994
+        }
+      },
+      "compiledLayout": {
+        "version": 1,
+        "pages": [
+          {
+            "id": "acceptance:page1:edf0fdc5",
+            "slots": [
+              {
+                "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                "panelId": "acceptance:p1:a04ed67a",
+                "points": [
+                  [
+                    0.0375,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.9734513274
+                  ],
+                  [
+                    0.0375,
+                    0.9734513274
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "knownPanelIds": [
+          "acceptance:p1:a04ed67a"
+        ]
+      },
+      "geometryOverride": false,
+      "locks": {
+        "pages": {},
+        "panelPoints": {}
+      },
+      "qa": {
+        "geometry": "validated_separately",
+        "visual": "not_run",
+        "entertainment": "human_review_required",
+        "findings": []
+      },
+      "importedAt": "2026-09-22T10:12:00.068Z"
+    },
+    "revision": 0,
+    "panelMotions": [],
+    "motionHistory": []
+  },
+  "complete": {
+    "version": 5,
+    "title": "最小制作確認",
+    "snapshots": [
+      {
+        "id": "acceptance-source",
+        "repo": "acceptance/fixture",
+        "sha": "0000000000000000000000000000000000000000",
+        "scenes": [
+          {
+            "id": "acceptance-scene",
+            "text": "こんにちは。文字と保存の確認です。",
+            "sourceHash": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+          }
+        ],
+        "settings": [],
+        "references": []
+      }
+    ],
+    "active": "acceptance-source",
+    "panels": [
+      {
+        "id": "acceptance:p1:a04ed67a",
+        "snapshotId": "acceptance-source",
+        "sceneId": "acceptance-scene",
+        "sourceRefs": [
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          }
+        ],
+        "contextRefs": [],
+        "requiredText": [
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          }
+        ],
+        "unitIds": [],
+        "characterIds": [],
+        "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+        "nameIntent": "木と小道を見せる",
+        "namePlanVersion": 2,
+        "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+        "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+        "capture_revision": null,
+        "status": "planned",
+        "instructions": [],
+        "attempts": 0,
+        "lettering": {
+          "mode": "balloons",
+          "boxes": [
+            {
+              "id": "box:acceptance:p1:a04ed67a:0",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                }
+              ],
+              "x": 0.05,
+              "y": 0.03,
+              "width": 0.9,
+              "height": 0.275,
+              "kind": "narration",
+              "shape": "rect",
+              "fontSize": 48,
+              "lineHeight": 1.25,
+              "padding": 10,
+              "tail": null
+            },
+            {
+              "id": "box:acceptance:p1:a04ed67a:1",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "x": 0.05,
+              "y": 0.32000000000000006,
+              "width": 0.9,
+              "height": 0.275,
+              "kind": "narration",
+              "shape": "rect",
+              "fontSize": 48,
+              "lineHeight": 1.25,
+              "padding": 10,
+              "tail": null
+            }
+          ]
+        },
+        "letteringStatus": "ready",
+        "letteringArtworkRevision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55"
+      }
+    ],
+    "artworks": [
+      {
+        "id": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+        "hash": "ea328e525dabc1092fd32a4c791041490ab08d3571d27b5a90f31b11d44e70ae",
+        "parent_revision": null,
+        "capture_revision": null,
+        "job_id": "2f259da1-1ee4-403f-bd9b-0765731f6d55",
+        "panel": {
+          "id": "acceptance:p1:a04ed67a",
+          "snapshotId": "acceptance-source",
+          "sceneId": "acceptance-scene",
+          "sourceRefs": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 0,
+              "endCp": 6
+            },
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "contextRefs": [],
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 0,
+              "endCp": 6
+            },
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "unitIds": [],
+          "characterIds": [],
+          "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+          "nameIntent": "木と小道を見せる",
+          "namePlanVersion": 2,
+          "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+          "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+          "capture_revision": null,
+          "status": "planned",
+          "instructions": [],
+          "attempts": 0,
+          "lettering": {
+            "mode": "balloons",
+            "boxes": [
+              {
+                "id": "box:acceptance:p1:a04ed67a:0",
+                "sourceRefs": [
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 0,
+                    "endCp": 6
+                  }
+                ],
+                "x": 0.05,
+                "y": 0.03,
+                "width": 0.9,
+                "height": 0.275,
+                "kind": "narration",
+                "shape": "rect",
+                "fontSize": 48,
+                "lineHeight": 1.25,
+                "padding": 10,
+                "tail": null
+              },
+              {
+                "id": "box:acceptance:p1:a04ed67a:1",
+                "sourceRefs": [
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 6,
+                    "endCp": 17
+                  }
+                ],
+                "x": 0.05,
+                "y": 0.32000000000000006,
+                "width": 0.9,
+                "height": 0.275,
+                "kind": "narration",
+                "shape": "rect",
+                "fontSize": 48,
+                "lineHeight": 1.25,
+                "padding": 10,
+                "tail": null
+              }
+            ]
+          },
+          "letteringStatus": "draft",
+          "letteringArtworkRevision": null
+        }
+      }
+    ],
+    "characters": [],
+    "history": [
+      {
+        "panels": [],
+        "layout": {
+          "version": 1,
+          "pages": [],
+          "knownPanelIds": []
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "draftScope": null,
+        "namePlan": null,
+        "layoutHistory": [],
+        "layoutRedo": [],
+        "panelMotions": [],
+        "motionHistory": [],
+        "characters": [],
+        "style_references": [],
+        "output_locale": "ja",
+        "id": "f2f81bb2-dd95-4807-8af1-33a22d49ecfa",
+        "active": "acceptance-source",
+        "draftCheckpoint": true,
+        "label": "ネーム採用前の原稿",
+        "at": "2026-09-22T10:12:00.068Z"
+      },
+      {
+        "panels": [
+          {
+            "id": "acceptance:p1:a04ed67a",
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "sourceRefs": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+            "nameIntent": "木と小道を見せる",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:acceptance:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 0,
+                      "endCp": 6
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                },
+                {
+                  "id": "box:acceptance:p1:a04ed67a:1",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.32000000000000006,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "label": "generate",
+        "at": "2026-09-22T10:12:00.072Z"
+      },
+      {
+        "panels": [
+          {
+            "id": "acceptance:p1:a04ed67a",
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "sourceRefs": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+            "nameIntent": "木と小道を見せる",
+            "namePlanVersion": 2,
+            "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+            "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:acceptance:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 0,
+                      "endCp": 6
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                },
+                {
+                  "id": "box:acceptance:p1:a04ed67a:1",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.32000000000000006,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "acceptance:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                  "panelId": "acceptance:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "acceptance:p1:a04ed67a"
+          ]
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "edit": true,
+        "after": {
+          "panels": [
+            {
+              "id": "acceptance:p1:a04ed67a",
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                },
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "contextRefs": [],
+              "requiredText": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                },
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "unitIds": [],
+              "characterIds": [],
+              "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+              "nameIntent": "木と小道を見せる",
+              "namePlanVersion": 2,
+              "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+              "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+              "capture_revision": null,
+              "status": "planned",
+              "instructions": [],
+              "attempts": 0,
+              "lettering": {
+                "mode": "balloons",
+                "boxes": [
+                  {
+                    "id": "box:acceptance:p1:a04ed67a:0",
+                    "sourceRefs": [
+                      {
+                        "snapshotId": "acceptance-source",
+                        "sceneId": "acceptance-scene",
+                        "startCp": 0,
+                        "endCp": 6
+                      }
+                    ],
+                    "x": 0.05,
+                    "y": 0.03,
+                    "width": 0.9,
+                    "height": 0.275,
+                    "kind": "narration",
+                    "shape": "rect",
+                    "fontSize": 48,
+                    "lineHeight": 1.25,
+                    "padding": 10,
+                    "tail": null
+                  },
+                  {
+                    "id": "box:acceptance:p1:a04ed67a:1",
+                    "sourceRefs": [
+                      {
+                        "snapshotId": "acceptance-source",
+                        "sceneId": "acceptance-scene",
+                        "startCp": 6,
+                        "endCp": 17
+                      }
+                    ],
+                    "x": 0.05,
+                    "y": 0.32000000000000006,
+                    "width": 0.9,
+                    "height": 0.275,
+                    "kind": "narration",
+                    "shape": "rect",
+                    "fontSize": 48,
+                    "lineHeight": 1.25,
+                    "padding": 10,
+                    "tail": null
+                  }
+                ]
+              },
+              "letteringStatus": "ready",
+              "letteringArtworkRevision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55"
+            }
+          ],
+          "layout": {
+            "version": 1,
+            "pages": [
+              {
+                "id": "acceptance:page1:edf0fdc5",
+                "slots": [
+                  {
+                    "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                    "panelId": "acceptance:p1:a04ed67a",
+                    "points": [
+                      [
+                        0.0375,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.9734513274
+                      ],
+                      [
+                        0.0375,
+                        0.9734513274
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "knownPanelIds": [
+              "acceptance:p1:a04ed67a"
+            ]
+          }
+        },
+        "label": "文字配置",
+        "at": "2026-09-22T10:12:00.073Z"
+      },
+      {
+        "panels": [
+          {
+            "id": "acceptance:p1:a04ed67a",
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "sourceRefs": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+            "nameIntent": "木と小道を見せる",
+            "namePlanVersion": 2,
+            "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+            "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:acceptance:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 0,
+                      "endCp": 6
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                },
+                {
+                  "id": "box:acceptance:p1:a04ed67a:1",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "acceptance-source",
+                      "sceneId": "acceptance-scene",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.32000000000000006,
+                  "width": 0.9,
+                  "height": 0.275,
+                  "kind": "narration",
+                  "shape": "rect",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "ready",
+            "letteringArtworkRevision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55"
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "acceptance:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                  "panelId": "acceptance:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "acceptance:p1:a04ed67a"
+          ]
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "draftScope": {
+          "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+          "snapshotId": "acceptance-source",
+          "sceneIds": [
+            "acceptance-scene"
+          ]
+        },
+        "namePlan": {
+          "format": "manga-mac/name-plan/v2",
+          "status": "adopted",
+          "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+          "namespace": "acceptance",
+          "file": {
+            "format": "manga-mac/name-plan/v2",
+            "title": "最小制作確認",
+            "stage": "name-only",
+            "readingDirection": "rtl",
+            "source": {
+              "repo": "acceptance/fixture",
+              "workId": "acceptance-fixture-v1",
+              "branch": "main",
+              "commit": "0000000000000000000000000000000000000000",
+              "scenes": [
+                {
+                  "id": "acceptance-scene",
+                  "sha256": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+                }
+              ],
+              "selectedAtomIds": [
+                "acceptance-scene:u0:a0",
+                "acceptance-scene:u0:a1"
+              ],
+              "settingsHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+              "referencesHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+            },
+            "policyVersion": "name-director/2.0.0",
+            "provenance": {
+              "producer": "acceptance-fixture",
+              "model": "",
+              "editedBy": []
+            },
+            "plan": {
+              "workGoal": {
+                "readerQuestion": "確認用の木はどう見えるか",
+                "emotionalArc": [
+                  "導入",
+                  "確認"
+                ],
+                "payoff": "木と文字が同じページにある"
+              },
+              "coverage": [
+                {
+                  "atomId": "acceptance-scene:u0:a0",
+                  "presentation": "narration",
+                  "reason": "確認用原稿の全文を表示する"
+                },
+                {
+                  "atomId": "acceptance-scene:u0:a1",
+                  "presentation": "narration",
+                  "reason": "確認用原稿の全文を表示する"
+                }
+              ],
+              "beats": [
+                {
+                  "id": "b1",
+                  "atomIds": [
+                    "acceptance-scene:u0:a0",
+                    "acceptance-scene:u0:a1"
+                  ],
+                  "function": "setup",
+                  "tempo": "normal",
+                  "readerBefore": "確認前",
+                  "readerAfter": "確認済み"
+                }
+              ],
+              "panels": [
+                {
+                  "id": "p1",
+                  "atomIds": [
+                    "acceptance-scene:u0:a0",
+                    "acceptance-scene:u0:a1"
+                  ],
+                  "contextAtomIds": [],
+                  "beatIds": [
+                    "b1"
+                  ],
+                  "characterIds": [],
+                  "role": "standard",
+                  "shot": "medium",
+                  "shotIntent": "木と小道を見せる",
+                  "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.",
+                  "silentReason": "",
+                  "protect": [
+                    "木"
+                  ],
+                  "gaze": "neutral"
+                }
+              ],
+              "pages": [
+                {
+                  "id": "page1",
+                  "purpose": "保存・文字・出力を確認する",
+                  "entryBeatId": "b1",
+                  "exit": {
+                    "kind": "pause",
+                    "note": "確認を終える",
+                    "payoffBeatIds": []
+                  },
+                  "tree": {
+                    "type": "leaf",
+                    "panelId": "p1"
+                  }
+                }
+              ]
+            }
+          },
+          "fileHash": "99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+          "snapshotId": "acceptance-source",
+          "draftId": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+          "panelIds": [
+            "acceptance:p1:a04ed67a"
+          ],
+          "pageIds": [
+            "acceptance:page1:edf0fdc5"
+          ],
+          "sourcePolicy": [
+            {
+              "atomId": "acceptance-scene:u0:a0",
+              "source": {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 0,
+                "endCp": 6
+              },
+              "kind": "prose",
+              "presentation": "narration",
+              "requiredText": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                }
+              ],
+              "reason": "確認用原稿の全文を表示する"
+            },
+            {
+              "atomId": "acceptance-scene:u0:a1",
+              "source": {
+                "snapshotId": "acceptance-source",
+                "sceneId": "acceptance-scene",
+                "startCp": 6,
+                "endCp": 17
+              },
+              "kind": "prose",
+              "presentation": "narration",
+              "requiredText": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "reason": "確認用原稿の全文を表示する"
+            }
+          ],
+          "compilerVersion": "name-layout/2.0.0",
+          "profile": {
+            "width": 1600,
+            "height": 2260,
+            "margin": 60,
+            "gutter": 28,
+            "minWidth": 128,
+            "minHeight": 110
+          },
+          "metrics": {
+            "acceptance:p1:a04ed67a": {
+              "minWidth": 320,
+              "minHeight": 399.99999999999994
+            }
+          },
+          "compiledLayout": {
+            "version": 1,
+            "pages": [
+              {
+                "id": "acceptance:page1:edf0fdc5",
+                "slots": [
+                  {
+                    "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                    "panelId": "acceptance:p1:a04ed67a",
+                    "points": [
+                      [
+                        0.0375,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.9734513274
+                      ],
+                      [
+                        0.0375,
+                        0.9734513274
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "knownPanelIds": [
+              "acceptance:p1:a04ed67a"
+            ]
+          },
+          "geometryOverride": false,
+          "locks": {
+            "pages": {},
+            "panelPoints": {}
+          },
+          "qa": {
+            "geometry": "validated_separately",
+            "visual": "not_run",
+            "entertainment": "human_review_required",
+            "findings": []
+          },
+          "importedAt": "2026-09-22T10:12:00.068Z"
+        },
+        "layoutHistory": [],
+        "layoutRedo": [],
+        "panelMotions": [],
+        "motionHistory": [],
+        "nameEdit": true,
+        "edit": true,
+        "after": {
+          "panels": [
+            {
+              "id": "acceptance:p1:a04ed67a",
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "sourceRefs": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                },
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "contextRefs": [],
+              "requiredText": [
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                },
+                {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "unitIds": [],
+              "characterIds": [],
+              "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.\n構図: 木と小道を見せる\n保護する要素: 木\n視線: neutral\nNo text, no lettering, no balloons.",
+              "nameIntent": "木と小道を見せる",
+              "namePlanVersion": 2,
+              "image": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/GmsAAAAASUVORK5CYII=",
+              "artwork_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+              "capture_revision": null,
+              "status": "planned",
+              "instructions": [],
+              "attempts": 0,
+              "lettering": {
+                "mode": "balloons",
+                "boxes": [
+                  {
+                    "id": "box:acceptance:p1:a04ed67a:0",
+                    "sourceRefs": [
+                      {
+                        "snapshotId": "acceptance-source",
+                        "sceneId": "acceptance-scene",
+                        "startCp": 0,
+                        "endCp": 6
+                      }
+                    ],
+                    "x": 0.05,
+                    "y": 0.03,
+                    "width": 0.9,
+                    "height": 0.275,
+                    "kind": "narration",
+                    "shape": "rect",
+                    "fontSize": 48,
+                    "lineHeight": 1.25,
+                    "padding": 10,
+                    "tail": null
+                  },
+                  {
+                    "id": "box:acceptance:p1:a04ed67a:1",
+                    "sourceRefs": [
+                      {
+                        "snapshotId": "acceptance-source",
+                        "sceneId": "acceptance-scene",
+                        "startCp": 6,
+                        "endCp": 17
+                      }
+                    ],
+                    "x": 0.05,
+                    "y": 0.32000000000000006,
+                    "width": 0.9,
+                    "height": 0.275,
+                    "kind": "narration",
+                    "shape": "rect",
+                    "fontSize": 48,
+                    "lineHeight": 1.25,
+                    "padding": 10,
+                    "tail": null
+                  }
+                ]
+              },
+              "letteringStatus": "ready",
+              "letteringArtworkRevision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55"
+            }
+          ],
+          "layout": {
+            "version": 1,
+            "pages": [
+              {
+                "id": "acceptance:page1:edf0fdc5",
+                "slots": [
+                  {
+                    "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                    "panelId": "acceptance:p1:a04ed67a",
+                    "points": [
+                      [
+                        0.0375,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.9734513274
+                      ],
+                      [
+                        0.0375,
+                        0.9734513274
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "knownPanelIds": [
+              "acceptance:p1:a04ed67a"
+            ]
+          },
+          "sourceApplication": {
+            "version": 1,
+            "units": [
+              {
+                "id": "name-source:acceptance-source:acceptance-scene:u0",
+                "source": {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 17
+                },
+                "requiredText": [
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 0,
+                    "endCp": 6
+                  },
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 6,
+                    "endCp": 17
+                  }
+                ]
+              }
+            ]
+          },
+          "draftScope": {
+            "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+            "snapshotId": "acceptance-source",
+            "sceneIds": [
+              "acceptance-scene"
+            ]
+          },
+          "namePlan": {
+            "format": "manga-mac/name-plan/v2",
+            "status": "adopted",
+            "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+            "namespace": "acceptance",
+            "file": {
+              "format": "manga-mac/name-plan/v2",
+              "title": "最小制作確認",
+              "stage": "name-only",
+              "readingDirection": "rtl",
+              "source": {
+                "repo": "acceptance/fixture",
+                "workId": "acceptance-fixture-v1",
+                "branch": "main",
+                "commit": "0000000000000000000000000000000000000000",
+                "scenes": [
+                  {
+                    "id": "acceptance-scene",
+                    "sha256": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+                  }
+                ],
+                "selectedAtomIds": [
+                  "acceptance-scene:u0:a0",
+                  "acceptance-scene:u0:a1"
+                ],
+                "settingsHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+                "referencesHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+              },
+              "policyVersion": "name-director/2.0.0",
+              "provenance": {
+                "producer": "acceptance-fixture",
+                "model": "",
+                "editedBy": []
+              },
+              "plan": {
+                "workGoal": {
+                  "readerQuestion": "確認用の木はどう見えるか",
+                  "emotionalArc": [
+                    "導入",
+                    "確認"
+                  ],
+                  "payoff": "木と文字が同じページにある"
+                },
+                "coverage": [
+                  {
+                    "atomId": "acceptance-scene:u0:a0",
+                    "presentation": "narration",
+                    "reason": "確認用原稿の全文を表示する"
+                  },
+                  {
+                    "atomId": "acceptance-scene:u0:a1",
+                    "presentation": "narration",
+                    "reason": "確認用原稿の全文を表示する"
+                  }
+                ],
+                "beats": [
+                  {
+                    "id": "b1",
+                    "atomIds": [
+                      "acceptance-scene:u0:a0",
+                      "acceptance-scene:u0:a1"
+                    ],
+                    "function": "setup",
+                    "tempo": "normal",
+                    "readerBefore": "確認前",
+                    "readerAfter": "確認済み"
+                  }
+                ],
+                "panels": [
+                  {
+                    "id": "p1",
+                    "atomIds": [
+                      "acceptance-scene:u0:a0",
+                      "acceptance-scene:u0:a1"
+                    ],
+                    "contextAtomIds": [],
+                    "beatIds": [
+                      "b1"
+                    ],
+                    "characterIds": [],
+                    "role": "standard",
+                    "shot": "medium",
+                    "shotIntent": "木と小道を見せる",
+                    "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.",
+                    "silentReason": "",
+                    "protect": [
+                      "木"
+                    ],
+                    "gaze": "neutral"
+                  }
+                ],
+                "pages": [
+                  {
+                    "id": "page1",
+                    "purpose": "保存・文字・出力を確認する",
+                    "entryBeatId": "b1",
+                    "exit": {
+                      "kind": "pause",
+                      "note": "確認を終える",
+                      "payoffBeatIds": []
+                    },
+                    "tree": {
+                      "type": "leaf",
+                      "panelId": "p1"
+                    }
+                  }
+                ]
+              }
+            },
+            "fileHash": "99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+            "snapshotId": "acceptance-source",
+            "draftId": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+            "panelIds": [
+              "acceptance:p1:a04ed67a"
+            ],
+            "pageIds": [
+              "acceptance:page1:edf0fdc5"
+            ],
+            "sourcePolicy": [
+              {
+                "atomId": "acceptance-scene:u0:a0",
+                "source": {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 0,
+                  "endCp": 6
+                },
+                "kind": "prose",
+                "presentation": "narration",
+                "requiredText": [
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 0,
+                    "endCp": 6
+                  }
+                ],
+                "reason": "確認用原稿の全文を表示する"
+              },
+              {
+                "atomId": "acceptance-scene:u0:a1",
+                "source": {
+                  "snapshotId": "acceptance-source",
+                  "sceneId": "acceptance-scene",
+                  "startCp": 6,
+                  "endCp": 17
+                },
+                "kind": "prose",
+                "presentation": "narration",
+                "requiredText": [
+                  {
+                    "snapshotId": "acceptance-source",
+                    "sceneId": "acceptance-scene",
+                    "startCp": 6,
+                    "endCp": 17
+                  }
+                ],
+                "reason": "確認用原稿の全文を表示する"
+              }
+            ],
+            "compilerVersion": "name-layout/2.0.0",
+            "profile": {
+              "width": 1600,
+              "height": 2260,
+              "margin": 60,
+              "gutter": 28,
+              "minWidth": 128,
+              "minHeight": 110
+            },
+            "metrics": {
+              "acceptance:p1:a04ed67a": {
+                "minWidth": 320,
+                "minHeight": 399.99999999999994
+              }
+            },
+            "compiledLayout": {
+              "version": 1,
+              "pages": [
+                {
+                  "id": "acceptance:page1:edf0fdc5",
+                  "slots": [
+                    {
+                      "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                      "panelId": "acceptance:p1:a04ed67a",
+                      "points": [
+                        [
+                          0.0375,
+                          0.0265486726
+                        ],
+                        [
+                          0.9625,
+                          0.0265486726
+                        ],
+                        [
+                          0.9625,
+                          0.9734513274
+                        ],
+                        [
+                          0.0375,
+                          0.9734513274
+                        ]
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "knownPanelIds": [
+                "acceptance:p1:a04ed67a"
+              ]
+            },
+            "geometryOverride": false,
+            "locks": {
+              "pages": {},
+              "panelPoints": {}
+            },
+            "qa": {
+              "geometry": "validated_separately",
+              "visual": "not_run",
+              "entertainment": "human_review_required",
+              "findings": []
+            },
+            "importedAt": "2026-09-22T10:12:00.068Z",
+            "productionState": "proof-ready",
+            "completedAt": "2026-09-22T10:12:00.074Z"
+          },
+          "layoutHistory": [],
+          "layoutRedo": [],
+          "panelMotions": [],
+          "motionHistory": []
+        },
+        "label": "ネーム初稿の完了反映",
+        "at": "2026-09-22T10:12:00.074Z"
+      }
+    ],
+    "jobs": [
+      {
+        "id": "96c08278-c824-4d88-ae3c-2ecafe874b1e",
+        "kind": "draft_layout",
+        "status": "complete",
+        "source_revision": "acceptance-source",
+        "draft_id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+        "origin": "name-plan-v2"
+      },
+      {
+        "id": "2f259da1-1ee4-403f-bd9b-0765731f6d55",
+        "panelId": "acceptance:p1:a04ed67a",
+        "kind": "generate",
+        "scope": {
+          "type": "panel",
+          "id": "acceptance:p1:a04ed67a"
+        },
+        "source_revision": "acceptance-source",
+        "base_revision": null,
+        "media": {
+          "registry_id": "flux-2-klein-4b-q6-local",
+          "adapter_id": "media-generation-kit",
+          "model_id": "flux_2_klein_4b_q6p.ckpt"
+        },
+        "input_hash": "05d307199d469c6d8cfbd74d3ed93dfc87fb2f855f316433a5fde720e5681321",
+        "status": "complete",
+        "attempts": 1,
+        "cost": {
+          "kind": "local",
+          "amount": null,
+          "currency": null
+        },
+        "started_at": 1790071920072,
+        "at": "2026-09-22T10:12:00.072Z",
+        "output_revision": "artwork:2f259da1-1ee4-403f-bd9b-0765731f6d55",
+        "finished_at": 1790071920072,
+        "duration_ms": 0
+      }
+    ],
+    "localizations": [],
+    "output_locale": "ja",
+    "mediaDefaults": {
+      "image": "flux-2-klein-4b-q6-local",
+      "video": "runway-gen4-5"
+    },
+    "videoShots": [],
+    "videoRevisions": [],
+    "videoHistory": [],
+    "acceptanceFixture": "manga-mac/acceptance-fixture/v1",
+    "workId": "acceptance-fixture-v1",
+    "layout": {
+      "version": 1,
+      "pages": [
+        {
+          "id": "acceptance:page1:edf0fdc5",
+          "slots": [
+            {
+              "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+              "panelId": "acceptance:p1:a04ed67a",
+              "points": [
+                [
+                  0.0375,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.9734513274
+                ],
+                [
+                  0.0375,
+                  0.9734513274
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "knownPanelIds": [
+        "acceptance:p1:a04ed67a"
+      ]
+    },
+    "sourceApplication": {
+      "version": 1,
+      "units": [
+        {
+          "id": "name-source:acceptance-source:acceptance-scene:u0",
+          "source": {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 17
+          },
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 0,
+              "endCp": 6
+            },
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ]
+        }
+      ]
+    },
+    "draftScope": {
+      "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "snapshotId": "acceptance-source",
+      "sceneIds": [
+        "acceptance-scene"
+      ]
+    },
+    "layoutHistory": [],
+    "layoutRedo": [],
+    "editRedo": [],
+    "namePlan": {
+      "format": "manga-mac/name-plan/v2",
+      "status": "adopted",
+      "id": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "namespace": "acceptance",
+      "file": {
+        "format": "manga-mac/name-plan/v2",
+        "title": "最小制作確認",
+        "stage": "name-only",
+        "readingDirection": "rtl",
+        "source": {
+          "repo": "acceptance/fixture",
+          "workId": "acceptance-fixture-v1",
+          "branch": "main",
+          "commit": "0000000000000000000000000000000000000000",
+          "scenes": [
+            {
+              "id": "acceptance-scene",
+              "sha256": "c7291ae8ec954c682c808bf84071805320ec64d8c78dd70a94bf496a49e0c120"
+            }
+          ],
+          "selectedAtomIds": [
+            "acceptance-scene:u0:a0",
+            "acceptance-scene:u0:a1"
+          ],
+          "settingsHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "referencesHash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "policyVersion": "name-director/2.0.0",
+        "provenance": {
+          "producer": "acceptance-fixture",
+          "model": "",
+          "editedBy": []
+        },
+        "plan": {
+          "workGoal": {
+            "readerQuestion": "確認用の木はどう見えるか",
+            "emotionalArc": [
+              "導入",
+              "確認"
+            ],
+            "payoff": "木と文字が同じページにある"
+          },
+          "coverage": [
+            {
+              "atomId": "acceptance-scene:u0:a0",
+              "presentation": "narration",
+              "reason": "確認用原稿の全文を表示する"
+            },
+            {
+              "atomId": "acceptance-scene:u0:a1",
+              "presentation": "narration",
+              "reason": "確認用原稿の全文を表示する"
+            }
+          ],
+          "beats": [
+            {
+              "id": "b1",
+              "atomIds": [
+                "acceptance-scene:u0:a0",
+                "acceptance-scene:u0:a1"
+              ],
+              "function": "setup",
+              "tempo": "normal",
+              "readerBefore": "確認前",
+              "readerAfter": "確認済み"
+            }
+          ],
+          "panels": [
+            {
+              "id": "p1",
+              "atomIds": [
+                "acceptance-scene:u0:a0",
+                "acceptance-scene:u0:a1"
+              ],
+              "contextAtomIds": [],
+              "beatIds": [
+                "b1"
+              ],
+              "characterIds": [],
+              "role": "standard",
+              "shot": "medium",
+              "shotIntent": "木と小道を見せる",
+              "prompt": "A simple small tree beside a quiet path, clear black ink manga illustration.",
+              "silentReason": "",
+              "protect": [
+                "木"
+              ],
+              "gaze": "neutral"
+            }
+          ],
+          "pages": [
+            {
+              "id": "page1",
+              "purpose": "保存・文字・出力を確認する",
+              "entryBeatId": "b1",
+              "exit": {
+                "kind": "pause",
+                "note": "確認を終える",
+                "payoffBeatIds": []
+              },
+              "tree": {
+                "type": "leaf",
+                "panelId": "p1"
+              }
+            }
+          ]
+        }
+      },
+      "fileHash": "99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "snapshotId": "acceptance-source",
+      "draftId": "name:99e9a346410aa80dd525aa9bb28bf4e1fdab40f3874f72a834f43e039e109f9f",
+      "panelIds": [
+        "acceptance:p1:a04ed67a"
+      ],
+      "pageIds": [
+        "acceptance:page1:edf0fdc5"
+      ],
+      "sourcePolicy": [
+        {
+          "atomId": "acceptance-scene:u0:a0",
+          "source": {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 0,
+            "endCp": 6
+          },
+          "kind": "prose",
+          "presentation": "narration",
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 0,
+              "endCp": 6
+            }
+          ],
+          "reason": "確認用原稿の全文を表示する"
+        },
+        {
+          "atomId": "acceptance-scene:u0:a1",
+          "source": {
+            "snapshotId": "acceptance-source",
+            "sceneId": "acceptance-scene",
+            "startCp": 6,
+            "endCp": 17
+          },
+          "kind": "prose",
+          "presentation": "narration",
+          "requiredText": [
+            {
+              "snapshotId": "acceptance-source",
+              "sceneId": "acceptance-scene",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "reason": "確認用原稿の全文を表示する"
+        }
+      ],
+      "compilerVersion": "name-layout/2.0.0",
+      "profile": {
+        "width": 1600,
+        "height": 2260,
+        "margin": 60,
+        "gutter": 28,
+        "minWidth": 128,
+        "minHeight": 110
+      },
+      "metrics": {
+        "acceptance:p1:a04ed67a": {
+          "minWidth": 320,
+          "minHeight": 399.99999999999994
+        }
+      },
+      "compiledLayout": {
+        "version": 1,
+        "pages": [
+          {
+            "id": "acceptance:page1:edf0fdc5",
+            "slots": [
+              {
+                "id": "name:acceptance:page1:edf0fdc5:acceptance:p1:a04ed67a",
+                "panelId": "acceptance:p1:a04ed67a",
+                "points": [
+                  [
+                    0.0375,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.9734513274
+                  ],
+                  [
+                    0.0375,
+                    0.9734513274
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "knownPanelIds": [
+          "acceptance:p1:a04ed67a"
+        ]
+      },
+      "geometryOverride": false,
+      "locks": {
+        "pages": {},
+        "panelPoints": {}
+      },
+      "qa": {
+        "geometry": "validated_separately",
+        "visual": "not_run",
+        "entertainment": "human_review_required",
+        "findings": []
+      },
+      "importedAt": "2026-09-22T10:12:00.068Z",
+      "productionState": "proof-ready",
+      "completedAt": "2026-09-22T10:12:00.074Z"
+    },
+    "revision": 0,
+    "panelMotions": [],
+    "motionHistory": []
+  }
+}

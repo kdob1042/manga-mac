@@ -9,6 +9,7 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
   const initial={version:4,title:'A',snapshots:[snapshot],active:snapshot.id,panels:[],artworks:[],characters:[],history:[],jobs:[],localizations:[],output_locale:'ja',videoShots:[],videoRevisions:[],videoHistory:[]};
   window.checks=0;window.failSync=false;window.failSave=false;
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'A',repo,episode:'P01'}]};
    if(command==='source_register')return {entries:[args],id:'primary'};
    if(command==='load_project')return localStorage.getItem('saved')||JSON.stringify(initial);
@@ -41,8 +42,9 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
 
 test('generic sources use declarations at a pinned commit across A B A, and reject unknown schema without adoption',async({page})=>{
  await page.addInitScript(()=>{
-  window.activeRepo='example/one';window.badSchema=false;window.reads=[];
+  window.activeRepo=localStorage.getItem('chosen')||'example/one';window.badSchema=false;window.reads=[];
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    const repo=window.activeRepo,second=repo==='example/two';
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:repo,repo,episode:'P01'}]};
    if(command==='load_project')return localStorage.getItem(repo);
@@ -61,11 +63,12 @@ test('generic sources use declarations at a pinned commit across A B A, and reje
  });
  await page.goto('/');
  for(const repo of ['example/one','example/two','example/one']){
-  await page.evaluate(repo=>{window.activeRepo=repo;localStorage.setItem('chosen',repo);},repo);
+  await page.evaluate(repo=>localStorage.setItem('chosen',repo),repo);
   // A reload is the native workspace switch boundary; fixture storage remains keyed by repository.
-  if(repo==='example/two') await page.addInitScript(()=>{window.activeRepo=localStorage.getItem('chosen')||'example/one';});
   await page.reload();await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
+  await expect(page.getByRole('region',{name:'原稿の取込差分'}).or(page.getByRole('status').filter({hasText:'更新なし'}))).toBeVisible();
   if(await page.getByRole('button',{name:'取り込む',exact:true}).count())await page.getByRole('button',{name:'取り込む',exact:true}).click();
+  await expect.poll(()=>page.evaluate(repo=>JSON.parse(localStorage.getItem(repo))?.snapshots.at(-1)?.repo,repo)).toBe(repo);
   const saved=await page.evaluate(repo=>JSON.parse(localStorage.getItem(repo)),repo);expect(saved.snapshots.at(-1).repo).toBe(repo);expect(saved.snapshots.at(-1).sync.source_commit).toBe('c'.repeat(40));expect(saved.snapshots.at(-1).sync.manifest_sha256).toMatch(/^[a-f0-9]{64}$/);expect(saved.snapshots.at(-1).scenes[0].tags).toEqual(['駅']);
  }
  await page.evaluate(()=>{window.badSchema=true;window.__TAURI_INTERNALS__.invoke=new Proxy(window.__TAURI_INTERNALS__.invoke,{apply:async(target,self,args)=>args[0]==='github_get'?JSON.stringify({sha:'e'.repeat(40)}):target(...args)});});
@@ -80,6 +83,7 @@ test('story-source/v1 imports the common work entry, work-root files and fixed p
   const repo='example/story',sha='f'.repeat(40),image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==';
   const manifest={format:'story-source/v1',work:{title:'共通作品'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md',tags:['駅']}]}],settings:[{id:'WORLD',path:'settings/world.md'}],characters:[{id:'yu',name:'人物A',image:'assets/yu.png',description:'固定参照'}]};
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[{id:'primary',name:'共通作品',repo,episode:'P01'}]};
    if(command==='load_project')return localStorage.getItem('saved');
    if(command==='save_project'){localStorage.setItem('saved',args.data);return;}

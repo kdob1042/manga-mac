@@ -743,7 +743,7 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
             if !value["reason"].is_string() || !value["layout"].is_object() {
                 return Err(failure());
             }
-            crate::storage::lettering::validate(&value["layout"], None)?;
+            crate::storage::lettering::validate_proposal(&value["layout"])?;
         }
         Purpose::Layout => {
             let object = value.as_object().ok_or_else(failure)?;
