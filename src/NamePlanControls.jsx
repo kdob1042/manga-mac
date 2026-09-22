@@ -6,7 +6,7 @@ import { FORMAT, createNameCandidate, adoptNameCandidate, editNameCandidateLayou
 import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA } from './name-v2-ai.js';
 import { importNamePlan } from './name-import.js';
 import { askLLM } from './llm.js';
-import { fetchRepositoryNamePlan } from './name-repository.js';
+import { fetchRepositoryNamePlan, validateRepositoryNameTarget } from './name-repository.js';
 import { pagePNG } from './render.js';
 
 // Reuses the existing draft, Job, renderer, connection and atomic writer boundaries.
@@ -32,6 +32,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     const base=current.current;let data;
     if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_BYTES)throw Error('ネームJSONは4MiB以内で指定してください');
     try{data=JSON.parse(raw);}catch{throw Error('ネームJSONを読み取れません');}
+    if(provenance)validateRepositoryNameTarget(base,data,provenance);
     const id=crypto.randomUUID();
     const entry={id,kind:'name_plan',status:'candidate',source_revision:base.active,at:new Date().toISOString(),...(provenance?{repositoryPlan:provenance}:{})};
     if(data?.format===FORMAT)entry.nameCandidate=await createNameCandidate(base,data);

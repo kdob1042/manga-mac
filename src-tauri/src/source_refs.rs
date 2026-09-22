@@ -237,7 +237,9 @@ pub fn validate_application(p: &Value) -> Result<(), String> {
 }
 pub fn token(project: &Value) -> String {
     let mut content = json!({"active":project["active"],"snapshots":project["snapshots"],"panels":project["panels"],"layout":project["layout"],"sourceApplication":project["sourceApplication"]});
-    if project["namePlan"]["format"] == "manga-mac/name-plan/v2" { content["namePlan"] = project["namePlan"].clone(); }
+    if project["namePlan"]["format"] == "manga-mac/name-plan/v2" {
+        content["namePlan"] = project["namePlan"].clone();
+    }
     hash(&content.to_string())
 }
 #[cfg(test)]

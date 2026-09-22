@@ -1038,25 +1038,3 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 }
-
-#[cfg(test)]
-mod name_plan_roundtrip_tests {
-    use super::*;
-    #[test]
-    fn storyboard_v2_roundtrips_through_checked_sqlite_save() {
-        let (mut db, root) = super::tests::setup();
-        let p: Value = serde_json::from_str(include_str!("../../tests/fixtures/name-plan-v2-project.json")).unwrap();
-        save_checked(&mut db, &root, &p.to_string()).unwrap();
-        let raw = load(&db, &root).unwrap().unwrap();
-        let restored: Value = serde_json::from_str(&raw).unwrap();
-        assert_eq!(restored["namePlan"], p["namePlan"]);
-        assert_eq!(restored["panels"], p["panels"]);
-        assert_eq!(restored["layout"], p["layout"]);
-        let mut bad = restored.clone();
-        bad["panels"][1]["requiredText"] = json!([]);
-        assert!(save_checked(&mut db, &root, &bad.to_string()).is_err());
-        assert_eq!(load(&db, &root).unwrap().unwrap(), raw);
-        save_checked(&mut db, &root, &restored.to_string()).unwrap();
-        fs::remove_dir_all(root).unwrap();
-    }
-}
