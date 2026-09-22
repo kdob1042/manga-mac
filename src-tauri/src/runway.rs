@@ -1,5 +1,5 @@
 //! One official REST adapter. No SDK server, retries, fallback or secret logging.
-use crate::{llm::VideoConnection, policy_transport::PolicyTransport, storage};
+use crate::{llm::VideoConnection, media, policy_transport::PolicyTransport, storage};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -13,7 +13,6 @@ use std::{
 
 const ORIGIN: &str = "https://api.dev.runwayml.com";
 const OUTPUT_HOST: &str = "dnznrvs05pmza.cloudfront.net";
-pub const CREDITS: u64 = 60;
 fn failure() -> String {
     "動画APIの応答を確定できませんでした。新規生成を再送せず状態を確認してください".into()
 }
@@ -63,14 +62,7 @@ pub(crate) fn frame_bytes(
     let (w, h) = ratio.split_once(':').ok_or_else(failure)?;
     let w = w.parse::<u64>().map_err(|_| failure())?;
     let h = h.parse::<u64>().map_err(|_| failure())?;
-    if width == 0
-        || height == 0
-        || width > 8192
-        || height > 8192
-        || width * 2 < height
-        || width > height * 2
-        || width * h != height * w
-    {
+    if width == 0 || height == 0 || width > 8192 || height > 8192 || width * h != height * w {
         return Err(format!(
             "{}と出力の縦横比を合わせてください。自動切り抜きは行いません",
             label
@@ -90,6 +82,7 @@ pub(crate) fn frame_bytes(
     Ok((bytes, width, height))
 }
 
+#[cfg(test)]
 pub fn payload(manifest: &Value, image: &str) -> Result<Value, String> {
     payload_with_frames(manifest, image, None)
 }
@@ -110,6 +103,9 @@ pub fn payload_with_frames(
         "duration",
         "ratio",
         "connection",
+        "request_profile",
+        "audio",
+        "billing",
         "base_revision",
         "transition",
     ];
@@ -139,73 +135,164 @@ pub fn payload_with_frames(
     }) {
         return Err("未対応の画像制御です".into());
     }
-    if manifest["duration"] != 5 {
-        return Err("未対応の動画入力です".into());
-    }
     let prompt = manifest["prompt"].as_str().ok_or("Missing prompt")?;
     let ratio = manifest["ratio"].as_str().ok_or("Missing ratio")?;
-    if prompt.trim().is_empty()
-        || prompt.encode_utf16().count() > 1000
-        || ![
-            "1280:720", "720:1280", "1104:832", "960:960", "832:1104", "1584:672",
-        ]
-        .contains(&ratio)
-    {
-        return Err("未対応の動画指示・寸法です".into());
+    let duration = manifest["duration"]
+        .as_u64()
+        .ok_or("動画の尺がありません")?;
+    if prompt.trim().is_empty() {
+        return Err("未対応の動画指示です".into());
     }
-    if inputs.len() == 1 {
-        if end_image.is_some()
+
+    // Keep the synthetic end-frame fixture isolated from production models.
+    if manifest["connection"]["provider"] == "fixture"
+        && manifest["connection"]["model"] == "end-frame-v1"
+    {
+        if duration != 5
+            || ratio != "960:960"
+            || prompt.encode_utf16().count() > 1000
+            || inputs.len() != 2
+            || end_image.is_none()
             || inputs[0]["role"] != "start_frame"
-            || inputs[0]["media_type"] != "image"
-            || inputs[0]["transform"] != json!({"kind":"identity"})
-            || manifest["connection"]["provider"] != "runway"
-            || manifest["connection"]["model"] != "gen4.5"
+            || inputs[1]["role"] != "end_frame"
+            || inputs.iter().any(|input| {
+                input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
+            })
         {
             return Err("未対応の動画入力です".into());
         }
-        let (_, _, _) = frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
+        let (_, start_width, start_height) =
+            frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
+        let end = end_image.ok_or_else(failure)?;
+        let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+        if start_width != end_width || start_height != end_height {
+            return Err(
+                "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください"
+                    .into(),
+            );
+        }
         return Ok(json!({
-            "model":"gen4.5",
+            "model":"end-frame-v1",
             "promptImage":start_image,
+            "lastFrame":end,
             "promptText":prompt,
             "ratio":ratio,
-            "duration":5,
+            "duration":duration,
             "outputFormat":"mp4"
         }));
     }
-    if inputs.len() != 2
-        || end_image.is_none()
-        || inputs[0]["role"] != "start_frame"
-        || inputs[1]["role"] != "end_frame"
-        || inputs.iter().any(|input| {
-            input["media_type"] != "image" || input["transform"] != json!({"kind":"identity"})
-        })
-        || manifest["connection"]["provider"] != "fixture"
-        || manifest["connection"]["model"] != "end-frame-v1"
+
+    let selected = media::video_model_from_connection(&manifest["connection"])?;
+    if selected.adapter_id != "runway"
+        || selected.provider != "runway"
+        || !selected.durations_sec.contains(&duration)
+        || !selected.ratios.iter().any(|supported| supported == ratio)
+        || prompt.encode_utf16().count() > selected.max_prompt_utf16 as usize
+    {
+        return Err("選択した動画モデルが尺・寸法・指示に対応していません".into());
+    }
+    let (rw, rh) = ratio.split_once(':').ok_or("動画寸法定義が不正です")?;
+    let aspect =
+        rw.parse::<f64>().map_err(|_| failure())? / rh.parse::<f64>().map_err(|_| failure())?;
+    if aspect < selected.min_aspect_ratio || aspect > selected.max_aspect_ratio {
+        return Err("選択した動画モデルが入力画像の縦横比に対応していません".into());
+    }
+    if manifest["version"].as_u64().unwrap_or(1) >= 2 {
+        if manifest["request_profile"].as_str() != Some(selected.request_profile.as_str())
+            || manifest["audio"].as_bool() != Some(false)
+        {
+            return Err("保存済み動画要求の実行契約が登録情報と一致しません".into());
+        }
+        validate_billing_snapshot(&selected, manifest, duration, ratio)?;
+    }
+
+    match selected.request_profile.as_str() {
+        "gen-image-to-video-v1" => {
+            if inputs.len() != 1
+                || end_image.is_some()
+                || inputs[0]["role"] != "start_frame"
+                || inputs[0]["media_type"] != "image"
+                || inputs[0]["transform"] != json!({"kind":"identity"})
+            {
+                if inputs.len() == 2 && !selected.end_frame {
+                    return Err(
+                        "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
+                    );
+                }
+                return Err("未対応の動画入力です".into());
+            }
+            frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
+            Ok(json!({
+                "model":selected.model_id,
+                "promptImage":start_image,
+                "promptText":prompt,
+                "ratio":ratio,
+                "duration":duration,
+                "outputFormat":"mp4"
+            }))
+        }
+        "seedance-keyframes-v1" => {
+            if !(1..=2).contains(&inputs.len())
+                || inputs[0]["role"] != "start_frame"
+                || inputs[0]["media_type"] != "image"
+                || inputs[0]["transform"] != json!({"kind":"identity"})
+                || (inputs.len() == 2
+                    && (inputs[1]["role"] != "end_frame"
+                        || inputs[1]["media_type"] != "image"
+                        || inputs[1]["transform"] != json!({"kind":"identity"})))
+                || (inputs.len() == 1 && end_image.is_some())
+                || (inputs.len() == 2 && end_image.is_none())
+            {
+                return Err("Seedanceの始端・終端画像契約が不正です".into());
+            }
+            let (_, start_width, start_height) =
+                frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
+            let mut frames = vec![json!({"uri":start_image,"position":"first"})];
+            if inputs.len() == 2 {
+                let end = end_image.ok_or_else(failure)?;
+                let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+                if start_width != end_width || start_height != end_height {
+                    return Err(
+                        "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
+                    );
+                }
+                frames.push(json!({"uri":end,"position":"last"}));
+            }
+            Ok(json!({
+                "model":selected.model_id,
+                "promptImage":frames,
+                "promptText":prompt,
+                "ratio":ratio,
+                "duration":duration,
+                "audio":false
+            }))
+        }
+        _ => Err("未対応の動画request profileです".into()),
+    }
+}
+
+pub(crate) fn validate_billing_snapshot(
+    selected: &media::VideoModel,
+    manifest: &Value,
+    duration: u64,
+    ratio: &str,
+) -> Result<Value, String> {
+    let expected = media::video_pricing(selected, duration, ratio)?;
+    let saved = &manifest["billing"];
+    if !saved.is_object()
+        || saved["credits"] != expected["credits"]
+        || saved["rate"] != expected["rate"]
+        || saved["minimum"] != expected["minimum"]
+        || saved["tier"] != expected["tier"]
+        || saved["checked_at"] != expected["checked_at"]
+        || saved["model_id"].as_str() != Some(selected.model_id.as_str())
+        || saved["request_profile"].as_str() != Some(selected.request_profile.as_str())
     {
         return Err(
-            "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
+            "動画料金・送信契約が保存後に変更されています。内容を再確認してください".into(),
         );
     }
-    let (_, start_width, start_height) = frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
-    let end = end_image.ok_or_else(failure)?;
-    let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
-    if start_width != end_width || start_height != end_height {
-        return Err(
-            "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
-        );
-    }
-    // Fixture-only contract for tests and future adapter work. Current Runway is
-    // deliberately rejected above because its official API has no end-frame field.
-    Ok(json!({
-        "model":"end-frame-v1",
-        "promptImage":start_image,
-        "lastFrame":end,
-        "promptText":prompt,
-        "ratio":ratio,
-        "duration":5,
-        "outputFormat":"mp4"
-    }))
+    Ok(expected)
 }
 
 fn reserve(
@@ -220,6 +307,25 @@ fn reserve(
     {
         return Err("送信済み・未確定要求は再POSTできません".into());
     }
+    let selected = media::video_model_from_connection(&job["manifest"]["connection"])?;
+    if selected.adapter_id != "runway" || selected.provider != "runway" {
+        return Err("選択した動画adapterはまだ接続されていません".into());
+    }
+    let duration = job["manifest"]["duration"]
+        .as_u64()
+        .ok_or("動画の尺がありません")?;
+    if !selected.durations_sec.contains(&duration) {
+        return Err("選択した動画モデルが尺に対応していません".into());
+    }
+    let ratio = job["manifest"]["ratio"]
+        .as_str()
+        .ok_or("動画の寸法がありません")?;
+    let pricing = if job["manifest"]["version"].as_u64().unwrap_or(1) >= 2 {
+        validate_billing_snapshot(&selected, &job["manifest"], duration, ratio)?
+    } else {
+        media::video_pricing(&selected, duration, ratio)?
+    };
+    let credits = pricing["credits"].as_u64().ok_or("Invalid cost")?;
     let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     if jobs.iter().any(|j| {
         j["remote"]["actual_credits"].as_u64().unwrap_or(0)
@@ -232,11 +338,15 @@ fn reserve(
         .filter_map(|j| j["remote"]["reserved_credits"].as_u64())
         .try_fold(0_u64, |a, b| a.checked_add(b))
         .ok_or("Invalid cost")?;
-    if spent.saturating_add(CREDITS) > budget {
+    if spent.saturating_add(credits) > budget {
         return Err("作品の動画予算上限です。接続設定を確認してください".into());
     }
     validate_pending_job(project, job, connection_id)?;
-    Ok(json!({"status":"unknown","reserved_credits":CREDITS,"submitted_at":now()}))
+    Ok(json!({
+        "status":"unknown", "reserved_credits":credits, "submitted_at":now(),
+        "pricing":pricing, "model":selected.model_id,
+        "request_profile":selected.request_profile, "audio":false
+    }))
 }
 
 // Shared version/retry boundary for native video adapters, independent of billing.
@@ -259,6 +369,40 @@ pub(crate) fn validate_pending_job(
         .iter()
         .find(|s| s["id"] == job["scope"]["id"])
         .ok_or("Missing shot")?;
+    if !shot["sourcePanelId"].is_null() || !shot["batchId"].is_null() {
+        let panel_id = shot["sourcePanelId"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("動画レシピの作成元が不正です")?;
+        if !shot["batchId"].as_str().is_some_and(|id| !id.is_empty()) {
+            return Err("動画レシピの作成元が不正です".into());
+        }
+        let panel = project["panels"]
+            .as_array()
+            .and_then(|panels| panels.iter().find(|panel| panel["id"] == panel_id))
+            .ok_or("動画化したコマがありません")?;
+        let artwork = project["artworks"]
+            .as_array()
+            .and_then(|artworks| {
+                artworks.iter().find(|artwork| {
+                    artwork["id"] == shot["startImage"]["id"]
+                        && artwork["hash"] == shot["startImage"]["hash"]
+                })
+            })
+            .ok_or("動画化したコマの採用作画版がありません")?;
+        if shot["startImage"]["kind"] != "artwork"
+            || panel["snapshotId"] != shot["snapshotId"]
+            || panel["sceneId"] != shot["sceneId"]
+            || panel["unitIds"] != shot["unitIds"]
+            || panel["sourceRefs"] != shot["sourceRefs"]
+            || panel["characterIds"] != shot["characterIds"]
+            || panel["artwork_revision"] != artwork["id"]
+            || panel["image"].is_null()
+            || panel["image"] != artwork["panel"]["image"]
+        {
+            return Err("動画化したコマの原稿・採用作画版が変わっています".into());
+        }
+    }
     let snapshot = project["snapshots"]
         .as_array()
         .ok_or("Missing source")?
@@ -275,6 +419,7 @@ pub(crate) fn validate_pending_job(
         || shot["snapshotId"] != job["source_revision"]
         || shot["prompt"] != job["manifest"]["prompt"]
         || shot["unitIds"] != job["manifest"]["source"]["unitIds"]
+        || shot["sourceRefs"] != job["manifest"]["source"]["sourceRefs"]
         || shot["sceneId"] != job["manifest"]["source"]["sceneId"]
         || shot["characterIds"] != job["manifest"]["characterIds"]
         || shot["ratio"] != job["manifest"]["ratio"]
@@ -726,6 +871,210 @@ pub async fn cancel(
     })
 }
 
+// Static images reuse Runway's transport, ephemeral credentials, existing image
+// receipts and the project Job. A task ID is durably recorded before polling.
+pub fn image_payload(input: &Value) -> Result<Value, String> {
+    if input["media"]["model_id"] != "gen4_image" || input["width"] != 720 || input["height"] != 720
+    {
+        return Err("Runway静止画はgen4_image / 720×720に対応します".into());
+    }
+    let mut refs = Vec::new();
+    if let Some(original) = input["original"].as_str() {
+        refs.push(json!({"uri":original,"tag":if input["capture"].is_object() {"capture"} else {"original"}}));
+    }
+    for (i, r) in input["references"]
+        .as_array()
+        .ok_or("Missing references")?
+        .iter()
+        .enumerate()
+    {
+        let role = match r["role"].as_str() {
+            Some("character") => "character",
+            Some("style") => "style",
+            Some("context") => "context",
+            None => "reference",
+            _ => return Err("未対応の参照役割です".into()),
+        };
+        refs.push(json!({"uri":r["image"],"tag":format!("{role}{}",i+1)}));
+    }
+    if refs.len() > 3 {
+        return Err("撮影原本・編集元を含め参照は3枚までです".into());
+    }
+    for r in &refs {
+        let uri = r["uri"].as_str().ok_or("Missing image")?;
+        if uri.len() > 5_000_000
+            || ![
+                "data:image/png;base64,",
+                "data:image/jpeg;base64,",
+                "data:image/webp;base64,",
+            ]
+            .iter()
+            .any(|prefix| uri.starts_with(prefix))
+        {
+            return Err("参照画像はPNG/JPEG/WebPの5MB以下にしてください".into());
+        }
+    }
+    let prompt = input["prompt"].as_str().ok_or("Missing prompt")?;
+    let tags = refs
+        .iter()
+        .map(|r| format!("@{}", r["tag"].as_str().unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let prompt = format!("{prompt}\nUse references in the given order: {tags}");
+    if prompt.encode_utf16().count() > 1000 {
+        return Err("Runwayの作画指示は参照指定込み1000文字以内にしてください".into());
+    }
+    Ok(
+        json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}),
+    )
+}
+fn image_account(connection: &VideoConnection) -> String {
+    format!("{:x}", Sha256::digest(connection.credential.as_bytes()))
+}
+pub async fn submit_image(
+    db: &Mutex<Connection>,
+    input: &Value,
+    connection: &VideoConnection,
+) -> Result<(), String> {
+    if connection.model != "gen4_image" || connection.adapter_id != "runway-image" {
+        return Err("静止画用の接続を登録してください".into());
+    }
+    let payload = image_payload(input)?;
+    let id = input["job"]["id"].as_str().ok_or("Missing image job")?;
+    let account = image_account(connection);
+    update(db, id, |p, j| {
+        if j.get("remote").is_some() || j["status"] != "running" || j["media"] != input["media"] {
+            return Err("送信済みまたは異なる画像要求です".into());
+        }
+        let used: u64 = p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .filter(|j| j["remote"]["kind"] == "runway-image")
+            .map(|j| j["remote"]["reserved_credits"].as_u64().unwrap_or(0))
+            .sum();
+        if used.saturating_add(5) > connection.max_credits {
+            return Err("作品の静止画credits上限です".into());
+        }
+        Ok(
+            json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}),
+        )
+    })?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let response = json_response(
+        request(&client, reqwest::Method::POST, url, connection)
+            .json(&payload)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    let task = response["id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or_else(failure)?;
+    update(db, id, |_, j| {
+        let mut remote = j["remote"].clone();
+        remote["task_id"] = json!(task);
+        remote["status"] = json!("PENDING");
+        Ok(remote)
+    })?;
+    Ok(())
+}
+pub async fn collect_image(
+    db: &Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    connection: &VideoConnection,
+) -> Result<Value, String> {
+    let remote = {
+        let db = db.lock().map_err(|_| failure())?;
+        let p = storage::raw_project(&db)?;
+        p["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == id)
+            .ok_or("Missing job")?["remote"]
+            .clone()
+    };
+    if remote["kind"] != "runway-image"
+        || remote["account"] != image_account(connection)
+        || connection.model != "gen4_image"
+    {
+        return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());
+    }
+    {
+        let db = db.lock().map_err(|_| failure())?;
+        if let Ok(saved) = storage::image_recovery::recover(&db, root, id) {
+            return Ok(saved);
+        }
+    }
+    let task = remote["task_id"]
+        .as_str()
+        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
+        .ok_or("送信応答が未確定です。自動再送しません")?;
+    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_| failure())?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let value = json_response(
+        request(&client, reqwest::Method::GET, url, connection)
+            .send()
+            .await
+            .map_err(|_| failure())?,
+    )
+    .await?;
+    if value["status"] != "SUCCEEDED" {
+        return Err(format!(
+            "静止画処理状態: {}。後で保存済み作画を回収してください",
+            value["status"].as_str().unwrap_or("UNKNOWN")
+        ));
+    }
+    let url = output_url(&value)?;
+    let client = PolicyTransport::external_client(&url).await?;
+    let mut response = client.get(url).send().await.map_err(|_| failure())?;
+    if !response.status().is_success() {
+        return Err(failure());
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| failure())? {
+        if bytes.len() + chunk.len() > 24 * 1024 * 1024 {
+            return Err("画像が大きすぎます".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    storage::image_recovery::store_remote(db, root, id, &bytes)
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::*;
+    #[test]
+    fn image_wire_contract_rejects_unsupported_inputs_before_post() {
+        let input = json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":"data:image/png;base64,YQ==","role":"character"}]});
+        let payload = image_payload(&input).unwrap();
+        assert_eq!(payload["ratio"], "720:720");
+        assert_eq!(payload["referenceImages"][0]["tag"], "character1");
+        let mut bad = input.clone();
+        bad["width"] = json!(768);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["references"] = json!([
+            input["references"][0],
+            input["references"][0],
+            input["references"][0],
+            input["references"][0]
+        ]);
+        assert!(image_payload(&bad).is_err());
+        bad = input.clone();
+        bad["prompt"] = json!("x".repeat(1001));
+        assert!(image_payload(&bad).is_err());
+        bad = input;
+        bad["references"][0]["image"] = json!("https://unapproved.example/image.png");
+        assert!(image_payload(&bad).is_err());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,15 +1122,27 @@ mod tests {
     }
 
     #[test]
-    fn provider_body_uses_actual_bytes_and_rejects_unavailable_controls() {
+    fn provider_body_uses_actual_bytes_and_registered_model_contract() {
         let (manifest, image) = fixture();
         let body = payload(&manifest, &image).unwrap();
         assert_eq!(body["promptImage"], image);
         assert_eq!(body["duration"], 5);
         assert_eq!(body["model"], "gen4.5");
         assert!(body.get("sourceDependencies").is_none());
+
+        let mut ten_seconds = manifest.clone();
+        ten_seconds["duration"] = json!(10);
+        assert_eq!(payload(&ten_seconds, &image).unwrap()["duration"], 10);
+
+        let mut turbo = manifest.clone();
+        turbo["connection"]["model"] = json!("gen4_turbo");
+        turbo["duration"] = json!(6);
+        let turbo_body = payload(&turbo, &image).unwrap();
+        assert_eq!(turbo_body["model"], "gen4_turbo");
+        assert_eq!(turbo_body["duration"], 6);
+
         for (key, value) in [
-            ("duration", json!(10)),
+            ("duration", json!(11)),
             ("ratio", json!("1920:1080")),
             ("endImage", json!("ignored")),
             ("depth", json!("ignored")),
@@ -790,10 +1151,84 @@ mod tests {
             bad[key] = value;
             assert!(payload(&bad, &image).is_err());
         }
+        let mut invented = manifest.clone();
+        invented["connection"]["model"] = json!("invented");
+        assert!(payload(&invented, &image).is_err());
         let mut bad = manifest.clone();
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
     }
+    fn seedance_fixture(with_end: bool) -> (Value, String, Option<String>) {
+        let (mut manifest, start) = fixture();
+        manifest["version"] = json!(2);
+        manifest["connection"] = json!({"id":"seedance","provider":"runway","model":"seedance2_5","adapter_id":"runway"});
+        manifest["request_profile"] = json!("seedance-keyframes-v1");
+        manifest["audio"] = json!(false);
+        manifest["billing"] = json!({
+            "credits":150,
+            "rate":30,
+            "minimum":80,
+            "tier":"720p",
+            "checked_at":"2026-09-22",
+            "model_id":"seedance2_5",
+            "request_profile":"seedance-keyframes-v1"
+        });
+        if with_end {
+            let bytes = STANDARD.decode(start.split_once(',').unwrap().1).unwrap();
+            let hash = format!("{:x}", Sha256::digest(&bytes));
+            manifest["providerInputs"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "id":"b",
+                    "hash":hash,
+                    "size":bytes.len(),
+                    "role":"end_frame",
+                    "media_type":"image",
+                    "transform":{"kind":"identity"}
+                }));
+            (manifest, start.clone(), Some(start))
+        } else {
+            (manifest, start, None)
+        }
+    }
+
+    #[test]
+    fn seedance_payload_uses_keyframes_and_never_gen_specific_fields() {
+        let (single, start, _) = seedance_fixture(false);
+        let body = payload_with_frames(&single, &start, None).unwrap();
+        assert_eq!(body["model"], "seedance2_5");
+        assert_eq!(
+            body["promptImage"],
+            json!([{"uri":start,"position":"first"}])
+        );
+        assert_eq!(body["audio"], false);
+        assert!(body.get("outputFormat").is_none());
+        assert!(body.get("lastFrame").is_none());
+        assert!(body.get("resolution").is_none());
+
+        let (pair, first, last) = seedance_fixture(true);
+        let last = last.unwrap();
+        let body = payload_with_frames(&pair, &first, Some(&last)).unwrap();
+        assert_eq!(body["promptImage"][0]["position"], "first");
+        assert_eq!(body["promptImage"][1]["position"], "last");
+        assert_eq!(body["promptImage"][1]["uri"], last);
+
+        let mut invalid = pair.clone();
+        invalid["providerInputs"][0]["role"] = json!("end_frame");
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair.clone();
+        let duplicate = invalid["providerInputs"][1].clone();
+        invalid["providerInputs"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair;
+        invalid["audio"] = json!(true);
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+    }
+
     #[test]
     fn provider_body_preserves_start_end_bytes_and_rejects_runway_fallback() {
         let (manifest, start, end) = transition_fixture();
@@ -809,59 +1244,65 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn transition_http_fixture_receives_start_and_end_bytes_in_order() {
+    async fn image_and_video_http_fixtures_receive_exact_reference_bytes() {
         let (manifest, start, end) = transition_fixture();
         let body = payload_with_frames(&manifest, &start, Some(&end)).unwrap();
-        let expected = body.clone();
-        let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = server.local_addr().unwrap();
-        let worker = std::thread::spawn(move || {
-            let (mut socket, _) = server.accept().unwrap();
-            socket
-                .set_read_timeout(Some(Duration::from_secs(5)))
+        let image = image_payload(&json!({"media":{"model_id":"gen4_image"},"width":720,"height":720,"seed":1,"prompt":"scene","references":[{"image":start,"role":"character"},{"image":end,"role":"style"}]})).unwrap();
+        for (body, path) in [(body, "image_to_video"), (image, "text_to_image")] {
+            let expected = body.clone();
+            let server = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = server.local_addr().unwrap();
+            let worker = std::thread::spawn(move || {
+                let (mut socket, _) = server.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut headers = Vec::new();
+                let mut byte = [0_u8; 1];
+                while !headers.ends_with(b"\r\n\r\n") {
+                    socket.read_exact(&mut byte).unwrap();
+                    headers.push(byte[0]);
+                }
+                let text = String::from_utf8(headers).unwrap().to_lowercase();
+                assert!(text.starts_with(&format!("post /v1/{path} ")));
+                assert!(text.contains("authorization: bearer fixture-secret"));
+                let size: usize = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix("content-length: "))
+                    .unwrap()
+                    .parse()
+                    .unwrap();
+                let mut bytes = vec![0; size];
+                socket.read_exact(&mut bytes).unwrap();
+                assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
+                let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
+                write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
+            });
+            let client = reqwest::Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
                 .unwrap();
-            let mut headers = Vec::new();
-            let mut byte = [0_u8; 1];
-            while !headers.ends_with(b"\r\n\r\n") {
-                socket.read_exact(&mut byte).unwrap();
-                headers.push(byte[0]);
-            }
-            let text = String::from_utf8(headers).unwrap().to_lowercase();
-            assert!(text.starts_with("post /v1/image_to_video "));
-            assert!(text.contains("authorization: bearer fixture-secret"));
-            let size: usize = text
-                .lines()
-                .find_map(|line| line.strip_prefix("content-length: "))
-                .unwrap()
-                .parse()
-                .unwrap();
-            let mut bytes = vec![0; size];
-            socket.read_exact(&mut bytes).unwrap();
-            assert_eq!(serde_json::from_slice::<Value>(&bytes).unwrap(), expected);
-            let response = r#"{"id":"10000000-0000-4000-8000-000000000002"}"#;
-            write!(socket,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",response.len(),response).unwrap();
-        });
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .build()
+            let connection = VideoConnection {
+                credential: "fixture-secret".into(),
+                max_credits: 60,
+                provider: "runway".into(),
+                model: "gen4.5".into(),
+                adapter_id: "runway".into(),
+            };
+            let response = request(
+                &client,
+                reqwest::Method::POST,
+                reqwest::Url::parse(&format!("http://{address}/v1/{path}")).unwrap(),
+                &connection,
+            )
+            .json(&body)
+            .send()
+            .await
             .unwrap();
-        let connection = VideoConnection {
-            credential: "fixture-secret".into(),
-            max_credits: 60,
-        };
-        let response = request(
-            &client,
-            reqwest::Method::POST,
-            reqwest::Url::parse(&format!("http://{address}/v1/image_to_video")).unwrap(),
-            &connection,
-        )
-        .json(&body)
-        .send()
-        .await
-        .unwrap();
-        assert!(json_response(response).await.unwrap()["id"].is_string());
-        worker.join().unwrap();
+            assert!(json_response(response).await.unwrap()["id"].is_string());
+            worker.join().unwrap();
+        }
     }
 
     #[test]
@@ -887,6 +1328,89 @@ mod tests {
             60
         );
     }
+    #[test]
+    fn reservation_uses_selected_model_rate_and_duration() {
+        let (mut manifest, _) = fixture();
+        manifest["connection"]["model"] = json!("gen4_turbo");
+        let job = json!({
+            "id":"j",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "c", 24).is_err());
+        assert_eq!(
+            reserve(&project, &job, "c", 25).unwrap()["reserved_credits"],
+            25
+        );
+    }
+
+    #[test]
+    fn seedance_reservation_uses_tier_rate_and_minimum() {
+        let (manifest, _, _) = seedance_fixture(false);
+        let job = json!({
+            "id":"seedance-job",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "seedance", 149).is_err());
+        let remote = reserve(&project, &job, "seedance", 150).unwrap();
+        assert_eq!(remote["reserved_credits"], 150);
+        assert_eq!(remote["pricing"]["tier"], "720p");
+        assert_eq!(remote["pricing"]["minimum"], 80);
+        assert_eq!(remote["audio"], false);
+
+        let selected = media::video_model_from_connection(&json!({
+            "provider":"runway","model":"seedance2_5","adapter_id":"runway"
+        }))
+        .unwrap();
+        assert_eq!(
+            media::video_pricing(&selected, 4, "854:480").unwrap()["credits"],
+            80
+        );
+    }
+
     #[test]
     fn output_urls_and_status_projection_never_expose_secrets_or_unapproved_hosts() {
         for url in [
@@ -948,6 +1472,9 @@ mod tests {
         let connection = VideoConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
+            provider: "runway".into(),
+            model: "gen4.5".into(),
+            adapter_id: "runway".into(),
         };
         let response = request(
             &client,
@@ -1073,6 +1600,9 @@ mod tests {
         let connection = VideoConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
+            provider: "runway".into(),
+            model: "gen4.5".into(),
+            adapter_id: "runway".into(),
         };
         for method in [reqwest::Method::GET, reqwest::Method::DELETE] {
             let (url, worker) = local_response("200 OK", "application/json", b"{}".to_vec(), 2);

@@ -8,6 +8,7 @@ import { adjacentPanelPairs, createAdjacentVideoShot, createSelectedAdjacentVide
 
 const legacy = JSON.parse(await readFile(new URL('./fixtures/legacy-v1.json', import.meta.url)));
 const runway = { id: 'runway', provider: 'runway', model: 'gen4.5' };
+const seedance = { id: 'seedance', provider: 'runway', model: 'seedance2_5', adapter_id: 'runway' };
 const fixtureConnection = { id: 'fixture', provider: 'fixture', model: 'end-frame-v1' };
 
 async function pairFixture() {
@@ -46,6 +47,11 @@ test('A→B manifest preserves adopted artwork identities, dimensions and ordere
   const withShot = createAdjacentVideoShot(project, { pairId: pair.id, prompt: 'AからBへ移る', duration: 5, ratio: '960:960' });
   const shot = withShot.videoShots[0];
   await assert.rejects(videoManifest(withShot, shot, runway), /終端画像/);
+  const seedanceRequest = await videoManifest(withShot, shot, seedance);
+  assert.deepEqual(seedanceRequest.manifest.providerInputs.map(input => input.role), ['start_frame', 'end_frame']);
+  assert.equal(seedanceRequest.manifest.request_profile, 'seedance-keyframes-v1');
+  assert.equal(seedanceRequest.manifest.audio, false);
+  assert.equal(seedanceRequest.manifest.billing.credits, 150);
   const request = await videoManifest(withShot, shot, fixtureConnection);
   assert.deepEqual(request.manifest.providerInputs.map(input => input.role), ['start_frame', 'end_frame']);
   assert.equal(request.manifest.providerInputs[0].id, shot.transition.fromArtworkRevisionId);

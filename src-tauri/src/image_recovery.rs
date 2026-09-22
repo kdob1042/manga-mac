@@ -64,13 +64,22 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
             return Err("Image job inputs changed".into());
         }
     }
+    if job["cloud_connection"] != request["cloud_connection"] {
+        return Err("クラウド接続が保存済みJobと一致しません".into());
+    }
+    if job.get("media").is_some() && job["media"] != request["media"] {
+        return Err("保存済み画像要求の実行先を変更できません".into());
+    }
     let context = &request["recovery"];
     if context["version"] != 1
         || context["kind"] != job["kind"]
         || context["panel"]["id"] != job["panelId"]
         || context["panel"]["snapshotId"] != job["source_revision"]
         || !context["panel"]["image"].is_null()
-        || !matches!(job["kind"].as_str(), Some("generate" | "retake" | "edit"))
+        || !matches!(
+            job["kind"].as_str(),
+            Some("generate" | "retake" | "edit" | "decompose" | "layer_edit")
+        )
     {
         return Err("Invalid image recovery context".into());
     }
@@ -118,6 +127,92 @@ pub fn reserve(db: &mut Connection, root: &Path, request: &Value) -> Result<Valu
         || panel["snapshotId"] != job["source_revision"]
     {
         return Err("Image base revision changed".into());
+    }
+    if job["kind"] == "decompose" {
+        let original = panel["image"]
+            .as_str()
+            .ok_or("Missing decomposition source")?;
+        let bytes = STANDARD
+            .decode(
+                original
+                    .split_once(',')
+                    .ok_or("Invalid decomposition source")?
+                    .1,
+            )
+            .map_err(err)?;
+        if bytes.len() < 33
+            || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+            || request["width"] != u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?)
+            || request["height"] != u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?)
+        {
+            return Err("Decomposition must keep source dimensions".into());
+        }
+        if request["original"] != panel["image"]
+            || context["original"] != panel["image"]
+            || job["layered"] != context["layered"]
+            || job["layered"]["layer_count"] != request["layer_count"]
+            || job["layered"]["width"] != request["width"]
+            || job["layered"]["height"] != request["height"]
+        {
+            return Err("分解元・レイヤー数・寸法が保存済み要求と一致しません".into());
+        }
+    }
+    if job["kind"] == "layer_edit" {
+        let fixed = &job["layer_edit"];
+        if fixed != &context["layer_edit"]
+            || fixed["preset"] != "colour-only"
+            || fixed["target_hash"] != request["original_hash"]
+            || fixed["width"] != request["width"]
+            || fixed["height"] != request["height"]
+        {
+            return Err("レイヤー編集の保存済み入力が一致しません".into());
+        }
+        let colour = fixed["colour"].as_str().ok_or("Missing colour")?;
+        let rect = fixed["rect"].as_array().ok_or("Missing colour region")?;
+        let coords: Option<Vec<f64>> = rect.iter().map(Value::as_f64).collect();
+        let r = coords.ok_or("Invalid colour region")?;
+        if colour.len() != 7
+            || !colour.starts_with('#')
+            || !colour[1..].bytes().all(|b| b.is_ascii_hexdigit())
+            || r.len() != 4
+            || r.iter().any(|n| !n.is_finite() || *n < 0.0 || *n > 1.0)
+            || r[2] <= 0.0
+            || r[3] <= 0.0
+            || r[0] + r[2] > 1.0
+            || r[1] + r[3] > 1.0
+        {
+            return Err("Invalid colour-only preset or region".into());
+        }
+        let owner = hydrated["jobs"]
+            .as_array()
+            .ok_or("Missing jobs")?
+            .iter()
+            .find(|j| j["id"] == fixed["source"]["session"])
+            .ok_or("Missing source editor job")?;
+        let layer = fixed["source"]["layer"]
+            .as_str()
+            .ok_or("Missing layer UUID")?;
+        if owner["panelId"] != job["panelId"]
+            || owner["compositor"]["bindings"][layer] != fixed["character_id"]
+        {
+            return Err("Layer character mapping is not confirmed".into());
+        }
+        let refs = request["references"]
+            .as_array()
+            .ok_or("Missing layer references")?;
+        let expected = fixed["references"]
+            .as_array()
+            .ok_or("Missing fixed references")?;
+        if refs.len() != expected.len() {
+            return Err("Layer reference count changed".into());
+        }
+        for (actual, saved) in refs.iter().zip(expected) {
+            for key in ["id", "name", "hash", "role"] {
+                if actual[key] != saved[key] {
+                    return Err("Layer reference roles changed".into());
+                }
+            }
+        }
     }
     if job["kind"] == "edit" {
         let rect = context["rect"].as_array().ok_or("Missing edit region")?;
@@ -234,6 +329,9 @@ pub fn recover(db: &Connection, root: &Path, id: &str) -> Result<Value> {
     if receipt["request_hash"] != job["local_image"]["request_hash"] {
         return Err("Image request receipt mismatch".into());
     }
+    if job["kind"] == "decompose" {
+        return recover_layers(root, id, job, &receipt, &dir);
+    }
     let bytes = read_bounded(&dir.join("result.png"), MAX_IMAGE)?;
     let digest = hash(&bytes);
     if receipt["hash"] != digest
@@ -252,11 +350,139 @@ pub fn recover(db: &Connection, root: &Path, id: &str) -> Result<Value> {
     {
         return Err("Image output dimensions mismatch".into());
     }
+    let bytes = if job["kind"] == "layer_edit" {
+        let target = context["target"]["image"]
+            .as_str()
+            .ok_or("Missing target RGBA")?;
+        let original = STANDARD
+            .decode(target.split_once(',').ok_or("Invalid target")?.1)
+            .map_err(err)?;
+        if hash(&original) != context["layer_edit"]["target_hash"] {
+            return Err("Target RGBA changed".into());
+        }
+        let rect: [f64; 4] =
+            serde_json::from_value(context["layer_edit"]["rect"].clone()).map_err(err)?;
+        super::layer_colour::compose(&original, &bytes, rect)?
+    } else {
+        bytes
+    };
+    let digest = hash(&bytes);
     // Canonical artifacts are the existing hash store; collecting twice is harmless.
     put(&root.join("artifacts"), &bytes)?;
     Ok(
-        json!({"job_id":id,"input_hash":job["input_hash"],"context":context,"hash":digest,"image":format!("data:image/png;base64,{}",STANDARD.encode(bytes))}),
+        json!({"job_id":id,"input_hash":job["input_hash"],"context":context,"hash":digest,"colour_composited":job["kind"] == "layer_edit","image":format!("data:image/png;base64,{}",STANDARD.encode(bytes))}),
     )
+}
+
+fn recover_layers(
+    root: &Path,
+    id: &str,
+    job: &Value,
+    receipt: &Value,
+    dir: &Path,
+) -> Result<Value> {
+    let expected = job["layered"]["layer_count"]
+        .as_u64()
+        .ok_or("Missing layer count")?;
+    let layers = receipt["layers"]
+        .as_array()
+        .ok_or("Missing ordered layer receipt")?;
+    if receipt["kind"] != "ordered-rgba-layers"
+        || !(2..=6).contains(&expected)
+        || layers.len() as u64 != expected
+    {
+        return Err("Layer result count or kind mismatch".into());
+    }
+    let mut verified = Vec::new();
+    for (index, item) in layers.iter().enumerate() {
+        let name = format!("layer-{index}.png");
+        if item["index"] != index || item["filename"] != name {
+            return Err("Layer order mismatch".into());
+        }
+        let bytes = read_bounded(&dir.join(name), MAX_IMAGE)?;
+        let digest = hash(&bytes);
+        if item["hash"] != digest
+            || bytes.len() < 33
+            || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+            || &bytes[12..16] != b"IHDR"
+            || bytes[24] != 8
+            || bytes[25] != 6
+        {
+            return Err("Layer hash or 8-bit RGBA format mismatch".into());
+        }
+        let width = u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?);
+        let height = u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?);
+        if job["layered"]["width"] != width || job["layered"]["height"] != height {
+            return Err("Layer dimensions mismatch".into());
+        }
+        verified.push((digest, bytes));
+    }
+    let mut output = Vec::new();
+    for (index, (digest, bytes)) in verified.into_iter().enumerate() {
+        put(&root.join("artifacts"), &bytes)?;
+        output.push(json!({"index":index,"hash":digest,"image":format!("data:image/png;base64,{}", STANDARD.encode(bytes))}));
+    }
+    let mut context = job["local_image"]["context"].clone();
+    hydrate(&mut context, &root.join("artifacts"))?;
+    Ok(
+        json!({"kind":"ordered-rgba-layers","job_id":id,"input_hash":job["input_hash"],"context":context,"layers":output}),
+    )
+}
+
+pub fn store_remote(
+    db: &std::sync::Mutex<Connection>,
+    root: &Path,
+    id: &str,
+    bytes: &[u8],
+) -> Result<Value> {
+    let connection = db.lock().map_err(err)?;
+    let project = raw_project(&connection)?;
+    let job = project["jobs"]
+        .as_array()
+        .ok_or("Missing jobs")?
+        .iter()
+        .find(|j| j["id"] == id)
+        .ok_or("Missing job")?;
+    if job["remote"]["kind"] != "runway-image"
+        || bytes.len() < 33
+        || bytes.len() > MAX_IMAGE as usize
+        || &bytes[..8] != b"\x89PNG\r\n\x1a\n"
+    {
+        return Err("クラウド画像の形式を確認できません".into());
+    }
+    let generation = &job["local_image"]["context"]["panel"]["generation"];
+    if generation["width"] != u32::from_be_bytes(bytes[16..20].try_into().map_err(err)?)
+        || generation["height"] != u32::from_be_bytes(bytes[20..24].try_into().map_err(err)?)
+    {
+        return Err("クラウド画像の寸法が一致しません".into());
+    }
+    let dir = directory(root, id)?;
+    if !fs::symlink_metadata(&dir)
+        .map_err(err)?
+        .file_type()
+        .is_dir()
+    {
+        return Err("Invalid image directory".into());
+    }
+    let receipt = json!({"request_hash":job["local_image"]["request_hash"],"hash":hash(bytes)});
+    for (name, data) in [
+        ("result.png", bytes.to_vec()),
+        ("receipt.json", receipt.to_string().into_bytes()),
+    ] {
+        let path = dir.join(name);
+        let artifact = put(&dir, &data)?;
+        match fs::hard_link(dir.join(artifact), &path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if read_bounded(&path, MAX_IMAGE)? != data {
+                    return Err("既存の画像結果が一致しません".into());
+                }
+            }
+            Err(e) => return Err(err(e)),
+        }
+    }
+    sync_dir(&dir)?;
+    recover(&connection, root, id)
 }
 
 #[cfg(test)]
@@ -298,6 +524,130 @@ mod tests {
             json!({"request_hash":destination["request_hash"],"hash":hash(&bytes)}).to_string(),
         )
         .unwrap();
+    }
+    #[test]
+    fn cloud_receipt_reuses_atomic_files_and_preserves_adopted_art() {
+        let (mut db, root, project, request) = setup();
+        reserve(&mut db, &root, &request).unwrap();
+        update_remote_job(&mut db, "local-1", |_, _| {
+            Ok(json!({"kind":"runway-image","task_id":"saved-task"}))
+        })
+        .unwrap();
+        let bytes = STANDARD
+            .decode(
+                request["recovery"]["original"]
+                    .as_str()
+                    .unwrap()
+                    .split_once(',')
+                    .unwrap()
+                    .1,
+            )
+            .unwrap();
+        let dir = directory(&root, "local-1").unwrap();
+        let artifact = put(&dir, &bytes).unwrap();
+        fs::hard_link(dir.join(artifact), dir.join("result.png")).unwrap();
+        fs::write(dir.join(".pending-interrupted"), b"partial").unwrap();
+        let db = std::sync::Mutex::new(db);
+        let result = store_remote(&db, &root, "local-1", &bytes).unwrap();
+        assert_eq!(store_remote(&db, &root, "local-1", &bytes).unwrap(), result);
+        let connection = db.lock().unwrap();
+        assert_eq!(recover(&connection, &root, "local-1").unwrap(), result);
+        let saved: Value =
+            serde_json::from_str(&load(&connection, &root).unwrap().unwrap()).unwrap();
+        assert_eq!(saved["panels"], project["panels"]);
+        assert!(store_remote(
+            &std::sync::Mutex::new(Connection::open_in_memory().unwrap()),
+            &root,
+            "unknown",
+            &bytes
+        )
+        .is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn layer_colour_receipt_preserves_target_and_rejects_changed_reference_roles() {
+        let (mut db, root, mut project, mut request) = setup();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/layered.json")).unwrap();
+        let original = fixture["layers"][0].clone();
+        let raw = STANDARD
+            .decode(original.as_str().unwrap().split_once(',').unwrap().1)
+            .unwrap();
+        request["recovery"]["original"] = original;
+        request["recovery"]["original_hash"] = json!(hash(&raw));
+        for key in ["width", "height"] {
+            request[key] = json!(256);
+            request["recovery"]["panel"]["generation"][key] = json!(256);
+        }
+        let fixed = json!({"preset":"colour-only","colour":"#3366cc","rect":[0,0,1,1],"width":256,"height":256,"target_hash":request["recovery"]["original_hash"],"character_id":"person","source":{"session":"editor","layer":"layer"},"references":[{"id":"context","name":"Context","role":"context","hash":"context-hash"},{"id":"person","name":"Person","role":"character","hash":"person-hash"}]});
+        project["jobs"][0]["kind"] = json!("layer_edit");
+        project["jobs"][0]["layer_edit"] = fixed.clone();
+        let owner = json!({"id":"editor","kind":"compositor","status":"candidate","panelId":project["panels"][0]["id"],"compositor":{"bindings":{"layer":"person"}}});
+        project["jobs"].as_array_mut().unwrap().push(owner);
+        save(&mut db, &root, &project.to_string()).unwrap();
+        request["job"] = project["jobs"][0].clone();
+        request["original_hash"] = fixed["target_hash"].clone();
+        request["references"] = fixed["references"].clone();
+        request["recovery"]["kind"] = json!("layer_edit");
+        request["recovery"]["layer_edit"] = fixed.clone();
+        request["recovery"]["target"] = json!({"image":request["recovery"]["original"]});
+        let mut changed = request.clone();
+        changed["references"][0]["role"] = json!("character");
+        assert!(reserve(&mut db, &root, &changed).is_err());
+        changed = request.clone();
+        changed["recovery"]["layer_edit"]["source"]["layer"] = json!("deleted");
+        assert!(reserve(&mut db, &root, &changed).is_err());
+        let destination = reserve(&mut db, &root, &request).unwrap();
+        assert!(reserve(&mut db, &root, &request).is_err());
+        publish(&root, &destination, &request);
+        let receipt = recover(&db, &root, "local-1").unwrap();
+        assert_eq!(receipt["context"]["layer_edit"], fixed);
+        assert_eq!(
+            receipt["context"]["target"]["image"],
+            request["recovery"]["original"]
+        );
+        assert_eq!(recover(&db, &root, "local-1").unwrap(), receipt);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn ordered_rgba_receipt_recovers_all_layers_without_resending() {
+        let (mut db, root, mut project, mut request) = setup();
+        let fixture: Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/layered.json")).unwrap();
+        project["panels"][0]["image"] = fixture["original"].clone();
+        project["jobs"][0]["kind"] = json!("decompose");
+        project["jobs"][0]["layered"] = json!({"width":256,"height":256,"layer_count":2});
+        save(&mut db, &root, &project.to_string()).unwrap();
+        request["job"] = project["jobs"][0].clone();
+        request["original"] = fixture["original"].clone();
+        request["width"] = json!(256);
+        request["height"] = json!(256);
+        request["layer_count"] = json!(2);
+        request["recovery"]["kind"] = json!("decompose");
+        request["recovery"]["original"] = fixture["original"].clone();
+        request["recovery"]["layered"] = project["jobs"][0]["layered"].clone();
+        request["recovery"]["panel"]["generation"]["width"] = json!(256);
+        request["recovery"]["panel"]["generation"]["height"] = json!(256);
+        let destination = reserve(&mut db, &root, &request).unwrap();
+        let dir = directory(&root, "local-1").unwrap();
+        let mut layers = Vec::new();
+        for (index, image) in fixture["layers"].as_array().unwrap().iter().enumerate() {
+            let bytes = STANDARD
+                .decode(image.as_str().unwrap().split_once(',').unwrap().1)
+                .unwrap();
+            let name = format!("layer-{index}.png");
+            fs::write(dir.join(&name), &bytes).unwrap();
+            layers.push(json!({"index":index,"filename":name,"hash":hash(&bytes)}));
+        }
+        fs::write(dir.join("receipt.json"), json!({"request_hash":destination["request_hash"],"kind":"ordered-rgba-layers","layers":layers}).to_string()).unwrap();
+        assert!(reserve(&mut db, &root, &request).is_err());
+        let result = recover(&db, &root, "local-1").unwrap();
+        assert_eq!(result["layers"].as_array().unwrap().len(), 2);
+        assert_eq!(result["layers"][1]["image"], fixture["layers"][1]);
+        assert_eq!(recover(&db, &root, "local-1").unwrap(), result);
+        fs::write(dir.join("layer-1.png"), b"broken").unwrap();
+        assert!(recover(&db, &root, "local-1").is_err());
+        fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn source_candidate_generation_checks_base_without_adopting_panels() {

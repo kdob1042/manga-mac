@@ -14,6 +14,7 @@ test('empty project exposes shared artwork and video collections before first sa
 
 test('local restart never bills credits or replays inference; saved artifact becomes one candidate', () => {
   const p = fixture({ provider: 'ltx-mlx', status: 'unknown' });
+  p.jobs[0].manifest = { connection: { id: 'local', provider: 'ltx-mlx', model: 'ltx-2.5' } };
   p.jobs[0].cost = { kind: 'local', amount: null, currency: null };
   const unknown = restoreVideoResults(p);
   assert.equal(unknown.jobs[0].status, 'unknown');

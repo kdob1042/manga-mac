@@ -13,3 +13,15 @@ pub mod storage;
 
 #[path = "../../src-tauri/src/blender.rs"]
 pub mod blender;
+
+#[path = "../../src-tauri/src/blender_live.rs"]
+pub mod blender_live;
+
+#[path = "../../src-tauri/src/blender_gui.rs"]
+pub mod blender_gui;
+
+#[path = "../../src-tauri/src/media.rs"]
+pub mod media;
+
+#[path = "../../src-tauri/src/compositor.rs"]
+pub mod compositor;

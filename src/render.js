@@ -250,10 +250,16 @@ export async function pageLayers(
       ctx.fillRect(2, 2, 716, 716);
       ctx.fillStyle = '#777';
       ctx.font = '30px sans-serif';
-      ctx.fillText('未作画', 30, 50);
+      ctx.fillText('未作画 · 原稿', 30, 50);
+      if (p.sourceRefs?.length) {
+        ctx.font = '24px sans-serif';
+        const preview = lines(ctx, textForRefs(p.sourceRefs, snapshots), 650);
+        preview.slice(0, 18).forEach((line, i) => ctx.fillText(line, 30, 105 + i * 30));
+        if (preview.length > 18) ctx.fillText('… 全文は原稿割当で確認', 30, 675);
+      }
       ctx.restore();
     }
-    if (layer !== 'art') await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
+    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
     if (layer !== 'art') strokeFrame(ctx,slot.points);
   }

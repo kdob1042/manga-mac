@@ -1,3 +1,4 @@
+import NameEditor from './NameEditor.jsx';
 import {produceSourceCandidate} from './production.js';
 import {generatePanel} from './pipeline.js';
 import React,{useRef,useState,useEffect} from 'react';
@@ -11,7 +12,7 @@ import {call,desktop} from './bridge.js';
 import {pagePNG} from './render.js';
 import {pagePanels} from './layout.js';
 const stages={waiting:'依存する範囲の完了待ち',planning:'更新案を計画中',candidate:'更新案を確認できます',drawing:'必要な作画を生成中',stopping:'現在の応答を回収して停止中',stopped:'停止済み・素材を保持',failed:'失敗・候補を保持',complete:'反映済み'};
-export default function SourceUpdate({project,current,commit,acceptSaved,exclusive=fn=>fn(),busy,model}){
+export default function SourceUpdate({project,current,commit,acceptSaved,exclusive=fn=>fn(),busy,model,imageModelId}){
  const scheduler=useRef(createRangeScheduler()),controls=useRef(new Map()),[local,setLocal]=useState([]),[error,setError]=useState('');
  const redraw=()=>setLocal([...controls.current.values()].map(c=>({id:c.id,selection:c.selection,stage:c.stage,note:c.note,workId:c.workId})));
  const sameWork=id=>{if(current.current.workId!==id)throw Error('対象作品が変わりました');};
@@ -46,12 +47,13 @@ export default function SourceUpdate({project,current,commit,acceptSaved,exclusi
  }
  function control(job){let c=controls.current.get(job.id);if(!c){c={id:job.id,runId:job.run?.id??job.id,workId:project.workId,selection:job.run?.selection??job.source_candidate?.prepared.selection??{selectedBlockIds:[]},keys:job.run?.keys??[],model:structuredClone(model),stopped:false,stage:job.run?.stage??'candidate'};controls.current.set(job.id,c);}return c;}
  async function operate(job,action){const c=control(job);if(c.operating)return;c.operating=true;c.stopped=false;setError('');try{if(!c.acquired){await stage(c,'waiting');await scheduler.current.acquire(c.id,c.keys,()=>c.stopped);c.acquired=true;}await action(c);}catch(e){setError(e.message??String(e));await stage(c,c.stopped?'stopped':'failed').catch(()=>{});scheduler.current.release(c.id);c.acquired=false;}finally{c.operating=false;redraw();}}
- async function draw(job){return operate(job,async c=>{
+ async function draw(job,panelIds=null){return operate(job,async c=>{
   let candidate=await refresh(c,current.current.jobs.find(j=>j.id===c.id).source_candidate);
+  if(!candidate.nameConfirmed)throw Error('作画前にネームを確定してください');
   await patchJob(c.id,c.workId,j=>({...j,source_candidate:candidate}));await stage(c,'drawing');
-  await produceSourceCandidate({current:()=>current.current,commit,opId:c.id,generate:generatePanel,recover:jobId=>call('recover_image',{jobId}),cancelled:()=>c.stopped,notify:note=>{c.note=note;redraw();},
+  await produceSourceCandidate({current:()=>current.current,commit,opId:c.id,generate:generatePanel,recover:jobId=>{const job=current.current.jobs.find(j=>j.id===jobId);return job?.media?.adapter_id==='runway-image'?call('recover_cloud_image',{jobId,connectionId:current.current.mediaDefaults?.imageConnection}):call('recover_image',{jobId});},cancelled:()=>c.stopped,notify:note=>{c.note=note;redraw();},
    refresh:async()=>{sameWork(c.workId);const latest=current.current.jobs.find(j=>j.id===c.id).source_candidate;const refreshed=await refresh(c,latest);await patchJob(c.id,c.workId,j=>({...j,source_candidate:refreshed}));},
-  });await stage(c,c.stopped?'stopped':'candidate');if(c.stopped){scheduler.current.release(c.id);c.acquired=false;}
+   imageModelId,panelIds});await stage(c,c.stopped?'stopped':'candidate');if(c.stopped){scheduler.current.release(c.id);c.acquired=false;}
  });}
  async function adopt(job){return operate(job,async c=>{
   const applied=await exclusive(async()=>{sameWork(c.workId);const saved=JSON.parse(await call('load_project'));sameWork(c.workId);acceptSaved(saved);return !!saved.sourcePatchReceipts?.[c.id];});
@@ -68,5 +70,5 @@ export default function SourceUpdate({project,current,commit,acceptSaved,exclusi
  return <><SourceManuscript project={project} busy={busy} pendingBlockIds={pendingBlockIds} current={()=>current.current} onApply={desktop()?propose:undefined}/>
  {!!completed.length&&<details><summary>適用履歴（{completed.length}グループ）</summary><ul>{completed.map(j=><li key={j.id}>適用済み · {j.source_candidate?.reason??'選択した原稿'}</li>)}</ul></details>}
  {error&&<p role="alert">{error}</p>}{!!jobs.length&&<><p>独立した範囲は同時に計画できます。ローカル推論は1件ずつ実行し、混在する範囲は待機します。</p><button onClick={()=>jobs.forEach(job=>void stop(job))}>すべての原稿処理を停止</button></>}
- {jobs.map(job=>{const c=job.source_candidate,stageValue=local.find(x=>x.id===job.id)?.stage??job.run?.stage??'candidate',working=['waiting','planning','drawing','stopping'].includes(stageValue)&&controls.current.has(job.id);return <section key={job.id} aria-label="原稿反映の更新案" className="edit-candidate"><h3>原稿反映の更新案</h3><p>{stages[stageValue]??stageValue}</p>{local.find(x=>x.id===job.id)?.note&&<p>{local.find(x=>x.id===job.id).note}</p>}{c?<><p>{c.reason}</p><p>変更後 {c.patch.panels.length}コマ・{c.patch.layout.pages.length}ページ / 新規作画 {c.redrawPanelIds.length}コマ</p>{!!c.redrawPanelIds.length&&<button disabled={busy||working} onClick={()=>void draw(job)}>画像AIで不足分を作画・再開</button>}<button disabled={busy||working||!!c.redrawPanelIds.length} onClick={()=>void adopt(job)}>この更新案を適用</button></>:!working&&<p>計画は未確定です。現在の差分を選び、明示的に再計画してください。</p>}<button disabled={['stopped','stopping'].includes(stageValue)} onClick={()=>void stop(job)}>この範囲を停止</button><button disabled={working} onClick={()=>void operate(job,async control=>{await patchJob(job.id,control.workId,j=>({...j,status:'cancelled'}));scheduler.current.release(job.id);control.acquired=false;control.stage='stopped';})}>取り下げる</button></section>;})}</>;
+ {jobs.map(job=>{const c=job.source_candidate,stageValue=local.find(x=>x.id===job.id)?.stage??job.run?.stage??'candidate',working=['waiting','planning','drawing','stopping'].includes(stageValue)&&controls.current.has(job.id);return <section key={job.id} aria-label="原稿反映の更新案" className="edit-candidate"><h3>原稿反映の更新案</h3><p>{stages[stageValue]??stageValue}</p>{local.find(x=>x.id===job.id)?.note&&<p>{local.find(x=>x.id===job.id).note}</p>}{c?<><p>{c.reason}</p><NameEditor project={project} candidate={c} busy={busy||working} model={model} onDraw={ids=>draw(job,ids)} onChange={value=>{if(current.current.jobs.some(j=>j.sourcePatchOp===job.id&&['running','unknown','candidate'].includes(j.status)))throw Error('未確定の作画を回収してからネームを編集してください');return patchJob(job.id,project.workId,j=>({...j,source_candidate:value}));}}/><p>変更後 {c.patch.panels.length}コマ・{c.patch.layout.pages.length}ページ / 新規作画 {c.redrawPanelIds.length}コマ</p>{!!c.redrawPanelIds.length&&<button disabled={busy||working||!c.nameConfirmed} onClick={()=>void draw(job)}>画像AIで不足分を作画・再開</button>}<button disabled={busy||working||!!c.redrawPanelIds.length} onClick={()=>void adopt(job)}>この更新案を適用</button></>:!working&&<p>計画は未確定です。現在の差分を選び、明示的に再計画してください。</p>}<button disabled={['stopped','stopping'].includes(stageValue)} onClick={()=>void stop(job)}>この範囲を停止</button><button disabled={working} onClick={()=>void operate(job,async control=>{await patchJob(job.id,control.workId,j=>({...j,status:'cancelled'}));scheduler.current.release(job.id);control.acquired=false;control.stage='stopped';})}>取り下げる</button></section>;})}</>;
 }

@@ -1,3 +1,4 @@
+import {generatePanel} from './pipeline.js';
 import {withResource} from './execution.js';
 import { activeDirection } from './directing.js';
 import { affectedScenes, revise } from './core.js';
@@ -28,6 +29,7 @@ export async function produceDraft({
   imageOf,
   pagePNG,
   finalizeSource,
+  imageModelId,
 }) {
   if (!current().active) throw Error('まず原作を接続してください');
   let p = current();
@@ -92,12 +94,12 @@ export async function produceDraft({
       productionMode === 'blender' &&
       (!panel.capture_revision || activeDirection(current(), id))
     )
-      await stagePanel(id);
+      { const staged = await stagePanel(id); if(staged?.live) throw Error("live編集結果を詳細調整で確認し、候補保存・採用してから続行してください"); }
     if (cancelled()) break;
     setBusy(`${id} を作画中`);
     p = current();
     const livePanel = p.panels.find((x) => x.id === id),
-      job = await beginJob(p, livePanel);
+      job = await beginJob(p, livePanel, 'generate', imageModelId);
     await commit({ ...p, jobs: [...p.jobs, job] });
     try {
       const generated = await generatePanel(
@@ -108,6 +110,9 @@ export async function produceDraft({
         job,
         p.captures?.find((c) => c.id === livePanel.capture_revision),
         p.style_references ?? [],
+        null,
+        null,
+        imageModelId,
       );
       await commit(await finishJob(current(), job, generated, cancelled()));
     } catch (e) {
@@ -167,16 +172,20 @@ export async function produceDraft({
 
 // Reuse the ordinary image jobs and recovery for a source candidate. Only the
 // candidate receives generated panels; the adopted manga remains unchanged.
-export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{}}){
+export async function produceSourceCandidate({current,commit,opId,generate,recover,cancelled=()=>false,notify=()=>{},refresh=async()=>{},imageModelId=null,panelIds=null}){
  const check=()=>{const p=current(),owner=p.jobs.find(j=>j.id===opId&&j.kind==='sourcePatch');
   const c=owner?.source_candidate;if(owner?.status!=='candidate'||!c||c.prepared.identity.workId!==p.workId||c.prepared.identity.baseContentToken!==p.contentToken)throw Error('原稿反映の候補が古いか、取り下げられています');return {p,c};};
+ const frozen=structuredClone(check().p);
  const candidateProject=({p,c})=>({...p,...c.patch});
  const persist=async result=>{const {p,c}=check();const patch={...c.patch,panels:result.panels};const updated={...c,patch,redrawPanelIds:c.redrawPanelIds.filter(id=>!patch.panels.find(p=>p.id===id)?.image)};
   const owned=result.jobs.filter(j=>j.sourcePatchOp===opId);
   return commit(latest=>{if(latest.workId!==p.workId)throw Error('対象作品が変わりました');return {...latest,artworks:[...latest.artworks.filter(a=>!result.artworks.some(b=>b.id===a.id)),...result.artworks],jobs:latest.jobs.map(j=>j.id===opId?{...j,source_candidate:updated}:owned.find(n=>n.id===j.id)??j)};});};
- for(const id of [...check().c.redrawPanelIds]){
+ const targets=panelIds?[...new Set(panelIds)]:[...check().c.redrawPanelIds];
+ if(targets.some(id=>!check().c.redrawPanelIds.includes(id)))throw Error('未作画の候補コマだけを選んでください');
+ for(const id of targets){
   if(cancelled())return;
   await refresh();
+  if(JSON.stringify(check().p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(check().p.style_references)!==JSON.stringify(frozen.style_references))throw Error('参照が変わったため残りの作画を停止しました');
   let cp=candidateProject(check()),panel=cp.panels.find(p=>p.id===id);if(panel.image)continue;
   const pending=cp.jobs.find(j=>j.sourcePatchOp===opId&&j.panelId===id&&['unknown','candidate'].includes(j.status));
   if(pending){
@@ -184,15 +193,37 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
    if(pending.status==='unknown')cp=await recoverImageResult(cp,pending.id,await recover(pending.id));
    await persist(await adoptCandidate(cp,pending.id));continue;
   }
-  const job={...await beginJob(cp,panel),sourcePatchOp:opId};
+  const job={...await beginJob(cp,panel,'generate',imageModelId),sourcePatchOp:opId};
   await commit(p=>{if(p.workId!==cp.workId)throw Error('対象作品が変わりました');return {...p,jobs:[...p.jobs,job]};});notify(`${id} の必要な作画を生成中`);
   let submitted=false;
   try {
-   const generated=await withResource('local-inference',1,async permit=>{await refresh();submitted=true;return generate(panel,cp.characters,null,'',job,null,cp.style_references??[],null,permit);},{cancelled,waiting:()=>notify('ローカル推論は1件ずつ実行します。順番を待っています')});
+   const generated=await withResource('local-inference',1,async permit=>{await refresh();submitted=true;return generate(panel,cp.characters,null,'',job,null,cp.style_references??[],null,permit,imageModelId,'direct');},{cancelled,waiting:()=>notify('ローカル推論は1件ずつ実行します。順番を待っています')});
    await refresh();
    await persist(await finishJob(candidateProject(check()),job,generated));
   }catch(e){
    const p=current();if(p.workId===cp.workId)await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:submitted?'unknown':'cancelled',...(!submitted?{notSubmitted:true}:{})}:j)}));throw e;
   }
+ }
+}
+
+// Freeze the batch before the first request. Each saved job is the recovery boundary.
+export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false,capture=false}){
+ const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
+ if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
+ const selected=targets.filter(p=>regenerate||!p.image);
+ for(const panel of selected){
+  if(frozen.jobs.some(j=>j.panelId===panel.id&&['running','unknown','candidate'].includes(j.status)))throw Error('未確定の要求・保存済み候補を先に確認してください');
+  for(const id of panel.characterIds)if(!frozen.characters.find(c=>c.id===id&&c.image&&c.hash))throw Error('人物の参照画像がありません');
+ }
+ for(const [i,original] of selected.entries()){
+  if(cancelled())break;
+  const p=current(),panel=p.panels.find(x=>x.id===original.id);
+  if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
+  const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId);
+  await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
+  try{
+   const result=await generate(panel,frozen.characters,null,'',job,capture?frozen.captures?.find(c=>c.id===panel.capture_revision):null,frozen.style_references??[],null,null,imageModelId,capture?'capture':'direct');
+   await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
+  }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
 }

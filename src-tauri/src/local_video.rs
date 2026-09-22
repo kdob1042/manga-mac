@@ -1,5 +1,5 @@
 //! Local CLI adapter; no model downloads, shell, HTTP client or provider fallback.
-use crate::{runway, storage};
+use crate::{media, runway, storage};
 use rusqlite::Connection;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -82,8 +82,6 @@ pub fn validate_config(mut input: Registration) -> Result<Registration, String> 
     Ok(input)
 }
 
-pub const RATIOS: [&str; 3] = ["512:512", "512:320", "320:512"];
-
 fn validate_input(manifest: &Value, image: &str, end: Option<&str>) -> Result<Vec<u8>, String> {
     let allowed = [
         "version",
@@ -97,7 +95,14 @@ fn validate_input(manifest: &Value, image: &str, end: Option<&str>) -> Result<Ve
         "ratio",
         "connection",
         "base_revision",
+        "request_profile",
+        "audio",
+        "billing",
     ];
+    let selected = media::video_model_from_connection(&manifest["connection"])?;
+    let version = manifest["version"]
+        .as_u64()
+        .ok_or("動画要求の版が不正です")?;
     let inputs = manifest["providerInputs"]
         .as_array()
         .ok_or("開始画像がありません")?;
@@ -106,7 +111,9 @@ fn validate_input(manifest: &Value, image: &str, end: Option<&str>) -> Result<Ve
         .is_some_and(|m| m.keys().all(|k| allowed.contains(&k.as_str())))
         || end.is_some()
         || inputs.len() != 1
-        || manifest["version"] != 1
+        || ![1, 2].contains(&version)
+        || selected.adapter_id != "ltx-mlx"
+        || selected.request_profile != "distilled-low-ram-v1"
         || manifest["connection"]["provider"] != "ltx-mlx"
         || manifest["connection"]["model"] != "ltx-2.5"
         || manifest["duration"] != 5
@@ -119,11 +126,29 @@ fn validate_input(manifest: &Value, image: &str, end: Option<&str>) -> Result<Ve
     }
     let ratio = manifest["ratio"].as_str().ok_or("寸法がありません")?;
     let prompt = manifest["prompt"].as_str().ok_or("指示がありません")?;
-    if !RATIOS.contains(&ratio) || prompt.trim().is_empty() || prompt.encode_utf16().count() > 1000
+    if !selected.ratios.iter().any(|r| r == ratio)
+        || !selected
+            .durations_sec
+            .contains(&manifest["duration"].as_u64().unwrap_or(0))
+        || prompt.trim().is_empty()
+        || prompt.encode_utf16().count() as u64 > selected.max_prompt_utf16
     {
         return Err(
             "ローカル動画は512:512 / 512:320 / 320:512と1000文字以内の指示に対応します".into(),
         );
+    }
+    if version == 2 {
+        if manifest["request_profile"].as_str() != Some(selected.request_profile.as_str())
+            || manifest["audio"] != false
+        {
+            return Err("保存済みローカル動画の実行契約が登録情報と一致しません".into());
+        }
+        runway::validate_billing_snapshot(&selected, manifest, 5, ratio)?;
+    } else if manifest.get("request_profile").is_some()
+        || manifest.get("audio").is_some()
+        || manifest.get("billing").is_some()
+    {
+        return Err("旧動画要求へ新しい実行条件を追加できません".into());
     }
     Ok(runway::frame_bytes(&inputs[0], image, ratio, "開始画像")?.0)
 }
@@ -422,6 +447,98 @@ mod tests {
         db.execute("INSERT INTO project VALUES(1,?1)", [project.to_string()])
             .unwrap();
         Mutex::new(db)
+    }
+
+    fn current_manifest(f: &mut Fixture) {
+        let selected = media::video_model_from_connection(&f.manifest["connection"]).unwrap();
+        f.manifest["version"] = json!(2);
+        f.manifest["connection"]["adapter_id"] = json!("ltx-mlx");
+        f.manifest["request_profile"] = json!(selected.request_profile);
+        f.manifest["audio"] = json!(false);
+        let mut billing = media::video_pricing(&selected, 5, "512:512").unwrap();
+        billing["model_id"] = json!(selected.model_id);
+        billing["request_profile"] = f.manifest["request_profile"].clone();
+        f.manifest["billing"] = billing;
+    }
+
+    #[test]
+    fn shared_registry_contract_rejects_adapter_profile_and_billing_drift() {
+        let mut f = fixture();
+        current_manifest(&mut f);
+        assert!(validate_input(&f.manifest, &f.image, None).is_ok());
+        for key in ["request_profile", "audio", "billing"] {
+            let mut changed = f.manifest.clone();
+            changed[key] = Value::Null;
+            assert!(validate_input(&changed, &f.image, None).is_err());
+        }
+        let mut changed = f.manifest.clone();
+        changed["connection"]["adapter_id"] = json!("runway");
+        assert!(validate_input(&changed, &f.image, None).is_err());
+        let mut changed = f.manifest.clone();
+        changed["billing"]["credits"] = json!(1);
+        assert!(validate_input(&changed, &f.image, None).is_err());
+    }
+
+    #[tokio::test]
+    async fn two_saved_batch_shots_render_once_with_exact_source_refs() {
+        let mut f = fixture();
+        current_manifest(&mut f);
+        f.manifest["source"]["sourceRefs"] = json!([
+            {"snapshotId":"source","sceneId":"s","startCp":1,"endCp":3}
+        ]);
+        let db = database(&f);
+        let mut p = storage::raw_project(&db.lock().unwrap()).unwrap();
+        p["videoShots"][0]["sourceRefs"] = f.manifest["source"]["sourceRefs"].clone();
+        p["videoShots"][0]["sourcePanelId"] = json!("p");
+        p["videoShots"][0]["batchId"] = json!("batch");
+        p["videoShots"][0]["startImage"]["kind"] = json!("artwork");
+        p["panels"] = json!([{
+            "id":"p","snapshotId":"source","sceneId":"s","unitIds":["u"],
+            "sourceRefs":f.manifest["source"]["sourceRefs"],"characterIds":[],
+            "artwork_revision":"a","image":"stored-image-reference"
+        }]);
+        p["artworks"] = json!([{
+            "id":"a","hash":f.manifest["providerInputs"][0]["hash"],
+            "panel":{"image":"stored-image-reference"}
+        }]);
+        let mut shot = p["videoShots"][0].clone();
+        shot["id"] = json!("v2");
+        p["videoShots"].as_array_mut().unwrap().push(shot);
+        let mut job = p["jobs"][0].clone();
+        job["id"] = json!("j2");
+        job["scope"]["id"] = json!("v2");
+        job["manifest"]["scope"]["id"] = json!("v2");
+        p["jobs"].as_array_mut().unwrap().push(job);
+        // Native protects the batch's adopted artwork and exact source selection.
+        for key in ["artwork_revision", "sourceRefs"] {
+            let mut changed = p.clone();
+            changed["panels"][0][key] = Value::Null;
+            assert!(runway::validate_pending_job(&changed, &changed["jobs"][0], "c").is_err());
+        }
+        db.lock()
+            .unwrap()
+            .execute("UPDATE project SET data=?1", [p.to_string()])
+            .unwrap();
+        for id in ["j", "j2"] {
+            let artifact = submit(&db, &f.root, id, "c", &f.config, &f.image, None)
+                .await
+                .unwrap();
+            storage::verify_video(&f.root, &artifact).unwrap();
+            assert!(submit(&db, &f.root, id, "c", &f.config, &f.image, None)
+                .await
+                .is_err());
+        }
+        let saved = storage::raw_project(&db.lock().unwrap()).unwrap();
+        assert_eq!(saved["jobs"].as_array().unwrap().len(), 2);
+        for (index, shot) in saved["videoShots"].as_array().unwrap().iter().enumerate() {
+            assert!(shot["adopted_revision"].is_null());
+            assert_eq!(saved["jobs"][index]["remote"]["status"], "SUCCEEDED");
+            assert_eq!(
+                saved["jobs"][index]["manifest"]["source"]["sourceRefs"],
+                shot["sourceRefs"]
+            );
+            assert!(saved["jobs"][index]["remote"]["reserved_credits"].is_null());
+        }
     }
 
     #[test]

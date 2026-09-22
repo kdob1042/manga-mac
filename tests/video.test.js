@@ -18,14 +18,14 @@ async function fixture() {
 
 test('local MLX uses pinned start image and local cost; provider dimensions do not silently change', async () => {
   const p = await fixture(), shot = p.videoShots[0];
-  await assert.rejects(videoManifest(p, shot, localConnection), /512/);
+  await assert.rejects(videoManifest(p, shot, localConnection), /寸法/);
   shot.ratio = '512:512';
   const started = await beginVideoJob(p, shot.id, localConnection);
   assert.equal(started.job.cost.kind, 'local');
   assert.equal(started.job.manifest.connection.provider, 'ltx-mlx');
   assert.equal(started.job.manifest.providerInputs[0].hash, shot.startImage.hash);
   assert.equal(await videoJobIsCurrent(started.project, started.job), true);
-  await assert.rejects(videoManifest(p, shot, connection), /Runway/);
+  await assert.rejects(videoManifest(p, shot, connection), /寸法/);
   await assert.rejects(beginVideoJob(started.project, shot.id, localConnection), /未確定/);
   assert.deepEqual(started.project.panels, p.panels);
 });
@@ -81,13 +81,41 @@ test('MV-02/03 existing artwork bytes and capture bytes share one resolver, prov
 
 test('MV-04 unsupported controls, reordered/foreign units, missing assets and invalid model fail before transport', async () => {
   const p = await fixture(), shot = p.videoShots[0];
-  for (const patch of [{ duration: 6 }, { ratio: '1920:1080' }, { endImage: shot.startImage }, { depth: 'x' },
+  for (const patch of [{ duration: 11 }, { ratio: '1920:1080' }, { endImage: shot.startImage }, { depth: 'x' },
     { unitIds: [...shot.unitIds].reverse() }, { unitIds: ['other:u0'] }, { characterIds: ['unknown'] },
     { prompt: 'x'.repeat(1001) }, { startImage: { ...shot.startImage, id: 'missing' } }]) {
     await assert.rejects(videoManifest(p, { ...shot, ...patch }, connection));
   }
   await assert.rejects(videoManifest(p, shot, { ...connection, model: 'invented' }));
   await assert.rejects(videoManifest(p, shot, { ...connection, api_key: 'must-not-persist' }));
+});
+
+test('Runway provider accepts another registered model without changing video job contracts', async () => {
+  const p = await fixture(), shot = p.videoShots[0];
+  const turbo = { id: 'turbo', provider: 'runway', model: 'gen4_turbo', adapter_id: 'runway' };
+  const result = await videoManifest(p, { ...shot, duration: 6 }, turbo);
+  assert.equal(result.manifest.connection.provider, 'runway');
+  assert.equal(result.manifest.connection.model, 'gen4_turbo');
+  assert.equal(result.manifest.duration, 6);
+  assert.equal(result.manifest.providerInputs[0].role, 'start_frame');
+  await assert.rejects(videoManifest(p, { ...shot, duration: 11 }, turbo), /尺・寸法/);
+});
+
+test('Seedance jobs pin request profile, silent audio and pricing before paid submission', async () => {
+  const p = await fixture(), shot = p.videoShots[0];
+  const seedance = { id: 'seedance-binding', provider: 'runway', model: 'seedance2_5', adapter_id: 'runway' };
+  const request = await videoManifest(p, shot, seedance);
+  assert.equal(request.manifest.version, 2);
+  assert.equal(request.manifest.request_profile, 'seedance-keyframes-v1');
+  assert.equal(request.manifest.audio, false);
+  assert.deepEqual(request.manifest.billing, {
+    credits: 150, rate: 30, minimum: 80, tier: '720p', checked_at: '2026-09-22',
+    model_id: 'seedance2_5', request_profile: 'seedance-keyframes-v1'
+  });
+  assert.equal(request.manifest.providerInputs.length, 1);
+  const long = { ...shot, prompt: 'x'.repeat(15000) };
+  await assert.doesNotReject(videoManifest(p, long, seedance));
+  await assert.rejects(videoManifest(p, { ...shot, prompt: 'x'.repeat(15001) }, seedance), /指示/);
 });
 
 test('MV-05 input/source/adopted version changes invalidate result; attempts survive abandonment', async () => {

@@ -401,3 +401,167 @@ Nodeの割当・変更・再起動・独立Undo試験、既存回帰、Web build
 - Vite production build成功。初期JSは535.84 kB → 437.31 kB、gzipは171.84 kB → 140.21 kB。JSZip 97.15 kBをCBZ要求時へ遅延。Mac起動時間／推論性能の実測ではない。
 - crop画像のページ描画で同一画像を二度読み込む処理を一回へ統合。ページ内の原文索引を再利用し、割当チェックの反復includesをSetへ変更。
 - Macビルド、実Blender接続、実機画像品質・性能は今回未実施。既存のbridge／canvas-imageへの静的・動的import混在によるVite警告は残る。
+
+## Live Blender A/B（#176/#177）
+
+- Web bundle: pass（2026-09-19）。Python syntax: pass。
+- 固定MIT上流からviewport取得だけ再利用。外部送信・任意Pythonの経路は同梱しない。
+- Mac native build、Blender GUI未保存変更/evaluated state/実viewport/実camera画像: **not_run**（この実行環境にBlender/Macなし）。fixtureや構文成功で実機受入にしない。
+- 実機では同じGUIで選択/frame/lens/constraintを変更→summary/objectで確認、viewport/cameraを別々に取得。file load/undo/redo後の旧epoch拒否、別instance/file接続拒否を確認する。
+
+### Live C（#178）
+
+`node --test tests/live-blender.test.js`: 6件pass。readyのみの未変更完了を拒否、対象詳細→実操作→再観測、推論中の手動変更による未送信計画失効、旧enum外のconstraint操作検証、観測ループ上限、epoch不一致を検証。これらは注入した接続の契約試験であり、実Blender/実モデル試験ではない。
+
+liveのreadyは構造確認の提案として扱い、任意自然言語の見た目を自己申告で合格にしない。人の確認へ戻し、旧撮影で自動作画を進めない。ライブ書込みはobject詳細のIDと版を要求し、既存constraint influence・camera lens・静的transformだけを許可する。未対応operatorをRNAの存在だけで許可しない。
+
+### Live D / 統合（#179）
+
+- Node全体: **214/214 pass**（live専用10件を含む）。AI応答待ちの引継ぎで未送信操作を破棄し、旧撮影へ進まずlive pauseを返す。候補採用で対象コマ以外・原文・旧作画を保持し、Undo用の旧panelsを残す。
+- Python全モジュール構文検査: pass。Web build: pass。
+- Rust live接続の入力・対象照合テストを既存`tests/llm`へ追加。ローカルRust toolchainなしのため**not_run**。GitHub CIの判定はPR参照。
+- Mac GUI、AI→手修正→再開、実constraint influence変更、実pack/copy→候補撮影→採用→Undo、実モデルの状態に応じた手順選択: **not_run**。実装・契約試験と区別し、#176〜#179は受入確認までopenを維持。
+
+### Live Blender 実GUI検証の確定結果
+
+2026-09-19、[GitHub Actions run 35474952384](https://github.com/kdob1042/manga-mac/actions/runs/35474952384) / commit `007f9c1c310f4508197308e45af7f674504908eb`でLinux GUI（Xvfb、Blender 4.5.13）の実MCP試験を実施し、下記をpassとした。上記の初期not_run記録のうちLinux GUI/Rust分を更新する。
+
+- 認証拒否、未保存のlens/frame変更取得、evaluated world取得。
+- 古い観測版による書込み拒否、実在constraint influence変更と読戻し。
+- 手動引継ぎ中のAI書込み拒否。
+- viewport screenshotとcamera render両方のPNG取得。出力を目視確認し、空画像でないことと両者が異なる視点であることを確認。
+- pack/save copyによる新規blend取得。元GUIの未保存file状態を保持。
+- 既存headless実撮影/再読込/IPC、Rust契約・clippy、storage、Web/UIも成功。
+
+成果物は同runの`Blender-candidate-review`、`blender-results/live-acceptance.json`と両PNG。初回の30秒でcamera renderがタイムアウトしたため、MCP要求を180秒（native 185秒）に制限付きで拡張した。応答不明時の自動再送は行わない。
+
+その後、人物のrename/複製時の明示再割当を追加し、Node **214件pass**、Web build passを確認。Macアプリ本体のnativeビルド・GUI往復、実モデルの自然言語判断、Mac上での候補採用/Undo通し受入と24GB性能は引き続きnot_run。Linuxの合格でMac実機合格へ置き換えない。
+
+未実施のMac実機受入は #184（接続）、#185（観測）、#186（実LLM判断）、#187（制御交代と候補採用）へ移管。親計画 #175 は継続する。追加回帰試験として管理領域とsymlink経由のcheckpoint接続拒否、および実GUIでpending要求中のサーバー停止が2秒未満で戻ることを検査する。最新の実行結果はPR #183のActionsを参照。
+
+### dev統合後のMac native検証
+
+2026-09-19、run 35476194533 / dev `d3b618d` でMac nativeテスト **82 pass / 3 ignored**。Swift画像エンジンとTauriテストのコンパイルは成功。後続clippyは既存のテスト専用`runway::payload`、不要なstruct update、`source_register`のIPC引数数で停止したため、DMG生成は未実施でmain昇格は保留。#189 / PR #190でテスト専用関数のcfg、冗長初期化の除去、互換を維持するIPC境界だけのlint期待値を修正し、devのMacゲートを再実行する。
+
+追試: [run 35477035742](https://github.com/kdob1042/manga-mac/actions/runs/35477035742) / dev `4084260abe77368d5b51126be393695233488cec`（PR #190反映後）で全チェック成功。macOS validationは2026-09-19 23:59 UTCに完了し、nativeテスト **82 pass / 3 ignored**、clippy `-D warnings`、Swift画像エンジン、TauriのApple Silicon向けapp/DMGビルドが成功した。未署名検証DMGは同runの `Manga-Mac-Apple-Silicon-validation` artifact（ID `10595340393`、ZIP SHA-256 `45eba49cf5247b898aa4b777a616541e82cb3903ea6dea69101cbb0d3d260e59`）。前回のclippy失敗は解消済み。
+
+この成功で更新するのはnativeビルド・自動試験の判定であり、Mac実機でのGUI live往復・実LLMの自然言語判断・候補採用/Undo通し受入・24GB性能は未実施のまま。#184〜#187を継続し、#175はopenを維持する。main昇格と配布用DMGはPR #188で追跡する。
+
+### Mac GUIの実MCP受入（#192 / PR #193）
+
+2026-09-20、[run 35480970981](https://github.com/kdob1042/manga-mac/actions/runs/35480970981) / commit `e3d7e087904ae9886c776113c4fcb41c563d95a2`で **macOS 26.6.2 arm64 / Blender 4.5.13 LTS / EEVEE** の実GUI試験14項目がpass。`bpy.app.background=false`、GUI window 1件を実行時に検査した。従来の「Mac GUI未実施」のうち、Blenderアドオン/MCP単体の判定をこの結果で更新する。
+
+- 認証拒否、未保存lens/frame取得、evaluated state、古い観測の拒否、実constraint influence変更。
+- 手動制御中の書込み拒否、viewport offscreen画像、camera render画像、作業状態の新規copy保存、pending要求中のGUI停止。
+- release後の旧client拒否と明示再接続。実undo/redo/file load後のepoch変更・manual制御への移行・旧clientの拒否。再claim後も古い観測による操作を拒否する。
+- 画像を実際に開き、viewportはグリッド・選択表示を持つ作業画面、cameraは別視点の立方体レンダリングで、空画像ではないことを確認。両画像は同じinstance/epochに属し、それぞれの観測revisionと取得方式を記録する。画像同士のrevisionが同じとは仮定しない。
+
+証跡: 同runの `Live-Blender-macOS-GUI` artifact（ID `10595124244`）、`blender-environment.json`、`live-acceptance.json`、両PNG、Blenderログ。Linux追試 [run 35480970949](https://github.com/kdob1042/manga-mac/actions/runs/35480970949) も追加失効ケースを含め成功。
+
+同fixtureには、アプリ本体と同じRust `blender_live::command` を使う実接続試験も追加した。専用Mac workflowでコンパイルしたtest binaryをGUI稼働中に呼び、誤token/instance/file/scene/view layer/作品の拒否、観測、切断・再接続を検査し、`native_client`の結果をJSONへ残す。通常のunit testではGUI必須試験を明示ignoreし、専用workflowでだけ実行する。最新結果はPR #193を参照。
+
+この結果は配布Tauriアプリの設定画面・候補採用/Undoの通し操作、設定済み実LLMの判断、個人Macの24GB性能を含まない。これらは #184 / #186 / #187 で継続する。異なるrig・アドオン・GPU環境すべての互換性やviewport fallbackの全経路を保証する試験でもない。
+
+## GUI統一とCodex引継ぎ（#195）
+
+仕様変更により旧headless自動演出・Web素材取込・撮影UIの試験をGUI接続案内／GUI撮影へ置換。旧成果物の読取・採否復旧・バックアップ契約は保持。旧実行IPCからプロセスを起動できないことを検証する。
+
+追加検証: GUI内render+copyと寸法・依存固定、nativeで候補保存→capture読戻し、manga-mac yield→別MCP client claim→占有中reclaim拒否→release→再観測。実CodexアプリのComputer Use操作そのものはこのfixtureでは検証しない（#187）。試験結果はPRに記録する。
+
+### #197 GUI自動起動・作業フォルダ・カメラ拡張
+
+- ローカル: Web build、live判断の既存回帰とカメラ回転/注視点の検証を実行。Python構文確認。
+- CI追加: 実Blender 4.5.13 GUIをnative launcherが起動し、同じinstanceの再利用、別コマへの暗黙切替拒否、カメラ回転と注視点の実値読戻し、作業保存、切断/再接続を検証する。
+- 2026-09-20: commit `c1f68da` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35490889836)成功。保存→プロセス終了→再開と、素材原本から別作業へのコピー作成・原本不変も実Blenderで確認。読み込み直後のGUI context不足を修正した後の結果。
+- 同commitの[共通CI](https://github.com/kdob1042/manga-mac/actions/runs/35490889946)でweb/storage/llm/blender成功。ブラウザは48件成功。実Macアプリの視覚品質、実Codex Computer Use、参照画像からの実モデル生成はこのfixtureの合格では代替しない（#184/#187/#199）。
+
+### #199 制作依頼と複数アングル
+
+- 制作依頼の原文範囲・参照bytes/hash・秘密情報除外・古いGUI識別子の拒否をNodeで検証。
+- 3候補を保存しても採用版/他コマ/原文が変わらず、途中の停止や手動変更時は残りを撮らず完成済み候補を残すことをNodeで検証。
+- 2026-09-20: `6a71a78` の[Mac実GUI試験](https://github.com/kdob1042/manga-mac/actions/runs/35491679314)で、同じSceneの2角度を実描画して画像hashが異なること、camera location/rotationの復元、撮影後の観測版の読戻しを確認。共通CI（35491679300）のweb/storage/llm/blenderも成功。
+- 追加のZIP展開試験を含むローカルNode215件成功。`3afc466` の[ブラウザCI](https://github.com/kdob1042/manga-mac/actions/runs/35492221353)で49件成功。3候補生成→制作依頼ZIP→MCP解放の操作順も確認。
+- 実参照画像からのモデル生成、実MacのCodex操作、人物・演出の見た目の品質は未受入。
+
+
+## Mac上のCodexによる実地確認（#184 / #186 / #187）
+
+実施担当は対象Mac上のCodex。利用者へ試験一式を渡さず、Codexがアプリと同じBlender GUIを操作し、結果・不具合を記録する。Macの画面操作/MCPにアクセスできる環境で実施し、OSの権限許可・本人認証・必要な資格情報の入力だけ利用者へ依頼する。アクセスできない環境では未実施と記録し、CI成功で代替しない。
+
+1. 対象DMGのcommit・macOS/Blender版を記録。試験用作品でアプリからBlenderを起動し、instance/file/sceneと未保存変更の読取りを確認する。
+2. アプリから演出指示と複数アングル撮影を行い、実画像を比較する。実LLM未設定なら演出判断の項目だけ未実施とする。
+3. 「MacのCodexへ渡す」で制作依頼ZIPを読み、同じGUIをMCPまたは利用可能なComputer Useで編集する。引継ぎ中のアプリ自動書込み停止を確認し、操作権を戻して再観測・人物対応を確認する。接続手順は[導入ガイド](INSTALL_MAC.md#macのcodexで同じblenderを操作する)を参照。
+4. 新しい候補を採用→Undo→アプリ再起動で確認する。原稿・他コマ・旧採用版を保持し、開いているGUIには明示再接続する。
+
+関連Issueへ環境/commit・使った操作経路（MCP/Computer Use）・項目ごとの成功/失敗/未実施・画面または画像の証跡を残す。token/APIキーは記録しない。使っていない操作経路まで合格扱いしない。モデル自動生成は #201 の別受入とする。
+
+
+## Tripo連携の実地確認（#201）
+
+実施担当は対象Mac上のCodex。実APIキー・課金が必要な項目は利用者が専用キーと上限を確認した場合だけ実施し、キーやtask URLをIssue・ログ・証跡へ記録しない。Linuxのfixture、Node/Rustの契約試験、GLB fixtureだけではTripoの生成品質受入にしない。
+
+1. Tripoのテスト用人物正本を1枚登録し、設定で固定モデル版 v2.5-20250123、送信対象、補足指示、credits上限を確認する。接続登録だけで課金要求が出ないこと、balance照会が機能することを確認する。
+2. 生成を1回実行し、UIに保存済みtask IDとqueued/running/success等の状態が表示されることを確認する。ネットワークを中断した応答不明ケースでは再送せず、再起動後の再登録で同じtaskを照会できることを確認する。
+3. success後にGLBを取得し、素材フォルダに検証済みファイルができること、プロジェクトへartifact file/hashだけが残ること、APIキー・署名URL・不要なprovider応答が残らないことを確認する。
+4. アプリが起動した同じBlender GUIへ「同じBlender GUIへ取り込む」を押す。file/scene/view layer/観測版一致、手動handoff、標準GLB import、新規オブジェクトの再観測を記録する。別instance・別作品・managed checkpointへの接続やpath指定が拒否されることを確認する。
+5. 取り込んだモデルを同じSceneで調整し、既存のカメラ変更・複数アングル候補・Codex/人への引継ぎへ進む。元の人物正本、原稿、他コマ、旧採用版が変わらないことを確認する。
+
+記録するのは対象Mac/Blender/app commit、項目ごとのpass/fail/not_run、生成物のhashと画面または画像証跡だけ。APIキー・Bearer token・署名URLは記録しない。Tripoの実モデル品質、料金表示、利用規約適合、複数画像/multiviewは結果を別Issue/#201へ残し、fixture成功で完了扱いにしない。
+
+## Issue #213 — 画像・動画の軽量モデル切替基盤（2026-09-20）
+
+実装した判定境界:
+
+| 検証 | 結果 |
+|---|---|
+| `src/media-registry.json`の実装済み項目だけをUI選択肢へ公開 | Node `tests/media.test.js`で確認。画像はFLUX.2 klein 4B、動画はRunway gen4.5のみ |
+| 画像要求へregistry ID・adapter・model・step数を固定し、モデル依存の寸法を検査 | Nodeで確認。既存画像要求・仕上げ・局所修正は同じ候補／採用経路を使用 |
+| 動画接続・manifestのprovider/model/adapter固定、尺・比率・終端画像能力の送信前検査 | 既存動画回帰＋media testで確認。fixtureの終端画像adapterはUI registryへ公開しない |
+| 任意モデル名・provider・adapter、未実装モデル、cloud fallback、旧Jobの付替えを拒否 | JS/native境界を追加。native Rust試験はRust toolchain未配置のため`not_run` |
+| UI選択→native生成入口の経路、明示prepare、Jev非使用 | `npm run build`成功。Mac UI・Swift helper・実モデルは`not_run` |
+
+ローカル確認: `npm ci --ignore-scripts`、`npm test` **222件pass**、`npm run build` pass、`git diff --check` pass。Rustの`cargo fmt`／`cargo test`／`clippy`は、この作業環境に`cargo`／`rustc`がないため未実行。Apple SiliconのSwift/Tauriビルド、FLUX実生成、Runwayの有料API、Mac上のcandidate採用・Undo・再起動復旧は、対象MacのCI／実機受入で別途確認する。
+
+
+## #213 モデル選択の補正（2026-09-21）
+
+Node回帰222件とVite buildは補正後に成功。モデル選択・Job固定・参照上限・再登録復旧を追加検証する。Swift helperはnativeの解決済みモデルを利用し、単一画像契約で複数結果を黙って捨てない。6-bit重みの実推論、Macネットワーク遮断下のSDK動作、24GB性能は `not_run`。CI・Macビルド結果はPR #215の最新headを参照。
+
+### Layered RGBA adapter（#222）
+
+`tests/swift/LayerPNGTests.swift`は透明白・不透明赤・半透明緑・青の人工ARGB tensorを
+straight RGBA/sRGB PNGへ書き、ImageIOで読み返す。`.github/workflows/helper-contracts.yml`
+でこの試験と実SDK公開APIのコンパイルを実行する。モデル重みは取得しない。
+Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。Rustでは多層receiptの回収と
+破損／二重送信拒否を確認する。実Qwen推論、層の意味、原画との視覚的一致、24GB性能はnot_run。
+### Compositor外部接続（#217）
+
+- 上流pin: `c39da13b5db11bc8678ec04a7a748e1e0a589244`、format v8、macOS 26.5。
+- `integrations/compositor/build.sh <empty-directory>` は上流に接続口を追加した別アプリをビルドする。
+- `.github/workflows/compositor.yml` は実アプリに人工RGBA背景＋人物を渡し、位置変更、古いrevision拒否、
+  手動引継ぎ、同一snapshotのpackage／PNG、元画素と対象外レイヤーの保持を検証する。
+- AI推論、24GBでの性能、参照付き編集、ユーザーによる手動操作の視覚受入は `not_run`。
+- この試験だけではmanga-macのnative/UI/候補採用までの一連の完了を意味しない。
+
+### 参照付き局所色編集（#224）
+
+- Node fixture: 対象／文脈／人物画像の実入力と役割／hash固定。
+- Rust PNG fixture: 低alpha=1、透明画素のhidden RGB、半透明の範囲外画素をPNG decode→色合成→encode→decodeで完全保持。Canvasを通さない。
+- 実Compositor fixture: 対象RGBA／文脈の書出し、正規化候補を別レイヤーへ取込み、元素材保持、再起動後の合成一致。
+- 参照画像を使う実FLUX推論と見た目の人物同一性、24GB性能はnot_run。fixtureを画質受入とはしない。
+
+## 2026-09-22: 動画バッチ再開・停止（Issue #271 / PR #272）
+
+- 対象: dev `1f5767d` 起点。保存済みbatchId/jobsから未送信分を復元、モデル・接続・レシピ変更で確認失効、未送信分停止を追加。
+- `npm test`: 254成功。既送信/候補/unknownの除外、全件事前検証、保存失敗時送信0件、失敗時停止を含む。
+- 動画UI: 6成功（既存3＋再開/通信断/停止/モデル・尺変更3）。3コマの2件目で応答消失後、再起動して3件目だけ送信するIPC fixtureで重複要求0件を確認。
+- `npm run build`、`git diff --check`: 成功。既存のchunkサイズ警告あり。
+- 実Runway課金・LTX実推論・Mac実再生/24GB性能は未実施。実機残確認は #266、LTX接続統合は #166 / PR #167。
+
+## 2026-09-22: LTX共有バッチ統合（Issue #166 / PR #167）
+
+- PR #167の旧実装を現行devへ統合し、`ltx-2-5-mlx-local`を共有registry/runtime・動画接続画面へ接続。既存videoShots/jobs/候補・採用経路を共用。
+- Node全体: 257成功。動画UI: 9成功（バッチ回帰6＋ローカル単発/3コマ逐次/既存復旧3）。3コマすべての候補保存、cloud IPC 0件、再起動後の再送0件を確認。
+- Rust native fixture: 100成功／既存の外部依存4件ignored。ローカル7件、Runway13件を含む。2ショットを疑似CLI→実FFmpeg→不変artifact保存で逐次処理し、同一Job再実行・古い原稿範囲/採用作画の拒否を確認。
+- `cargo fmt --check`、`cargo clippy --all-targets -- -D warnings`: 成功。
+- LTX実モデル推論・Mac実再生・24GB性能は未実施。CLI/モデル自動取得なし。Mac実機受入は #266 に集約。
