@@ -116,6 +116,9 @@ export function classifyFiles(files, context = {}) {
     } else if (file === "playwright.config.js") {
       mark(result, "web");
       result.runUi = true;
+    } else if (file.startsWith("contracts/name-plan/")) {
+      mark(result, "web"); mark(result, "storage");
+      result.runUi = true; result.runLive = true; result.runMac = true; result.runRelease = true;
     } else if (file.startsWith("src/")) {
       mark(result, "web");
       result.runRelease = true;

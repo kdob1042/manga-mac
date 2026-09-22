@@ -1,3 +1,4 @@
+import { NAME_EDIT_FIELDS, nameEditState, validateV2State } from './name-v2.js';
 import {checkVisualEdit,regionForEdit,letteringRegions} from './visual-regions.js';
 import { defaultLettering, validateLettering, setLettering, isCustomLetteringBox } from './lettering.js';
 import { validateLayout, layoutWarnings, changeLayout, pagePanels } from './layout.js';
@@ -113,6 +114,13 @@ export function executeLocalEdits(project, candidate) {
 export function undoEdit(project, redo=false) {
   const from=redo?'editRedo':'history',entry=project[from]?.at(-1);
   if(!entry) return project;
+  if(entry.nameEdit) {
+    const expected=redo?entry:entry.after,target=redo?entry.after:entry;
+    if(JSON.stringify(nameEditState(project))!==JSON.stringify(nameEditState(expected)))throw Error('別の編集があるため先にその操作を戻してください');
+    const restored=Object.fromEntries(NAME_EDIT_FIELDS.map(key=>[key,structuredClone(target[key])]));
+    const next={...project,...restored,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?(project.editRedo??[]).slice(0,-1):[...(project.editRedo??[]),entry]};
+    validateV2State(next);return next;
+  }
   if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(entry.sourcePatch) {
     const fields=['panels','layout','sourceApplication',...['layoutHistory','layoutRedo'].filter(k=>entry[k]!==undefined)],expected=redo?entry:entry.after,target=redo?entry.after:entry;

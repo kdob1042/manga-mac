@@ -67,3 +67,14 @@ input[type="checkbox"] { width: auto; }
 
 .video-transition-option{display:grid;gap:4px}.video-transition-thumbnails{display:flex;gap:8px;max-width:360px}.video-transition-thumbnails img{width:160px;height:160px;object-fit:contain;background:#f3f3ef;border:1px solid #d6d9d2;border-radius:4px}
 .video-batch-row{display:grid;grid-template-columns:minmax(120px,180px) 1fr;gap:8px 14px;align-items:start;padding:14px;margin:12px 0;border:1px solid #d6d9d2;border-radius:8px;background:#fafbf8}.video-batch-row>.shot-preview{grid-row:2/6;max-height:180px;margin:0}.video-batch-row>label,.video-batch-row>p{margin:0}.video-batch-row>.video-source{max-height:100px;overflow:auto;white-space:pre-wrap}@media(max-width:760px){.video-batch-row{grid-template-columns:1fr}.video-batch-row>.shot-preview{grid-row:auto;max-height:240px}}
+
+/* Name planning stays in the existing draft workspace. */
+.name-plan-controls { margin-block: 1rem; padding-block: .6rem; border-top: 1px solid #ddd; }
+.name-plan-controls textarea { width: 100%; min-height: 6rem; resize: vertical; }
+.name-plan-controls button { margin: .25rem .2rem .25rem 0; }
+.name-plan-controls label { display: block; margin-block: .5rem; }
+.name-atom-list { max-height: 20rem; overflow: auto; }
+.name-atom-list label { display:flex; align-items:flex-start; gap:.4rem; }
+.name-atom-list span { white-space:pre-wrap; overflow-wrap:anywhere; }
+.name-proof-scroll { overflow:auto; max-height:70vh; max-width:100%; }
+.name-plan-controls small { display:block; line-height:1.5; }

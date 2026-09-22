@@ -31,6 +31,10 @@ export async function produceDraft({
   finalizeSource,
   imageModelId,
 }) {
+  if (current().namePlan?.format === 'manga-mac/name-plan/v2') {
+    const {produceNameDraft} = await import('./name-v2-production.js');
+    return produceNameDraft({current,commit,cancelled,model,productionMode,setBusy,setNotice,showProof,stagePanel,planScene,generatePanel,askLLM,imageOf,pagePNG,finalizeSource,imageModelId});
+  }
   if (!current().active) throw Error('まず原作を接続してください');
   let p = current();
   const snapshot = p.snapshots.find((s) => s.id === p.active),

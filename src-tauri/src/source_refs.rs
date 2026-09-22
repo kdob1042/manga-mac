@@ -1,3 +1,5 @@
+#[path = "name_plan.rs"]
+mod name_plan;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 fn hash(text: &str) -> String {
@@ -101,6 +103,7 @@ pub fn validate(project: &Value) -> Result<(), String> {
         Ok(())
     }
     panels(project, project)?;
+    name_plan::validate(project)?;
     validate_application(project)
 }
 fn intersects(a: &Value, b: &Value) -> bool {
@@ -233,7 +236,8 @@ pub fn validate_application(p: &Value) -> Result<(), String> {
     Ok(())
 }
 pub fn token(project: &Value) -> String {
-    let content = json!({"active":project["active"],"snapshots":project["snapshots"],"panels":project["panels"],"layout":project["layout"],"sourceApplication":project["sourceApplication"]});
+    let mut content = json!({"active":project["active"],"snapshots":project["snapshots"],"panels":project["panels"],"layout":project["layout"],"sourceApplication":project["sourceApplication"]});
+    if project["namePlan"]["format"] == "manga-mac/name-plan/v2" { content["namePlan"] = project["namePlan"].clone(); }
     hash(&content.to_string())
 }
 #[cfg(test)]

@@ -139,3 +139,5 @@ test("story-source contract changes run the web contract checks only", () => {
   assert.equal(result.runMac, false);
   assert.equal(result.runUi, false);
 });
+
+test('name contract changes exercise shared native/web and renderer validation',()=>{const r=classifyFiles(['contracts/name-plan/schema.json']);assert.equal(r.runWeb,true);assert.equal(r.runStorage,true);assert.equal(r.runUi,true);assert.equal(r.runLive,true);assert.equal(r.runMac,true);});

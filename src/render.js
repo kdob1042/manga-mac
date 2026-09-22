@@ -55,7 +55,7 @@ export function drawLettering(ctx, text, box, balloon, style = {}) {
     if (kind === 'balloon' && style.tail) {
       ctx.beginPath();
       ctx.moveTo(box.x + box.width * 0.4, box.y + box.height * 0.5);
-      ctx.lineTo(2 + style.tail[0] * 716, 2 + style.tail[1] * 716);
+      ctx.lineTo(style.tailPoint?.[0] ?? 2 + style.tail[0] * 716, style.tailPoint?.[1] ?? 2 + style.tail[1] * 716);
       ctx.lineTo(box.x + box.width * 0.6, box.y + box.height * 0.5);
       ctx.closePath();
       ctx.fill();
@@ -131,7 +131,19 @@ function enterComposition(ctx,slot) {
   ctx.scale(scale, scale);
   return scale;
 }
+function drawNameLettering(ctx,p,slot,snapshots,localizations,locale) {
+  if(!panelHasText(p))return;
+  const frame=contentBox(slot.points),layout=validateLettering(p,p.lettering);
+  if(layout.mode!=='balloons')throw Error(`コマ ${p.id} の掲載文字を枠内に配置してください。全文captionへは戻しません`);
+  for(const [index,box] of layout.boxes.entries()) {
+    if((box.fontSize??48)<32)throw Error(`コマ ${p.id} の文字が小さすぎます。枠・ページを見直してください`);
+    for(const other of layout.boxes.slice(index+1))if(box.x<other.x+other.width&&box.x+box.width>other.x&&box.y<other.y+other.height&&box.y+box.height>other.y)throw Error(`コマ ${p.id} の文字枠が重なっています`);
+    const text=isCustomLetteringBox(box)?box.text:textForRefs(box.sourceRefs,snapshots,locale==='en'?localizations:null);
+    drawLettering(ctx,text,{x:frame.x+box.x*frame.width,y:frame.y+box.y*frame.height,width:box.width*frame.width,height:box.height*frame.height},true,{...box,fontSize:box.fontSize??48,tailPoint:box.tail?[frame.x+box.tail[0]*frame.width,frame.y+box.tail[1]*frame.height]:null});
+  }
+}
 async function drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText) {
+  if(p.namePlanVersion===2)return drawNameLettering(ctx,p,slot,snapshots,localizations,locale);
   const box = contentBox(slot.points);
   const scale = Math.min(box.width / 720, box.height / 1030);
   if (panelHasText(p) && !(draft && p.previewLetteringPending) && scale * 14 < 6)
@@ -243,7 +255,13 @@ export async function pageLayers(
       if (layer !== 'art') strokeFrame(ctx,slot.points);
       continue;
     }
-    if (!p.image) {
+    if (!p.image && p.namePlanVersion===2) {
+      const frame=contentBox(slot.points);
+      ctx.fillStyle='#f6f5f1';ctx.fillRect(frame.x,frame.y,frame.width,frame.height);
+      ctx.fillStyle='#777';ctx.font='22px sans-serif';
+      const intent=lines(ctx,`仮ネーム · ${p.nameIntent??p.id}`,Math.max(1,frame.width-32));
+      intent.slice(0,3).forEach((line,i)=>ctx.fillText(line,frame.x+16,frame.y+frame.height-70+i*24));
+    } else if (!p.image) {
       ctx.save();
       enterComposition(ctx,slot);
       ctx.fillStyle = '#f2f0eb';
@@ -259,7 +277,7 @@ export async function pageLayers(
       }
       ctx.restore();
     }
-    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
+    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length && p.namePlanVersion!==2)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
     if (layer !== 'art') strokeFrame(ctx,slot.points);
   }

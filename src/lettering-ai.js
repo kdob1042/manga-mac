@@ -39,7 +39,7 @@ async function proposeReferencedLettering(project,panel,instruction,ask,visual){
  validateLettering(panel,current);
  const result=JSON.parse(await ask(JSON.stringify({
   task:'漫画の文字配置だけを提案。既存のbox IDを全て同じ順序で一度ずつ残す。本文の追加・省略・変更・分割はしない。既存の追加文字枠はid・本文・全フィールドを保持する。固定した枠は表示方法と全ての値を保持する。座標0〜1、文字サイズ14〜72。重要領域を避け、入りきらなければcaption。原稿の範囲は返さない。',
-  instruction,mode:current.mode,current:{mode:current.mode,boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>box)},
+  instruction:panel.namePlanVersion===2?`${instruction}。v2はコマ全面の正規化座標。文字は原稿由来の確定値を保持、fontSize48以上を基本にし32未満禁止。modeはballoons。収まらなければ文字を減らさずエラーとして返す。`:instruction,mode:current.mode,current:{mode:current.mode,boxes:current.boxes.map(({sourceRefs,unit_id,...box})=>box)},
   boxes:current.boxes.map(box=>isCustomLetteringBox(box)?structuredClone(box):(({sourceRefs,unit_id,...rest})=>({...rest,text:textForRefs(sourceRefs,project.snapshots)}))(box)),
   regions:visual?letteringRegions(project,panel.id,visual):null,
  }),referencedLetteringSchema));
@@ -50,6 +50,7 @@ async function proposeReferencedLettering(project,panel,instruction,ask,visual){
   return {...current.boxes[i],...box,sourceRefs:structuredClone(current.boxes[i].sourceRefs),...(current.boxes[i].unit_id!==undefined?{unit_id:current.boxes[i].unit_id}:{})};
  });
  const layout={...result.layout,boxes};validateLettering(panel,layout);
+ if(panel.namePlanVersion===2&&(layout.mode!=='balloons'||boxes.some(box=>(box.fontSize??48)<32)))throw Error('ネームの文字は省略・縮小せず、枠内配置を見直してください');
  if(current.boxes.some(b=>b.locked)&&current.mode!==layout.mode)throw Error('固定した文字配置の表示方法は変更できません');
  for(const [i,b] of current.boxes.entries())if(b.locked&&!sameLetteringBox(b,{...b,...boxes[i]}))throw Error('固定した文字枠を変更する案は採用できません');
  checkVisualEdit(project,{kind:'lettering',panelId:panel.id,args:layout},visual);

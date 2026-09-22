@@ -33,6 +33,7 @@ export function letteringKind(box) {
 }
 
 export function defaultLettering(panel) {
+  if(panel.requiredText)return {mode:'balloons',boxes:panel.requiredText.map((ref,i)=>({id:`box:${panel.id}:${i}`,sourceRefs:[ref],x:.55,y:.03+i*.9/Math.max(1,panel.requiredText.length),width:.42,height:Math.min(.28,.85/Math.max(1,panel.requiredText.length))}))};
   if(panel.sourceRefs)return {mode:'caption',boxes:panel.sourceRefs.map((ref,i)=>({id:`box:${panel.id}:${i}`,sourceRefs:[ref],x:.55,y:.03+i*.9/Math.max(1,panel.sourceRefs.length),width:.42,height:Math.min(.28,.85/Math.max(1,panel.sourceRefs.length))}))};
   const count = panel.unitIds.length;
   return { mode: 'caption', boxes: panel.unitIds.map((id, i) => ({ id: `letter:${id}`, unit_id: id, x: 0.55, y: 0.03 + i * 0.9 / Math.max(1, count), width: 0.42, height: Math.min(0.28, 0.85 / Math.max(1, count)) })) };
@@ -83,6 +84,6 @@ export function setLettering(project, panelId, layout) {
     const identity=boxes=>boxes.filter(b=>!isCustomLetteringBox(b)).map(b=>({id:b.id,sourceRefs:b.sourceRefs}));
     if(JSON.stringify(identity(layout.boxes))!==JSON.stringify(identity((panel.lettering??defaultLettering(panel)).boxes)))throw Error('文字配置だけの編集で原文対応は変更できません');
   }
-  const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout) } : p);
+  const panels = project.panels.map(p => p.id === panelId ? { ...p, lettering: structuredClone(layout), ...(p.namePlanVersion===2?{letteringStatus:'ready',letteringArtworkRevision:p.artwork_revision??null}:{}) } : p);
   return { ...project, history: [...project.history, { panels: project.panels, layout: project.layout, ...(project.sourceApplication?{sourceApplication:project.sourceApplication}:{}), edit: true, after: {panels,layout:project.layout}, label: '文字配置', at: new Date().toISOString() }], panels, editRedo: [] };
 }
