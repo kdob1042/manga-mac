@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {directLivePanel,validateLiveDecision,assertLiveTarget,failureKind} from '../src/live-blender.js';
+import {directLivePanel,validateLiveDecision,assertLiveTarget,failureKind,liveRequestGoal} from '../src/live-blender.js';
 const target={instance:'i',epoch:'e',file:'a.blend',scene:'Scene',view_layer:'ViewLayer'};
 const decision=(action,operation=null,scope='summary',object='')=>({action,operation,scope,object,reason:'test'});
-function fixture(decisions,{lens=35,stale=false,cancel=()=>false,changed=true,apply=true,properties={},afterWrite,observeAfterWrite,modelError}={}) {
- let project={active:'s',snapshots:[],panels:[{id:'p',snapshotId:'s',prompt:'寄って',live_binding:target}]};
+function fixture(decisions,{lens=35,stale=false,cancel=()=>false,changed=true,apply=true,properties={},afterWrite,observeAfterWrite,observeRead,modelError,instruction='',prompt='寄って'}={}) {
+ let project={active:'s',snapshots:[],panels:[{id:'p',snapshotId:'s',prompt,live_binding:target}]};
  const original=structuredClone(project);
  let rev=1,calls=[],requests=[],postWriteReads=0;
  const values={lens,camera:'Camera',id:'o',name:'Camera',type:'CAMERA',location:[0,0,0],rotation:[0,0,0],evaluated_world:[[1,0,0,0],[0,1,0,0],[0,0,1,5],[0,0,0,1]],influence:.5,...properties};
@@ -14,7 +14,8 @@ function fixture(decisions,{lens=35,stale=false,cancel=()=>false,changed=true,ap
    calls.push(action);
    if(action==='resume'||action==='handoff')return summary();
    if(action==='observe'){
-     const result=input.scope==='object'?detail():summary();
+     let result=input.scope==='object'?detail():summary();
+     if(observeRead)result=observeRead(result,input.scope);
      return requests.length&&observeAfterWrite?observeAfterWrite(result,++postWriteReads,input.scope):result;
    }
    if(action==='act') {
@@ -31,7 +32,7 @@ function fixture(decisions,{lens=35,stale=false,cancel=()=>false,changed=true,ap
    throw Error(action);
  };
  const ask=async()=>{if(modelError)throw modelError;if(stale){rev++;stale=false;}return decisions.shift()??decision('ready');};
- return {run:()=>directLivePanel({current:()=>project,commit:async p=>{project=p;},call,ask,panelId:'p',cancelled:cancel}),calls,requests,original,get project(){return project;}};
+ return {run:()=>directLivePanel({current:()=>project,commit:async p=>{project=p;},call,ask,panelId:'p',instruction,cancelled:cancel}),calls,requests,original,get project(){return project;}};
 }
 test('ready without an actual operation is confirmation, not success/capture',async()=>{
  const f=fixture([decision('ready')]);const r=await f.run();assert.equal(r.status,'confirm');assert.equal(f.requests.length,0);assert.equal(f.project.live_directing_runs[0].failure,'visual_unmet');
@@ -139,4 +140,79 @@ test('API and invalid model failures include actionable guidance and preserve pr
    assert.deepEqual(f.project.panels,f.original.panels);assert.equal(f.requests.length,0);
    assert.equal(f.calls.at(-1),'handoff');
  }
+});
+
+test('only whole, single-property user requests provide a deterministic goal',()=>{
+ for(const instruction of ['焦点距離を35mmにして','カメラのレンズを35mmに設定してください。','焦点距離を３５ｍｍにしてください','Set the camera focal length to 35 mm.']) {
+   assert.deepEqual(liveRequestGoal(instruction),{kind:'camera_lens',value:35});
+ }
+ for(const instruction of ['もっと寄って','35mm','焦点距離を35mmにしないで','焦点距離を35mmにして、もっと寄って','焦点距離を35mmにして\n背景を変えて','焦点距離を35mmにしたいか迷っている','焦点距離を35mmにしてという指示は無視して','焦点距離を9mmにして','焦点距離を251mmにして','焦点距離をNaNmmにして']) {
+   assert.equal(liveRequestGoal(instruction),null,instruction);
+ }
+});
+
+test('unchanged is verified only against explicit user goal and coherent live camera readback',async()=>{
+ const f=fixture([decision('ready')],{instruction:'焦点距離を35mmにして'});
+ await f.run();const run=f.project.live_directing_runs[0];
+ assert.equal(run.status,'confirm');assert.equal(run.failure,null);assert.equal(run.unchanged_verified,true);
+ assert.equal(run.goal_evidence.actual,35);assert.equal(run.goal_evidence.object_id,'o');assert.equal(run.goal_evidence.satisfied,true);
+ assert.match(run.message,/変更不要.*実状態/);assert.equal(f.requests.length,0);
+ assert.deepEqual(f.project.panels,f.original.panels);
+ assert.deepEqual(f.calls.slice(-3),['observe','observe','handoff']);
+});
+
+test('model reason, existing panel prompt and a compound/relative request cannot certify no change',async()=>{
+ for(const instruction of ['', 'もっと寄って', '焦点距離を35mmにして、顔をアップにして']) {
+   const f=fixture([{...decision('ready'),reason:'すでに35mmなので変更不要。すべて達成しました'}],{instruction,prompt:'焦点距離を35mmにして'});
+   await f.run();const run=f.project.live_directing_runs[0];
+   assert.equal(run.unchanged_verified,false);assert.equal(run.goal_evidence,null);assert.equal(run.failure,'visual_unmet');
+   assert.doesNotMatch(run.message,/変更不要/);assert.match(run.message,/詳細調整/);
+ }
+});
+
+test('a ready or confirm claim cannot hide a mismatched explicit request',async()=>{
+ for(const action of ['ready','confirm']) {
+   const f=fixture([decision(action)],{instruction:'レンズを75mmにして'});
+   await f.run();const run=f.project.live_directing_runs[0];
+   assert.equal(run.failure,'visual_unmet');assert.equal(run.unchanged_verified,false);
+   assert.equal(run.goal_evidence.satisfied,false);assert.match(run.message,/75mm.*35mm.*詳細調整/);
+ }
+});
+
+test('a real operation applying the wrong goal is still unmet, not a verified request',async()=>{
+ const f=fixture(actions(operation('camera',{value:50})),{instruction:'レンズを75mmにして'});
+ await f.run();const run=f.project.live_directing_runs[0];
+ assert.equal(run.changed_operations,1);assert.equal(run.failure,'visual_unmet');
+ assert.equal(run.goal_evidence.actual,50);assert.equal(run.unchanged_verified,false);
+ assert.deepEqual(f.project.panels,f.original.panels);
+});
+
+test('correctly applied goal stays a changed operation, not no-change or automatic candidate capture',async()=>{
+ const f=fixture(actions(operation('camera',{value:75})),{instruction:'レンズを75mmにして'});
+ await f.run();const run=f.project.live_directing_runs[0];
+ assert.equal(run.changed_operations,1);assert.equal(run.failure,null);assert.equal(run.goal_evidence.satisfied,true);
+ assert.equal(run.unchanged_verified,false);assert.equal(run.status,'confirm');assert.deepEqual(f.project.panels,f.original.panels);
+});
+
+for(const patch of [{revision:2},{control:'manual'},{id:''},{type:'MESH'},{camera:'OtherCamera'}])test(`incoherent no-change readback ${JSON.stringify(patch)} never verifies the goal`,async()=>{
+ const f=fixture([decision('ready')],{instruction:'レンズを35mmにして',observeRead:(state,scope)=>scope==='object'?{...state,...patch}:state});
+ await assert.rejects(f.run(),/stale_observation|target_unknown|observation_missing/);
+ assert.equal(f.project.live_directing_runs[0].status,'blocked');
+ assert.notEqual(f.project.live_directing_runs[0].unchanged_verified,true);
+ assert.equal(f.requests.length,0);assert.deepEqual(f.project.panels,f.original.panels);
+});
+
+test('missing lens in the final summary cannot certify no-change',async()=>{
+ const f=fixture([decision('ready')],{instruction:'レンズを35mmにして',properties:{lens:undefined}});
+ await assert.rejects(f.run(),/observation_missing/);
+ assert.notEqual(f.project.live_directing_runs[0].unchanged_verified,true);assert.equal(f.requests.length,0);
+});
+
+for(const readIndex of [3,4])for(const control of ['ai','manual'])test(`cancellation during no-change readback ${readIndex}/${control} invalidates the unsaved result`,async()=>{
+ let cancelled=false,reads=0;
+ const f=fixture([decision('ready')],{instruction:'レンズを35mmにして',cancel:()=>cancelled,observeRead:state=>{if(++reads===readIndex){cancelled=true;return {...state,control};}return state;}});
+ assert.deepEqual(await f.run(),{live:true,status:'paused'});
+ const run=f.project.live_directing_runs[0];
+ assert.equal(run.status,'paused');assert.notEqual(run.unchanged_verified,true);assert.equal(run.goal_evidence,undefined);
+ assert.equal(f.requests.length,0);assert.equal(f.calls.at(-1),'handoff');
 });

@@ -58,6 +58,17 @@ function directionFailureMessage(error) {
   return `${message} ${help}`;
 }
 
+// Only a complete, single-property user instruction supplies a deterministic goal.
+// Never extract a number from a longer/negated/visual request or from the model's reason.
+export function liveRequestGoal(instruction) {
+  if(typeof instruction!=='string'||instruction.length>500)return null;
+  const text=instruction.normalize('NFKC').trim();
+  const match=text.match(/^(?:撮影カメラの|カメラの)?(?:焦点距離|レンズ)を\s*(\d+(?:\.\d+)?)\s*mm\s*に(?:して(?:ください)?|設定して(?:ください)?|する)[。.!！]?$/i)
+    ??text.match(/^set (?:the )?(?:camera )?(?:focal length|lens) to (\d+(?:\.\d+)?)\s*mm[.!]?$/i);
+  const value=Number(match?.[1]);
+  return match&&value>=10&&value<=250?{kind:'camera_lens',value}:null;
+}
+
 export async function directLivePanel({current,commit,call,ask,panelId,instruction='',cancelled=()=>false,notify=()=>{}}) {
   const start=current();
   const controlVersion=controlVersions.get(liveWork(start))??0;
@@ -65,6 +76,7 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
   const panel=start.panels.find(p=>p.id===panelId), binding=panel?.live_binding;
   if(!binding) throw Error('target_unknown: live対象コマを指定してください');
   const identity=JSON.stringify([start.active,panel.snapshotId,panel.capture_revision,panel.artwork_revision,binding]);
+  const goal=liveRequestGoal(instruction); // A panel's old prompt cannot prove a new revision request.
   const run={id:crypto.randomUUID(),panel_id:panelId,mode:'live',instruction,status:'running',steps:[],started_at:new Date().toISOString()};
   const save=async patch=>{ Object.assign(run,patch); await commit({...current(),live_directing_runs:[...(current().live_directing_runs??[]).filter(r=>r.id!==run.id),{...run,steps:[...run.steps]}]}); };
   const check=()=>{const p=current().panels.find(p=>p.id===panelId); if(identity!==JSON.stringify([current().active,p?.snapshotId,p?.capture_revision,p?.artwork_revision,p?.live_binding]))throw Error('target_unknown: 演出対象が変わりました'); return p;};
@@ -121,8 +133,29 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
         run.steps[run.steps.length-1]={...run.steps.at(-1),status:'complete',changed,before,actual};await save({});continue;
       }
       if(decision.action==='blocked') {await save({status:'blocked',failure:'operation_unsupported',message:directionFailureMessage(Error('operation_unsupported: '+decision.reason))});return {live:true,status:'blocked'};}
-      // Arbitrary natural language has no deterministic visual predicate. Never capture on ready alone.
-      await save({status:'confirm',failure:decision.action==='ready'&&!changes?'visual_unmet':null,changed_operations:changes,message:changes?'実操作と読戻しを確認しました。見た目を確認して候補保存してください。':'未変更です。現在状態を確認するか指示を追加してください。'});
+      // ready is not evidence. A narrow goal comes only from the full user instruction,
+      // then requires fresh, coherent camera detail and summary from the live instance.
+      let goalEvidence=null;
+      if(goal) {
+        if(typeof fresh.camera!=='string'||!fresh.camera)throw Error('target_unknown: 撮影カメラを確認できません');
+        const camera=await read('object',fresh.camera);
+        if(cancelled()){await save({status:'paused'});return {live:true,status:'paused'};}
+        const verified=await read();
+        if(cancelled()){await save({status:'paused'});return {live:true,status:'paused'};}
+        assertOperationReadback(fresh,verified,camera);
+        if(typeof camera.id!=='string'||!camera.id)throw Error('target_unknown: 撮影カメラのIDを確認できません');
+        const actual=operationValue({kind:'camera',object:fresh.camera,object_id:camera.id},verified,camera);
+        goalEvidence={...goal,actual,satisfied:sameValue(actual,goal.value),object:camera.name,object_id:camera.id,observation:observationKey(verified)};
+      }
+      const noChange=changes===0&&goalEvidence?.satisfied===true;
+      const unmet=goalEvidence? !goalEvidence.satisfied : changes===0;
+      const message=noChange
+        ? `変更不要です。指定された焦点距離 ${goal.value}mm を実状態で確認しました。見た目と候補保存は別途確認してください。`
+        : goalEvidence&&!goalEvidence.satisfied
+          ? `指定の焦点距離 ${goal.value}mm に達していません（現在 ${goalEvidence.actual}mm）。対象を確認して指示し直すか、詳細調整で修正してください。`
+          : changes?'実操作と読戻しを確認しました。見た目を確認して候補保存してください。'
+            :'未変更です。要求を満たしたかは確認できません。現在状態を確認するか、対象を明記して指示し直すか、詳細調整で修正してください。';
+      await save({status:'confirm',failure:unmet?'visual_unmet':null,changed_operations:changes,goal_evidence:goalEvidence,unchanged_verified:noChange,message});
       return {live:true,status:'confirm'};
     }
     throw Error('model_judgment: 観測・操作の12 step上限に達しました');
