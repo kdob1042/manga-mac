@@ -174,6 +174,51 @@ impl Connections {
         );
         Ok(id)
     }
+    pub fn reuse_video_connection(
+        &self,
+        source_id: &str,
+        approved: bool,
+        provider: String,
+        model: String,
+        adapter_id: String,
+    ) -> Result<String, String> {
+        if !approved {
+            return Err("追加する動画モデルの送信先・費用を承認してください".into());
+        }
+        let mut entries = self.video.lock().map_err(|_| failure())?;
+        let source = entries
+            .get(source_id)
+            .cloned()
+            .ok_or("再利用するRunway接続がありません")?;
+        if source.provider != provider || source.adapter_id != adapter_id {
+            return Err("別providerの資格情報を動画モデルへ流用できません".into());
+        }
+        if let Some((id, _)) = entries.iter().find(|(_, value)| {
+            value.provider == provider
+                && value.model == model
+                && value.adapter_id == adapter_id
+                && value.credential == source.credential
+                && value.max_credits == source.max_credits
+        }) {
+            return Ok(id.clone());
+        }
+        if entries.len() >= 8 {
+            return Err("不要な動画接続を解除してください".into());
+        }
+        let id = id();
+        entries.insert(
+            id.clone(),
+            Arc::new(VideoConnection {
+                credential: source.credential.clone(),
+                max_credits: source.max_credits,
+                provider,
+                model,
+                adapter_id,
+            }),
+        );
+        Ok(id)
+    }
+
     pub fn video_connection(&self, id: &str) -> Result<Arc<VideoConnection>, String> {
         self.video
             .lock()

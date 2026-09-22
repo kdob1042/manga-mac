@@ -24,10 +24,15 @@ pub struct VideoModel {
     pub adapter_id: String,
     pub provider: String,
     pub model_id: String,
+    pub request_profile: String,
     pub durations_sec: Vec<u64>,
     pub ratios: Vec<String>,
     pub end_frame: bool,
-    pub credits_per_second: u64,
+    pub max_prompt_utf16: u64,
+    pub min_aspect_ratio: f64,
+    pub max_aspect_ratio: f64,
+    pub output_tiers: Value,
+    pub pricing: Value,
 }
 
 fn registry() -> Result<Value, String> {
@@ -232,6 +237,27 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
     if durations_sec.is_empty() || ratios.is_empty() {
         return Err("動画モデルの入力定義が空です".into());
     }
+    let request_profile = value["request_profile"]
+        .as_str()
+        .ok_or("動画request profile定義が不正です")?
+        .to_owned();
+    let max_prompt_utf16 = input["max_prompt_utf16"]
+        .as_u64()
+        .ok_or("動画prompt上限定義が不正です")?;
+    let min_aspect_ratio = input["min_aspect_ratio"]
+        .as_f64()
+        .ok_or("動画入力比率定義が不正です")?;
+    let max_aspect_ratio = input["max_aspect_ratio"]
+        .as_f64()
+        .ok_or("動画入力比率定義が不正です")?;
+    if max_prompt_utf16 == 0
+        || !min_aspect_ratio.is_finite()
+        || !max_aspect_ratio.is_finite()
+        || min_aspect_ratio <= 0.0
+        || max_aspect_ratio < min_aspect_ratio
+    {
+        return Err("動画モデル定義が不正です".into());
+    }
     Ok(VideoModel {
         adapter_id: value["adapter_id"]
             .as_str()
@@ -239,15 +265,72 @@ pub fn video_model_from_connection(connection: &Value) -> Result<VideoModel, Str
             .into(),
         provider: provider.into(),
         model_id: model_id.into(),
+        request_profile,
         durations_sec,
         ratios,
         end_frame: value["capabilities"]["end_frame"]
             .as_bool()
             .unwrap_or(false),
-        credits_per_second: value["pricing"]["credits_per_second"]
-            .as_u64()
-            .ok_or("動画料金定義が不正です")?,
+        max_prompt_utf16,
+        min_aspect_ratio,
+        max_aspect_ratio,
+        output_tiers: value["output_tiers"].clone(),
+        pricing: value["pricing"].clone(),
     })
+}
+
+pub fn video_pricing(model: &VideoModel, duration: u64, ratio: &str) -> Result<Value, String> {
+    if !model.durations_sec.contains(&duration)
+        || !model.ratios.iter().any(|supported| supported == ratio)
+    {
+        return Err("選択した動画モデルが尺・寸法に対応していません".into());
+    }
+    let pricing = pricing_object(&model.pricing)?;
+    let minimum = pricing
+        .get("minimum_credits")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let (tier, rate) = if let Some(rate) = pricing.get("credits_per_second").and_then(Value::as_u64)
+    {
+        ("default".to_string(), rate)
+    } else {
+        let tiers = model
+            .output_tiers
+            .as_object()
+            .ok_or("動画料金tier定義が不正です")?;
+        let tier = tiers
+            .iter()
+            .find(|(_, ratios)| {
+                ratios
+                    .as_array()
+                    .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(ratio)))
+            })
+            .map(|(name, _)| name.clone())
+            .ok_or("動画料金tierを確認できません")?;
+        let rate = pricing
+            .get("credits_per_second_by_tier")
+            .and_then(Value::as_object)
+            .and_then(|rates| rates.get(&tier))
+            .and_then(Value::as_u64)
+            .ok_or("動画料金定義が不正です")?;
+        (tier, rate)
+    };
+    if rate == 0 {
+        return Err("動画料金定義が不正です".into());
+    }
+    let calculated = rate.checked_mul(duration).ok_or("Invalid cost")?;
+    let estimated = calculated.max(minimum);
+    Ok(json!({
+        "credits": estimated,
+        "rate": rate,
+        "minimum": minimum,
+        "tier": tier,
+        "checked_at": pricing.get("checked_at").cloned().unwrap_or(Value::Null)
+    }))
+}
+
+fn pricing_object(value: &Value) -> Result<&serde_json::Map<String, Value>, String> {
+    value.as_object().ok_or("動画料金定義が不正です".into())
 }
 
 #[cfg(test)]
@@ -294,6 +377,30 @@ mod tests {
         request["recovery"]["kind"] = json!("generate");
         assert!(validate_image_request(&request).is_err());
     }
+    #[test]
+    fn seedance_pricing_and_contract_are_registry_bound() {
+        let model = video_model_from_connection(&json!({
+            "provider":"runway",
+            "model":"seedance2_5",
+            "adapter_id":"runway"
+        }))
+        .unwrap();
+        assert_eq!(model.request_profile, "seedance-keyframes-v1");
+        assert!(model.end_frame);
+        assert_eq!(model.max_prompt_utf16, 15000);
+        assert_eq!(video_pricing(&model, 4, "854:480").unwrap()["credits"], 80);
+        assert_eq!(
+            video_pricing(&model, 5, "1280:720").unwrap()["credits"],
+            150
+        );
+        assert_eq!(
+            video_pricing(&model, 5, "1920:1080").unwrap()["credits"],
+            340
+        );
+        assert!(video_pricing(&model, 3, "1280:720").is_err());
+        assert!(video_pricing(&model, 5, "1000:1000").is_err());
+    }
+
     #[test]
     fn invented_image_model_and_video_adapter_are_rejected() {
         let image = json!({

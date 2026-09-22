@@ -86,6 +86,23 @@ test('Runway provider accepts another registered model without changing video jo
   await assert.rejects(videoManifest(p, { ...shot, duration: 11 }, turbo), /尺・寸法/);
 });
 
+test('Seedance jobs pin request profile, silent audio and pricing before paid submission', async () => {
+  const p = await fixture(), shot = p.videoShots[0];
+  const seedance = { id: 'seedance-binding', provider: 'runway', model: 'seedance2_5', adapter_id: 'runway' };
+  const request = await videoManifest(p, shot, seedance);
+  assert.equal(request.manifest.version, 2);
+  assert.equal(request.manifest.request_profile, 'seedance-keyframes-v1');
+  assert.equal(request.manifest.audio, false);
+  assert.deepEqual(request.manifest.billing, {
+    credits: 150, rate: 30, minimum: 80, tier: '720p', checked_at: '2026-09-22',
+    model_id: 'seedance2_5', request_profile: 'seedance-keyframes-v1'
+  });
+  assert.equal(request.manifest.providerInputs.length, 1);
+  const long = { ...shot, prompt: 'x'.repeat(15000) };
+  await assert.doesNotReject(videoManifest(p, long, seedance));
+  await assert.rejects(videoManifest(p, { ...shot, prompt: 'x'.repeat(15001) }, seedance), /指示/);
+});
+
 test('MV-05 input/source/adopted version changes invalidate result; attempts survive abandonment', async () => {
   const p = await fixture(), shot = p.videoShots[0], { project, job } = await beginVideoJob(p, shot.id, connection);
   assert.equal(await videoJobIsCurrent(project, job), true);

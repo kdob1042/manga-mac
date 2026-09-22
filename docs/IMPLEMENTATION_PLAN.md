@@ -376,7 +376,7 @@ schema 4へv1/v2/v3を互換移行し、既存panels/history/jobsと作品言語
 
 開始画像は既存ArtworkRevisionまたは固定CaptureRevisionから実bytesを解決・hash照合する。jobのmanifestへ原作commit、対象範囲、作成元版、接続ID/モデル、実入力hash、変換、指示、出力条件、基準採用版を固定する。`sourceDependencies`は開始画像の出所、`providerInputs`は実送信する開始画像1枚のみ。旧画像に存在しない人物参照版は捏造しない。現段階は画像変換を行わずidentityを記録する。変換を追加する場合は派生画像の実hashと変換矩形を別途固定する。
 
-クラウド動画はRunway Dev APIをproviderとして使い、実モデルは`src/media-registry.json`のdescriptorで選択する。2026-09-21時点の初期登録は `gen4.5` と `gen4_turbo`。両者はimage_to_videoを同じRunway adapterから呼び、2〜10秒の対応尺、許可ratio、終端画像能力、credits単価をdescriptorで送信前検証する。promptTextは1000 UTF-16 code units以内、画像は5MB以内という既存入力境界を維持する。未登録モデル、未対応の終端画像/depth/pose等を黙って格下げ・fallbackしない。
+クラウド動画はRunway Dev APIをproviderとして使い、実モデルは`src/media-registry.json`のdescriptorで選択する。実装済みは `gen4.5`、`gen4_turbo`、`seedance2_5`。Gen系は開始画像1枚、2〜10秒、prompt 1000 UTF-16 unitsの既存契約を維持する。Seedance 2.5は`seedance-keyframes-v1`の閉じたrequest profileで、開始画像1枚または同一ページ隣接コマのfirst/last、4〜30秒、480p/720p/1080p、prompt 15000 UTF-16 units、`audio:false`を扱う。provider adapterはRunwayで1本のまま、modelごとの尺・ratio・入力aspect・終端画像能力・prompt上限・request profile・料金をdescriptorで送信前検証する。未登録モデルや未対応入力を一般参照や別モデルへ黙って格下げ・fallbackしない。
 
 V-Aの実装は共通参照解決・manifest・保存移行まで。実API送信/動画ファイル保存/再生UIは後続V-B/Cであり、未接続の生成ボタンは表示しない。有料POST前にjobを永続化し、再起動でrunningはunknownへ変更する。未確定要求を再POSTせず、確定済taskを照会する。原作/入力/採用版の変更後に届く結果は候補に留める。試行上限は同じ採用版で3回、取下げでリセットしない。実行許可・予算・資格情報・task永続化はRust接続境界で追加検証するまで外部送信しない。
 
@@ -388,11 +388,11 @@ V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、�
 
 Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
 
-APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratioは保存済みmanifestとregistryから解決する。開始画像はRustで既存作画/固定撮影から再解決し、実bytes・hashを照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)で5MBはbase64化後のData URI全体の上限であることを確認済み。PNG/8192px以下かつ選択モデルで許可したratioと厳密一致する入力だけを送信し、モデルごとの入力aspect制約はregistryで公開するratioへ反映してサービス側の暗黙cropへ依存しない。任意model ID・任意endpoint・任意JSON payloadは受け付けない。
+APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratio/request profileは保存済みmanifestとregistryから解決する。Gen系mapperは従来の`promptImage`文字列と`outputFormat:mp4`を維持する。Seedance mapperは検証済みPNGを`promptImage:[{uri,position:first},{uri,position:last}]`へ変換し、開始画像のみならfirst 1件だけを送る。Seedanceへ`lastFrame`、`outputFormat`、別`resolution`を混ぜず、無音契約のため`audio:false`を明示する。開始／終端画像はRustで既存作画/固定撮影から再解決し、実bytes・hash・寸法・順序を照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)を基に、アプリ独自上限はencoded Data URI 5MB以下・PNG/8192px以下を維持し、モデル別aspectと登録ratioを適用する。自動cropや任意model ID・任意endpoint・任意JSON mapperは使わない。
 
 POST前に既存job.remoteへunknown・予約費用・送信日時をSQLite commitする。受信task IDを即保存。古いUI保存でremoteの削除/巻戻しを許さず、送信後のmanifest等を固定する。新規POSTは同じjobで一回だけ。再起動は既存taskのGETに戻し、取得完了artifactがUI保存前に残った場合も候補として一度だけ再接続する。API成功とローカル保存・採用を分ける。
 
-[公式料金](https://docs.dev.runwayml.com/guides/pricing/)を2026-09-21に再確認し、初期登録ではGen-4.5を12 credits/秒、Gen-4 Turboを5 credits/秒としてdescriptorへ固定する。予約額は`credits_per_second × duration`で送信前に計算し、固定60 creditsを全モデルへ流用しない。利用者の作品累計予約上限、失敗・成否不明・取消時に枠を勝手に戻さない既存ルール、実績超過時の停止は維持する。
+[公式料金](https://docs.dev.runwayml.com/guides/pricing/)を2026-09-22に再確認する。Gen-4.5は12 credits/秒、Gen-4 Turboは5 credits/秒。Seedance 2.5は最低80 credits/生成に加え、480p=20、720p=30、1080p=68 credits/秒で、`max(minimum, rate[tier] × duration)`を用いる。ratio→tier対応、単価、最低料金、確認日をregistryに固定し、Job作成時のbilling snapshotとnative送信直前の再計算が一致しない場合は再承認を要求する。予約額を実請求額とは表示しない。作品累計予約上限、失敗・成否不明・取消時に枠を勝手に戻さない既存ルール、実績超過時の停止は維持する。
 
 task状態はPENDING/THROTTLED/RUNNING/SUCCEEDED/FAILED/CANCELLEDと取消要求中/成否不明を区別する。手動照会は5秒以上間隔をあけ、自動pollや自動再POSTは行わない。公式DELETEは実行中の取消と完了結果の削除を兼ねるため、画面でその影響を明示してから呼ぶ。ローカルの照会停止を取消完了と表示しない。
 
@@ -582,7 +582,7 @@ MCPの排他はこの接続経路の書込みを制御するもので、OSのマ
 現時点の実装済みadapterは次の2つだけである。
 
 - 画像: `media-generation-kit` / FLUX.2 klein 4B（Mac内、Swift helper）。入力寸法・刻み・比率・step数はregistryから読み、`generate`・`edit`・`retake`・`finishing`で同じ候補／採用／Undo／receipt復旧経路を使う。
-- 動画: `runway` provider / Runway Gen-4.5・Gen-4 Turbo（外部、無音・既存Runway REST adapter）。provider adapterは1本だけとし、model ID・対応尺・比率・終端画像能力・credits単価をregistryで固定する。新しいRunway提供モデルは、公式API契約とrequest mappingを確認した上でdescriptorを追加し、上位UI・Job・保存処理へモデル別分岐を増やさない。
+- 動画: `runway` provider / Runway Gen-4.5・Gen-4 Turbo・Seedance 2.5（外部、無音・既存Runway REST adapter）。provider adapterは1本だけとし、model ID・request profile・対応尺・比率・入力aspect・prompt上限・終端画像能力・料金式をregistryで固定する。同じRunway資格情報はnativeメモリ内のモデル別bindingへ明示承認して再利用できるが、旧Jobは保存済みmodel/bindingを正本として回収する。モデル切替時に不適合な尺・ratio・終端・promptを自動修正せず、理由を表示して新しい送信を停止する。
 
 UIからnativeへ渡す生成入口は`src/media-runtime.js`へ集約し、画像は`generate_image`、動画は既存の`video_submit`／`video_task`へ送る。nativeの`src-tauri/src/media.rs`は同じregistryを読み、任意のmodel/provider/adapter/endpoint、未実装項目、対応外の寸法・操作を送信前に拒否する。cloud fallbackや旧Jobの現在選択モデルへの付替えは行わない。旧画像Jobは保存された入力・recoveryを、旧動画Jobはmanifestの接続・モデルを正本としてそのまま復旧する。
 

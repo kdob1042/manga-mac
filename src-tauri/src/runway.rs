@@ -103,6 +103,9 @@ pub fn payload_with_frames(
         "duration",
         "ratio",
         "connection",
+        "request_profile",
+        "audio",
+        "billing",
         "base_revision",
         "transition",
     ];
@@ -137,7 +140,7 @@ pub fn payload_with_frames(
     let duration = manifest["duration"]
         .as_u64()
         .ok_or("動画の尺がありません")?;
-    if prompt.trim().is_empty() || prompt.encode_utf16().count() > 1000 {
+    if prompt.trim().is_empty() {
         return Err("未対応の動画指示です".into());
     }
 
@@ -147,6 +150,7 @@ pub fn payload_with_frames(
     {
         if duration != 5
             || ratio != "960:960"
+            || prompt.encode_utf16().count() > 1000
             || inputs.len() != 2
             || end_image.is_none()
             || inputs[0]["role"] != "start_frame"
@@ -183,31 +187,112 @@ pub fn payload_with_frames(
         || selected.provider != "runway"
         || !selected.durations_sec.contains(&duration)
         || !selected.ratios.iter().any(|supported| supported == ratio)
+        || prompt.encode_utf16().count() > selected.max_prompt_utf16 as usize
     {
-        return Err("選択した動画モデルが尺・寸法に対応していません".into());
+        return Err("選択した動画モデルが尺・寸法・指示に対応していません".into());
     }
-    if inputs.len() != 1
-        || end_image.is_some()
-        || inputs[0]["role"] != "start_frame"
-        || inputs[0]["media_type"] != "image"
-        || inputs[0]["transform"] != json!({"kind":"identity"})
-    {
-        if inputs.len() == 2 && !selected.end_frame {
-            return Err(
-                "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
-            );
+    let (rw, rh) = ratio.split_once(':').ok_or("動画寸法定義が不正です")?;
+    let aspect =
+        rw.parse::<f64>().map_err(|_| failure())? / rh.parse::<f64>().map_err(|_| failure())?;
+    if aspect < selected.min_aspect_ratio || aspect > selected.max_aspect_ratio {
+        return Err("選択した動画モデルが入力画像の縦横比に対応していません".into());
+    }
+    if manifest["version"].as_u64().unwrap_or(1) >= 2 {
+        if manifest["request_profile"].as_str() != Some(selected.request_profile.as_str())
+            || manifest["audio"].as_bool() != Some(false)
+        {
+            return Err("保存済み動画要求の実行契約が登録情報と一致しません".into());
         }
-        return Err("未対応の動画入力です".into());
+        validate_billing_snapshot(&selected, manifest, duration, ratio)?;
     }
-    frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
-    Ok(json!({
-        "model":selected.model_id,
-        "promptImage":start_image,
-        "promptText":prompt,
-        "ratio":ratio,
-        "duration":duration,
-        "outputFormat":"mp4"
-    }))
+
+    match selected.request_profile.as_str() {
+        "gen-image-to-video-v1" => {
+            if inputs.len() != 1
+                || end_image.is_some()
+                || inputs[0]["role"] != "start_frame"
+                || inputs[0]["media_type"] != "image"
+                || inputs[0]["transform"] != json!({"kind":"identity"})
+            {
+                if inputs.len() == 2 && !selected.end_frame {
+                    return Err(
+                        "選択した動画接続・モデルは終端画像に対応していません。有料送信は行いません".into(),
+                    );
+                }
+                return Err("未対応の動画入力です".into());
+            }
+            frame_bytes(&inputs[0], start_image, ratio, "開始画像")?;
+            Ok(json!({
+                "model":selected.model_id,
+                "promptImage":start_image,
+                "promptText":prompt,
+                "ratio":ratio,
+                "duration":duration,
+                "outputFormat":"mp4"
+            }))
+        }
+        "seedance-keyframes-v1" => {
+            if !(1..=2).contains(&inputs.len())
+                || inputs[0]["role"] != "start_frame"
+                || inputs[0]["media_type"] != "image"
+                || inputs[0]["transform"] != json!({"kind":"identity"})
+                || (inputs.len() == 2
+                    && (inputs[1]["role"] != "end_frame"
+                        || inputs[1]["media_type"] != "image"
+                        || inputs[1]["transform"] != json!({"kind":"identity"})))
+                || (inputs.len() == 1 && end_image.is_some())
+                || (inputs.len() == 2 && end_image.is_none())
+            {
+                return Err("Seedanceの始端・終端画像契約が不正です".into());
+            }
+            let (_, start_width, start_height) =
+                frame_bytes(&inputs[0], start_image, ratio, "始端画像")?;
+            let mut frames = vec![json!({"uri":start_image,"position":"first"})];
+            if inputs.len() == 2 {
+                let end = end_image.ok_or_else(failure)?;
+                let (_, end_width, end_height) = frame_bytes(&inputs[1], end, ratio, "終端画像")?;
+                if start_width != end_width || start_height != end_height {
+                    return Err(
+                        "始端・終端画像の寸法が一致しません。保存済み変換を用意してから実行してください".into(),
+                    );
+                }
+                frames.push(json!({"uri":end,"position":"last"}));
+            }
+            Ok(json!({
+                "model":selected.model_id,
+                "promptImage":frames,
+                "promptText":prompt,
+                "ratio":ratio,
+                "duration":duration,
+                "audio":false
+            }))
+        }
+        _ => Err("未対応の動画request profileです".into()),
+    }
+}
+
+fn validate_billing_snapshot(
+    selected: &media::VideoModel,
+    manifest: &Value,
+    duration: u64,
+    ratio: &str,
+) -> Result<Value, String> {
+    let expected = media::video_pricing(selected, duration, ratio)?;
+    let saved = &manifest["billing"];
+    if !saved.is_object()
+        || saved["credits"] != expected["credits"]
+        || saved["rate"] != expected["rate"]
+        || saved["minimum"] != expected["minimum"]
+        || saved["tier"] != expected["tier"]
+        || saved["checked_at"] != expected["checked_at"]
+        || saved["model_id"].as_str() != Some(selected.model_id.as_str())
+        || saved["request_profile"].as_str() != Some(selected.request_profile.as_str())
+    {
+        return Err(
+            "動画料金・送信契約が保存後に変更されています。内容を再確認してください".into(),
+        );
+    }
+    Ok(expected)
 }
 
 fn reserve(
@@ -232,10 +317,15 @@ fn reserve(
     if !selected.durations_sec.contains(&duration) {
         return Err("選択した動画モデルが尺に対応していません".into());
     }
-    let credits = selected
-        .credits_per_second
-        .checked_mul(duration)
-        .ok_or("Invalid cost")?;
+    let ratio = job["manifest"]["ratio"]
+        .as_str()
+        .ok_or("動画の寸法がありません")?;
+    let pricing = if job["manifest"]["version"].as_u64().unwrap_or(1) >= 2 {
+        validate_billing_snapshot(&selected, &job["manifest"], duration, ratio)?
+    } else {
+        media::video_pricing(&selected, duration, ratio)?
+    };
+    let credits = pricing["credits"].as_u64().ok_or("Invalid cost")?;
     let jobs = project["jobs"].as_array().ok_or("Missing jobs")?;
     if jobs.iter().any(|j| {
         j["remote"]["actual_credits"].as_u64().unwrap_or(0)
@@ -335,7 +425,15 @@ fn reserve(
     }) {
         return Err("先に未確定要求を確認してください".into());
     }
-    Ok(json!({"status":"unknown","reserved_credits":credits,"submitted_at":now()}))
+    Ok(json!({
+        "status":"unknown",
+        "reserved_credits":credits,
+        "submitted_at":now(),
+        "pricing":pricing,
+        "model":selected.model_id,
+        "request_profile":selected.request_profile,
+        "audio":false
+    }))
 }
 
 async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {
@@ -1012,6 +1110,77 @@ mod tests {
         bad["providerInputs"][0]["hash"] = json!("0".repeat(64));
         assert!(payload(&bad, &image).is_err());
     }
+    fn seedance_fixture(with_end: bool) -> (Value, String, Option<String>) {
+        let (mut manifest, start) = fixture();
+        manifest["version"] = json!(2);
+        manifest["connection"] = json!({"id":"seedance","provider":"runway","model":"seedance2_5","adapter_id":"runway"});
+        manifest["request_profile"] = json!("seedance-keyframes-v1");
+        manifest["audio"] = json!(false);
+        manifest["billing"] = json!({
+            "credits":150,
+            "rate":30,
+            "minimum":80,
+            "tier":"720p",
+            "checked_at":"2026-09-22",
+            "model_id":"seedance2_5",
+            "request_profile":"seedance-keyframes-v1"
+        });
+        if with_end {
+            let bytes = STANDARD.decode(start.split_once(',').unwrap().1).unwrap();
+            let hash = format!("{:x}", Sha256::digest(&bytes));
+            manifest["providerInputs"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({
+                    "id":"b",
+                    "hash":hash,
+                    "size":bytes.len(),
+                    "role":"end_frame",
+                    "media_type":"image",
+                    "transform":{"kind":"identity"}
+                }));
+            (manifest, start.clone(), Some(start))
+        } else {
+            (manifest, start, None)
+        }
+    }
+
+    #[test]
+    fn seedance_payload_uses_keyframes_and_never_gen_specific_fields() {
+        let (single, start, _) = seedance_fixture(false);
+        let body = payload_with_frames(&single, &start, None).unwrap();
+        assert_eq!(body["model"], "seedance2_5");
+        assert_eq!(
+            body["promptImage"],
+            json!([{"uri":start,"position":"first"}])
+        );
+        assert_eq!(body["audio"], false);
+        assert!(body.get("outputFormat").is_none());
+        assert!(body.get("lastFrame").is_none());
+        assert!(body.get("resolution").is_none());
+
+        let (pair, first, last) = seedance_fixture(true);
+        let last = last.unwrap();
+        let body = payload_with_frames(&pair, &first, Some(&last)).unwrap();
+        assert_eq!(body["promptImage"][0]["position"], "first");
+        assert_eq!(body["promptImage"][1]["position"], "last");
+        assert_eq!(body["promptImage"][1]["uri"], last);
+
+        let mut invalid = pair.clone();
+        invalid["providerInputs"][0]["role"] = json!("end_frame");
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair.clone();
+        let duplicate = invalid["providerInputs"][1].clone();
+        invalid["providerInputs"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate);
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+        invalid = pair;
+        invalid["audio"] = json!(true);
+        assert!(payload_with_frames(&invalid, &first, Some(&last)).is_err());
+    }
+
     #[test]
     fn provider_body_preserves_start_end_bytes_and_rejects_runway_fallback() {
         let (manifest, start, end) = transition_fixture();
@@ -1145,6 +1314,52 @@ mod tests {
         assert_eq!(
             reserve(&project, &job, "c", 25).unwrap()["reserved_credits"],
             25
+        );
+    }
+
+    #[test]
+    fn seedance_reservation_uses_tier_rate_and_minimum() {
+        let (manifest, _, _) = seedance_fixture(false);
+        let job = json!({
+            "id":"seedance-job",
+            "scope":{"type":"videoShot","id":"v"},
+            "status":"running",
+            "manifest":manifest,
+            "base_revision":null,
+            "source_revision":"source",
+            "active_snapshot":"source"
+        });
+        let project = json!({
+            "active":"source",
+            "snapshots":[{"id":"source","sha":"sha"}],
+            "jobs":[job],
+            "videoShots":[{
+                "id":"v",
+                "adopted_revision":null,
+                "snapshotId":"source",
+                "sceneId":"s",
+                "unitIds":["u"],
+                "characterIds":[],
+                "prompt":"Slow push",
+                "ratio":"960:960",
+                "duration":5,
+                "startImage":{"id":"a","hash":manifest["providerInputs"][0]["hash"]}
+            }]
+        });
+        assert!(reserve(&project, &job, "seedance", 149).is_err());
+        let remote = reserve(&project, &job, "seedance", 150).unwrap();
+        assert_eq!(remote["reserved_credits"], 150);
+        assert_eq!(remote["pricing"]["tier"], "720p");
+        assert_eq!(remote["pricing"]["minimum"], 80);
+        assert_eq!(remote["audio"], false);
+
+        let selected = media::video_model_from_connection(&json!({
+            "provider":"runway","model":"seedance2_5","adapter_id":"runway"
+        }))
+        .unwrap();
+        assert_eq!(
+            media::video_pricing(&selected, 4, "854:480").unwrap()["credits"],
+            80
         );
     }
 
