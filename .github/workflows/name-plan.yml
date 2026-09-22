@@ -39,6 +39,13 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Archive lock-matched dependencies for offline browser review
+        run: tar -czf /tmp/name-node-dependencies.tar.gz package-lock.json node_modules
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: name-node-dependencies-${{ github.run_id }}
+          path: /tmp/name-node-dependencies.tar.gz
+          retention-days: 1
       - name: Name contracts and production adapters
         shell: bash
         run: |
