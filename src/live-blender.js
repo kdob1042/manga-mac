@@ -32,6 +32,42 @@ export function validateLiveDecision(value, detail) {
   return value;
 }
 export const failureKind = error => ['observation_missing','target_unknown','operation_unsupported','model_judgment','execution_unknown','visual_unmet','stale_observation'].find(k=>String(error?.message??error).includes(k)) ?? 'execution_failed';
+const sameValue = (a,b) => Array.isArray(b)
+  ? Array.isArray(a) && a.length===b.length && a.every((v,i)=>sameValue(v,b[i]))
+  : Number.isFinite(a) && Number.isFinite(b) && Math.abs(a-b)<1e-5;
+function operationValue(operation,state,detail) {
+  if(detail?.id!==operation.object_id || detail?.name!==operation.object) throw Error('target_unknown: 操作対象の名前・IDが変わりました');
+  if(['camera','rotation','aim'].includes(operation.kind) && (detail.type!=='CAMERA' || state.camera!==operation.object || detail.camera!==operation.object)) throw Error('target_unknown: 撮影カメラが変わりました');
+  const value=operation.kind==='camera'?state.lens:operation.kind==='rotation'?detail.rotation:operation.kind==='aim'?detail.evaluated_world:operation.kind==='constraint'?detail.constraints?.find(c=>c.name===operation.constraint)?.influence:detail.location;
+  const vector=v=>Array.isArray(v)&&v.length===3&&v.every(Number.isFinite);
+  const valid=operation.kind==='aim'?Array.isArray(value)&&value.length===4&&value.every(row=>Array.isArray(row)&&row.length===4&&row.every(Number.isFinite)):['transform','rotation'].includes(operation.kind)?vector(value):Number.isFinite(value);
+  if(!valid) throw Error('observation_missing: 操作対象の実値を確認できません');
+  return structuredClone(value);
+}
+function assertOperationReadback(result,state,detail) {
+  if(!Number.isSafeInteger(result.revision) || observationKey(result)!==observationKey(state) || observationKey(state)!==observationKey(detail) || [result,state,detail].some(s=>s.control!=='ai')) {
+    throw Error('stale_observation: 操作後の読戻し中に状態または操作権が変わりました');
+  }
+}
+function directionFailureMessage(error) {
+  const message=String(error?.message??error);
+  const kind=failureKind(error);
+  const help=['model_judgment','operation_unsupported'].includes(kind)
+    ? '対象を明記して指示し直すか、詳細調整で操作してください。'
+    : '接続とBlender画面の対象・現在状態を確認し、必要なら詳細調整で修正してから再実行してください。';
+  return `${message} ${help}`;
+}
+
+// Only a complete, single-property user instruction supplies a deterministic goal.
+// Never extract a number from a longer/negated/visual request or from the model's reason.
+export function liveRequestGoal(instruction) {
+  if(typeof instruction!=='string'||instruction.length>500)return null;
+  const text=instruction.normalize('NFKC').trim();
+  const match=text.match(/^(?:撮影カメラの|カメラの)?(?:焦点距離|レンズ)を\s*(\d+(?:\.\d+)?)\s*mm\s*に(?:して(?:ください)?|設定して(?:ください)?|する)[。.!！]?$/i)
+    ??text.match(/^set (?:the )?(?:camera )?(?:focal length|lens) to (\d+(?:\.\d+)?)\s*mm[.!]?$/i);
+  const value=Number(match?.[1]);
+  return match&&value>=10&&value<=250?{kind:'camera_lens',value}:null;
+}
 
 export async function directLivePanel({current,commit,call,ask,panelId,instruction='',cancelled=()=>false,notify=()=>{}}) {
   const start=current();
@@ -40,6 +76,7 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
   const panel=start.panels.find(p=>p.id===panelId), binding=panel?.live_binding;
   if(!binding) throw Error('target_unknown: live対象コマを指定してください');
   const identity=JSON.stringify([start.active,panel.snapshotId,panel.capture_revision,panel.artwork_revision,binding]);
+  const goal=liveRequestGoal(instruction); // A panel's old prompt cannot prove a new revision request.
   const run={id:crypto.randomUUID(),panel_id:panelId,mode:'live',instruction,status:'running',steps:[],started_at:new Date().toISOString()};
   const save=async patch=>{ Object.assign(run,patch); await commit({...current(),live_directing_runs:[...(current().live_directing_runs??[]).filter(r=>r.id!==run.id),{...run,steps:[...run.steps]}]}); };
   const check=()=>{const p=current().panels.find(p=>p.id===panelId); if(identity!==JSON.stringify([current().active,p?.snapshotId,p?.capture_revision,p?.artwork_revision,p?.live_binding]))throw Error('target_unknown: 演出対象が変わりました'); return p;};
@@ -74,6 +111,8 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
         run.steps.push({action:'observe',scope:decision.scope,object:decision.object,status:'observed'});await save({});continue;
       }
       if(decision.action==='act') {
+        if(observationKey(detail)!==observationKey(state)) throw Error('stale_observation: 操作対象の詳細観測が古くなりました');
+        const before=operationValue(decision.operation,state,detail);
         const key=JSON.stringify(decision.operation);
         if(performed.has(key)) throw Error('model_judgment: 同じ操作の繰返しを停止しました');
         performed.add(key);
@@ -84,20 +123,43 @@ export async function directLivePanel({current,commit,call,ask,panelId,instructi
         assertLiveTarget(binding,result);
         state=await read(); // Mandatory fresh read after every write.
         detail=await read('object',decision.operation.object);
-        const actual=decision.operation.kind==='rotation'?detail.rotation:decision.operation.kind==='aim'?detail.evaluated_world:decision.operation.kind==='camera'?state.lens:decision.operation.kind==='constraint'?detail.constraints.find(c=>c.name===decision.operation.constraint)?.influence:detail.local?.slice(0,3).map(row=>row[3]);
+        assertOperationReadback(result,state,detail);
+        const actual=operationValue(decision.operation,state,detail);
         const expected=decision.operation.kind==='rotation'?decision.operation.rotation:decision.operation.kind==='transform'?decision.operation.location:decision.operation.value;
-        const equal=(a,b)=>Array.isArray(b)?Array.isArray(a)&&a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<1e-5):typeof a==='number'&&Math.abs(a-b)<1e-5;
-        if(!(decision.operation.kind==='aim'?cameraAimsAt(detail.evaluated_world,decision.operation.target):equal(actual,expected))) throw Error('execution_failed: 操作後の実値が一致しません');
-        if(result.changed) changes++;
-        run.steps[run.steps.length-1]={...run.steps.at(-1),status:'complete',changed:!!result.changed,actual};await save({});continue;
+        if(!(decision.operation.kind==='aim'?cameraAimsAt(actual,decision.operation.target):sameValue(actual,expected))) throw Error('execution_failed: 操作後の実値が一致しません');
+        // The adapter's changed flag and revision are not evidence of a property change.
+        const changed=!sameValue(actual,before);
+        if(changed) changes++;
+        run.steps[run.steps.length-1]={...run.steps.at(-1),status:'complete',changed,before,actual};await save({});continue;
       }
-      if(decision.action==='blocked') {await save({status:'blocked',failure:'operation_unsupported',message:decision.reason});return {live:true,status:'blocked'};}
-      // Arbitrary natural language has no deterministic visual predicate. Never capture on ready alone.
-      await save({status:'confirm',failure:decision.action==='ready'&&!changes?'visual_unmet':null,changed_operations:changes,message:changes?'実操作と読戻しを確認しました。見た目を確認して候補保存してください。':'未変更です。現在状態を確認するか指示を追加してください。'});
+      if(decision.action==='blocked') {await save({status:'blocked',failure:'operation_unsupported',message:directionFailureMessage(Error('operation_unsupported: '+decision.reason))});return {live:true,status:'blocked'};}
+      // ready is not evidence. A narrow goal comes only from the full user instruction,
+      // then requires fresh, coherent camera detail and summary from the live instance.
+      let goalEvidence=null;
+      if(goal) {
+        if(typeof fresh.camera!=='string'||!fresh.camera)throw Error('target_unknown: 撮影カメラを確認できません');
+        const camera=await read('object',fresh.camera);
+        if(cancelled()){await save({status:'paused'});return {live:true,status:'paused'};}
+        const verified=await read();
+        if(cancelled()){await save({status:'paused'});return {live:true,status:'paused'};}
+        assertOperationReadback(fresh,verified,camera);
+        if(typeof camera.id!=='string'||!camera.id)throw Error('target_unknown: 撮影カメラのIDを確認できません');
+        const actual=operationValue({kind:'camera',object:fresh.camera,object_id:camera.id},verified,camera);
+        goalEvidence={...goal,actual,satisfied:sameValue(actual,goal.value),object:camera.name,object_id:camera.id,observation:observationKey(verified)};
+      }
+      const noChange=changes===0&&goalEvidence?.satisfied===true;
+      const unmet=goalEvidence? !goalEvidence.satisfied : changes===0;
+      const message=noChange
+        ? `変更不要です。指定された焦点距離 ${goal.value}mm を実状態で確認しました。見た目と候補保存は別途確認してください。`
+        : goalEvidence&&!goalEvidence.satisfied
+          ? `指定の焦点距離 ${goal.value}mm に達していません（現在 ${goalEvidence.actual}mm）。対象を確認して指示し直すか、詳細調整で修正してください。`
+          : changes?'実操作と読戻しを確認しました。見た目を確認して候補保存してください。'
+            :'未変更です。要求を満たしたかは確認できません。現在状態を確認するか、対象を明記して指示し直すか、詳細調整で修正してください。';
+      await save({status:'confirm',failure:unmet?'visual_unmet':null,changed_operations:changes,goal_evidence:goalEvidence,unchanged_verified:noChange,message});
       return {live:true,status:'confirm'};
     }
     throw Error('model_judgment: 観測・操作の12 step上限に達しました');
-  } catch(error) {await save({status:'blocked',failure:failureKind(error),message:error.message});throw error;}
+  } catch(error) {const message=directionFailureMessage(error);await save({status:'blocked',failure:failureKind(error),message});throw Error(message,{cause:error});}
   finally { await request('handoff').catch(()=>{}); }
 }
 

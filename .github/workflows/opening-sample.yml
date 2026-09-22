@@ -1,0 +1,79 @@
+name: Produce encrypted opening sample
+on:
+  workflow_dispatch:
+  push:
+    branches: [issue/46-work-4]
+    paths: [samples/opening-preview/run-request.txt]
+permissions:
+  contents: read
+concurrency:
+  group: opening-sample
+  cancel-in-progress: false
+jobs:
+  produce:
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Validate private input configuration
+        env:
+          INPUT_KEY: ${{ secrets.MANGA_SAMPLE_DECRYPT_KEY }}
+        run: |
+          test -n "$INPUT_KEY" || { echo 'MANGA_SAMPLE_DECRYPT_KEY must be configured before running'; exit 1; }
+          test -f samples/opening-preview/input.cms
+          test -f samples/opening-preview/recipient.pem
+          umask 077
+          mkdir -p "$RUNNER_TEMP/opening/input"
+          printf '%s' "$INPUT_KEY" > "$RUNNER_TEMP/opening/key.pem"
+          openssl cms -decrypt -binary -inform DER -in samples/opening-preview/input.cms -inkey "$RUNNER_TEMP/opening/key.pem" -out "$RUNNER_TEMP/opening/input.tar"
+          rm "$RUNNER_TEMP/opening/key.pem"
+          python3 samples/opening-preview/unpack.py "$RUNNER_TEMP/opening/input.tar" "$RUNNER_TEMP/opening/input"
+          rm "$RUNNER_TEMP/opening/input.tar"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npx playwright install chromium
+      - name: Build production image helper
+        run: swift build -c release --package-path helper
+      - name: Prepare model and produce private page
+        id: generation
+        run: |
+          umask 077
+          sample_model=$(node samples/opening-preview/run.mjs --model-id)
+          helper/.build/release/manga-engine --prepare "$sample_model" > "$RUNNER_TEMP/opening/prepare.log" 2>&1
+          node samples/opening-preview/run.mjs "$RUNNER_TEMP/opening/input/input.json" "$RUNNER_TEMP/opening/output" helper/.build/release/manga-engine > "$RUNNER_TEMP/opening/generation.log" 2>&1
+          echo 'Production helper images and preview package verified'
+      - name: Transfer to nonproduction Preview
+        if: steps.generation.outcome == 'success'
+        env:
+          PREVIEW_WRITE_KEY: ${{ secrets.MANGA_PREVIEW_WRITE_KEY }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.MANGA_CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.MANGA_CF_ACCESS_CLIENT_SECRET }}
+        run: |
+          test -n "$PREVIEW_WRITE_KEY" || { echo 'Preview writer authentication is not configured; encrypted production output will be preserved'; exit 1; }
+          node samples/opening-preview/send.mjs "$RUNNER_TEMP/opening/output" https://dev-live-manga.mashstock.workers.dev null > "$RUNNER_TEMP/opening/transfer.log" 2>&1
+          echo 'Preview transfer committed'
+      - name: Encrypt results including partial checkpoints
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/opening" ] && [ -f samples/opening-preview/recipient.pem ]; then
+            rm -f "$RUNNER_TEMP/opening/key.pem"
+            umask 077
+            tar -cf "$RUNNER_TEMP/opening-result.tar" -C "$RUNNER_TEMP/opening" .
+            mkdir -p encrypted-results
+            openssl cms -encrypt -binary -aes256 -in "$RUNNER_TEMP/opening-result.tar" -outform DER -out encrypted-results/opening-result.cms samples/opening-preview/recipient.pem
+            rm "$RUNNER_TEMP/opening-result.tar"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: encrypted-opening-result
+          path: encrypted-results/opening-result.cms
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove private working data
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/opening"
