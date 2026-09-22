@@ -34,6 +34,7 @@ test('unfinished art and missing required text are rejected by finalization',asy
  assert.throws(()=>finalizeNameApplication(p),/文字/);
 });
 test('reference updates mark names stale without losing old art or manual geometry',async()=>{
- const p=await draft();p.characters.push({id:'new',name:'new',hash:'b'.repeat(64)});
+ const p=await draft(),snapshot=p.snapshots.find(snapshot=>snapshot.id===p.active);
+ snapshot.characters=[{id:'new',name:'new'}];
  const next=await refreshNameBindings(p);assert.equal(next.namePlan.status,'stale');assert.deepEqual(next.layout,p.layout);
 });

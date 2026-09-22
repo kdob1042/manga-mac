@@ -41,7 +41,8 @@ function portableCharacterPlan(project, snapshot, plan) {
     fail('character', `人物${id}は対象原稿にありません`);
   };
   const portable = structuredClone(plan);
-  portable.panels = portable.panels.map(panel => ({ ...panel, characterIds: panel.characterIds.map(sourceIdFor) }));
+  if (!Array.isArray(portable?.panels)) return portable;
+  portable.panels = portable.panels.map(panel => ({ ...panel, characterIds: Array.isArray(panel.characterIds) ? panel.characterIds.map(sourceIdFor) : panel.characterIds }));
   return portable;
 }
 export async function nameReadToken(project) {
