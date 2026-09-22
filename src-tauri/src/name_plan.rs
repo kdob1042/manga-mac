@@ -5,7 +5,8 @@ use std::collections::HashSet;
 type Result<T> = std::result::Result<T, String>;
 const FORMAT: &str = "manga-mac/name-plan/v2";
 fn list<'a>(v: &'a Value, label: &str) -> Result<&'a Vec<Value>> {
-    v.as_array().ok_or_else(|| format!("Invalid name plan {label}"))
+    v.as_array()
+        .ok_or_else(|| format!("Invalid name plan {label}"))
 }
 fn schema_check(value: &Value, schema: &Value, root: &Value, depth: usize) -> Result<()> {
     if depth > 40 {
@@ -27,7 +28,9 @@ fn schema_check(value: &Value, schema: &Value, root: &Value, depth: usize) -> Re
             Err("Name schema choice mismatch".into())
         };
     }
-    if schema.get("const").is_some_and(|constant| value != constant)
+    if schema
+        .get("const")
+        .is_some_and(|constant| value != constant)
         || schema["enum"]
             .as_array()
             .is_some_and(|values| !values.contains(value))
@@ -52,7 +55,10 @@ fn schema_check(value: &Value, schema: &Value, root: &Value, depth: usize) -> Re
                     "^[A-Za-z0-9][A-Za-z0-9:_-]{0,159}$" => {
                         !text.is_empty()
                             && text.len() <= 160
-                            && text.bytes().next().is_some_and(|c| c.is_ascii_alphanumeric())
+                            && text
+                                .bytes()
+                                .next()
+                                .is_some_and(|c| c.is_ascii_alphanumeric())
                             && text
                                 .bytes()
                                 .all(|c| c.is_ascii_alphanumeric() || b":_-".contains(&c))
@@ -81,7 +87,9 @@ fn schema_check(value: &Value, schema: &Value, root: &Value, depth: usize) -> Re
             if !n.is_finite()
                 || schema["minimum"].as_f64().is_some_and(|min| n < min)
                 || schema["maximum"].as_f64().is_some_and(|max| n > max)
-                || schema["exclusiveMinimum"].as_f64().is_some_and(|min| n <= min)
+                || schema["exclusiveMinimum"]
+                    .as_f64()
+                    .is_some_and(|min| n <= min)
             {
                 return Err("Name number range violation".into());
             }
@@ -269,7 +277,9 @@ fn state(project: &Value, current: &Value, schema: &Value) -> Result<()> {
         }
         let matches: Vec<_> = policy
             .iter()
-            .filter(|p| p["atomId"] == entry["atomId"] && p["source"]["snapshotId"] == name["snapshotId"])
+            .filter(|p| {
+                p["atomId"] == entry["atomId"] && p["source"]["snapshotId"] == name["snapshotId"]
+            })
             .collect();
         if matches.len() != 1 || matches[0]["presentation"] != entry["presentation"] {
             return Err("Name file and bound policy disagree".into());
@@ -340,10 +350,10 @@ fn state(project: &Value, current: &Value, schema: &Value) -> Result<()> {
     }
     if let Some(locks) = name["locks"]["pages"].as_object() {
         for (id, locked) in locks {
-            if current["layout"]["pages"].as_array().and_then(|ps| {
-                ps.iter()
-                    .find(|p| p["id"].as_str() == Some(id.as_str()))
-            }) != Some(locked)
+            if current["layout"]["pages"]
+                .as_array()
+                .and_then(|ps| ps.iter().find(|p| p["id"].as_str() == Some(id.as_str())))
+                != Some(locked)
             {
                 return Err("Locked name page changed".into());
             }
@@ -378,9 +388,8 @@ fn state(project: &Value, current: &Value, schema: &Value) -> Result<()> {
     Ok(())
 }
 pub(super) fn validate(project: &Value) -> Result<()> {
-    let schema: Value =
-        serde_json::from_str(include_str!("../../contracts/name-plan/schema.json"))
-            .map_err(|e| e.to_string())?;
+    let schema: Value = serde_json::from_str(include_str!("../../contracts/name-plan/schema.json"))
+        .map_err(|e| e.to_string())?;
     let mut pending = vec![(project, 0)];
     while let Some((current, depth)) = pending.pop() {
         if depth > 64 {
@@ -403,7 +412,10 @@ mod tests {
     use super::super::super::{hash, load, save_checked, tests::setup};
     use super::*;
     fn fixture() -> Value {
-        serde_json::from_str(include_str!("../../tests/fixtures/name-plan-v2-project.json")).unwrap()
+        serde_json::from_str(include_str!(
+            "../../tests/fixtures/name-plan-v2-project.json"
+        ))
+        .unwrap()
     }
     #[test]
     fn bound_name_policy_is_validated_on_native_save() {
@@ -454,9 +466,10 @@ mod tests {
     #[test]
     fn storyboard_v2_roundtrips_through_checked_sqlite_save() {
         let (mut db, root) = setup();
-        let p: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/name-plan-v2-project.json"))
-                .unwrap();
+        let p: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/name-plan-v2-project.json"
+        ))
+        .unwrap();
         save_checked(&mut db, &root, &p.to_string()).unwrap();
         let raw = load(&db, &root).unwrap().unwrap();
         let restored: Value = serde_json::from_str(&raw).unwrap();
@@ -473,9 +486,10 @@ mod tests {
     #[test]
     fn repository_name_without_commit_preserves_retrieval_receipt_on_save() {
         let (mut db, root) = setup();
-        let mut p: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/name-plan-v2-project.json"))
-                .unwrap();
+        let mut p: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/name-plan-v2-project.json"
+        ))
+        .unwrap();
         p["namePlan"]["file"]["source"]
             .as_object_mut()
             .unwrap()
@@ -493,7 +507,9 @@ mod tests {
         let restored: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(restored["namePlan"], p["namePlan"]);
         assert_eq!(restored["jobs"], p["jobs"]);
-        assert!(restored["namePlan"]["file"]["source"].get("commit").is_none());
+        assert!(restored["namePlan"]["file"]["source"]
+            .get("commit")
+            .is_none());
         let mut bad = restored.clone();
         bad["namePlan"]["file"]["source"]["commit"] = json!("not-a-commit");
         assert!(save_checked(&mut db, &root, &bad.to_string()).is_err());
