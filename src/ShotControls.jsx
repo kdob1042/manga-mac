@@ -51,6 +51,12 @@ export default function ShotControls({ project, current, commit, chosen, busy, r
         await liveCall(call,current.current,'reclaim');const s=await read();assertLiveTarget(chosen.live_binding,s);verifyLiveMappings(current.current,chosen,s);
         setPreview(await liveCall(call,current.current,'observe',{scope:'camera'}));setMessage('再観測済み。manga-macの演出指示から新しい計画で再開できます。');
       })}>操作権を戻し、再観測する</button>
+      {!video&&<button disabled={busy} onClick={()=>run('Blenderから戻して撮影を回収',async()=>{
+        const base=current.current.panels.find(p=>p.id===chosen.id);
+        await liveCall(call,current.current,'reclaim');const observed=await read();assertLiveTarget(base.live_binding,observed);verifyLiveMappings(current.current,base,observed);
+        const result=await call('blender_live_candidate',{input:{work:liveWork(current.current),expected:observed,width,height}});
+        await commit(await recordLiveCandidate(current.current,chosen.id,result,base));setPreview(result);setMessage('同じコマに撮影候補を回収しました。候補を採用後、AIで漫画化またはCompositorで編集できます。');
+      })}>操作権を戻して撮影候補を回収</button>}
       {['viewport','camera'].map(scope=><button key={scope} disabled={busy} onClick={()=>run('GUI画像を取得中',async()=>setPreview(await liveCall(call,current.current,'observe',{scope})))}>{scope==='viewport'?'Viewportを確認':'Cameraを確認'}</button>)}
       {!!chosen.characterIds?.length&&<><button disabled={busy} onClick={()=>run('人物対応を確認中',read)}>人物の対応先を読み込む</button>
         <label>人物<select aria-label="人物" value={character} onChange={e=>setCharacter(e.target.value)}><option value="">選択</option>{chosen.characterIds.map(id=><option key={id} value={id}>{project.characters.find(c=>c.id===id)?.name??id}</option>)}</select></label>

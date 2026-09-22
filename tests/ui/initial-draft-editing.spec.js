@@ -45,7 +45,7 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
  await page.getByRole('button',{name:'↶ 元に戻す',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.saved.panels[2].lettering.boxes[0].x)).toBe(.55);
  await page.getByRole('button',{name:'↷ やり直す',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.saved.panels[2].lettering.boxes[0].x)).toBe(.1);
  const after=await page.evaluate(()=>window.saved);expect(after.panels.map(p=>p.image)).toEqual(before.panels.map(p=>p.image));expect(after.snapshots).toEqual(before.snapshots);
- await page.locator('.panel').nth(2).click();const handle=page.getByTestId('letter-box-0');await handle.scrollIntoViewIfNeeded();const b=await handle.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+20,b.y+b.height/2+15);await page.mouse.up();
+ await page.getByLabel('仕上げるコマ',{exact:true}).selectOption('p2');const handle=page.getByTestId('letter-box-0');await handle.scrollIntoViewIfNeeded();const b=await handle.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height/2);await page.mouse.down();await page.mouse.move(b.x+b.width/2+20,b.y+b.height/2+15);await page.mouse.up();
  await expect.poll(()=>page.evaluate(()=>window.saved.panels[2].lettering.boxes[0].x)).toBeGreaterThan(.1);
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
  await page.screenshot({path:'test-results/initial-draft-editing.png',fullPage:true});

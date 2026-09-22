@@ -1,10 +1,12 @@
 import { collectVideoResult } from './video.js';
+import { videoModelForConnection } from './media.js';
 
 // Reconcile transport metadata persisted by Rust into the existing domain jobs.
 // This is called after IPC AND on restart; it never starts a network request.
 export function restoreVideoResults(project) {
   let next = project;
-  for (const original of project.jobs.filter(j => j.scope?.type === 'videoShot' && j.remote)) {
+  for (const original of project.jobs) {
+    if (original.scope?.type !== 'videoShot' || !original.remote) continue;
     const remote = original.remote;
     if (remote.artifact && !original.output_revision) {
       next = collectVideoResult({ ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status: 'output_pending' } : j) }, original.id, remote.artifact);
@@ -13,8 +15,15 @@ export function restoreVideoResults(project) {
     if (['candidate', 'complete', 'abandoned'].includes(original.status)) continue;
     const status = ({ PENDING: 'submitted', THROTTLED: 'submitted', RUNNING: 'submitted', SUCCEEDED: 'output_pending', FAILED: 'failed', CANCELLED: 'cancelled', cancel_requested: 'cancel_requested', unknown: 'unknown' })[remote.status];
     if (!status) throw Error('未対応の動画サービス状態です');
-    next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status,
-      cost: { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits } } : j) };
+    const model = videoModelForConnection(original.manifest?.connection);
+    const cost = model?.locality === 'local'
+      ? { kind: 'local', amount: null, currency: null }
+      : { kind: 'external', amount: remote.actual_credits ?? null, currency: 'credits', reserved: remote.reserved_credits };
+    // An unchanged receipt must not rewrite a project containing large images.
+    const sameCost = original.cost && Object.keys(original.cost).length === Object.keys(cost).length
+      && Object.keys(cost).every(key => Object.hasOwn(original.cost, key) && original.cost[key] === cost[key]);
+    if (original.status === status && sameCost) continue;
+    next = { ...next, jobs: next.jobs.map(j => j.id === original.id ? { ...j, status, cost } : j) };
   }
   return next;
 }

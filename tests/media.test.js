@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { defaultImageModelId, defaultVideoModelId, imageModels, videoModels, imageModel, videoModel, videoConnection, videoEstimateCredits, validateVideoModelRequest } from '../src/media.js';
+import { imageRequest, generationSize } from '../src/image-input.js';
+import { videoConnectionSupportsEndFrame } from '../src/video.js';
+
+test('the public registry exposes only implemented adapters and freezes defaults', () => {
+  assert.equal(defaultImageModelId, 'flux-2-klein-4b-local');
+  assert.equal(defaultVideoModelId, 'runway-gen4-5');
+  assert.ok(imageModels.length >= 2);
+  assert.ok(imageModels.every(model => ['media-generation-kit','runway-image'].includes(model.adapter_id)));
+  assert.equal(videoModels.length,3);
+  assert.ok(videoModels.every(model=>model.adapter_id==='runway'));
+  assert.deepEqual(videoModels.map(model=>model.model_id),['gen4.5','gen4_turbo','seedance2_5']);
+  assert.throws(() => imageModel('qwen-image'), /未対応/);
+  assert.ok(!videoModels.some(model => model.provider === 'fixture' && model.model_id === 'end-frame-v1'), 'test fixtures are not selectable production models');
+});
+
+test('selected image model is carried into request and dimensions', () => {
+  const selected = imageModel();
+  assert.deepEqual(generationSize([1536, 1024], selected.id), [1024, 704]);
+  const request = imageRequest({ panel: { prompt: 'scene' }, references: [], original: null, width: 768, height: 768, seed: 5, instruction: '', modelId: selected.id });
+  assert.deepEqual(request.media, { registry_id: selected.id, adapter_id: selected.adapter_id, model_id: selected.model_id });
+  assert.equal(request.steps, selected.input.steps);
+  assert.throws(() => imageRequest({ panel: {}, references: [], width: 1088, height: 768, seed: 5, instruction: '', modelId: selected.id }), /寸法/);
+});
+
+test('video selection is explicit and test-only end-frame support stays out of production UI', () => {
+  const connection = videoConnection(defaultVideoModelId, 'connection:1');
+  assert.deepEqual(connection, { id: 'connection:1', provider: 'runway', model: 'gen4.5', adapter_id: 'runway' });
+  assert.equal(videoConnectionSupportsEndFrame(connection), false);
+  assert.equal(videoConnectionSupportsEndFrame({ id: 'fixture', provider: 'fixture', model: 'end-frame-v1' }), true);
+});
+
+test('Runway stays one provider while model capabilities and pricing vary by descriptor', () => {
+  const gen45 = videoModel('runway-gen4-5');
+  const turbo = videoModel('runway-gen4-turbo');
+  assert.equal(gen45.provider, 'runway');
+  assert.equal(turbo.provider, 'runway');
+  assert.equal(gen45.adapter_id, turbo.adapter_id);
+  assert.deepEqual(gen45.input.durations_sec, [2,3,4,5,6,7,8,9,10]);
+  assert.deepEqual(turbo.input.durations_sec, [2,3,4,5,6,7,8,9,10]);
+  assert.equal(gen45.pricing.credits_per_second, 12);
+  assert.equal(turbo.pricing.credits_per_second, 5);
+  assert.deepEqual(videoConnection('runway-gen4-turbo', 'connection:2'), { id: 'connection:2', provider: 'runway', model: 'gen4_turbo', adapter_id: 'runway' });
+});
+
+test('Seedance exposes end-frame, duration, aspect and tiered pricing without changing Gen contracts', () => {
+  const seedance = videoModel('runway-seedance-2-5');
+  assert.equal(seedance.request_profile, 'seedance-keyframes-v1');
+  assert.equal(seedance.capabilities.end_frame, true);
+  assert.equal(seedance.input.max_prompt_utf16, 15000);
+  assert.deepEqual(videoEstimateCredits(seedance.id, 4, '854:480'), { credits: 80, rate: 20, minimum: 80, tier: '480p', checked_at: '2026-09-22' });
+  assert.equal(videoEstimateCredits(seedance.id, 5, '1280:720').credits, 150);
+  assert.equal(videoEstimateCredits(seedance.id, 5, '1920:1080').credits, 340);
+  assert.doesNotThrow(() => validateVideoModelRequest(seedance.id, { duration: 30, ratio: '1080:1920', prompt: 'x'.repeat(15000), endFrame: true, aspect: 1080 / 1920 }));
+  assert.throws(() => validateVideoModelRequest(seedance.id, { duration: 3, ratio: '1280:720', prompt: 'x' }), /尺/);
+  assert.throws(() => validateVideoModelRequest('runway-gen4-5', { duration: 5, ratio: '960:960', prompt: 'x', endFrame: true }), /終端/);
+});
+
+test('both native model definitions produce distinct pinned requests and enforce reference limits', () => {
+  const requests = imageModels.filter(m=>m.locality==='local').map(selected => imageRequest({ panel: { prompt: 'scene' }, references: [], width: 768, height: 768, seed: 5, instruction: '', modelId: selected.id }));
+  assert.notEqual(requests[0].media.model_id, requests[1].media.model_id);
+  assert.equal(requests[0].media.model_id, imageModels[0].model_id);
+  assert.throws(() => imageRequest({ panel: {}, references: Array(9).fill({name:'ref'}), width:768, height:768, seed:5 }), /最大8枚/);
+});
+
+test('cloud image descriptor pins dimensions, cost, connection and ordered references',()=>{
+ const selected=imageModel('runway-gen4-image');assert.equal(selected.locality,'cloud');assert.equal(selected.cost.credits,5);
+ assert.deepEqual(generationSize([768,768],selected.id),[720,720]);
+ const references=[{id:'hero',name:'Hero',role:'character',image:'data:image/png;base64,YQ==',hash:'a'.repeat(64)}];
+ const request=imageRequest({panel:{prompt:'scene'},references,width:720,height:720,seed:1,instruction:'',modelId:selected.id,job:{id:'j',cloud_connection:'approved'}});
+ assert.equal(request.cloud_connection,'approved');assert.deepEqual(request.references,references);
+ assert.throws(()=>imageRequest({panel:{},references:Array(4).fill(references[0]),width:720,height:720,seed:1,modelId:selected.id}),/最大3枚/);
+});

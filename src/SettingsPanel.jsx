@@ -1,4 +1,4 @@
-import React from "react";
+import React, {useEffect,useRef} from "react";
 import LLMSettings from "./LLMSettings";
 import JevSettings from "./JevSettings";
 import BlenderSettings from "./BlenderSettings";
@@ -6,6 +6,8 @@ import BackupSettings from "./BackupSettings";
 import { protocolLabel } from "./source-protocol";
 import { call } from "./bridge";
 import { download } from "./export.js";
+import CloudImageSettings from './CloudImageSettings.jsx';
+import {imageModels,imageModel} from './media.js';
 export default function SettingsPanel({
   setSettings,
   repo,
@@ -33,12 +35,17 @@ export default function SettingsPanel({
   model,
   setModel,
   jev,
-  setJev
+  setJev,
+  imageModelId,
+  setImageModelId,
+  sourceBranch
 }) {
-  return <section className="settings">
+  const selectedImageModel=imageModel(imageModelId), closeButton=useRef(null);
+  useEffect(()=>{const previous=document.activeElement;closeButton.current?.focus();return()=>previous?.focus?.();},[]);
+  return <section className="settings" aria-label="接続・人物設定" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setSettings(false);}}}>
     <div className="setting-head">
     <h2>制作の準備</h2>
-    <button onClick={() => setSettings(false)}>閉じる</button>
+    <button ref={closeButton} onClick={() => setSettings(false)}>閉じる</button>
     </div>
     <h3>01 / 原作をつなぐ</h3>
     <label>GitHubリポジトリ<input value={repo} readOnly={!!library?.entries.some(e => e.id === library.active)} disabled={!!busy} onChange={e => {
@@ -57,7 +64,7 @@ export default function SettingsPanel({
     </label>
     <small>トークンは今回の起動中だけ保持。原作リポジトリのContents: readを使用します。</small>{snapshot && <div className="source-status">
     <strong>使用中の原稿</strong>
-    <span>{snapshot.repo} / main @ {snapshot.sha.slice(0, 8)}</span>
+    <span>{snapshot.repo} / {snapshot.sync?.source_branch??sourceBranch} @ {snapshot.sha.slice(0, 8)}</span>
     <span>{protocolLabel(snapshot)}</span>
     </div>}<button className="full" disabled={!!busy || !ready} onClick={() => run("原作を取得中", checkSync)}>GitHub側の更新を確認</button>
     <h3>02 / キャラクターの正本</h3>
@@ -96,12 +103,18 @@ export default function SettingsPanel({
     <LLMSettings title="演出・コマ計画" value={model} onChange={setModel} disabled={!!busy} run={run} notify={setNotice} />
     <small>演出・コマ計画の接続は、漫画と動画で共通する英訳の作成にも使用します。</small>
     <JevSettings value={jev} onChange={setJev} run={run} busy={!!busy} />
-    <small>画像の作画はMac内のFLUXを使用します。</small>
-    <button disabled={!!busy} className="full" onClick={() => run("画像モデルを準備中（初回ダウンロード）", async () => {
-      await call("prepare_engine");
+    <label>画像生成モデル<select aria-label="画像生成モデル" disabled={!!busy} value={imageModelId} onChange={e=>run('画像モデルを選択',async()=>{
+      const next=e.target.value;
+      await commit({...current.current,mediaDefaults:{...current.current.mediaDefaults,image:next}});
+      setImageModelId(next);
+    })}>{imageModels.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
+    <small>{selectedImageModel.locality==='local'?'Mac内で生成します。':'生成時に画像をクラウドへ送信します。'} 別モデルへ自動で切り替えません。</small>
+    <button disabled={!!busy||!selectedImageModel.requires_preparation} className="full" onClick={() => run("画像モデルを準備中（初回ダウンロード）", async () => {
+      await call("prepare_media_engine", {modelId:imageModelId});
       setNotice("画像モデルの準備が完了しました");
     })}>画像モデルを準備する</button>
-    <small>FLUX.2 klein 4B。初回はネット接続と十分な空き容量が必要です。Ollamaを選ぶ場合は別途起動してください。</small>
+    <small>必要なモデルだけ、この操作でダウンロードします。</small>
+    <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
     <h3>04 / Blenderで撮影する</h3>
     <BlenderSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />

@@ -1,0 +1,416 @@
+{
+  "version": 1,
+  "defaults": {
+    "image": "flux-2-klein-4b-local",
+    "video": "runway-gen4-5"
+  },
+  "images": [
+    {
+      "id": "flux-2-klein-4b-local",
+      "display_name": "FLUX.2 klein 4B（Mac内）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "flux_2_klein_4b_q8p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake",
+        "finishing"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true,
+        "transparent_rgba": false,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 4,
+        "max_references": 8
+      },
+      "requires_preparation": true,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "inference": "not_run"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "minimum_macos": "14",
+        "weights_sha256": "430ba0f94ee0851a7f95c1383527f931afa6219898a51c5aa8e37979e9e4c86a"
+      }
+    },
+    {
+      "id": "flux-2-klein-4b-q6-local",
+      "display_name": "FLUX.2 klein 4B / 6-bit（Mac内・実機未検証）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "flux_2_klein_4b_q6p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake",
+        "finishing"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true,
+        "transparent_rgba": false,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 4,
+        "max_references": 8
+      },
+      "requires_preparation": true,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "inference": "not_run"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "minimum_macos": "14",
+        "weights_sha256": "ba42005a6d4e6c48430787db98ae8913aced4654682b59d0d0f1d9ccf820fe30"
+      }
+    },
+    {
+      "id": "qwen-image-layered-q6-local",
+      "display_name": "Qwen Image Layered / 6-bit（分解専用・実推論未検証）",
+      "adapter_id": "media-generation-kit",
+      "model_id": "qwen_image_layered_1.0_bf16_q6p.ckpt",
+      "locality": "local",
+      "status": "implemented",
+      "operations": [
+        "decompose"
+      ],
+      "capabilities": {
+        "text_to_image": false,
+        "image_edit": false,
+        "multi_reference": false,
+        "transparent_rgba": true,
+        "text_rendering": false
+      },
+      "input": {
+        "min_width": 256,
+        "max_width": 1024,
+        "min_height": 256,
+        "max_height": 1024,
+        "step": 64,
+        "max_aspect_ratio": 4,
+        "steps": 50,
+        "max_references": 0,
+        "min_layers": 2,
+        "max_layers": 6
+      },
+      "output": {
+        "kind": "ordered-rgba-layers",
+        "channels": 4,
+        "order": "sdk-index-bottom-to-top",
+        "alpha": "straight",
+        "color_space": "sRGB"
+      },
+      "runtime": {
+        "sdk_revision": "8868a9685d9c299816f43ef53efd455ffca437f0",
+        "core_revision": "d473a2f148b3e7dc9b90d0b7cfccc5cda999eb66",
+        "helper_contract": 2,
+        "weights_sha256": "28c5a5a1417d955ef802f318e489fedefc2ed4c39d79032ea6cdc84b7eafc894",
+        "minimum_macos": "15"
+      },
+      "validation": {
+        "runtime": "sdk-source-reviewed",
+        "codec": "fixture-passed",
+        "inference": "not_run"
+      },
+      "requires_preparation": true
+    },
+    {
+      "id": "runway-gen4-image",
+      "display_name": "Runway Gen-4 Image（クラウド・720×720・5 credits/枚）",
+      "adapter_id": "runway-image",
+      "model_id": "gen4_image",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true
+      },
+      "input": {
+        "min_width": 720,
+        "max_width": 720,
+        "min_height": 720,
+        "max_height": 720,
+        "step": 1,
+        "max_aspect_ratio": 1,
+        "steps": 1,
+        "max_references": 3
+      },
+      "requires_preparation": false,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "official-api-reviewed",
+        "inference": "not_run"
+      },
+      "cost": {
+        "credits": 5,
+        "usd_per_credit": 0.01
+      }
+    }
+  ],
+  "videos": [
+    {
+      "id": "runway-gen4-5",
+      "display_name": "Runway Gen-4.5",
+      "adapter_id": "runway",
+      "provider": "runway",
+      "model_id": "gen4.5",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "image_to_video"
+      ],
+      "capabilities": {
+        "end_frame": false,
+        "native_audio": false
+      },
+      "input": {
+        "durations_sec": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "default_duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "ratios": [
+          "1280:720",
+          "720:1280",
+          "1104:832",
+          "960:960",
+          "832:1104"
+        ],
+        "max_prompt_utf16": 1000,
+        "min_aspect_ratio": 0.5,
+        "max_aspect_ratio": 2
+      },
+      "pricing": {
+        "unit": "runway-credit",
+        "credits_per_second": 12,
+        "checked_at": "2026-09-21",
+        "minimum_credits": 0,
+        "usd_per_credit": 0.01
+      },
+      "requires_connection": true,
+      "request_profile": "gen-image-to-video-v1"
+    },
+    {
+      "id": "runway-gen4-turbo",
+      "display_name": "Runway Gen-4 Turbo",
+      "adapter_id": "runway",
+      "provider": "runway",
+      "model_id": "gen4_turbo",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "image_to_video"
+      ],
+      "capabilities": {
+        "end_frame": false,
+        "native_audio": false
+      },
+      "input": {
+        "durations_sec": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "default_duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "ratios": [
+          "1280:720",
+          "720:1280",
+          "1104:832",
+          "960:960",
+          "832:1104",
+          "1584:672"
+        ],
+        "max_prompt_utf16": 1000,
+        "min_aspect_ratio": 0.5,
+        "max_aspect_ratio": 2.358
+      },
+      "pricing": {
+        "unit": "runway-credit",
+        "credits_per_second": 5,
+        "checked_at": "2026-09-21",
+        "minimum_credits": 0,
+        "usd_per_credit": 0.01
+      },
+      "requires_connection": true,
+      "request_profile": "gen-image-to-video-v1"
+    },
+    {
+      "id": "runway-seedance-2-5",
+      "display_name": "Runway Seedance 2.5",
+      "adapter_id": "runway",
+      "provider": "runway",
+      "model_id": "seedance2_5",
+      "locality": "cloud",
+      "status": "implemented",
+      "request_profile": "seedance-keyframes-v1",
+      "operations": [
+        "image_to_video"
+      ],
+      "capabilities": {
+        "end_frame": true,
+        "native_audio": false
+      },
+      "input": {
+        "durations_sec": [
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24,
+          25,
+          26,
+          27,
+          28,
+          29,
+          30
+        ],
+        "default_duration_sec": 5,
+        "max_input_bytes": 5000000,
+        "max_prompt_utf16": 15000,
+        "min_aspect_ratio": 0.4,
+        "max_aspect_ratio": 4,
+        "ratios": [
+          "992:432",
+          "854:480",
+          "752:560",
+          "640:640",
+          "560:752",
+          "480:854",
+          "1470:630",
+          "1280:720",
+          "1112:834",
+          "960:960",
+          "834:1112",
+          "720:1280",
+          "2206:946",
+          "1920:1080",
+          "1664:1248",
+          "1440:1440",
+          "1248:1664",
+          "1080:1920"
+        ]
+      },
+      "output_tiers": {
+        "480p": [
+          "992:432",
+          "854:480",
+          "752:560",
+          "640:640",
+          "560:752",
+          "480:854"
+        ],
+        "720p": [
+          "1470:630",
+          "1280:720",
+          "1112:834",
+          "960:960",
+          "834:1112",
+          "720:1280"
+        ],
+        "1080p": [
+          "2206:946",
+          "1920:1080",
+          "1664:1248",
+          "1440:1440",
+          "1248:1664",
+          "1080:1920"
+        ]
+      },
+      "pricing": {
+        "unit": "runway-credit",
+        "minimum_credits": 80,
+        "credits_per_second_by_tier": {
+          "480p": 20,
+          "720p": 30,
+          "1080p": 68
+        },
+        "usd_per_credit": 0.01,
+        "checked_at": "2026-09-22"
+      },
+      "request_defaults": {
+        "audio": false
+      },
+      "validation": {
+        "contract": "runway-dev-official-reviewed",
+        "api_version": "2024-11-06",
+        "real_api": "not_run"
+      },
+      "requires_connection": true
+    }
+  ]
+}

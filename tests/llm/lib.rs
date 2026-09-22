@@ -17,3 +17,9 @@ pub mod blender_live;
 
 #[path = "../../src-tauri/src/blender_gui.rs"]
 pub mod blender_gui;
+
+#[path = "../../src-tauri/src/media.rs"]
+pub mod media;
+
+#[path = "../../src-tauri/src/compositor.rs"]
+pub mod compositor;

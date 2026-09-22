@@ -6,7 +6,7 @@ import {withResource,holdsResource} from './execution.js';
 export const desktop = () => !!window.__TAURI_INTERNALS__;
 export async function call(command, args = {}, permit=null) {
   if (!desktop()) throw Error('この操作はMacアプリで利用できます。ブラウザではサンプルの組版を確認できます。');
-  if((command==='generate_image'||command==='prepare_engine')&&!holdsResource(permit,'local-inference'))return withResource('local-inference',1,()=>invoke(command,args));
+  if((command==='generate_image'||command==='generate_layers'||command==='prepare_engine'||command==='prepare_media_engine')&&!holdsResource(permit,'local-inference'))return withResource('local-inference',1,()=>invoke(command,args));
   return invoke(command, args);
 }
 export async function saveProject(project) {
@@ -31,7 +31,7 @@ export async function loadProject() {
   }
   const restored = restoreVideoResults(normalized);
   // Persist recovered artifact references before playback asks native storage for them.
-  if (JSON.stringify(restored) !== JSON.stringify(normalized)) return saveProject(restored);
+  if (restored !== normalized) return saveProject(restored);
   return restored;
 }
 function idb(mode, action) {

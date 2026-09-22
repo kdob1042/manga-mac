@@ -2,8 +2,8 @@ import {buildChangeSet,highlightSourceChange} from './source-diff.js';
 import {sourceResolver,tokenizeSnapshot,refKey} from './source-refs.js';
 
 // Presentation only: all states and selectable operations come from the common diff.
-export function sourceView(project){
- const changes=buildChangeSet(project),resolve=sourceResolver(project.snapshots);
+export function sourceView(project,replanApplied=false){
+ const changes=buildChangeSet(project,project.active,replanApplied?{replanApplied:true}:{}),resolve=sourceResolver(project.snapshots);
  const target=project.snapshots.find(s=>s.id===project.active),units=tokenizeSnapshot(target);
  const old=new Map(project.sourceApplication.units.map(u=>[u.id,u])),covered=new Set();
  const rows=changes.blocks.map(block=>{
@@ -29,9 +29,9 @@ export function toggleSourceGroup(changes,selected,id){
  return changes.blocks.filter(b=>next.has(b.id)).map(b=>b.id);
 }
 export function sourceSelection(project,changes,ids){
- const current=buildChangeSet(project);
+ const current=buildChangeSet(project,project.active,changes.budget);
  if(current.id!==changes.id||JSON.stringify(current.blocks)!==JSON.stringify(changes.blocks))throw Error('原稿または漫画が変わりました。選択し直してください');
  if(!ids.length||new Set(ids).size!==ids.length||ids.some(id=>!current.blocks.some(b=>b.id===id)))throw Error('反映する差分を選択してください');
  for(const b of current.blocks)if(ids.includes(b.id)&&current.blocks.some(other=>other.groupId===b.groupId&&!ids.includes(other.id)))throw Error('関連する差分をまとめて選択してください');
- return {changeSetId:current.id,selectedBlockIds:[...ids],baseContentToken:current.baseContentToken,targetSnapshotId:current.targetSnapshotId};
+ return {...(current.budget.replanApplied?{budget:current.budget}:{}),changeSetId:current.id,selectedBlockIds:[...ids],baseContentToken:current.baseContentToken,targetSnapshotId:current.targetSnapshotId};
 }

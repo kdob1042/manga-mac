@@ -5,7 +5,7 @@ import { imageOf } from './canvas-image.js';
 import { pagePNG } from './render.js';
 import {proposeLayout,adoptLayoutProposal,layoutBase} from './layout-ai.js';
 import {askLLM} from './llm';
-export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled}) {
+export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled,onSelect,active:visible=true}) {
   const [draft,setDraft]=useState(null),[active,setActive]=useState(null),[preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(''),[count,setCount]=useState(6),[instruction,setInstruction]=useState(''),[candidate,setCandidate]=useState(null),[candidatePreview,setCandidatePreview]=useState(null),[zoom,setZoom]=useState(100),[whole,setWhole]=useState(false);
   const [rangeCount,setRangeCount]=useState(1);
   const rangeLength=Math.min(rangeCount,Math.max(1,project.layout.pages.length-pageIndex));
@@ -14,11 +14,12 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   const layout=draft??project.layout,page=layout?.pages[pageIndex];
   useEffect(()=>{setDraft(null);draftRef.current=null;setActive(null);gesture.current=null;},[pageIndex,project.layout]);
   useEffect(()=>{
+    if(!visible)return;
     let stopped=false;setPreviewError('');
     if(page)pagePNG(pagePanels(project,page),project.snapshots,project.localizations,project.output_locale,page,true,layout.imageCrops).then(src=>{if(!stopped)setPreview(src);}).catch(e=>{if(!stopped){setPreview(null);setPreviewError(e.message);}});
     return()=>{stopped=true;};
-  },[page,project,layout.imageCrops]);
-  useEffect(()=>{let stopped=false;Promise.all(project.panels.filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[project.panels]);
+  },[visible,page,project,layout.imageCrops]);
+  useEffect(()=>{if(!visible)return;let stopped=false;Promise.all(pagePanels(project,page).filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[visible,page,project.panels]);
   function cancelDrag(){gesture.current=null;draftRef.current=null;setDraft(null);}
   useEffect(()=>{const key=e=>{if(e.key==='Escape')cancelDrag();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   function position(e){const r=svg.current.getBoundingClientRect();return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height];}
@@ -28,7 +29,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     return [dx,dy];
   }
   function containsHome(home,overflow){return home.every(p=>inside(p,overflow));}
-  function start(e,slot,{vertex=null,overflow=false}={}){if(busy||e.button!==0)return;e.preventDefault();e.stopPropagation();setActive(slot.id);
+  function start(e,slot,{vertex=null,overflow=false}={}){if(busy||e.button!==0)return;e.preventDefault();e.stopPropagation();setActive(slot.id);onSelect?.(slot.panelId);
     if(imageMode && (!slot.panelId || !dimensions[slot.panelId]))return;
     gesture.current={pointer:e.pointerId,start:position(e),slot:structuredClone(slot),vertex,overflow,base:project.layout,imageMode};e.currentTarget.setPointerCapture(e.pointerId);}
   function move(e){const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;const at=position(e);
@@ -85,7 +86,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     <div className="toolbar"><strong>コマ割り編集</strong><button disabled={busy||!project.layoutHistory?.length} onClick={()=>run('枠を戻す',()=>commit(undoLayout(current.current)))}>枠をUndo</button><button disabled={busy||!project.layoutRedo?.length} onClick={()=>run('枠をやり直す',()=>commit(undoLayout(current.current,true)))}>枠をRedo</button><button disabled={busy} onClick={()=>run('ページ追加',async()=>{const p=current.current,at=p.layout.pages.length?pageIndex+1:0;await commitSplices(p,[layoutSplice(p,at,0,[{id:crypto.randomUUID(),slots:template(count)}])],'ページ追加');setPage(at);})}>ページ追加</button><button disabled={busy||!page} onClick={()=>run('ページ削除',async()=>{const p=current.current;await commitSplices(p,[layoutSplice(p,pageIndex,1,[])],'ページ削除');setPage(Math.max(0,pageIndex-1));})}>このページを外す</button></div>
     <p>コマを選び、四隅をドラッグして変形。枠内をドラッグすると全体を移動します。Escで取消。絵や本文は変更しません。枠破りでは、従来のコマ割りを描いたうえに、ホーム枠の外へ出る作画だけが隣の上に乗ります。破線ははみ出し範囲です。</p>
     <div className="toolbar"><button aria-pressed={!imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(false);}}>枠を編集</button><button aria-pressed={imageMode} disabled={busy} onClick={()=>{cancelDrag();setImageMode(true);}}>画像トリミング</button></div>
-    {imageMode && <div className="crop-controls"><p>既定はコマ形状でマスクした全面表示です。枠を選ぶと画像をドラッグできます。元画像・セリフ・吹き出しは変更しません。通常の作画画面は原本表示です。</p>
+    {imageMode && <div className="crop-controls"><p>既定はコマ形状でマスクした全面表示です。枠を選ぶと画像をドラッグできます。元画像・セリフ・吹き出しは変更しません。確定した枠と同じ配置で表示します。</p>
       {slot?.panelId && <><button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(defaultCrop())}>画像を中央・等倍に戻す</button>
       {crop && <label>画像の拡大率<select aria-label="画像の拡大率" disabled={busy} value={crop.zoom} onChange={e=>setCrop({zoom:Number(e.target.value),x:crop.x,y:crop.y})}>{[1,1.25,1.5,2,3,4,6,8].map(n=><option key={n} value={n}>{n}倍</option>)}</select></label>}
       <button disabled={busy||!dimensions[slot.panelId]} onClick={()=>setCrop(crop?containCrop():defaultCrop())}>{crop?'画像全体を枠内に収める':'このコマを全面表示にする'}</button></>}
