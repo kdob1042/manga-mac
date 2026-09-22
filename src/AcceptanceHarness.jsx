@@ -25,11 +25,15 @@ export default function AcceptanceHarness({ context }) {
   return <main aria-label="実機の最小制作確認" style={{ maxWidth: 960, margin: 'auto', padding: 32, display: 'block', overflow: 'auto', height: '100vh' }}>
     <h1>最小制作確認</h1>
     <p>確認用の短い日本語原稿から、1ページを作成して保存・再起動・PNG出力を確認します。</p>
-    <p><strong>{model.display_name}</strong><br/>Mac内で256 × 256 px・4ステップ・1枚を生成します。モデルは事前に準備してください。</p>
+    <p><strong>{model.display_name}</strong><br/>Mac内で256 × 256 px・4ステップ・1枚を生成します。下のボタンでこの確認に必要なモデルだけを準備してください。</p>
     <p>セッション：<code>{context.sessionId}</code> · {context.resumed ? '再起動後' : '初回起動'}</p>
     {error && <p role="alert">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '24px 0' }}>
+      <button disabled={!ready || busy || !!pending} onClick={() => run(async () => {
+        await call('prepare_media_engine', { modelId: ACCEPTANCE_MODEL });
+        setNotice(`${model.display_name} の準備が完了しました。`);
+      })}>この確認用モデルを準備する</button>
       <button className="primary" disabled={!ready || busy || !!pending} onClick={() => run(() => session.current.run())}>最小制作確認を実行</button>
       {pending && <button disabled={!ready || busy} onClick={() => run(() => session.current.recover())}>保存済み結果を回収</button>}
       <button disabled={!ready || busy || !context.resumed || context.stages?.adoption?.status !== 'PASS'} onClick={() => run(() => session.current.verifyRestart())}>再起動後の保存内容を確認</button>

@@ -8,6 +8,20 @@ struct Output: Decodable { let directory: String; let request_hash: String }
 struct MediaSelection: Decodable { let adapter_id: String; let model_id: String }
 struct Request: Decodable { let output: Output; let prompt: String; let references: [Reference]; let original: String?; let seed: UInt32; let width: Int?; let height: Int?; let steps: Int?; let media: MediaSelection?; let output_kind: String?; let layer_count: Int? }
 
+enum MangaEngineError: LocalizedError {
+  case modelReferenceUnavailable(String)
+  case modelNotPrepared(String)
+
+  var errorDescription: String? {
+    switch self {
+    case .modelReferenceUnavailable(let model):
+      return "画像モデルの登録情報を解決できません: \(model)"
+    case .modelNotPrepared(let model):
+      return "画像モデルが未準備です: \(model)。設定または確認画面で「画像モデルを準備する」を先に実行してください。生成時の自動ダウンロードは行いません。"
+    }
+  }
+}
+
 @main struct MangaEngine {
   static func main() async {
     do {
@@ -31,8 +45,14 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
               let count = request.layer_count, (2...6).contains(count) else { throw NSError(domain: "Invalid layered inputs", code: 13) }
       }
       let model = selection.model_id
-      // Missing weights fail locally; only --prepare may download.
-      try await MediaGenerationEnvironment.default.ensure(model, offline: true)
+      // Generation runs in a network-denied sandbox. Resolve the local catalog
+      // entry first and refuse missing weights; only --prepare may download.
+      guard let resolved = await MediaGenerationEnvironment.default.resolveModel(model, offline: true) else {
+        throw MangaEngineError.modelReferenceUnavailable(model)
+      }
+      guard resolved.isDownloaded else {
+        throw MangaEngineError.modelNotPrepared(resolved.file)
+      }
       let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
       try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
       defer { try? FileManager.default.removeItem(at: temp) }
@@ -95,7 +115,8 @@ struct Request: Decodable { let output: Output; let prompt: String; let referenc
       guard fsync(directoryFD) == 0 else { throw NSError(domain: "Output sync", code: 5) }
       print("MANGA_RESULT_SAVED")
     } catch {
-      FileHandle.standardError.write(Data("Manga engine: \(error)\n".utf8))
+      let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+      FileHandle.standardError.write(Data("Manga engine: \(message)\n".utf8))
       exit(1)
     }
   }
