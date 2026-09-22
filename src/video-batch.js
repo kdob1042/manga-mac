@@ -1,5 +1,5 @@
 import { sourceForPanel } from './core.js';
-import { createVideoShot, validateVideoFrame } from './video.js';
+import { beginVideoJob, createVideoShot, validateVideoFrame, videoManifest } from './video.js';
 
 function adoptedArtwork(project, panel) {
   return project.artworks?.find(artwork => artwork.id === panel?.artwork_revision
@@ -61,4 +61,48 @@ export function createPanelVideoShots(project, rows, { batchId = crypto.randomUU
   }
   if (!shotIds.length) throw Error('実行するコマを1件以上選択してください');
   return { project: next, batchId, shotIds };
+}
+
+// The saved recipes and existing jobs are the batch ledger, including after a
+// restart. Any attempted shot is excluded: retrying it is a separate action.
+export function savedVideoBatches(project) {
+  const batches = new Map();
+  for (const shot of project.videoShots ?? []) {
+    if (!shot.batchId || shot.snapshotId !== project.active) continue;
+    if (!batches.has(shot.batchId)) batches.set(shot.batchId, { id: shot.batchId, shots: [] });
+    const jobs = project.jobs.filter(job => job.scope?.type === 'videoShot' && job.scope.id === shot.id);
+    batches.get(shot.batchId).shots.push({ shot, job: jobs.at(-1) ?? null });
+  }
+  return [...batches.values()];
+}
+
+export async function runVideoBatch({ batchId, connection, getProject, commit, submit, refresh, loadCapture, shouldStop = () => false, onProgress = () => {} }) {
+  const initial = getProject();
+  const batch = savedVideoBatches(initial).find(item => item.id === batchId);
+  const pending = batch?.shots.filter(item => !item.job) ?? [];
+  if (!pending.length) throw Error('未送信の動画レシピがありません');
+  const frozenConnection = structuredClone(connection);
+  // Validate every pending recipe before the first paid request. The native
+  // adapter still enforces its durable reservation and budget per request.
+  for (const { shot } of pending) await videoManifest(initial, shot, frozenConnection, loadCapture);
+  let submitted = 0;
+  for (const { shot } of pending) {
+    if (shouldStop()) break;
+    const current = getProject();
+    if (current.active !== initial.active) throw Error('原作版が変わったためバッチを停止しました');
+    if (current.jobs.some(job => job.scope?.type === 'videoShot' && job.scope.id === shot.id)) continue;
+    if (JSON.stringify(current.videoShots.find(item => item.id === shot.id)) !== JSON.stringify(shot)) throw Error('動画レシピが変わったため、内容と費用を再確認してください');
+    const started = await beginVideoJob(current, shot.id, frozenConnection, loadCapture);
+    if (shouldStop()) break;
+    await commit(started.project);
+    try { await submit(started.job); }
+    finally { await refresh(); }
+    submitted += 1;
+    onProgress(submitted, pending.length);
+    const result = getProject().jobs.find(job => job.id === started.job.id);
+    if (!result || !['submitted', 'output_pending', 'candidate', 'complete'].includes(result.status)) {
+      throw Error('直前の動画要求の結果を確認してください。残りは未送信のまま保存されています');
+    }
+  }
+  return { submitted, stopped: shouldStop() };
 }

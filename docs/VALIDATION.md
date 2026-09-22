@@ -579,3 +579,11 @@ Nodeでは原画保持、出力型、層数、順序、hash、寸法を確認。
 - `npm test`: 374件成功。`npm run build`: 成功。NamePlanControlsとLayoutEditorは遅延chunkを維持。
 - Chromiumの関連UI: 21件成功。JSON取込、同SHAのGitHub取込、候補採用・再起動、作画・文字・CBZ、初回読込と入力保持、工程切替、配置、原稿反映、画像復旧を確認。検証用worktreeのport 5175で実行した。
 - 実LLM・画像推論・Mac GUI・実APIは未実行。上記は人工応答を含むブラウザ / Node検証であり、#266の実機受入は残る。
+
+## 2026-09-22: 動画バッチ再開・停止（Issue #271 / PR #272）
+
+- 対象: dev `1f5767d` 起点。保存済みbatchId/jobsから未送信分を復元、モデル・接続・レシピ変更で確認失効、未送信分停止を追加。
+- `npm test`: 254成功。既送信/候補/unknownの除外、全件事前検証、保存失敗時送信0件、失敗時停止を含む。
+- 動画UI: 6成功（既存3＋再開/通信断/停止/モデル・尺変更3）。3コマの2件目で応答消失後、再起動して3件目だけ送信するIPC fixtureで重複要求0件を確認。
+- `npm run build`、`git diff --check`: 成功。既存のchunkサイズ警告あり。
+- 実Runway課金・LTX実推論・Mac実再生/24GB性能は未実施。実機残確認は #266、LTX接続統合は #166 / PR #167。

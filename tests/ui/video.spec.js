@@ -120,7 +120,12 @@ for (const scope of ['common', 'individual']) test(`video model changes invalida
   await page.getByRole('region',{name:'動画バッチ実行確認'}).getByRole('checkbox').check();
   await page.getByText('動画API接続',{exact:true}).click();
   await page.getByLabel('動画の生成先').selectOption('runway-gen4-5');
-  await expect(page.getByRole('region',{name:'動画バッチ実行確認'})).toHaveCount(0);
+  // Saved recipes survive model changes so they remain resumable. Their prior
+  // approval is invalid, and incompatible recipes cannot be submitted.
+  const confirmation = page.getByRole('region',{name:'動画バッチ実行確認'});
+  await expect(confirmation).toBeVisible();
+  await expect(confirmation.getByRole('checkbox')).not.toBeChecked();
+  await expect(confirmation.getByRole('button',{name:'保存したレシピをバッチ実行'})).toBeDisabled();
   await expect(page.getByLabel('s:p0の寸法')).toBeEnabled();
   await expect(page.getByLabel('s:p0の尺')).toBeEnabled();
   if (scope === 'common') {
