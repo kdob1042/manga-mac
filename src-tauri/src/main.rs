@@ -470,9 +470,9 @@ fn reuse_video_connection(
     state: State<AppState>,
 ) -> Result<String, String> {
     let selected = media::video_model_from_connection(&serde_json::json!({
-        "provider":provider,
-        "model":model,
-        "adapter_id":adapter_id
+        "provider": provider,
+        "model": model,
+        "adapter_id": adapter_id
     }))?;
     if selected.adapter_id != "runway" {
         return Err("選択した動画adapterはまだ接続されていません".into());
