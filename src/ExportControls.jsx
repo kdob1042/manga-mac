@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { OUTPUT_WIDTHS, outputSize, outputResolution } from './output.js';
+import { OUTPUT_WIDTHS, outputSize, outputResolution, outputProblems } from './output.js';
 import { videoFrameDimensions } from './video.js';
 import { exportCBZ, download } from './export.js';
 import { exportLiveManga } from './live-export.js';
@@ -10,11 +10,18 @@ import { desktop } from './bridge.js';
 export default function ExportControls({ project, current, pageIndex, busy, run, notify, onInspect, active }) {
   const [width, setWidth] = useState(1600), output = outputSize({ width });
   const problems = useMemo(() => active ? outputResolution(project, { width }, videoFrameDimensions) : [], [active, project, width]);
+  const blockers = useMemo(() => active ? outputProblems(project) : [], [active,project]);
   return <div className="export-options">
     <label>PNG・CBZの出力幅<select aria-label="PNG・CBZの出力幅" value={width} disabled={busy} onChange={e => setWidth(Number(e.target.value))}>
       {OUTPUT_WIDTHS.map(value => <option key={value} value={value}>{value}px{value === 1600 ? '（標準）' : ''}</option>)}
     </select></label>
     <small>{output.width} × {output.height}px · ページ比率は共通</small>
+    {blockers.length > 0 && <details className="output-resolution" open><summary>出力前に修正 · {blockers.length}コマ</summary>
+      <ul>{blockers.map(row => <li key={`${row.pageIndex}:${row.panelIndex}`}><button type="button" disabled={busy} onClick={() => onInspect(row)}>
+        {row.pageIndex + 1}ページ · {row.panelIndex + 1}コマ目を修正
+      </button><small>{row.message}</small></li>)}</ul>
+      <small>PNGは表示中のページ、CBZ・Live Mangaは全ページを検査します。</small>
+    </details>}
     <button disabled={busy || !project.layout.pages[pageIndex]?.slots.length} onClick={() => run('PNGを書き出し', async () => {
       const p = current.current, page = p.layout.pages[pageIndex];
       const data = await pagePNG(pagePanels(p, page), p.snapshots, p.localizations, p.output_locale, page, false, p.layout.imageCrops, output);

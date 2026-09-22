@@ -169,6 +169,20 @@ export async function adoptNameCandidate(project, candidate, mode = 'replace') {
     jobs: [...project.jobs.map(job => job.kind === 'name_plan' && job.nameCandidate?.id === candidate.id ? { ...job, status: 'complete' } : job), { id: crypto.randomUUID(), kind: 'draft_layout', status: 'complete', source_revision: project.active, draft_id: id, origin: 'name-plan-v2' }],
   };
 }
+export function nameLetteringProblems(panel) {
+  if (panel?.namePlanVersion !== 2) return [];
+  const required = panel.requiredText, boxes = panel.lettering?.boxes;
+  const validRef = ref => ref && typeof ref.snapshotId === 'string' && typeof ref.sceneId === 'string'
+    && Number.isSafeInteger(ref.startCp) && Number.isSafeInteger(ref.endCp) && ref.startCp >= 0 && ref.endCp > ref.startCp;
+  if (!Array.isArray(required) || !required.every(validRef)) return [{code:'lettering',message:'必須台詞の設定が不正です'}];
+  const actual = Array.isArray(boxes) ? boxes.flatMap(box => box?.sourceRefs ?? []) : [];
+  const problems = [];
+  if (!actual.every(validRef) || !orderedCoverage(required, actual)) problems.push({code:'lettering',message:'掲載文字の欠落・重複・順序変更があります'});
+  if (required.length && (panel.lettering?.mode !== 'balloons' || panel.letteringStatus !== 'ready'
+    || panel.letteringArtworkRevision !== panel.artwork_revision)) problems.push({code:'incomplete',message:'文字配置が未完了、または現在の作画に対応していません。仕上げで文字配置を適用してください'});
+  return problems;
+}
+
 export function validateV2State(project, { complete = false } = {}) {
   const state = project.namePlan;
   if (state?.format && ![FORMAT,'manga-mac/name-plan/v1'].includes(state.format))fail('unsupported_name','保存ネームの版に対応していません');
@@ -202,8 +216,11 @@ export function validateV2State(project, { complete = false } = {}) {
     const found = (project.layout?.pages ?? []).flatMap(page => page.slots).filter(slot => slot.panelId === panel.id);
     if (found.length !== 1) fail('placement', 'コマの配置が欠落・重複しています');
     if (state.locks?.panelPoints?.[panel.id] && !same(found[0].points, state.locks.panelPoints[panel.id])) fail('locked', '固定したコマを変更できません', panel.id);
-    if (complete && (!panel.image || panel.requiredText.length && (!panel.lettering || panel.letteringStatus !== 'ready' || panel.letteringArtworkRevision !== panel.artwork_revision))) fail('incomplete', '選択範囲の作画または文字配置が未完了です', panel.id);
-    if (complete && !orderedCoverage(panel.requiredText, (panel.lettering?.boxes ?? []).flatMap(box => box.sourceRefs ?? []))) fail('lettering', '掲載文字の欠落・重複・順序変更があります', panel.id);
+    if (complete && !panel.image) fail('incomplete', '選択範囲の作画が未完了です', panel.id);
+    if (complete) {
+      const problem = nameLetteringProblems(panel)[0];
+      if (problem) fail(problem.code, problem.message, panel.id);
+    }
   }
   for (const [id, locked] of Object.entries(state.locks?.pages ?? {})) if (!same(project.layout.pages.find(page => page.id === id), locked)) fail('locked', '固定ページを変更できません', id);
   return true;

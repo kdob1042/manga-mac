@@ -1,5 +1,6 @@
 import { PAGE, artPoints } from './layout.js';
 import { panelArtRect } from './page-art.js';
+import { nameLetteringProblems } from './name-v2.js';
 
 export const OUTPUT_WIDTHS = [800, 1600, 3200];
 
@@ -8,6 +9,18 @@ export function outputSize(options = {}) {
   const width = options.width ?? PAGE.width;
   if (!OUTPUT_WIDTHS.includes(width)) throw Error('出力幅は800・1600・3200pxから選んでください');
   return { width, height: width * PAGE.height / PAGE.width };
+}
+
+// Fast, deterministic checks only. Text fitting remains the shared renderer's job.
+export function outputProblems(project) {
+  const panels = new Map(project.panels.map(panel => [panel.id, panel]));
+  return project.layout.pages.flatMap((page, pageIndex) => page.slots.flatMap((slot, panelIndex) => {
+    const panel = panels.get(slot.panelId), target = {pageIndex,panelIndex,panelId:panel?.id??null};
+    if (!panel) return [{...target,code:'unassigned',stage:'layout',message:'枠にコマが割り当てられていません'}];
+    if (!panel.image) return [{...target,code:'artwork',stage:'art',message:'未作画のコマです'}];
+    const lettering = nameLetteringProblems(panel);
+    return lettering.length ? [{...target,code:'lettering',stage:'finish',message:lettering.map(problem=>problem.message).join(' / ')}] : [];
+  }));
 }
 
 export function outputResolution(project, options, dimensions) {

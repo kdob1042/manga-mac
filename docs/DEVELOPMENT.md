@@ -14,7 +14,7 @@
 | ネームAI・GitHub / JSON取込 | `src/NamePlanControls.jsx`、`src/name-repository.js`、`src/name-v2.js`、`contracts/name-plan/` | 23、[受渡し手順](NAME_PLAN_IMPORT.md) |
 | モデル選択・生成境界 | `src/media.js`、`src/media-runtime.js`、`src/image-executor.js`、`src-tauri/src/media.rs` | 18 |
 | レイヤー・Compositor | `src/compositor.js`、`src/layered.js`、`src/layer-edit.js`、`src-tauri/src/compositor.rs` | 18の関連節 |
-| コマ・画像配置・文字 | `src/layout.js`、`src/render.js`、`src/lettering.js`、`src/LetteringControls.jsx` | 8、16 |
+| コマ・画像配置・文字 | `src/layout.js`、`src/layout-ai.js`、`src/render.js`、`src/PageProof.jsx`、`src/lettering.js`、`src/LetteringControls.jsx` | 8、16 |
 | ページ出力・解像度確認 | `src/ExportControls.jsx`、`src/export.js`、`src/output.js` | 8 |
 | 前後コマ・修正候補の比較 | `src/artwork-comparison.js`、`src/PanelContextComparison.jsx`、`src/CandidateComparison.jsx` | 8 |
 | 採用・履歴・保存 | `src/revisions.js`、`src/project-writer.js`、`src/bridge.js`、`src-tauri/src/storage.rs` | 4、9 |

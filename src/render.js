@@ -13,6 +13,7 @@ import { wrapText, verticalColumns, letteringFont, validateLettering, letteringK
 import { panelHasText } from './core.js';
 import { createTextResolver } from './localization.js';
 import { imageOf } from './canvas-image.js';
+import { nameLetteringProblems } from './name-v2.js';
 import { outputSize } from './output.js';
 export function lines(ctx, text, width) {
   return wrapText(text, (value) => ctx.measureText(value).width, width);
@@ -280,6 +281,10 @@ export async function pageLayers(
     const p = panels.find((p) => p.id === slot.panelId);
     if (!p && !draft) throw Error('未割当の枠があります');
     if (p && !p.image && !draft) throw Error(`未作画のコマ: ${p.id}`);
+    if (p && !draft) {
+      const problems = nameLetteringProblems(p);
+      if (problems.length) throw Error(`コマ ${page.slots.indexOf(slot) + 1}: ${problems.map(problem => problem.message).join(' / ')}`);
+    }
     prepared.push({
       slot,
       p,

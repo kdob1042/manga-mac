@@ -57,8 +57,12 @@ test('name-v2 actual aspect editor matches PNG before and after vertical font ch
 test('vertical Japanese keeps PNG CBZ and Live identical and redraws bounded text at export density',async({page})=>{
  await setup(page);
  const exports=await page.evaluate(async()=>{
-  const p=await (await import('/src/bridge.js')).loadProject();
-  p.panels.forEach(panel=>panel.lettering.boxes.forEach(box=>{box.writingMode='vertical-rl';box.fontFamily='mincho';}));
+  let p=await (await import('/src/bridge.js')).loadProject();
+  const {setLettering}=await import('/src/lettering.js');
+  for(const panel of p.panels){
+   const lettering=structuredClone(panel.lettering);lettering.boxes.forEach(box=>{box.writingMode='vertical-rl';box.fontFamily='mincho';});
+   p=setLettering(p,panel.id,lettering);
+  }
   const {pagePNG,pageLayers}=await import('/src/render.js'),{exportCBZ}=await import('/src/export.js'),{prepareLiveManga}=await import('/src/live-export.js');
   const pg=p.layout.pages[0],png=await pagePNG(p.panels,p.snapshots,p.localizations,p.output_locale,pg,false,p.layout.imageCrops);
   const live=await prepareLiveManga(p,()=>{throw Error('no video expected');});
