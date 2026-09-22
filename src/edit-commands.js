@@ -1,3 +1,4 @@
+import { NAME_EDIT_FIELDS, nameEditState, validateV2State } from './name-v2.js';
 import {checkVisualEdit,regionForEdit,letteringRegions} from './visual-regions.js';
 import { defaultLettering, validateLettering, setLettering, isCustomLetteringBox } from './lettering.js';
 import { validateLayout, layoutWarnings, changeLayout, pagePanels } from './layout.js';
@@ -113,6 +114,13 @@ export function executeLocalEdits(project, candidate) {
 export function undoEdit(project, redo=false) {
   const from=redo?'editRedo':'history',entry=project[from]?.at(-1);
   if(!entry) return project;
+  if(entry.nameEdit) {
+    const expected=redo?entry:entry.after,target=redo?entry.after:entry;
+    if(JSON.stringify(nameEditState(project))!==JSON.stringify(nameEditState(expected)))throw Error('別の編集があるため先にその操作を戻してください');
+    const restored=Object.fromEntries(NAME_EDIT_FIELDS.map(key=>[key,structuredClone(target[key])]));
+    const next={...project,...restored,history:redo?[...project.history,entry]:project.history.slice(0,-1),editRedo:redo?(project.editRedo??[]).slice(0,-1):[...(project.editRedo??[]),entry]};
+    validateV2State(next);return next;
+  }
   if(entry.draftCheckpoint) throw Error('原稿の切替は「保存した原稿」から行ってください');
   if(entry.sourcePatch) {
     const fields=['panels','layout','sourceApplication',...['layoutHistory','layoutRedo'].filter(k=>entry[k]!==undefined)],expected=redo?entry:entry.after,target=redo?entry.after:entry;
@@ -160,6 +168,20 @@ export async function planEdit(project,context,instruction,ask,classify,recogniz
   if(decision && ['unclear','unsupported','readonly'].includes(decision.choice)) throw Error('変更内容を確認してください。原文変更・未対応操作は実行しません');
   const prompt=JSON.stringify({task:'漫画の編集計画をJSONで返す。対象は表示ページの読書順numberからidへ解決。明示対象がない時だけselectedを使う。曖昧/未対応ならoperations空。原文とunit_id順序、固定locked枠、対象外を保持。画像内の位置はcontext.visualとletteringRegionsだけを根拠にする。letteringRegionsは文字枠と同じ座標でavoidに文字を重ねない。subjectの矩形へしっぽ先端を向ける。根拠がなければ推測せず確認する。lettering argsは完全な{mode,boxes}、crop argsは{x,y,zoom}（x/yは切り取り基準、右へ動かす時はxを減らす）、layout argsは{pages:[表示ページ]}。direction/region argsは{instruction}。regionは手選択済み領域またはvisualのedit矩形を使う。文字の内容は変更できない。文字サイズfontSizeは14〜72、lineHeightは1〜2、paddingは0〜40。複数の軽い変更は操作順に分ける。resolution/finishing argsは{}、upscaleは{factor:2または4}。video_prepareは{instruction,ratio}で5秒無音動画の準備のみ（生成しない）。video_assignは{shotId}でvideoShotsの既存採用動画を選ぶ。複合操作は文字・枠・cropを先にまとめ、その後に生成する順序にする。同じコマの連続生成は先の採用が必要なため分ける。診断・動画準備・動画割当は単独操作。',instruction,context,decision});
   const plan=JSON.parse(await ask(prompt,editPlanSchema));
+  // Moving a box must not silently reset typography omitted by the model.
+  // Carry explicit changes forward for a later lettering operation in this plan.
+  const typography = new Map(project.panels.map(panel => [panel.id, panel.lettering ?? defaultLettering(panel)]));
+  for (const op of Array.isArray(plan?.operations) ? plan.operations : []) {
+    if (op?.kind !== 'lettering' || !Array.isArray(op.args?.boxes)) continue;
+    const previous = typography.get(op.panelId);
+    op.args.boxes = op.args.boxes.map(box => {
+      if (!object(box)) return box;
+      const before = previous?.boxes.find(old => isCustomLetteringBox(old) || Array.isArray(old.sourceRefs) ? old.id === box.id : old.unit_id === box.unit_id);
+      return { ...(before?.writingMode !== undefined ? {writingMode:before.writingMode} : {}),
+        ...(before?.fontFamily !== undefined ? {fontFamily:before.fontFamily} : {}), ...box };
+    });
+    typography.set(op.panelId, op.args);
+  }
   validateEditPlan(project,plan,context);
   return {base,context,plan};
 }

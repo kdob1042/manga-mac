@@ -821,6 +821,39 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]
+    fn source_typography_and_custom_narration_survive_save_and_restart() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        p["version"] = json!(5);
+        p["sourceApplication"] = json!({"version":1,"units":[]});
+        for snapshot in p["snapshots"].as_array_mut().unwrap() {
+            for scene in snapshot["scenes"].as_array_mut().unwrap() {
+                scene["sourceHash"] = json!(hash(scene["text"].as_str().unwrap().as_bytes()));
+            }
+        }
+        let snapshot = &p["snapshots"][0];
+        let r = json!({"snapshotId":snapshot["id"],"sceneId":snapshot["scenes"][0]["id"],"startCp":0,"endCp":1});
+        p["panels"][0]["sourceRefs"] = json!([r]);
+        p["panels"][0]["lettering"] = json!({"mode":"balloons","boxes":[
+            {"id":"box:source","sourceRefs":[r],"x":0.1,"y":0.1,"width":0.4,"height":0.6,"writingMode":"vertical-rl","fontFamily":"mincho"},
+            {"id":"custom:scene:1","text":"放課後","kind":"narration","shape":"rect","x":0.6,"y":0.1,"width":0.3,"height":0.2,"fontFamily":"gothic"}
+        ]});
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let before = load(&db, &dir).unwrap();
+        let mut invalid = p.clone();
+        invalid["panels"][0]["lettering"]["boxes"][0]["text"] = json!("書き換え");
+        assert!(save(&mut db, &dir, &invalid.to_string()).is_err());
+        assert_eq!(load(&db, &dir).unwrap(), before);
+        drop(db);
+        let db = Connection::open(dir.join("test.sqlite3")).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        assert_eq!(restored["panels"], p["panels"]);
+        assert_eq!(restored["snapshots"], p["snapshots"]);
+        assert_eq!(restored["history"], p["history"]);
+        assert_eq!(restored["jobs"], p["jobs"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn stale_ui_cannot_erase_task_id_cost_or_mutate_submitted_input() {
         let (mut db, dir) = setup();
         let mut original = fixture();

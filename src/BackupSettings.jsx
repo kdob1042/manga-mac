@@ -1,26 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { call, desktop } from './bridge';
 const date = seconds => seconds ? new Date(seconds * 1000).toLocaleString('ja-JP') : '未実施';
 const phases = { preparing: '保存状態を確定中', uploading: '転送・全量復元検証中', verifying: '全量復元検証中', succeeded: '処理完了', failed: '失敗' };
-export function useBackupSchedule(ready, busy) {
-  const current = useRef({ ready, busy }); current.current = { ready, busy };
-  useEffect(() => {
-    if (!desktop()) return;
-    let running = false, disposed = false;
-    const tick = async () => {
-      if (disposed || running || !current.current.ready || current.current.busy) return;
-      running = true;
-      try { await call('backup_run', { automatic: true }); }
-      catch { /* Native status persists failure and bounded retry deadline. */ }
-      finally { running = false; }
-    };
-    const timer = setInterval(tick, 60000);
-    const visibility = () => { if (!document.hidden) tick(); };
-    window.addEventListener('focus', tick); document.addEventListener('visibilitychange', visibility);
-    tick();
-    return () => { disposed = true; clearInterval(timer); window.removeEventListener('focus', tick); document.removeEventListener('visibilitychange', visibility); };
-  }, []);
-}
 export default function BackupSettings({ disabled }) {
   const [data, setData] = useState(null), [pending, setPending] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState(''), [history, setHistory] = useState([]);
   const [form, setForm] = useState({ repository: 'rclone:manga:manga-mac-backups/works', restic: '', rclone: '', rclone_config: '', password: '', consent: false, tools_verified: false, password_saved_elsewhere: false, initialize: false });

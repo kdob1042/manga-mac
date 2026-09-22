@@ -53,6 +53,8 @@ test('unknown image UI collects saved output and keeps adopted image across relo
     } };
   }, legacy);
   await page.goto('/');
+  // Wait for startup migration before replacing its saved fixture with an interrupted job.
+  await expect(page.locator('.panel')).toHaveCount(legacy.panels.length);
   await page.evaluate(async legacy => {
     const { migrateProject,beginJob,imageHash }=await import('/src/revisions.js');
     const p=await migrateProject(legacy), panel=p.panels[0], job=await beginJob(p,panel,'retake');

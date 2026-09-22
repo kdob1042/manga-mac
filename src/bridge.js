@@ -1,3 +1,4 @@
+import {refreshNameBindings} from './name-v2.js';
 import {upgradeSourceProject,sealSnapshots,migrateSourceApplication} from './source-application.js';
 import { invoke } from '@tauri-apps/api/core';
 import { migrateProject } from './revisions.js';
@@ -13,6 +14,7 @@ export async function saveProject(project) {
   let normalized = await migrateProject(project);
   if(desktop()&&normalized.version<5)normalized=await upgradeSourceProject(normalized);
   if(normalized.version>=5){await sealSnapshots(normalized.snapshots);migrateSourceApplication(normalized);}
+  normalized=await refreshNameBindings(normalized);
   if (desktop()) {
     await call('save_project', { data: JSON.stringify(normalized) });
     if(normalized.version>=5){const saved=await call('load_project');return migrateProject(JSON.parse(saved));}
@@ -29,9 +31,10 @@ export async function loadProject() {
     // Do not expose the migrated UI state until the save has succeeded.
     normalized=await saveProject(await upgradeSourceProject(normalized));
   }
+  normalized=await refreshNameBindings(normalized);
   const restored = restoreVideoResults(normalized);
   // Persist recovered artifact references before playback asks native storage for them.
-  if (JSON.stringify(restored) !== JSON.stringify(normalized)) return saveProject(restored);
+  if (restored !== normalized) return saveProject(restored);
   return restored;
 }
 function idb(mode, action) {

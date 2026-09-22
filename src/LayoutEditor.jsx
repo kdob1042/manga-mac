@@ -5,7 +5,7 @@ import { imageOf } from './canvas-image.js';
 import { pagePNG } from './render.js';
 import {proposeLayout,adoptLayoutProposal,layoutBase} from './layout-ai.js';
 import {askLLM} from './llm';
-export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled,onSelect}) {
+export default function LayoutEditor({project,current,commit,run,busy,pageIndex,setPage,model,selected,cancelled,onSelect,active:visible=true}) {
   const [draft,setDraft]=useState(null),[active,setActive]=useState(null),[preview,setPreview]=useState(null),[previewError,setPreviewError]=useState(''),[count,setCount]=useState(6),[instruction,setInstruction]=useState(''),[candidate,setCandidate]=useState(null),[candidatePreview,setCandidatePreview]=useState(null),[zoom,setZoom]=useState(100),[whole,setWhole]=useState(false);
   const [rangeCount,setRangeCount]=useState(1);
   const rangeLength=Math.min(rangeCount,Math.max(1,project.layout.pages.length-pageIndex));
@@ -14,11 +14,12 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   const layout=draft??project.layout,page=layout?.pages[pageIndex];
   useEffect(()=>{setDraft(null);draftRef.current=null;setActive(null);gesture.current=null;},[pageIndex,project.layout]);
   useEffect(()=>{
+    if(!visible)return;
     let stopped=false;setPreviewError('');
     if(page)pagePNG(pagePanels(project,page),project.snapshots,project.localizations,project.output_locale,page,true,layout.imageCrops).then(src=>{if(!stopped)setPreview(src);}).catch(e=>{if(!stopped){setPreview(null);setPreviewError(e.message);}});
     return()=>{stopped=true;};
-  },[page,project,layout.imageCrops]);
-  useEffect(()=>{let stopped=false;Promise.all(project.panels.filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[project.panels]);
+  },[visible,page,project,layout.imageCrops]);
+  useEffect(()=>{if(!visible)return;let stopped=false;Promise.all(pagePanels(project,page).filter(p=>p.image).map(async p=>{const im=await imageOf(p.image);return [p.id,[im.width,im.height]];})).then(entries=>{if(!stopped)setDimensions(Object.fromEntries(entries));}).catch(()=>{});return()=>{stopped=true;};},[visible,page,project.panels]);
   function cancelDrag(){gesture.current=null;draftRef.current=null;setDraft(null);}
   useEffect(()=>{const key=e=>{if(e.key==='Escape')cancelDrag();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
   function position(e){const r=svg.current.getBoundingClientRect();return [(e.clientX-r.left)/r.width,(e.clientY-r.top)/r.height];}

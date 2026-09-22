@@ -5,6 +5,30 @@ use rig_core::http_client::{
     StreamingResponse,
 };
 type Calls = Arc<Mutex<Vec<(String, http::HeaderMap, Value)>>>;
+#[test]
+fn lettering_proposals_accept_source_box_ids_without_accepting_source_rewrites() {
+    let proposal = json!({"reason":"文字枠を移動","layout":{"mode":"balloons","boxes":[
+        {"id":"box:source:1","x":0.1,"y":0.1,"width":0.4,"height":0.6,"writingMode":"vertical-rl","fontFamily":"mincho"},
+        {"id":"custom:p:1","text":"放課後","x":0.6,"y":0.1,"width":0.3,"height":0.2,"kind":"narration","shape":"rect"}
+    ]}});
+    assert!(validate_output(Purpose::Lettering, &proposal).is_ok());
+    assert!(crate::storage::lettering::validate(&proposal["layout"], None).is_err());
+    for (key, value) in [
+        ("sourceRefs", json!([])),
+        ("text", json!("書き換え")),
+        ("fontFamily", json!("unknown")),
+        ("writingMode", json!("unknown")),
+    ] {
+        let mut invalid = proposal.clone();
+        invalid["layout"]["boxes"][0][key] = value;
+        assert!(validate_output(Purpose::Lettering, &invalid).is_err());
+    }
+    let legacy = json!({"reason":"従来の文字枠を移動","layout":{"mode":"balloons","boxes":[
+        {"unit_id":"unit:1","x":0.1,"y":0.1,"width":0.4,"height":0.3},
+        {"id":"custom:p:1","text":"放課後","x":0.6,"y":0.1,"width":0.3,"height":0.2,"kind":"narration","shape":"rect"}
+    ]}});
+    assert!(validate_output(Purpose::Lettering, &legacy).is_ok());
+}
 #[derive(Clone, Default, Debug)]
 struct Fixture {
     response: String,

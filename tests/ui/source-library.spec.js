@@ -90,8 +90,7 @@ test('story-library work entry supports work to second episode to second scene i
  await page.getByLabel('話を選ぶ').selectOption('P02');
  await page.getByRole('button',{name:'閲覧中だけ',exact:true}).click();
  await page.getByLabel('原稿ライブラリのシーン').selectOption('P02-02');
- await page.getByRole('button',{name:'接続・人物設定'}).click();
- await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
+ await page.getByRole('button',{name:'原稿の更新を確認',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('P02-02');
  await page.getByRole('button',{name:'取り込む',exact:true}).click();
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('story-library-project')));
