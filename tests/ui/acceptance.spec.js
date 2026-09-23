@@ -16,6 +16,10 @@ async function nativeFixture(page, { loseResponse = false, contextError = false 
         return { sessionId: '17630fa0-98b5-42d9-82a6-3690b37ebf33', resumed: get('acceptance-resumed', false), stages, restartBaseline: stages.adoption?.evidence?.projectSha256 ?? null, report: {} };
       }
       if (command === 'load_project') return sessionStorage.getItem('acceptance-project');
+      if (command === 'prepare_media_engine') {
+        put('acceptance-prepares', [...get('acceptance-prepares', []), args.modelId]);
+        return 'ready';
+      }
       if (command === 'save_project') { put('acceptance-project', nativeOrder(JSON.parse(args.data))); return; }
       if (command === 'generate_image') {
         const request = args.request;
@@ -41,6 +45,14 @@ async function nativeFixture(page, { loseResponse = false, contextError = false 
     } };
   }, { loseResponse, contextError });
 }
+
+test('acceptance screen prepares its fixed model only after an explicit click', async ({ page }) => {
+  await nativeFixture(page);
+  await page.goto('/');
+  await page.getByRole('button', { name: 'この確認用モデルを準備する', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('準備が完了しました');
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('acceptance-prepares')))).toEqual(['flux-2-klein-4b-q6-local']);
+});
 
 test('dedicated launch waits for explicit run, generates one local image, renders Japanese PNG and resumes without regeneration', async ({ page }) => {
   await nativeFixture(page);
