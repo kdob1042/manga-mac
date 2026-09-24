@@ -97,3 +97,55 @@ test('story-library work entry supports work to second episode to second scene i
  expect(saved.snapshots.at(-1).scenes.map(scene=>scene.id)).toEqual(['P02-01','P02-02']);
  expect(saved.snapshots.at(-1).scenes[1].text).toContain('本文22');
 });
+
+test('source recovery distinguishes unsupported and auth failures without losing selected branch',async({page})=>{
+ await page.addInitScript(()=>{
+  window.failure='unsupported';window.writes=0;
+  const sha='a'.repeat(40), repo='kdob1042/story-library';
+  const catalog={format:'story-library/v1',authorityUntil:'M8',works:[{
+   id:'work-a',title:'作品A',root:'works/work-a',formats:['manga'],manuscriptFormat:'story-source/v1',readAdapters:['story-source/v1'],
+   authority:'origin',origin:{repository:'owner/a',ref:'main',commit:sha,manifestPath:'manifest.json',accessible:true},importStatus:'imported'
+  }]};
+  const sourceMap={format:'story-library-source-map/v1',authority:'origin',entries:[{workId:'work-a',origin:{repository:'owner/a'},target:{root:'works/work-a'}}]};
+  const manifest={format:'story-source/v1',work:{title:'作品A'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'}]}],settings:[],characters:[]};
+  window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+   if(command==='acceptance_context')return null;
+   if(command==='source_library')return {active:null,entries:[]};
+   if(command==='load_project')return null;
+   if(command==='backup_status')return {config:null,status:{},restored:[]};
+   if(command==='save_project'||command==='source_register'){window.writes++;throw Error('unexpected write');}
+   if(command==='github_get'){
+    if(window.failure==='unsupported')throw Error('Unsupported GitHub operation');
+    if(window.failure==='auth'&&args.token!=='valid-token')throw Error('GitHub 401 — 接続権限・レート制限を確認してください');
+    if(window.failure==='network')throw Error('GitHub 503 — 接続権限・レート制限を確認してください');
+    return JSON.stringify({sha});
+   }
+   if(command==='github_file'){
+    if(args.repo!==repo||args.sha!==sha)throw Error('unfixed read');
+    return {'library.json':JSON.stringify(catalog),'migrations/source-map.json':JSON.stringify(sourceMap),'works/work-a/work.json':JSON.stringify(manifest)}[args.path];
+   }
+   throw Error(command);
+  }};
+ });
+ await page.goto('/');
+ await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
+ const diagnostic=page.getByRole('alert',{name:'原稿接続の診断'});
+ await expect(diagnostic).toContainText('この環境では原稿を取得できません');
+ await diagnostic.getByText('技術的な詳細と診断').click();
+ await expect(diagnostic).toContainText('Unsupported GitHub operation');
+ await page.evaluate(()=>{window.failure='auth';});
+ await page.getByRole('button',{name:'原稿一覧を再試行'}).click();
+ await expect(diagnostic).toContainText('原稿へのアクセス権を確認できません');
+ await expect(diagnostic).toContainText('GitHub HTTP 401');
+ await diagnostic.getByRole('button',{name:'読取り用トークンを確認'}).click();
+ await page.getByLabel('読み取り専用トークン').fill('valid-token');
+ await diagnostic.getByRole('button',{name:'同じ操作を再試行'}).click();
+ await page.getByLabel('原稿ライブラリの作品').selectOption('work-a');
+ await expect(page.getByLabel('話を選ぶ')).toHaveValue('P01');
+ await page.evaluate(()=>{window.failure='network';});
+ await page.getByLabel('原稿ブランチ').selectOption('dev');
+ await expect(page.getByLabel('原稿ブランチ')).toHaveValue('main');
+ await expect(diagnostic).toContainText('原稿への接続に失敗しました');
+ await expect(page.getByLabel('原稿ライブラリの作品')).toHaveValue('work-a');
+ expect(await page.evaluate(()=>window.writes)).toBe(0);
+});
