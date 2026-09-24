@@ -45,6 +45,10 @@ const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,
     let disposed=false;
     const resize=()=>{if(disposed)return;renderer.setSize(Math.max(container.clientWidth,320),Math.max(container.clientHeight,260));camera.aspect=renderer.domElement.width/renderer.domElement.height;camera.updateProjectionMatrix();};
     const render=()=>{if(!disposed && !document.hidden)renderer.render(world,camera);};
+    const contextLost=event=>{event.preventDefault();loading.error='3D描画コンテキストが失われました。復元を待つか構図を開き直してください';setError(loading.error);};
+    const contextRestored=()=>{if(disposed)return;loading.error=null;setError('');render();};
+    renderer.domElement.addEventListener('webglcontextlost',contextLost);
+    renderer.domElement.addEventListener('webglcontextrestored',contextRestored);
     const observer=new ResizeObserver(()=>{resize();render();});observer.observe(container);
     controls.addEventListener('change',render);
     const transform=new TransformControls(camera,renderer.domElement);
@@ -89,7 +93,7 @@ const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,
       if(current.selectedObjectId && instances.has(current.selectedObjectId))transform.attach(instances.get(current.selectedObjectId));
       loading.loading=false;setError('');rigCallback.current?.(info);render();
     }).catch(e=>{if(disposed)return;loading.error=e.message??String(e);loading.loading=false;setError(loading.error);});
-    return ()=>{disposed=true;observer.disconnect();controls.removeEventListener('end',stop);controls.removeEventListener('change',render);document.removeEventListener('visibilitychange',render);transform.detach();transform.dispose();controls.dispose();runtime.current=null;
+    return ()=>{disposed=true;observer.disconnect();controls.removeEventListener('end',stop);controls.removeEventListener('change',render);document.removeEventListener('visibilitychange',render);renderer.domElement.removeEventListener('webglcontextlost',contextLost);renderer.domElement.removeEventListener('webglcontextrestored',contextRestored);transform.detach();transform.dispose();controls.dispose();runtime.current=null;
       world.traverse(node=>{node.geometry?.dispose();if(node.material){for(const material of (Array.isArray(node.material)?node.material:[node.material])){for(const value of Object.values(material))if(value?.isTexture)value.dispose();material.dispose();}}});
       renderer.dispose();renderer.domElement.remove();};
   },[scene,assets]);
