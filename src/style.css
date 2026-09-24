@@ -21,6 +21,7 @@
 .art-page-targets polygon.selected { stroke: #2d8a56; stroke-width: 11; }
 .art-page-targets polygon:focus-visible { stroke: #e96e40; stroke-width: 11; outline: none; }
 .art-panel-source { max-width: 800px; margin: 14px auto; padding: 12px; background: #fff; font-size: 12px; white-space: pre-wrap; }
+.art-layout-action { max-width: 800px; margin: 8px auto; text-align: right; }
 .art-original-edit { max-width: 500px; margin: 30px auto 70px; padding: 12px; background: #fff; }
 .art-original-edit p { font-size: 12px; color: #526650; }
 .art-original-image { position: relative; width: min(100%, 480px); touch-action: none; user-select: none; cursor: crosshair; }
@@ -51,6 +52,7 @@
 .layout-canvas { display: block; max-width: none; height: auto; touch-action: none; user-select: none; }
 .layout-canvas polygon { cursor: move; }
 .layout-canvas circle { cursor: crosshair; }
+.layout-canvas .edge-handle { cursor: grab; }
 .layout-editor textarea { width: 100%; min-height: 70px; }
 .layout-editor small { display: block; }
 

@@ -2,7 +2,7 @@ import React, {useRef} from 'react';
 import PageProof from './PageProof.jsx';
 
 // The page uses the export renderer; region edits still address the original image.
-export default function ArtPage({project, page, panels, selected, onSelect, rect, onRect, busy, sourceText}) {
+export default function ArtPage({project, page, panels, selected, onSelect, onEditLayout, rect, onRect, busy, sourceText}) {
   const drag = useRef(null);
   const chosen = panels.find(panel => panel.id === selected);
   function point(event) {
@@ -23,9 +23,10 @@ export default function ArtPage({project, page, panels, selected, onSelect, rect
           onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(slot.panelId);}}}/>) }
       </svg>
     </PageProof>
+    {chosen && <div className="art-layout-action"><button disabled={busy} onClick={onEditLayout}>このコマの枠サイズを調整</button></div>}
     {chosen && sourceText && <p className="art-panel-source">{sourceText}</p>}
     {chosen?.image && <div className="art-original-edit">
-      <p>部分修正する場合は元画像上をドラッグして範囲を指定</p>
+      <p>画像の中身を部分修正する範囲は、下の元画像上をドラッグして指定します。コマ枠の大きさは上の「このコマの枠サイズを調整」から変更できます。</p>
       <div className="art-original-image" onPointerDown={event=>{
         if(busy || event.button!==0)return;
         drag.current=point(event);onRect(null);event.currentTarget.setPointerCapture(event.pointerId);

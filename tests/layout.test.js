@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {template,initialLayout,ensureLayout,validateLayout,validQuad,layoutWarnings,reflowLayout,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
+import {template,initialLayout,ensureLayout,validateLayout,validQuad,resizeQuadEdge,layoutWarnings,reflowLayout,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
 import {validateProposal,adoptLayoutProposal} from '../src/layout-ai.js';
 const panels=Array.from({length:10},(_,i)=>({id:`p${i}`,unitIds:[`u${i}`],image:`image${i}`}));
 const project=()=>ensureLayout({panels,active:'source',jobs:[]});
@@ -38,6 +38,17 @@ test('local geometry edit does not reflow or alter any page assignment',()=>{
  l.pages[1].slots[0].points[0][0]+=.01;const changed=changeLayout(p,l,'test',{pageIds:p.layout.pages.map(p=>p.id),allowPageChanges:true});
  assert.deepEqual(changed.layout.pages.map(pg=>pg.slots.map(s=>s.panelId)),assignments);
  assert.deepEqual(changed.layout.pages[0],p.layout.pages[0]);assert.notDeepEqual(changed.layout.pages[1].slots[0].points,p.layout.pages[1].slots[0].points);
+});
+test('dragging an edge resizes only its two corners and keeps undoable layout history',()=>{
+ const p=project(),slot=p.layout.pages[0].slots[0],moved=resizeQuadEdge(slot.points,1,[-.01,.02]);
+ assert.deepEqual(moved[0],slot.points[0]);assert.deepEqual(moved[3],slot.points[3]);
+ assert.ok(moved[1][0]<slot.points[1][0]);assert.equal(moved[1][1],slot.points[1][1]);
+ assert.equal(moved[1][0],moved[2][0]);
+ assert.ok(validQuad(moved));assert.ok(validQuad(slot.points));
+ const layout=structuredClone(p.layout);layout.pages[0].slots[0].points=moved;
+ const changed=changeLayout(p,layout,'枠サイズ調整',{pageIds:[layout.pages[0].id]});
+ assert.deepEqual(changed.layout.pages.slice(1),p.layout.pages.slice(1));assert.equal(changed.panels,p.panels);
+ assert.deepEqual(undoLayout(changed).layout,p.layout);
 });
 test('reflow pulls and pushes panels across every following page without touching artwork or source order',()=>{
  const p=project(),beforePanels=p.panels,beforeJobs=p.jobs;

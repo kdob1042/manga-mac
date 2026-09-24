@@ -7,6 +7,18 @@ export const PAGE = { width: 1600, height: 2260 };
 const cross = (a,b,c) => (b[0]-a[0])*(c[1]-b[1])-(b[1]-a[1])*(c[0]-b[0]);
 export function validQuad(points) {return Array.isArray(points)&&points.length===4&&points.every(p=>Array.isArray(p)&&p.length===2&&p.every(v=>Number.isFinite(v)&&v>=0&&v<=1))&&points.every((p,i)=>Math.hypot(p[0]-points[(i+1)%4][0],p[1]-points[(i+1)%4][1])>=.005&&cross(p,points[(i+1)%4],points[(i+2)%4])>.00001);}
 export function bounds(points){const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);const x=Math.min(...xs),y=Math.min(...ys);return {x,y,width:Math.max(...xs)-x,height:Math.max(...ys)-y};}
+export function resizeQuadEdge(points,edge,delta){
+ const result=points.map(point=>[...point]),first=points[edge],second=points[(edge+1)%4];
+ const ex=(second[0]-first[0])*PAGE.width,ey=(second[1]-first[1])*PAGE.height,length=Math.hypot(ex,ey);
+ if(!length)return result;
+ const nx=-ey/length,ny=ex/length;
+ const distance=delta[0]*PAGE.width*nx+delta[1]*PAGE.height*ny;
+ for(const index of [edge,(edge+1)%4]){
+  result[index][0]+=distance*nx/PAGE.width;
+  result[index][1]+=distance*ny/PAGE.height;
+ }
+ return result;
+}
 export function inside(p,points){return points.every((a,i)=>cross(a,points[(i+1)%4],p)>=-1e-9);}
 export function overlaps(a,b){return ![a,b].some(poly=>poly.some((p,i)=>{const q=poly[(i+1)%4],axis=[-(q[1]-p[1]),q[0]-p[0]],project=v=>v[0]*axis[0]+v[1]*axis[1];const aa=a.map(project),bb=b.map(project);return Math.max(...aa)<=Math.min(...bb)+1e-9||Math.max(...bb)<=Math.min(...aa)+1e-9;}));}
 export function artPoints(slot){return slot.overflow?.points??slot.points;}
