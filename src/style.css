@@ -34,7 +34,7 @@
 .production-mode {display:block;font-size:11px;margin:14px 0;color:#526650}.production-mode select{width:100%;padding:8px;margin-top:6px;border:1px solid #d6d9d2;border-radius:6px;background:white}.shot-details{margin:16px}.shot-details>summary{cursor:pointer;color:#526650;font-size:12px;padding:12px}.shot-controls p{line-height:1.8}.shot-controls button{margin:4px}
 
 .layout-editor { max-width: 960px; margin: 18px auto; padding: 20px; background: #f6f4ee; border-radius: 16px; }
-.layout-editor .toolbar { height: auto; min-height: 54px; padding: 12px 0; flex-wrap: wrap; gap: 12px; font-size: 12px; letter-spacing: 0; }
+.layout-editor .toolbar { position: sticky; top: 0; z-index: 2; height: auto; min-height: 54px; padding: 12px 0; flex-wrap: wrap; gap: 12px; font-size: 12px; letter-spacing: 0; background: #f6f4ee; }
 .layout-editor label { display: inline-flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .layout-scroll { overflow: auto; max-height: 78vh; padding: 24px; margin: 16px 0; background: #dedbd4; }
 .layout-canvas { display: block; max-width: none; height: auto; touch-action: none; user-select: none; }
@@ -120,13 +120,18 @@ main { min-width: 0; }
 .panel-context summary { cursor: pointer; font-size: 13px; }
 .panel-context .art-comparison-grid { margin-top: 12px; }
 .drawing-controls { margin: 20px 30px; padding: 20px; border: 1px solid #d6d9d2; border-radius: 10px; background: #fafbf8; }
+.drawing-action { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 0 30px; padding: 12px 18px; border: 1px solid #cbd8c1; border-radius: 10px; background: #fafbf8; box-shadow: 0 6px 18px #203a2710; }
+.drawing-action div { min-width: 0; }
+.drawing-action strong { display: block; font-size: 14px; }
+.drawing-action small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drawing-action button { flex-shrink: 0; font-size: 13px; }
 .drawing-controls h3 { margin-top: 0; font-size: 15px; }
 .drawing-controls>p { font-size: 12px; line-height: 1.8; }
 .drawing-controls>label { display: inline-flex; align-items: center; gap: 7px; margin: 6px 16px 12px 0; font-size: 12px; }
 .drawing-controls button { margin: 5px 8px 5px 0; }
 .drawing-controls details { margin-top: 12px; font-size: 12px; }
 .drawing-controls summary { cursor: pointer; }
-.finish-panel-select { display: flex; align-items: center; gap: 12px; margin: 24px 30px; font-size: 13px; }
+.finish-panel-select { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; margin: 8px 30px; padding: 9px 14px; background: #fafbf8; border: 1px solid #dce0d7; border-radius: 8px; font-size: 13px; }
 .finish-panel-select select { padding: 9px 12px; border: 1px solid #d6d9d2; border-radius: 6px; }
 section[aria-label="仕上げの作業"]>section { margin: 20px 30px; padding: 20px; border: 1px solid #d6d9d2; border-radius: 10px; }
 section[aria-label="仕上げの作業"]>section button { margin: 6px; }
@@ -172,4 +177,5 @@ button:focus-visible,input:focus-visible { outline: 3px solid #5b9270; outline-o
   .input-row input { min-width: 120px; }
   .page { width: calc(100% - 24px); padding: 12px; }
   .drawing-controls { margin: 16px 12px; padding: 12px; }
+  .drawing-action { margin: 0 12px; padding: 10px; flex-wrap: wrap; }
 }
