@@ -96,7 +96,7 @@ test('source sidebar moves between episodes and focuses the matching manuscript 
 
 test('source selection action remains visible while reading a long manuscript',async({page})=>{
   await page.goto('/');
-  await page.evaluate(async data=>{await(await import('/src/bridge.js')).saveProject(data);},savedWork);
+  await page.evaluate(async data=>{await(await import('/src/bridge.js')).saveProject({...data,contentToken:'fixture-token'});},savedWork);
   await page.reload();
   await page.getByRole('button',{name:'原稿',exact:true}).click();
   const toolbar=page.getByRole('region',{name:'原稿',exact:true}).locator('.toolbar');
