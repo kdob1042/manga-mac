@@ -19,6 +19,12 @@ Skill正本は `kdob1042/story-library/skills/manga-director/SKILL.md`。同じ�
 
 手動のネームJSONファイルも同じ候補経路へ渡せる。アプリ内の設定済み演出AIによる候補生成は任意の別入口であり、GitHub取込の前提ではない。旧v1は空の原稿への取り込み互換を維持する。
 
+## ローカルの検証コマンド
+
+開発時には `node tools/manga-director/validate.mjs --project PROJECT.json --plan name-plan.json --source-bundle SOURCE.json` で、取込前に形式・原稿対応・組版を診断できる。PROJECTは取り込み済みproject JSON、SOURCEは `{"manifest":story-sourceのmanifest,"files":{"作品rootからの相対パス":"ファイル本文"}}` 形式。source-bundleの本文を取り込み済み原稿と照合し、共通story-source validatorとアプリ本番のv2 importer/compilerを実行する。成功時は形式、コマ／ページ数、ファイルhashをJSONで表示し、入力ファイルは変更しない。
+
+このコマンドはローカルの診断だけを行う。GitHub取得SHAの固定と候補の保存・明示採用はアプリの操作で行う。LLM、別ホストのAPI、APIキー、画像生成、公開は使用しない。
+
 ## 更新と制約
 
 原稿・設定・人物参照の不一致、別作品、未対応形式、巨大JSON、取得途中の原稿版変更は候補・採用前に停止する。ファイルがない場合や認証に失敗した場合、別HEAD／別パスや別AIへ自動退避しない。トークンは既存のメモリ上の読み取り専用設定を使い、ネーム・来歴に保存しない。

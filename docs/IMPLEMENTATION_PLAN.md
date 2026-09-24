@@ -565,6 +565,7 @@ Node／native／ブラウザfixtureとMac上の実原稿・実推論・GUI操作
 - compilerは明示された構造を既存layout.version=1へ変換。rowは右から左、columnは上から下。比率はsoft、順序・固定・最小領域はhard制約。全面1コマ、非対称段組み、二つのleaf間の共有斜辺を扱う。解なしでページ数を増減・固定解除・4コマへのfallbackをしない。insetの重ね配置、曲線、印刷裁ち落としは自動compilerの対象外。
 - 意味計画は生成意図、採用layoutは描画正本。手で動かした座標を起動時に再計算せず、overrideとして保持する。自然言語は意味patchへ、座標はcompilerへ渡す。内容を変える指示は別のネーム候補とする。
 - 内部AI／外部JSONは同じ候補→検証→採用を通る。選択外ページを保ち、既存ページの一部と衝突する範囲は拡張確認または別初稿へ返す。旧v1取込は互換として維持する。
+- Manga Directorの主経路は作品Skillを読む同じチャットAI。検証用CLIはローカルのstory-source manifest/filesと取り込み済み原稿を照合し、共有name-plan/v2 importer/compilerで診断だけを行う。CLIからLLM・APIキー・別ホストへ接続せず、GitHub同一SHA取得と候補採用はアプリが担当する。
 - 採用後は既存producePanels/Job/生成adapter、文字配置、pagePNGを再利用する。寸法はコマ比率とモデル能力から選ぶ。採用ネームを旧planScene/layout AIで作り直さない。文字枠の存在だけを配置完了とせず、作画版に結び付く状態で再開判定する。
 - v2文字は実コマ領域で描画し、非掲載の地の文をcaptionへ復活させない。共通rendererで仮ネーム・完成PNG/CBZ/Live書出しを扱う。文字溢れは対象コマの修正に返し、台詞の要約や無断再作画をしない。
 - v2完了反映は既存checked save（nativeのcontentToken照合・検査・SQLite同一transaction・読戻し）を利用する。全ページproof成功後だけ、承認済み掲載方針に一致する完了原稿単位を追加する。旧source_patchの全量掲載契約は緩めない。未完了の段落一部は完了台帳へ先に書かない。
