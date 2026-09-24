@@ -54,7 +54,20 @@ test('imports manuscript while recording a declared image with invalid bytes',as
  const snapshot=await syncSource('owner/story','','P01',null,invoke,{commit:sha,branch:'dev'});
  assert.deepEqual(snapshot.scenes.map(scene=>scene.id),['P01-01']);
  assert.deepEqual(snapshot.references.map(reference=>reference.characterId),['yu']);
- assert.deepEqual(snapshot.unavailableReferences,[{name:'人物B',path:'assets/chihiro.jpg',reason:'invalid_image_format'}]);
+ assert.deepEqual(snapshot.unavailableReferences,[{name:'人物B',path:'assets/chihiro.jpg',reason:'invalid_image_format',diagnostic:'参照画像の実形式がPNG/JPEG/WebPではありません'}]);
+ let retried=false;
+ const recovered=await syncSource('owner/story','','P01',snapshot,async(command,args)=>{
+  if(command==='github_asset'&&args.path==='assets/chihiro.jpg'){
+   retried=true;
+   return {image:'data:image/jpeg;base64,/9j/',hash:'a'.repeat(64),mime:'image/jpeg',size:3};
+  }
+  return invoke(command,args);
+ },{commit:sha,branch:'dev'});
+ assert.equal(retried,true);
+ assert.deepEqual(recovered.references.map(reference=>reference.characterId),['yu','chihiro']);
+ assert.equal(recovered.unavailableReferences,undefined);
+ assert.notEqual(recovered.id,snapshot.id);
+ assert.equal(sourceSummary(snapshot,recovered).changed,true);
  await assert.rejects(syncSource('owner/story','','P01',null,async(command,args)=>{
   if(command==='github_asset')throw Error('connection failed');
   return invoke(command,args);

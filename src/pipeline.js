@@ -73,7 +73,8 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
     && (previous.sync?.source_branch ?? 'main') === branch
     && (previous.selectedSceneId ?? null) === (selectedSceneId ?? null)
-    && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
+    && Array.isArray(previous.references) && !previous.unavailableReferences?.length
+    && previous.protocol?.version === 1) return previous;
   const manifestFile = await readManifest(repo, sha, token, invokeCall, entryPath);
   const manifestText = manifestFile.text;
   const manifest = JSON.parse(manifestText);
@@ -125,7 +126,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
       }
       if (!asset) {
         if (!String(error?.message ?? error).includes('参照画像の実形式がPNG/JPEG/WebPではありません')) throw error;
-        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format'});
+        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format',diagnostic:String(error?.message ?? error)});
         continue;
       }
     }
@@ -145,6 +146,12 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     ...(workId ? {library: {repository: repo, branch, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
+  if (previous?.sha === sha && previous.unavailableReferences?.length
+    && JSON.stringify(previous.references.map(({path, hash}) => [path, hash]))
+      !== JSON.stringify(references.map(({path, hash}) => [path, hash]))) {
+    const fingerprint = await sha256(JSON.stringify(references.map(({path, hash}) => [path, hash])));
+    snapshot.id += `:refs-${fingerprint.slice(0, 12)}`;
+  }
   return snapshot;
 }
 export async function planScene(scene, snapshot, characters, model, ask = askLLM) {
