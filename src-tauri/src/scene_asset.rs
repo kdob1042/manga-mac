@@ -270,6 +270,134 @@ fn resource_budget(gltf: &Value, bin: Option<&[u8]>) -> Result<(), String> {
     Ok(())
 }
 
+fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String> {
+    let views = gltf["bufferViews"].as_array();
+    let accessors = gltf["accessors"].as_array();
+    let buffer_size = gltf["buffers"]
+        .as_array()
+        .and_then(|items| items.first())
+        .and_then(|item| item["byteLength"].as_u64());
+    for view in views.into_iter().flatten() {
+        if view["buffer"] != 0 {
+            return Err(invalid());
+        }
+        let offset = view["byteOffset"].as_u64().unwrap_or(0);
+        let length = view["byteLength"].as_u64().ok_or_else(invalid)?;
+        let end = offset.checked_add(length).ok_or_else(invalid)?;
+        if length == 0 || buffer_size.is_none_or(|size| end > size)
+            || binary.is_none_or(|bytes| end > bytes.len() as u64)
+        {
+            return Err(invalid());
+        }
+    }
+    for accessor in accessors.into_iter().flatten() {
+        // Sparse accessors are deliberately unsupported until their decoded
+        // allocation and index ranges can be checked before GLTFLoader runs.
+        if accessor.get("sparse").is_some() {
+            return Err("未対応の疎な3Dメッシュです".into());
+        }
+        let index = accessor["bufferView"].as_u64().ok_or_else(invalid)? as usize;
+        let view = views.and_then(|items| items.get(index)).ok_or_else(invalid)?;
+        let components: u64 = match accessor["type"].as_str() {
+            Some("SCALAR") => 1,
+            Some("VEC2") => 2,
+            Some("VEC3") => 3,
+            Some("VEC4" | "MAT2") => 4,
+            Some("MAT3") => 9,
+            Some("MAT4") => 16,
+            _ => return Err(invalid()),
+        };
+        let size: u64 = match accessor["componentType"].as_u64() {
+            Some(5120 | 5121) => 1,
+            Some(5122 | 5123) => 2,
+            Some(5125 | 5126) => 4,
+            _ => return Err(invalid()),
+        };
+        let element = components.checked_mul(size).ok_or_else(invalid)?;
+        let stride = view["byteStride"].as_u64().unwrap_or(element);
+        let count = accessor["count"].as_u64().ok_or_else(invalid)?;
+        let offset = accessor["byteOffset"].as_u64().unwrap_or(0);
+        if count == 0 || stride < element || stride > 252 || !offset.is_multiple_of(size)
+            || (count - 1)
+                .checked_mul(stride)
+                .and_then(|n| n.checked_add(offset))
+                .and_then(|n| n.checked_add(element))
+                .is_none_or(|end| end > view["byteLength"].as_u64().unwrap_or(0))
+        {
+            return Err(invalid());
+        }
+    }
+    for mesh in gltf["meshes"].as_array().into_iter().flatten() {
+        for primitive in mesh["primitives"].as_array().into_iter().flatten() {
+            let attributes = primitive["attributes"].as_object().ok_or_else(invalid)?;
+            if !attributes.contains_key("POSITION") || attributes.values().any(|index| {
+                index.as_u64().is_none_or(|index| {
+                    accessors.is_none_or(|items| items.get(index as usize).is_none())
+                })
+            }) || primitive["indices"].as_u64().is_some_and(|index| {
+                accessors.is_none_or(|items| items.get(index as usize).is_none())
+            }) {
+                return Err(invalid());
+            }
+        }
+    }
+    let nodes = gltf["nodes"].as_array();
+    let node_count = nodes.map_or(0, Vec::len);
+    let mut parents = vec![0usize; node_count];
+    for node in nodes.into_iter().flatten() {
+        for (key, collection) in [("mesh", "meshes"), ("skin", "skins"), ("camera", "cameras")] {
+            if let Some(reference) = node.get(key) {
+                let index = reference.as_u64().ok_or_else(invalid)? as usize;
+                if gltf[collection].as_array().is_none_or(|items| items.get(index).is_none()) {
+                    return Err(invalid());
+                }
+            }
+        }
+        if let Some(children) = node.get("children") {
+            for child in children.as_array().ok_or_else(invalid)? {
+                let index = child.as_u64().ok_or_else(invalid)? as usize;
+                let count = parents.get_mut(index).ok_or_else(invalid)?;
+                *count += 1;
+                if *count > 1 {
+                    return Err(invalid());
+                }
+            }
+        }
+    }
+    let mut state = vec![0u8; node_count];
+    fn visit(index: usize, nodes: &[Value], state: &mut [u8]) -> Result<(), String> {
+        match state[index] {
+            1 => return Err(invalid()),
+            2 => return Ok(()),
+            _ => (),
+        }
+        state[index] = 1;
+        for child in nodes[index]["children"].as_array().into_iter().flatten() {
+            visit(child.as_u64().ok_or_else(invalid)? as usize, nodes, state)?;
+        }
+        state[index] = 2;
+        Ok(())
+    }
+    if let Some(nodes) = nodes {
+        for index in 0..node_count {
+            visit(index, nodes, &mut state)?;
+        }
+    }
+    for scene in gltf["scenes"].as_array().into_iter().flatten() {
+        for node in scene["nodes"].as_array().into_iter().flatten() {
+            if nodes.is_none_or(|items| items.get(node.as_u64().ok_or_else(invalid)? as usize).is_none()) {
+                return Err(invalid());
+            }
+        }
+    }
+    if let Some(index) = gltf["scene"].as_u64() {
+        if gltf["scenes"].as_array().is_none_or(|items| items.get(index as usize).is_none()) {
+            return Err(invalid());
+        }
+    }
+    Ok(())
+}
+
 pub fn check_glb(bytes: &[u8]) -> Result<(), String> {
     if bytes.len() < 20
         || bytes.len() > MAX_BUNDLE
@@ -339,6 +467,7 @@ pub fn check_glb(bytes: &[u8]) -> Result<(), String> {
             return Err("外部ファイルを参照するGLBは使用できません".into());
         }
     }
+    validate_references(&gltf, binary)?;
     resource_budget(&gltf, binary)?;
     Ok(())
 }
@@ -442,6 +571,19 @@ mod tests {
         bytes.extend(body);
         bytes
     }
+    fn glb_with_binary(json: &str, data: &[u8]) -> Vec<u8> {
+        let mut bytes = glb(json);
+        let mut binary = data.to_vec();
+        while !binary.len().is_multiple_of(4) {
+            binary.push(0);
+        }
+        bytes.extend((binary.len() as u32).to_le_bytes());
+        bytes.extend(b"BIN\0");
+        bytes.extend(binary);
+        let length = bytes.len() as u32;
+        bytes[8..12].copy_from_slice(&length.to_le_bytes());
+        bytes
+    }
     fn png(width: u32, height: u32) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR".to_vec();
         bytes.extend(width.to_be_bytes());
@@ -460,6 +602,23 @@ mod tests {
         let mut damaged = glb(r#"{"asset":{"version":"2.0"}}"#);
         damaged.pop();
         assert!(check_glb(&damaged).is_err());
+    }
+    #[test]
+    fn accepts_bounded_embedded_geometry_and_rejects_broken_references() {
+        let geometry = json!({"asset":{"version":"2.0"},"buffers":[{"byteLength":36}],
+            "bufferViews":[{"buffer":0,"byteLength":36}],
+            "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3"}],
+            "meshes":[{"primitives":[{"attributes":{"POSITION":0}}]}]});
+        let data = vec![0; 36];
+        assert!(check_glb(&glb_with_binary(&geometry.to_string(), &data)).is_ok());
+        let mut wrong_view = geometry.clone();
+        wrong_view["bufferViews"][0]["byteLength"] = json!(40);
+        assert!(check_glb(&glb_with_binary(&wrong_view.to_string(), &data)).is_err());
+        let mut wrong_accessor = geometry;
+        wrong_accessor["accessors"][0]["bufferView"] = json!(4);
+        assert!(check_glb(&glb_with_binary(&wrong_accessor.to_string(), &data)).is_err());
+        let cycle = json!({"asset":{"version":"2.0"},"nodes":[{"children":[1]},{"children":[0]}]});
+        assert!(check_glb(&glb(&cycle.to_string())).is_err());
     }
     #[test]
     fn caps_geometry_bones_decoded_images_and_compression() {

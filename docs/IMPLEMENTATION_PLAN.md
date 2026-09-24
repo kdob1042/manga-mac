@@ -452,6 +452,8 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 
 人物参照画像の明示送信、APIキーのメモリ保持、credits上限、送信markerとunknown時再送禁止、回収GLBのサイズ・magic・hash検査を維持する。回収済みGLBは作品素材として登録し、scene3dのassetIdから再利用する。リグ・衣装・人物同一性は実物を検査し、生成されたというだけで対応済みと表示しない。
 
+2026-09-24時点の[Tripo公式Changelog](https://developers.tripo3d.ai/en/docs/changelog)はv3で生成endpointとtask応答項目が変更されたと記載する。既存クライアントはv2/openapiと固定モデル`v2.5-20250123`を使うため、旧taskの照会・回収を保つ現行経路は無条件でv3へ切り替えない。v2の実サービス稼働と有料生成は未検証。新規API版を採用する場合は[公式移行表](https://developers.tripo3d.ai/en/docs/migration-v2-to-v3)に沿い、新旧taskの識別、出力URL、送信・復旧fixtureを揃えてから切り替える。
+
 ### #213 実装境界の補正（2026-09-21）
 
 - 既存FLUX.2 klein 4Bに同一SDKの6-bit重みを追加。モデル定義は一つとし、Swiftはnativeが解決したID・寸法・stepsを受け取る。実機推論・性能は未検証。
