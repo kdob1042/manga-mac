@@ -14,6 +14,10 @@ test('external editor candidate can be adopted and reopened without Compositor i
  await page.reload();await page.locator('.panel').first().click();
  await expect(page.getByRole('button',{name:'この候補を採用',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'この候補を採用',exact:true}).click();
+ await expect.poll(()=>page.evaluate(async()=>{
+  const saved=await(await import('/src/bridge.js')).loadProject();
+  return saved.panels[0].compositor?.bundle?.manifest?.version;
+ })).toBe(8);
  await page.reload();await page.locator('.panel').first().click();
  const saved=await page.evaluate(async()=>await(await import('/src/bridge.js')).loadProject());
  expect(saved.panels[0].compositor.bundle.manifest.version).toBe(8);

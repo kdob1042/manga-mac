@@ -43,6 +43,32 @@ test('stages defer expensive views, retain unfinished layout input and collect e
   expect(errors).toEqual([]);
 });
 
+test('page actions stay in reach while the canvas scrolls',async({page})=>{
+  await openSaved(page);
+  await page.addStyleTag({content:'main .page, main .page-proof { min-height: 1600px; }'});
+  const main=page.locator('main');
+  const scrollAndCheck=async selector=>{
+    await main.evaluate(el=>{el.scrollTop=500;});
+    await expect.poll(()=>main.evaluate(el=>el.scrollTop)).toBeGreaterThan(400);
+    await expect.poll(async()=>{
+      const bounds=await selector.boundingBox(), viewport=await main.boundingBox();
+      return Math.round(bounds.y-viewport.y);
+    }).toBeGreaterThanOrEqual(0);
+    const bounds=await selector.boundingBox(), viewport=await main.boundingBox();
+    expect(bounds.y-viewport.y).toBeLessThan(20);
+  };
+  const action=page.getByRole('region',{name:'作画の実行'});
+  await expect(action.getByRole('button',{name:'作画するコマを選ぶ'})).toBeVisible();
+  await scrollAndCheck(action);
+  await page.getByRole('button',{name:'1コマ目を選択'}).click();
+  await expect(action.getByRole('button',{name:/このコマの再生成候補を作る|選択した1コマを作画/})).toBeVisible();
+  await page.getByRole('button',{name:'仕上げ',exact:true}).click();
+  const selector=page.getByLabel('仕上げるコマ');
+  await expect(selector).toBeVisible();
+  await expect(page.getByRole('img',{name:'書き出しページの確認'})).toBeVisible();
+  await scrollAndCheck(selector);
+});
+
 test('failed project load can retry without starting an empty replacement project',async({page})=>{
   await page.addInitScript(data=>{
     let attempts=0;window.saved=0;
