@@ -320,7 +320,7 @@ function App() {
         }
         libraryOptions={
           commit:detail.sha,branch:sourceBranch,workId:entry.work_id,workRoot:detail.work.root,sourceRoot:detail.sourceRoot,
-          manifestPath:detail.entryPath,episodeIds:requested,...(requested.length===1&&requested[0]===episode&&(selectedSceneId||entry.scene)?{sceneId:selectedSceneId||entry.scene}:{}),format:detail.work.manuscriptFormat,
+          manifestPath:detail.entryPath,episodeIds:requested,format:detail.work.manuscriptFormat,
         };
       } else if(library && entry) {
         const saved=await call('source_register',{name:entry.name,repo:entry.repo,episode,id:entry.id});
