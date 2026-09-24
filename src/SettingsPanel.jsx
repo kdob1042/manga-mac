@@ -23,7 +23,6 @@ export default function SettingsPanel({
   snapshot,
   ready,
   run,
-  checkSync,
   project,
   name,
   setName,
@@ -42,12 +41,12 @@ export default function SettingsPanel({
 }) {
   const selectedImageModel=imageModel(imageModelId), closeButton=useRef(null);
   useEffect(()=>{const previous=document.activeElement;closeButton.current?.focus();return()=>previous?.focus?.();},[]);
-  return <section className="settings" aria-label="接続・人物設定" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setSettings(false);}}}>
+  return <section className="settings" aria-label="設定" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();setSettings(false);}}}>
     <div className="setting-head">
-    <h2>制作の準備</h2>
+    <h2>設定</h2>
     <button ref={closeButton} onClick={() => setSettings(false)}>閉じる</button>
     </div>
-    <h3>01 / 原作をつなぐ</h3>
+    <details><summary>旧形式の原稿接続</summary>
     <label>GitHubリポジトリ<input value={repo} readOnly={!!library?.entries.some(e => e.id === library.active)} disabled={!!busy} onChange={e => {
         setRepo(e.target.value);
         setPending(null);
@@ -66,8 +65,8 @@ export default function SettingsPanel({
     <strong>使用中の原稿</strong>
     <span>{snapshot.repo} / {snapshot.sync?.source_branch??sourceBranch} @ {snapshot.sha.slice(0, 8)}</span>
     <span>{protocolLabel(snapshot)}</span>
-    </div>}<button className="full" disabled={!!busy || !ready} onClick={() => run("原作を取得中", checkSync)}>GitHub側の更新を確認</button>
-    <h3>02 / キャラクターの正本</h3>
+    </div>}</details>
+    <details><summary>人物と画風の参照</summary>
     <small>原稿で宣言された人物参照画像は、原稿版を取り込むと同じcommitから自動登録されます。</small>
     <div className="characters">{project.characters.map(c => <div key={c.id}>
     <img src={c.image} />
@@ -99,7 +98,8 @@ export default function SettingsPanel({
         e.target.value = "";
       }} />
     </label>
-    <h3>03 / AIの接続</h3>
+    </details>
+    <h3>AIの接続</h3>
     <LLMSettings title="演出・コマ計画" value={model} onChange={setModel} disabled={!!busy} run={run} notify={setNotice} />
     <small>演出・コマ計画の接続は、漫画と動画で共通する英訳の作成にも使用します。</small>
     <JevSettings value={jev} onChange={setJev} run={run} busy={!!busy} />
@@ -115,7 +115,7 @@ export default function SettingsPanel({
     })}>画像モデルを準備する</button>
     <small>必要なモデルだけ、この操作でダウンロードします。</small>
     <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
-    <h3>04 / Blenderで撮影する</h3>
+    <h3>Blenderで撮影する</h3>
     <BlenderSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />
     <h3>作品JSONの書き出し</h3>
