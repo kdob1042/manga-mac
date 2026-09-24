@@ -124,7 +124,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
       }
       if (!asset) {
         if (!String(error?.message ?? error).includes('参照画像の実形式がPNG/JPEG/WebPではありません')) throw error;
-        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format'});
+        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format',diagnostic:String(error?.message ?? error)});
         continue;
       }
     }
