@@ -307,7 +307,7 @@ fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Resul
         .map_err(|_| "参照画像のbase64が不正です".into())
 }
 #[cfg(test)]
-mod source_asset_tests {
+mod source_asset_response_tests {
     use super::*;
 
     #[test]
@@ -371,7 +371,7 @@ async fn github_asset(
             .get(url.as_str())
             .header("Accept", "application/vnd.github.raw+json");
         if !token.is_empty() {
-            req = req.bearer_auth(token);
+            req = req.bearer_auth(&token);
         }
         let response = req.send().await.map_err(err)?;
         if !response.status().is_success() {
