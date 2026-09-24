@@ -11,6 +11,30 @@ export const videoModels = registry.videos.filter(item => item.status === 'imple
 export const defaultImageModelId = registry.defaults.image;
 export const defaultVideoModelId = registry.defaults.video;
 
+export function mediaProvider(selected) {
+  const provider = registry.providers[selected.provider];
+  if (!provider) throw Error('生成サービスが未対応です');
+  return provider;
+}
+export function mediaModelGroups(models) {
+  return [...new Set(models.map(item => item.provider))].map(id => ({
+    id, label: mediaProvider({provider:id}).display_name,
+    models: models.filter(item => item.provider === id)
+  }));
+}
+export function mediaInputSummary(selected) {
+  if (selected.output?.kind === 'ordered-rgba-layers') return '既存画像のレイヤー分解';
+  if (selected.operations.includes('image_to_video')) return `開始画像1枚${selected.capabilities.end_frame ? '＋終端画像1枚' : '（終端画像は非対応）'} · 人物・画風の独立した参照画像は非対応`;
+  return selected.capabilities.reference_images ? `人物・画風・構図・編集元などの参照画像：合計${selected.input.max_references}枚まで` : '参照画像は非対応';
+}
+export function imageConnectionId(project, id) {
+  return project.mediaDefaults?.imageConnections?.[id]
+    ?? (id === 'runway-gen4-image' ? project.mediaDefaults?.imageConnection : '') ?? '';
+}
+export function isCloudImage(media) {
+  return allImageModels.some(model => model.id === media?.registry_id && model.locality === 'cloud');
+}
+
 function model(list, id, label) {
   const result = list.find(item => item.id === id);
   if (!result || result.status !== 'implemented') throw Error(`${label}が未対応です`);

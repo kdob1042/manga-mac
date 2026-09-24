@@ -1,3 +1,4 @@
+import {mediaModelGroups,mediaInputSummary,mediaProvider} from './media.js';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { call, desktop, loadProject } from './bridge';
@@ -173,9 +174,9 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   return <section className="video-workspace" aria-label="動画制作">
     {batchRunning && <button disabled={batchStopping} onClick={() => { batchStop.current = true; setBatchStopping(true); }}>次のコマから停止</button>}
     <h2>動画ショット</h2><p>動きを決める → 生成 → 再生して採用</p>
-    <details ref={setupRef}><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
-      <label>動画の生成先<select aria-label="動画の生成先" value={videoModelId} onChange={e => run('動画モデルを選択', async () => { const next = e.target.value; setVideoModelId(next); setApproved(false); setBatchApproval(''); const descriptor = videoModel(next); const nextRatio = descriptor.input.ratios[0], nextDuration = descriptor.input.default_duration_sec ?? descriptor.input.durations_sec[0]; setRatio(nextRatio); setDuration(nextDuration); setBatchRatio(nextRatio); setBatchDuration(nextDuration); await commit({ ...current.current, mediaDefaults: { ...current.current.mediaDefaults, video: next } }); })}>{videoModels.map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
-      <p>{selectedVideoModel.display_name} · 選択した接続の対応機能・入力条件を送信前に検証します。A→Bは終端画像対応の接続だけで実行します。</p>
+    <details ref={setupRef}><summary>動画生成の設定</summary><fieldset disabled={busy || !desktop()}>
+      <label>動画の生成先<select aria-label="動画の生成先" value={videoModelId} onChange={e => run('動画モデルを選択', async () => { const next = e.target.value; setVideoModelId(next); setApproved(false); setBatchApproval(''); const descriptor = videoModel(next); const nextRatio = descriptor.input.ratios[0], nextDuration = descriptor.input.default_duration_sec ?? descriptor.input.durations_sec[0]; setRatio(nextRatio); setDuration(nextDuration); setBatchRatio(nextRatio); setBatchDuration(nextDuration); await commit({ ...current.current, mediaDefaults: { ...current.current.mediaDefaults, video: next } }); })}>{mediaModelGroups(videoModels).map(group => <optgroup key={group.id} label={group.label}>{group.models.map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</optgroup>)}</select></label>
+      <p>{mediaInputSummary(selectedVideoModel)}</p>
       {localVideo ? <>
         <p>このMacの取得済みLTXモデルで生成します。モデルの自動取得・外部APIへの切替は行いません。</p>
         <label>LTX実行ファイル<input aria-label="LTX実行ファイル" disabled={!!connectionId} value={localExecutable} onChange={e => { setLocalExecutable(e.target.value); setApproved(false); }}/></label>
@@ -204,7 +205,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
         connectionRefs.current.set(id, 'remove_video'); setVideoConnections(items => ({ ...items, [videoModelId]: id }));
         notify('同じRunwayキーをこのモデルにも追加しました。');
       })}>同じRunwayキーでこのモデルを追加</button>}
-      <small>再起動後は同じRunwayキーを再登録して、保存済みtaskを確認してください。モデルbindingごとに課金送信を明示承認します。</small>
+      <small>再起動後は同じRunwayキーを再登録して、保存済みtaskを確認してください。モデルごとに送信と予算を設定します。</small>
       </>}
     </fieldset></details>
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
@@ -326,7 +327,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
       {shotRequestError && <p role="alert">{shotRequestError}</p>}
       {shotEdited && <p role="status">変更した指示を保存すると生成できます。</p>}
       <button className="primary" disabled={busy || !desktop() || !activeConnection || !transitionSupported || !!shotRequestError || shotEdited} onClick={() => run('動画要求を送信中', generate)}>{shot.duration}秒の動画を生成する</button>
-      {!connectionId && <p>動画API接続を登録すると生成・状態照会を利用できます。</p>}
+      {!connectionId && <p>動画生成の設定を登録すると生成・状態照会を利用できます。</p>}
       {shot.transition && activeConnection && !transitionSupported && <p role="alert">現在の接続・モデルは終端画像に対応していないため、このA→Bショットは送信しません。</p>}
       {project.jobs.filter(j => j.scope?.type === 'videoShot' && j.scope.id === shot.id).map(j => <article key={j.id}>
         <p>{videoStatusLabel(j)} · 予約 {j.remote?.reserved_credits ?? 0} credits{j.remote?.actual_credits != null ? ` / 実績 ${j.remote.actual_credits} credits` : ''}</p>

@@ -1,3 +1,4 @@
+import {isCloudImage,imageConnectionId} from './media.js';
 import { ensureLayout } from './layout.js';
 import { placementKey } from './placement.js';
 import { defaultImageModelId, defaultVideoModelId, imageExecution, imageModel, videoModel } from './media.js';
@@ -82,14 +83,14 @@ export async function beginJob(project, panel, kind = 'generate', imageModelId =
     : null;
   if (project.jobs.filter(j => !j.notSubmitted && j.panelId === panel.id && j.base_revision === (panel.artwork_revision ?? null) && j.source_revision === panel.snapshotId && j.kind === kind).length >= 3) throw Error('同じ基準版での試行上限です。既存候補を確認してください');
   if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');
-  const cloud=media?.adapter_id==='runway-image';
-  if(cloud&&!project.mediaDefaults?.imageConnection)throw Error('クラウド静止画の接続・予算を登録してください');
+  const cloud=isCloudImage(media), connection=cloud?imageConnectionId(project,media.registry_id):'', cost=cloud?imageModel(media.registry_id).cost:null;
+  if(cloud&&!connection)throw Error('クラウド静止画の接続・予算を登録してください');
   const previous = continuityReferenceId && project.panels.find(p => p.id === continuityReferenceId);
   if (continuityReferenceId && (effectiveContinuity(panel)?.previousPanelId !== continuityReferenceId || !previous?.image || previous.sceneId !== panel.sceneId)) throw Error('同一場面の採用済み前コマだけを参照できます');
   const continuityReference = previous ? {panelId: previous.id, hash: await imageHash(previous.image)} : null;
-  return { ...(cloud?{cloud_connection:project.mediaDefaults.imageConnection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
+  return { ...(cloud?{cloud_connection:connection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
     base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), ...(continuityReference ? {continuity_reference: continuityReference} : {}), input_hash_version: 2, input_hash: await inputHash(project, panel, media, 2, continuityReference),
-    status: 'running', attempts: 1, cost: { kind: cloud?'cloud':'local', amount: cloud?5:null, currency: cloud?'credits':null }, started_at: Date.now(), at: new Date().toISOString() };
+    status: 'running', attempts: 1, cost: { kind: cloud?'cloud':'local', amount: cloud?(cost.unit==='milliUSD'?cost.amount/1000:cost.amount):null, currency: cloud?(cost.unit==='milliUSD'?'USD':cost.unit):null }, started_at: Date.now(), at: new Date().toISOString() };
 }
 export async function finishJob(project, job, generated, cancelled = false, candidateOnly = false) {
   const currentJob = project.jobs.find(j => j.id === job.id);

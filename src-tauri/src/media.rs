@@ -6,6 +6,7 @@ const REGISTRY: &str = include_str!("../../src/media-registry.json");
 
 #[derive(Clone)]
 pub struct ImageModel {
+    pub provider: String,
     pub registry_id: String,
     pub adapter_id: String,
     pub model_id: String,
@@ -71,6 +72,10 @@ pub fn image_model(id: Option<&str>) -> Result<ImageModel, String> {
     implemented(&value)?;
     let input = &value["input"];
     Ok(ImageModel {
+        provider: value["provider"]
+            .as_str()
+            .ok_or("画像provider定義が不正です")?
+            .into(),
         registry_id: selected_id,
         adapter_id: value["adapter_id"]
             .as_str()
@@ -120,7 +125,9 @@ pub fn validate_image_request(request: &Value) -> Result<ImageModel, String> {
     {
         return Err("画像の実行先定義が登録情報と一致しません".into());
     }
-    if !["media-generation-kit", "runway-image"].contains(&selected.adapter_id.as_str()) {
+    if !["media-generation-kit", "runway-image", "openai-image"]
+        .contains(&selected.adapter_id.as_str())
+    {
         return Err("選択した画像adapterはまだ接続されていません".into());
     }
     let width = request["width"].as_u64().ok_or("画像幅がありません")?;

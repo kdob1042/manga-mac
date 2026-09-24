@@ -7,8 +7,7 @@ import { protocolLabel } from "./source-protocol";
 import { call } from "./bridge";
 import { download } from "./export.js";
 import CloudImageSettings from './CloudImageSettings.jsx';
-import TapNowSettings from './TapNowSettings.jsx';
-import {imageModels,imageModel} from './media.js';
+import {imageModels,imageModel,mediaModelGroups,mediaInputSummary} from './media.js';
 export default function SettingsPanel({
   setSettings,
   repo,
@@ -109,15 +108,15 @@ export default function SettingsPanel({
       const next=e.target.value;
       await commit({...current.current,mediaDefaults:{...current.current.mediaDefaults,image:next}});
       setImageModelId(next);
-    })}>{imageModels.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
+    })}>{mediaModelGroups(imageModels).map(group=><optgroup key={group.id} label={group.label}>{group.models.map(item=><option key={item.id} value={item.id}>{item.display_name}</option>)}</optgroup>)}</select></label>
+    <small>{mediaInputSummary(selectedImageModel)}</small>
     <small>{selectedImageModel.locality==='local'?'Mac内で生成します。':'生成時に画像をクラウドへ送信します。'} 別モデルへ自動で切り替えません。</small>
-    <button disabled={!!busy||!selectedImageModel.requires_preparation} className="full" onClick={() => run("画像モデルを準備中（初回ダウンロード）", async () => {
+    {selectedImageModel.requires_preparation&&<><button disabled={!!busy} className="full" onClick={() => run("画像モデルを準備中（初回ダウンロード）", async () => {
       await call("prepare_media_engine", {modelId:imageModelId});
       setNotice("画像モデルの準備が完了しました");
     })}>画像モデルを準備する</button>
-    <small>必要なモデルだけ、この操作でダウンロードします。</small>
-    <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
-    <TapNowSettings busy={busy} run={run}/>
+    <small>必要なモデルだけ、この操作でダウンロードします。</small></>}
+    <CloudImageSettings modelId={imageModelId} current={current} commit={commit} run={run} busy={!!busy}/>
     <h3>04 / 3D素材</h3>
     <TripoSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />

@@ -123,7 +123,7 @@ for (const scope of ['common', 'individual']) test(`video model changes invalida
   await save.click();
   await expect(save).toBeDisabled();
   await page.getByRole('region',{name:'動画バッチ実行確認'}).getByRole('checkbox').check();
-  await page.getByText('動画API接続',{exact:true}).click();
+  await page.getByText('動画生成の設定',{exact:true}).click();
   await page.getByLabel('動画の生成先').selectOption('runway-gen4-5');
   // Saved recipes survive model changes so they remain resumable. Their prior
   // approval is invalid, and incompatible recipes cannot be submitted.

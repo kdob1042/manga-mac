@@ -1,3 +1,4 @@
+import {isCloudImage,imageConnectionId} from './media.js';
 import {producePanels} from './production.js';
 import {finalizeProducedSource} from './source-patch.js';
 import {createProjectWriter} from './project-writer.js';
@@ -545,7 +546,7 @@ function App() {
       {chosenCapture && chosenCapture.origin !== 'three' && <p className="muted">旧撮影画像は保持されています。3D構図を編集する場合はGLB素材を配置して撮り直してください。</p>}
       {project.jobs.filter(j => ['generate','edit','retake','compositor','decompose','layer_edit'].includes(j.kind) && !j.finishing && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
         <p>{job.status === 'unknown' ? '応答未確定：再実行する前に結果を確認してください' : '作画候補：採用前の原稿を保持しています'}</p>
-        {job.status === 'unknown' && ['generate','edit','retake'].includes(job.kind) && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = job.media?.adapter_id==='runway-image'?await call('recover_cloud_image',{jobId:job.id,connectionId:current.current.mediaDefaults?.imageConnection}):await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
+        {job.status === 'unknown' && ['generate','edit','retake'].includes(job.kind) && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = isCloudImage(job.media)?await call('recover_cloud_image',{jobId:job.id,connectionId:imageConnectionId(current.current,job.media.registry_id)}):await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
         {job.output_revision && <><Suspense fallback={<p>比較を読み込み中…</p>}><CandidateComparison project={project} job={job}/></Suspense><button disabled={!!busy} onClick={() => run('作画候補を採用中', async () => commit(await adoptCandidate(current.current, job.id)))}>この候補を採用</button></>}
         <button disabled={!!busy} onClick={() => run('要求を解決中', async () => commit(abandonJob(current.current, job.id)))}>採用せず解決する</button>
       </div>)}
