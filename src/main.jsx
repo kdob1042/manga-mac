@@ -27,6 +27,7 @@ import { call, desktop, loadProject, saveProject } from './bridge';
 import { syncSource, planScene, generatePanel, editRegion } from './pipeline';
 import PageProof from './PageProof.jsx';
 import ArtPage from './ArtPage.jsx';
+import PageThumbnail from './PageThumbnail.jsx';
 import { pagePNG } from './render.js';
 import { imageOf } from './canvas-image.js';
 import UpscaleControls from './UpscaleControls.jsx';
@@ -448,7 +449,7 @@ function App() {
     await commit({ ...emptyProject(), title: s.manifest.work, snapshots: [s], active: s.id, panels: ps });
     setStage('art');
   }
-  const pageThumbnails = useMemo(() => layout.pages.map((item,i) => <button className={`thumbnail ${page===i?'active':''}`} aria-current={page===i?'page':undefined} aria-label={`${i+1}ページ目 · ${draftPageStatus(project,item)}`} key={item.id??i} onClick={()=>{setPage(i);setSelected(null);setRect(null);}}><div className="mini-grid">{pagePanels(project,item).map(p=><div key={p.id}>{p.image?<img loading="lazy" decoding="async" src={p.image} alt=""/>:<span>未作画</span>}</div>)}</div><span>PAGE {String(i+1).padStart(2,'0')} · {draftPageStatus(project,item)}</span></button>),[project,layout,page]);
+  const pageThumbnails = useMemo(() => layout.pages.map((item,i) => <button className={`thumbnail ${page===i?'active':''}`} aria-current={page===i?'page':undefined} aria-label={`${i+1}ページ目 · ${draftPageStatus(project,item)}`} key={item.id??i} onClick={()=>{setPage(i);setSelected(null);setRect(null);}}><PageThumbnail page={item} panels={pagePanels(project,item)}/><span>PAGE {String(i+1).padStart(2,'0')} · {draftPageStatus(project,item)}</span></button>),[project,layout,page]);
   const selectedImageModel = imageModel(imageModelId);
   const chosenCapture = project.captures?.find(c => c.id === chosen?.capture_revision);
   const emptyWorkspace = !snapshot && !project.panels.length && !pending && medium!=='video';
