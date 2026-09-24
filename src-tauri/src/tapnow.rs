@@ -307,7 +307,7 @@ async fn list_tools_with_bearer(bearer: &str) -> Result<Value, String> {
     ] {
         let mut request = http
             .post(MCP)
-            .bearer_auth(&bearer)
+            .bearer_auth(bearer)
             .header(header::ACCEPT, "application/json, text/event-stream")
             .header("MCP-Protocol-Version", "2025-03-26");
         if let Some(ref value) = session {
