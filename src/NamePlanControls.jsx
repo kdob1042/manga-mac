@@ -43,7 +43,12 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     else {await importNamePlan(base,raw);entry.legacyNameRaw=raw;entry.base=await nameReadToken(base);}
     if(current.current!==base)throw Error('ネーム確認中に作品が変わりました');
     await commit({...base,jobs:[...base.jobs,entry]});setChosen(id);setPageIndex(0);setPreview(null);
-    setMessage(provenance?'同じGitHub版のネームを候補として保存しました。原稿と配置を確認してから採用してください。':'候補を保存しました。原稿と配置を確認してから採用してください。');
+    if(entry.nameCandidate?.layout.pages?.[0]){
+      const target=entry.nameCandidate.layout.pages[0];
+      const panels=target.slots.map(slot=>entry.nameCandidate.panels.find(panel=>panel.id===slot.panelId)).filter(Boolean);
+      setPreview(await pagePNG(panels,base.snapshots,base.localizations,base.output_locale,target,true,entry.nameCandidate.layout.imageCrops));
+    }
+    setMessage(provenance?'同じGitHub版のネームを候補として保存しました。ページを確認して採用してください。':'候補を保存しました。ページを確認して採用してください。');
   }
   async function readFile(file) {
     if(!file)return;
@@ -123,7 +128,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     {name?.staleReason&&<p role="alert">{name.staleReason}</p>}
     {pages.length>0&&<div>
       <label>ネームページ<select aria-label="ネームページ" value={Math.min(pageIndex,pages.length-1)} onChange={e=>{setPageIndex(Number(e.target.value));setPreview(null);setEdit(null);}}>{pages.map((p,i)=><option key={p.id} value={i}>{i+1}ページ · {p.slots.length}コマ</option>)}</select></label>
-      <button disabled={busy} onClick={proof}>実文字入り仮ネームを確認</button>
+      <button disabled={busy} onClick={proof}>{preview?'プレビューを更新':'実文字入り仮ネームを確認'}</button>
       <label>表示幅<select aria-label="ネーム表示幅" value={width} onChange={e=>setWidth(Number(e.target.value))}>{[375,430,1024].map(w=><option key={w} value={w}>{w}px</option>)}</select></label>
       {preview&&<div className="name-proof-scroll"><img src={preview} alt="実際のコマ枠と掲載文字による仮ネーム" style={{width,maxWidth:'none',height:'auto'}}/></div>}
       {name&&!candidate&&page&&<>
