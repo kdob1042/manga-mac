@@ -338,10 +338,9 @@ async fn github_asset(
     let bytes = if let Some(local) = local_source_path(&repo, &state.base)? {
         local_source_blob(&local, &sha, &path).await?
     } else {
+        let url = format!("https://api.github.com/repos/{repo}/contents/{path}?ref={sha}");
         let mut req = client()?
-            .get(format!(
-                "https://api.github.com/repos/{repo}/contents/{path}?ref={sha}"
-            ))
+            .get(&url)
             .header("Accept", "application/vnd.github.raw+json");
         if !token.is_empty() {
             req = req.bearer_auth(token);
@@ -372,7 +371,51 @@ async fn github_asset(
         if body.len() as u64 > max_response_bytes {
             return Err("参照画像は20MB以下にしてください".into());
         }
-        source_asset_response_bytes(content_type.as_deref(), &body)?
+        let decoded = source_asset_response_bytes(content_type.as_deref(), &body);
+        if decoded
+            .as_ref()
+            .ok()
+            .and_then(|bytes| source_asset_mime(bytes))
+            .is_some()
+        {
+            decoded?
+        } else {
+            // An intermediary may return a non-image body despite a successful
+            // raw response. Ask for the pinned file's JSON/base64 representation.
+            let mut json_req = client()?
+                .get(&url)
+                .header("Accept", "application/vnd.github+json");
+            if !token.is_empty() {
+                json_req = json_req.bearer_auth(&token);
+            }
+            let json_response = json_req.send().await.map_err(err)?;
+            if !json_response.status().is_success() {
+                return Err(format!(
+                    "GitHub {} — 参照画像の再取得に失敗しました",
+                    json_response.status()
+                ));
+            }
+            if json_response
+                .content_length()
+                .is_some_and(|size| size > max_response_bytes)
+            {
+                return Err("参照画像は20MB以下にしてください".into());
+            }
+            let json_body = json_response.bytes().await.map_err(err)?;
+            if json_body.len() as u64 > max_response_bytes {
+                return Err("参照画像は20MB以下にしてください".into());
+            }
+            let recovered = source_asset_response_bytes(Some("application/json"), &json_body)?;
+            if source_asset_mime(&recovered).is_none() {
+                return Err(format!(
+                    "参照画像の実形式がPNG/JPEG/WebPではありません (commit={}, response_type={}, response_bytes={})",
+                    &sha[..12],
+                    content_type.as_deref().unwrap_or("unknown"),
+                    body.len()
+                ));
+            }
+            recovered
+        }
     };
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("参照画像は20MB以下にしてください".into());
