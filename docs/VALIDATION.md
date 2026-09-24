@@ -1,5 +1,14 @@
 > 以下のBlender試験記録は旧版の履歴です。現行版ではBlender連携を削除し、3Dステージの実機受入に置き換えます。
 
+## 2026-09-24 TapNow Mac接続の実機確認
+
+- 起点は `dev` `bf98b58ed7fbcb34f00262cdaa48bfe973c28db7`。分離したApple Silicon検証アプリで接続を確認した。
+- 元の登録要求は `invalid_client_metadata` (HTTP 400)。`grant_types: [authorization_code]` を省くと登録はHTTP 201になった。read単独の認証・`tools/list` は7件だった。
+- `mcp.tools.read mcp.tools.invoke` の両スコープを指定した認証では、画面に両権限が表示され、ユーザーの承認後にアプリで `tools/list` 14件を確認した。`create_hero_image`、`create_hero_video`、`get_production_result` の定義も表示された。
+- ユーザーが無料残高内の動画1件を許可した後、別bundle IDの検証アプリから `create_hero_video` を `draft`・5秒・16:9で1回送信した。MCP応答は `status: blocked`、`reason: insufficient_balance`、`No generation jobs were submitted`。動画ジョブは作成されず、生成・結果回収は未検証。MCP応答に必要Tapies数はない。
+- Safariの同じTapNowアカウントで、MCPから見えたチュートリアルのプロジェクトIDを確認した。画面の残高表示は確認時183 Tapies。取引履歴には15:58:59に `TapNow Agent - Sonnet 5 Agent biz metric` の処理で17 Tapiesを消費した記録があり、残高は200から183へ変化した。動画要求の課金記録はない。追加チャージ画面は最低500 Tapies／5 USDを表示するが、その量で動画を送れるかは不明。円建て請求額も表示されない。
+- 検証専用の送信・照会UIとコマンドは製品コードから除去した。devへの統合、正本アプリの更新、生成成功・結果回収は別途確認する。
+
 ## 2026-09-24 Three.js移行のLinux検証
 
 - 基準: `dev` b9b0175、同じLinux/Node/Vite toolchainで `npm ci && npm run build`。比較対象は #279 の統合ブランチ。`npm test` は409件成功（追加の撮影入力テスト後は410件）、Web build成功。

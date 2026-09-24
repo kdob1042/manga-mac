@@ -14,6 +14,7 @@ const RESOURCE: &str =
     "https://mcp.tapnow.ai/.well-known/oauth-protected-resource/api/agent-gateway/mcp/general/mcp";
 const METADATA: &str = "https://oauth.tapnow.ai/.well-known/oauth-authorization-server";
 const ISSUER: &str = "https://oauth.tapnow.ai";
+const SCOPES: &str = "mcp.tools.read mcp.tools.invoke";
 
 #[derive(Default)]
 pub struct Connection(pub Mutex<Option<String>>);
@@ -91,6 +92,16 @@ fn validate_metadata(resource: &Value, auth: &Value) -> Result<(), String> {
     Ok(())
 }
 
+fn registration_metadata(redirect: &str) -> Value {
+    json!({
+        "client_name": "Manga Mac",
+        "application_type": "native",
+        "redirect_uris": [redirect],
+        "token_endpoint_auth_method": "none",
+        "scope": SCOPES
+    })
+}
+
 async fn oauth_callback(listener: TcpListener, state: &str) -> Result<String, String> {
     let (mut stream, peer) = tokio::time::timeout(Duration::from_secs(180), listener.accept())
         .await
@@ -154,11 +165,12 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     )
     .await?;
     validate_metadata(&resource, &auth)?;
-    if !resource["scopes_supported"]
-        .as_array()
-        .is_some_and(|v| v.iter().any(|x| x == "mcp.tools.read"))
-    {
-        return Err("TapNowの読み取り権限を確認できません".into());
+    if !resource["scopes_supported"].as_array().is_some_and(|v| {
+        ["mcp.tools.read", "mcp.tools.invoke"]
+            .iter()
+            .all(|scope| v.iter().any(|x| x == scope))
+    }) {
+        return Err("TapNowのツール権限を確認できません".into());
     }
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -174,11 +186,12 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     let verifier = URL_SAFE_NO_PAD.encode(entropy.as_bytes());
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = uuid::Uuid::new_v4().to_string();
-    let registration = http.post(auth["registration_endpoint"].as_str().unwrap())
-        .json(&json!({"client_name":"Manga Mac", "application_type":"native", "redirect_uris":[redirect],
-            "grant_types":["authorization_code"], "response_types":["code"], "token_endpoint_auth_method":"none",
-            "scope":"mcp.tools.read"}))
-        .send().await.map_err(|_| "TapNowへアプリを登録できません")?;
+    let registration = http
+        .post(auth["registration_endpoint"].as_str().unwrap())
+        .json(&registration_metadata(&redirect))
+        .send()
+        .await
+        .map_err(|_| "TapNowへアプリを登録できません")?;
     if !registration.status().is_success() {
         return Err(registration_error(registration).await);
     }
@@ -193,7 +206,7 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
         .append_pair("response_type", "code")
         .append_pair("client_id", client_id)
         .append_pair("redirect_uri", &redirect)
-        .append_pair("scope", "mcp.tools.read")
+        .append_pair("scope", SCOPES)
         .append_pair("code_challenge", &challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", &state)
@@ -229,11 +242,12 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
         .as_str()
         .filter(|x| !x.is_empty())
         .ok_or("TapNowのアクセストークンがありません")?;
-    if token["scope"]
-        .as_str()
-        .is_some_and(|scope| !scope.split_whitespace().any(|s| s == "mcp.tools.read"))
-    {
-        return Err("TapNowの読み取り権限が付与されませんでした".into());
+    if token["scope"].as_str().is_some_and(|scope| {
+        ["mcp.tools.read", "mcp.tools.invoke"]
+            .iter()
+            .any(|expected| !scope.split_whitespace().any(|actual| actual == *expected))
+    }) {
+        return Err("TapNowのツール権限が付与されませんでした".into());
     }
     // 認可だけではMCP接続を確認できない。tools/listが成功してから接続済みにする。
     let tools = list_tools_with_bearer(bearer).await?;
@@ -241,7 +255,7 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
         .0
         .lock()
         .map_err(|_| "TapNow接続を保持できません")? = Some(bearer.to_owned());
-    Ok(json!({"connected":true,"scope":"mcp.tools.read","tools":tools["tools"]}))
+    Ok(json!({"connected":true,"scope":SCOPES,"tools":tools["tools"]}))
 }
 
 pub fn disconnect(connection: &Connection) -> Result<(), String> {
@@ -372,6 +386,18 @@ async fn list_tools_with_bearer(bearer: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registration_requests_supported_metadata_and_tool_scopes() {
+        let metadata = registration_metadata("http://127.0.0.1:54321/tapnow/callback");
+        assert!(metadata.get("grant_types").is_none());
+        assert!(metadata.get("response_types").is_none());
+        assert_eq!(metadata["scope"], SCOPES);
+        assert_eq!(metadata["token_endpoint_auth_method"], "none");
+        assert_eq!(
+            metadata["redirect_uris"],
+            json!(["http://127.0.0.1:54321/tapnow/callback"])
+        );
+    }
     #[test]
     fn rejects_untrusted_metadata_and_ignores_unrelated_sse_events() {
         let resource = json!({"resource":MCP,"authorization_servers":[ISSUER]});
