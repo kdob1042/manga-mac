@@ -73,7 +73,8 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     }
     let listener = TcpListener::bind("127.0.0.1:0").await.map_err(|_| "認証の戻り先を開けません")?;
     let redirect = format!("http://127.0.0.1:{}/tapnow/callback", listener.local_addr().map_err(|_| "認証の戻り先を確認できません")?.port());
-    let verifier = URL_SAFE_NO_PAD.encode(format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4()));
+    let entropy = format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
+    let verifier = URL_SAFE_NO_PAD.encode(entropy.as_bytes());
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = uuid::Uuid::new_v4().to_string();
     let registration = http.post(auth["registration_endpoint"].as_str().unwrap())
@@ -105,7 +106,7 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     ]).send().await.map_err(|_| "TapNowの認証を完了できません")?;
     let token = response_json(token).await?;
     let bearer = token["access_token"].as_str().filter(|x| !x.is_empty()).ok_or("TapNowのアクセストークンがありません")?;
-    if !token["scope"].as_str().unwrap_or("").split_whitespace().any(|s| s == "mcp.tools.read") {
+    if token["scope"].as_str().is_some_and(|scope| !scope.split_whitespace().any(|s| s == "mcp.tools.read")) {
         return Err("TapNowの読み取り権限が付与されませんでした".into());
     }
     *connection.0.lock().map_err(|_| "TapNow接続を保持できません")? = Some(bearer.to_owned());
