@@ -94,6 +94,11 @@ main { min-width: 0; }
 .toolbar[aria-label="制作する媒体"] button[aria-pressed="true"] { background: #e2ebde; border-color: #8da385; }
 .source-contract { font-size: 11px; margin: 12px 0; color: #71806a; }
 .source-contract summary { cursor: pointer; }
+.source-scene-nav { margin-top: 20px; }
+.source-scene-nav p { margin: 16px 0 6px; font-size: 11px; font-weight: 650; color: #5b705e; }
+.source-scene-nav button { display: block; width: 100%; margin: 3px 0; padding: 8px 10px; text-align: left; overflow-wrap: anywhere; }
+.source-scene-nav button[aria-current="location"] { border-color: #8da385; background: #e6ece4; }
+.source-scene-nav small { line-height: 1.3; }
 .export-menu { position: relative; }
 .export-menu>summary { list-style: none; cursor: pointer; padding: 10px 18px; background: #365845; color: #fff; border: 1px solid #365845; border-radius: 7px; font-size: 12px; white-space: nowrap; }
 .export-menu>summary::after { content: ' ▾'; }

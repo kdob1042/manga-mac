@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFileSync} from 'node:fs';
 const fixture=JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json',import.meta.url)));
+const savedWork=JSON.parse(readFileSync(new URL('../fixtures/name-plan-v2-project.json',import.meta.url)));
 
 async function openSaved(page){
   await page.goto('/');
@@ -67,6 +68,104 @@ test('page actions stay in reach while the canvas scrolls',async({page})=>{
   await expect(selector).toBeVisible();
   await expect(page.getByRole('img',{name:'書き出しページの確認'})).toBeVisible();
   await scrollAndCheck(selector);
+});
+
+test('source sidebar moves between episodes and focuses the matching manuscript without changing it',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(async data=>{
+    const project=structuredClone(data),snapshot=project.snapshots[0];
+    snapshot.scenes[0].episodeId='P01';snapshot.scenes[0].episodeTitle='第一話';
+    snapshot.scenes.push({id:'S02',episodeId:'P02',episodeTitle:'第二話',text:'第二話の本文',design:''});
+    snapshot.manifest={episodes:[{id:'P01',scenes:[{id:'s',title:'出会い'}]},{id:'P02',scenes:[{id:'S02',title:'再会'}]}]};
+    await(await import('/src/bridge.js')).saveProject(project);
+  },fixture);
+  await page.reload();
+  await page.getByRole('button',{name:'原稿',exact:true}).click();
+  const navigation=page.getByRole('navigation',{name:'原稿の場面'});
+  await expect(navigation).toContainText('第一話');
+  await expect(navigation).toContainText('第二話');
+  await expect(navigation.getByRole('button',{name:'S02へ移動'})).toContainText('再会');
+  await navigation.getByRole('button',{name:'S02へ移動'}).click();
+  const row=page.locator('.source-manuscript [data-source-scenes]').filter({hasText:'第二話の本文'}).first();
+  await expect(row).toBeFocused();
+  await expect(navigation.getByRole('button',{name:'S02へ移動'})).toHaveAttribute('aria-current','location');
+  await expect.poll(()=>page.locator('main').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
+  const saved=await page.evaluate(async()=>await(await import('/src/bridge.js')).loadProject());
+  expect(saved.snapshots[0].scenes.find(scene=>scene.id==='S02').text).toBe('第二話の本文');
+});
+
+test('initial import restores keyboard focus and keeps the action inside narrow windows',async({page})=>{
+  for(const width of [1280,1440,760]){
+    await page.setViewportSize({width,height:width===760?800:900});
+    await page.goto('/');
+    const open=page.getByRole('main').getByRole('button',{name:'原稿を開く'});
+    await expect(open).toBeVisible();
+    await page.screenshot({path:`test-results/entry-${width}.png`});
+    await open.focus();await page.keyboard.press('Enter');
+    const dialog=page.getByRole('dialog',{name:'原稿を開く'});
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('button',{name:'閉じる'})).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    expect(await dialog.evaluate(el=>el.contains(document.activeElement))).toBe(true);
+    const bounds=await dialog.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x+bounds.width).toBeLessThanOrEqual(width);
+    await page.screenshot({path:`test-results/import-${width}.png`});
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await expect(open).toBeFocused();
+  }
+});
+
+test('page and primary art action fit common window widths',async({page})=>{
+  await openSaved(page);
+  for(const width of [1280,1440,760]){
+    await page.setViewportSize({width,height:width===760?800:900});
+    const main=await page.locator('main').boundingBox();
+    for(const item of [page.getByRole('region',{name:'作画の実行'}),page.locator('.page')]){
+      const bounds=await item.boundingBox();
+      expect(bounds.x).toBeGreaterThanOrEqual(main.x);
+      expect(bounds.x+bounds.width).toBeLessThanOrEqual(main.x+main.width+1);
+    }
+    await page.screenshot({path:`test-results/art-${width}.png`});
+  }
+});
+
+test('workspace A to B to A restores each saved project and a failed save blocks the switch',async({page})=>{
+  await page.addInitScript(data=>{
+    const workA=structuredClone(data),workB=structuredClone(data);
+    workA.workId='A';workA.title='作品A';workA.snapshots[0].workId='A';
+    workB.workId='B';workB.title='作品B';workB.snapshots[0].workId='B';workB.panels[0].prompt='作品Bだけの作画指示';
+    if(!localStorage.getItem('work:A'))localStorage.setItem('work:A',JSON.stringify(workA));
+    if(!localStorage.getItem('work:B'))localStorage.setItem('work:B',JSON.stringify(workB));
+    window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
+      const active=localStorage.getItem('active')??'A';
+      if(command==='acceptance_context')return null;
+      if(command==='load_project')return localStorage.getItem(`work:${active}`);
+      if(command==='save_project'){
+        if(localStorage.getItem('failSave'))throw Error('保存できませんでした');
+        localStorage.setItem(`work:${active}`,args.data);return;
+      }
+      if(command==='source_library')return {active,entries:[{id:'A',name:'作品A',work_id:'A',repo:'fixture/a',episode:'P01'},{id:'B',name:'作品B',work_id:'B',repo:'fixture/b',episode:'P01'}]};
+      if(command==='backup_status')return {config:null,status:{},restored:[],active};
+      if(command==='backup_open'){localStorage.setItem('active',args.workspace);location.reload();return;}
+      throw Error(command);
+    }};
+  },savedWork);
+  await page.goto('/');
+  const picker=page.getByLabel('登録済み作品');
+  await expect(page.locator('aside h2')).toHaveText('作品A');
+  await picker.selectOption('B');
+  await expect(page.locator('aside h2')).toHaveText('作品B');
+  await picker.selectOption('A');
+  await expect(page.locator('aside h2')).toHaveText('作品A');
+  const before=await page.evaluate(()=>JSON.parse(localStorage.getItem('work:A')));
+  expect(before.panels[0].prompt).not.toBe('作品Bだけの作画指示');
+  await page.evaluate(()=>localStorage.setItem('failSave','1'));
+  await picker.selectOption('B');
+  await expect(page.getByRole('alert')).toContainText('保存できませんでした');
+  expect(await page.evaluate(()=>localStorage.getItem('active'))).toBe('A');
+  await expect(picker).toHaveValue('A');
 });
 
 test('failed project load can retry without starting an empty replacement project',async({page})=>{
