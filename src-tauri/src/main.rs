@@ -254,11 +254,14 @@ fn source_asset_path_valid(path: &str) -> bool {
 }
 fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Result<Vec<u8>, String> {
     let has_image_signature = source_asset_mime(body).is_some();
-    let first_non_whitespace = body.iter().copied().find(|byte| !byte.is_ascii_whitespace());
-    let media_type_is_json = content_type
-        .is_some_and(|value| value.to_ascii_lowercase().contains("json"));
-    let is_json = !has_image_signature
-        && (media_type_is_json || first_non_whitespace == Some(b'{'));
+    let first_non_whitespace = body
+        .iter()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace());
+    let media_type_is_json =
+        content_type.is_some_and(|value| value.to_ascii_lowercase().contains("json"));
+    let is_json =
+        !has_image_signature && (media_type_is_json || first_non_whitespace == Some(b'{'));
     if !is_json {
         return Ok(body.to_vec());
     }
