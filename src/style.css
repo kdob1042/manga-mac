@@ -71,6 +71,7 @@
 .layout-editor:has(> .layout-candidate.is-preview) > .toolbar:has(input[aria-label="表示倍率"]) > :not(:has(input[aria-label="表示倍率"])) { display: none; }
 .layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { max-height: none; margin-top: 0; padding: clamp(10px, 3vw, 28px); border: 1px solid #86a88b; border-top: 0; border-radius: 0 0 10px 10px; background: #e7e9e4; }
 .layout-editor:has(> .layout-candidate.is-preview) .layout-canvas { background: #fff; box-shadow: 0 4px 24px #23332821; }
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .composer { display: none; }
 .upscale-compare { display: flex; gap: 12px; }
 .upscale-compare figure { margin: 0; width: 45%; }
 .upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }
