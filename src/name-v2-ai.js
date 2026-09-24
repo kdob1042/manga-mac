@@ -4,6 +4,14 @@ import { NamePlanError, fail, canonical, validateSchema, treeLeaves } from '../c
 import { qaSchema, qaPrompt, validateQA } from '../contracts/name-plan/qa.mjs';
 import { createNameFile, createNameCandidate, nameReadToken, localNamePlan, patchNameLayout, setNameLock } from './name-v2.js';
 // Caller supplies the existing LLM/Job/save/stop boundary. No second provider or queue.
+export function localNameEditReady(model) {
+  return model?.provider === 'ollama' && !!model?.connectionId;
+}
+export function requireLocalNameEdit(model) {
+  if (model?.provider !== 'ollama') fail('local_edit_provider', '確定ネームの局所AI修正はOllama（ローカル）を接続してください');
+  if (!model?.connectionId) fail('local_edit_connection', '局所編集に使うOllamaを設定から接続してください');
+  return true;
+}
 export async function generateNameCandidate({ current, commit, ask, model, selectedAtomIds, sceneIds, instruction = '', cancelled = () => false, notify = () => {} }) {
   const initial = current(), base = await nameReadToken(initial), snapshot = initial.snapshots.find(snapshot => snapshot.id === initial.active);
   if (!snapshot) fail('source', '原稿を先に取り込んでください');
