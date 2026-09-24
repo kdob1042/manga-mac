@@ -59,7 +59,7 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
             onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(slot.panelId);}}}/>;})}
         {displayed.map((shape,index)=>{const slot=page.slots[index];return selected===slot.panelId&&slot.panelId&&shape.points.map((point,edge)=>{const next=shape.points[(edge+1)%4];return <g key={`${slot.id}-${edge}`}>
             <line data-testid={`art-edge-${edge}`} className="art-frame-edge" x1={point[0]*1600} y1={point[1]*2260} x2={next[0]*1600} y2={next[1]*2260} onPointerDown={event=>startFrame(event,slot,{edge})}/>
-            <circle className="art-frame-handle" cx={(point[0]+next[0])*800} cy={(point[1]+next[1])*1130} r="24" onPointerDown={event=>startFrame(event,slot,{edge})}/>
+            <circle className="art-frame-handle" data-testid={`art-handle-${edge}`} cx={(point[0]+next[0])*800} cy={(point[1]+next[1])*1130} r="24" onPointerDown={event=>startFrame(event,slot,{edge})}/>
             <circle className="art-frame-corner" cx={point[0]*1600} cy={point[1]*2260} r="24" onPointerDown={event=>startFrame(event,slot,{vertex:edge})}/>
           </g>;});})}
       </svg>

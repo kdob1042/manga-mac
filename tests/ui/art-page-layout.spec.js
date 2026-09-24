@@ -62,7 +62,8 @@ test('art page uses the saved export geometry and selects panels without changin
   const slot=page.getByTestId('art-slot-5');
   const before=await slot.getAttribute('points');
   const baseline=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');return loadProject();});
-  const handle=await page.getByTestId('art-edge-1').boundingBox();
+  await page.getByTestId('art-handle-1').scrollIntoViewIfNeeded();
+  const handle=await page.getByTestId('art-handle-1').boundingBox();
   await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);
   await page.mouse.down();
   await page.mouse.move(handle.x+handle.width/2-8,handle.y+handle.height/2,{steps:3});
