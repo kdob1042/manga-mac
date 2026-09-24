@@ -35,13 +35,47 @@ function usableClip(clip, root) {
   return clip.tracks.some(track => nodes.has(track.name?.split('.')[0]));
 }
 
+function validatedProfile(root, bones) {
+  const chains = [
+    ['leftUpperArm', 'leftForeArm', 'leftHand'], ['rightUpperArm', 'rightForeArm', 'rightHand'],
+    ['leftUpperLeg', 'leftLowerLeg', 'leftFoot'], ['rightUpperLeg', 'rightLowerLeg', 'rightFoot'],
+  ];
+  const names = new Set(Object.values(bones));
+  let bound = false;
+  root.updateMatrixWorld(true);
+  root.traverse(node => {
+    if (!node.isSkinnedMesh || !node.skeleton || node.skeleton.bones.length !== node.skeleton.boneInverses.length) return;
+    if (node.skeleton.boneInverses.some(matrix => matrix.elements.some(value => !Number.isFinite(value))) ||
+      node.skeleton.bones.some(bone => !Number.isFinite(bone.matrixWorld.determinant()) ||
+        !Number.isFinite(bone.getWorldPosition(new Vector3()).length()))) return;
+    if ([...names].every(name => node.skeleton.bones.some(bone => bone.name === name))) bound = true;
+  });
+  if (!bound) return { supported: false, reason: 'unbound_skeleton' };
+  const byName = new Map();
+  root.traverse(node => { if (node.isBone && names.has(node.name)) byName.set(node.name, node); });
+  const descends = (child, ancestor) => { for (let node = child.parent; node; node = node.parent) if (node === ancestor) return true; return false; };
+  const lengths = {};
+  for (const [upper, lower, end] of chains) {
+    const a = byName.get(bones[upper]), b = byName.get(bones[lower]), c = byName.get(bones[end]);
+    if (!a || !b || !c || !descends(b, a) || !descends(c, b) || !descends(a, byName.get(bones.hips)))
+      return { supported: false, reason: 'invalid_joint_chain' };
+    const first = a.getWorldPosition(new Vector3()).distanceTo(b.getWorldPosition(new Vector3()));
+    const second = b.getWorldPosition(new Vector3()).distanceTo(c.getWorldPosition(new Vector3()));
+    if (![first, second].every(length => Number.isFinite(length) && length >= .02 && length <= 3))
+      return { supported: false, reason: 'invalid_limb_length' };
+    lengths[upper] = [first, second];
+  }
+  return { supported: true, lengths };
+}
+
 export function inspectRig(root, clips = []) {
   const found = rigBones(root);
   const bones = Object.fromEntries(PARTS.filter(k => found[k]?.length === 1).map(k => [k, found[k][0].name]));
   const missing = PARTS.filter(k => !found[k]?.length);
   const ambiguous = PARTS.filter(k => found[k]?.length > 1);
   const clipNames = [...new Set((clips ?? []).filter(c => usableClip(c, root)).map(c => c.name))];
-  return { supported: missing.length === 0 && ambiguous.length === 0, bones, missing, ambiguous, clipNames,
+  const profile = missing.length || ambiguous.length ? { supported: false, reason: 'missing_or_ambiguous_bones' } : validatedProfile(root, bones);
+  return { supported: profile.supported, reason: profile.reason ?? null, lengths: profile.lengths ?? {}, bones, missing, ambiguous, clipNames,
     canAttachBall: !!bones.leftHand || !!bones.rightHand,
     canGround: !!bones.leftFoot || !!bones.rightFoot };
 }
@@ -97,12 +131,52 @@ function instancesById(instances) {
 function objectOf(value) { return value?.root ?? value?.scene ?? value?.object ?? value; }
 function getBone(root, semantic) { const matches = rigBones(root)[semantic]; return matches?.length === 1 ? matches[0] : null; }
 
+// Solve one profiled two-bone limb in world space. Keep the previous pose when
+// the target is unreachable or the bounded iterations do not converge.
+function aimLimb(root, side, limb, target, tolerance = .035) {
+  const names = limb === 'hand' ? [`${side}UpperArm`,`${side}ForeArm`,`${side}Hand`]
+    : [`${side}UpperLeg`,`${side}LowerLeg`,`${side}Foot`];
+  const [upper, lower, end] = names.map(name => getBone(root,name));
+  if (!upper || !lower || !end || !target?.isVector3 || ![target.x,target.y,target.z].every(Number.isFinite))
+    return { applied: false, reason: 'invalid_target' };
+  root.updateMatrixWorld(true);
+  const start = upper.getWorldPosition(new Vector3());
+  const elbow = lower.getWorldPosition(new Vector3());
+  const tip = end.getWorldPosition(new Vector3());
+  const reach = start.distanceTo(elbow) + elbow.distanceTo(tip);
+  const distance = start.distanceTo(target);
+  if (distance > reach + tolerance || distance < Math.abs(start.distanceTo(elbow)-elbow.distanceTo(tip)) - tolerance)
+    return { applied: false, reason: 'unreachable', error: Number((distance-reach).toFixed(4)) };
+  const initial = [upper.quaternion.clone(),lower.quaternion.clone()];
+  for (let turn = 0; turn < 24; turn++) {
+    for (const [index, bone] of [[1,lower],[0,upper]]) {
+      root.updateMatrixWorld(true);
+      const joint = bone.getWorldPosition(new Vector3());
+      const current = end.getWorldPosition(new Vector3()).sub(joint);
+      const desired = target.clone().sub(joint);
+      if (current.lengthSq() < 1e-8 || desired.lengthSq() < 1e-8) continue;
+      const worldDelta = new Quaternion().setFromUnitVectors(current.normalize(),desired.normalize());
+      const parent = bone.parent.getWorldQuaternion(new Quaternion());
+      const localDelta = parent.clone().invert().multiply(worldDelta).multiply(parent);
+      bone.quaternion.premultiply(localDelta);
+      const limit = index === 0 ? 2.5 : 2.4;
+      const angle = initial[index].angleTo(bone.quaternion);
+      if (angle > limit) bone.quaternion.copy(initial[index].clone().slerp(bone.quaternion,limit/angle));
+    }
+    root.updateMatrixWorld(true);
+    const error = end.getWorldPosition(new Vector3()).distanceTo(target);
+    if (error <= tolerance) return { applied: true, error: Number(error.toFixed(4)) };
+  }
+  upper.quaternion.copy(initial[0]);lower.quaternion.copy(initial[1]);root.updateMatrixWorld(true);
+  return { applied: false, reason: 'unresolved_target' };
+}
+
 // Static constraints run after posing. Only a prop follows a hand: the hand is never moved in response.
 // No physics or iterative solver is involved; airborne actors never receive floor snapping.
 export function resolveSceneContacts(instances, objects = []) {
   const byId = instancesById(instances);
   const diagnostics = [];
-  const attached = new Set();
+  const attached = new Map(), pending = [];
   const actors = Array.isArray(objects) ? objects : [];
   for (const actor of actors) {
     const root = objectOf(byId.get(actor.id));
@@ -133,8 +207,10 @@ export function resolveSceneContacts(instances, objects = []) {
         const world = hand.localToWorld(new Vector3(...(contact.offset ?? [0, -0.12, 0])));
         prop.position.copy(prop.parent.worldToLocal(world));
         prop.updateMatrixWorld(true);
-        attached.add(contact.targetId);
+        attached.set(contact.targetId, { actorId: actor.id, hand: contact.hand === 'left' ? 'left' : 'right' });
         diagnostics.push({ id: actor.id, type: contact.type, applied: true });
+      } else if (contact?.type === 'hand_target' || contact?.type === 'foot_plant') {
+        pending.push({ actor, root, contact });
       } else if (contact?.type === 'look_at') {
         const target = objectOf(byId.get(contact.targetId));
         if (!target?.getWorldPosition || target === root || !root.parent) {
@@ -155,6 +231,25 @@ export function resolveSceneContacts(instances, objects = []) {
         diagnostics.push({ id: actor.id, type: contact?.type ?? null, reason: 'unsupported_contact' });
       }
     }
+  }
+  for (const {actor,root,contact} of pending) {
+    const side = contact.side === 'left' ? 'left' : 'right';
+    if (!inspectRig(root).supported || (contact.type === 'foot_plant' && actor.airborne)) {
+      diagnostics.push({ id: actor.id, type: contact.type, reason: actor.airborne && contact.type === 'foot_plant' ? 'airborne' : 'incompatible_rig' }); continue;
+    }
+    if (contact.type === 'hand_target' && attached.get(contact.targetId)?.actorId === actor.id &&
+        attached.get(contact.targetId)?.hand === side) {
+      diagnostics.push({ id: actor.id, type: contact.type, reason: 'cyclic_contact' }); continue;
+    }
+    const targetObject = objectOf(byId.get(contact.targetId));
+    const target = contact.type === 'foot_plant' ? (finite3(contact.position) ? new Vector3(...contact.position) : null)
+      : targetObject?.localToWorld && finite3(contact.offset ?? [0,0,0])
+        ? targetObject.localToWorld(new Vector3(...(contact.offset ?? [0,0,0]))) : null;
+    if (!target || targetObject === root) {
+      diagnostics.push({ id: actor.id, type: contact.type, reason: 'unavailable_target' }); continue;
+    }
+    const result = aimLimb(root,side,contact.type === 'hand_target' ? 'hand' : 'foot',target);
+    diagnostics.push({ id: actor.id, type: contact.type, ...result });
   }
   return diagnostics;
 }

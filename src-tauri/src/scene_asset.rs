@@ -294,7 +294,7 @@ pub fn check_glb(bytes: &[u8]) -> Result<(), String> {
                 .map_err(|_| invalid())?,
         ) as usize;
         let kind = &bytes[offset + 4..offset + 8];
-        if size % 4 != 0 || size > bytes.len() - offset - 8 {
+        if !size.is_multiple_of(4) || size > bytes.len() - offset - 8 {
             return Err(invalid());
         }
         if chunks == 0 {
@@ -431,7 +431,7 @@ mod tests {
     use super::*;
     fn glb(json: &str) -> Vec<u8> {
         let mut body = json.as_bytes().to_vec();
-        while body.len() % 4 != 0 {
+        while !body.len().is_multiple_of(4) {
             body.push(b' ');
         }
         let mut bytes = b"glTF".to_vec();

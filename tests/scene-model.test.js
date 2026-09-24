@@ -25,6 +25,7 @@ test('reject unregistered or malformed GLB references, nonfinite transforms, dup
   assert.throws(()=>applySceneOperation(a,{type:'add',object:actor},assets),/不正/);
   assert.throws(()=>applySceneOperation(a,{type:'transform',id:'player',position:[Infinity,0,0]},assets),/不正/);
   assert.throws(()=>applySceneOperation(a,{type:'pose',id:'player',contacts:[{type:'ball_attach',targetId:'absent',hand:'right'}]},assets),/不正/);
+  assert.throws(()=>applySceneOperation(a,{type:'pose',id:'player',contacts:[{type:'foot_plant',side:'left',position:[NaN,0,0]}]},assets),/不正/);
   assert.throws(()=>validateScene({...a,camera:{...a.camera,fov:NaN}},assets),/不正/);
   assert.equal(a.objects.length,1);
 });

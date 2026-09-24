@@ -23,7 +23,15 @@ export function validateScene(scene, assetIds) {
   const ids = new Set();
   for(const object of scene.objects){
     if(!exact(object,['id','assetId','position','rotation','scale','pose','contacts','airborne']) || !id(object.id) || ids.has(object.id) || !id(object.assetId) || (assetIds && !assetIds.has(object.assetId)) || !vector(object.position) || !vector(object.rotation) || !vector(object.scale) || object.scale.some(n=>n<=0 || n>100) || (object.airborne!==undefined && typeof object.airborne!=='boolean') || !validPose(object.pose)) fail();
-    if(object.contacts!==undefined && (!Array.isArray(object.contacts) || object.contacts.length>16 || object.contacts.some(c=>!exact(c,['type','targetId','hand','offset']) || !['ball_attach','ground_snap','look_at'].includes(c.type) || (c.targetId!==undefined&&!id(c.targetId)) || (c.hand!==undefined&&!['left','right'].includes(c.hand)) || (c.offset!==undefined&&!vector(c.offset))))) fail();
+    if(object.contacts!==undefined && (!Array.isArray(object.contacts) || object.contacts.length>16 || object.contacts.some(c=>
+      !exact(c,['type','targetId','hand','side','offset','position']) || !['ball_attach','ground_snap','look_at','hand_target','foot_plant'].includes(c.type) ||
+      (c.targetId!==undefined&&!id(c.targetId)) || (c.hand!==undefined&&!['left','right'].includes(c.hand)) ||
+      (c.side!==undefined&&!['left','right'].includes(c.side)) || (c.offset!==undefined&&!vector(c.offset)) ||
+      (c.position!==undefined&&!vector(c.position)) ||
+      (['ball_attach','look_at','hand_target'].includes(c.type) && !c.targetId) ||
+      (['hand_target','foot_plant'].includes(c.type) && !c.side) ||
+      (c.type==='foot_plant' && !c.position) ||
+      (c.type==='foot_plant' && object.airborne)))) fail();
     ids.add(object.id);
   }
   for(const object of scene.objects) for(const contact of object.contacts??[]) if(contact.targetId && (!ids.has(contact.targetId)||contact.targetId===object.id)) fail();

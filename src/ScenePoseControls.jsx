@@ -16,6 +16,10 @@ function ActorPose({ scene, assets, chosen, rigInfo, update, busy }) {
   const [hand, setHand] = useState(chosen.contacts?.find(c => c.type === 'ball_attach')?.hand ?? 'right');
   const [lookAt, setLookAt] = useState(chosen.contacts?.find(c => c.type === 'look_at')?.targetId ?? '');
   const [ground, setGround] = useState(chosen.contacts?.some(c => c.type === 'ground_snap') ?? false);
+  const [secondHand, setSecondHand] = useState(chosen.contacts?.some(c => c.type === 'hand_target') ?? false);
+  const [secondOffset, setSecondOffset] = useState(chosen.contacts?.find(c => c.type === 'hand_target')?.offset ?? [0.15,0,0]);
+  const [plantFoot, setPlantFoot] = useState(chosen.contacts?.find(c => c.type === 'foot_plant')?.side ?? '');
+  const [footPosition, setFootPosition] = useState(chosen.contacts?.find(c => c.type === 'foot_plant')?.position ?? [0,0,0]);
   const usable = !!rigInfo?.supported;
   const partNames = usable ? Object.keys(rigInfo.bones) : [];
   const clipNames = usable ? rigInfo.clipNames : [];
@@ -27,7 +31,7 @@ function ActorPose({ scene, assets, chosen, rigInfo, update, busy }) {
   return <div className="scene-pose-actor">
     <h4>選択人物のポーズ</h4>
     {!rigInfo && <p role="status">骨格を読み込み中です。読み込み後に利用可能な動作と骨を表示します。</p>}
-    {rigInfo && !rigInfo.supported && <p role="alert">この人物の骨格はポーズに対応していません。別の人物素材を使用してください。未認識: {rigInfo.missing.join('、') || 'なし'}{rigInfo.ambiguous.length ? `／重複: ${rigInfo.ambiguous.join('、')}` : ''}</p>}
+    {rigInfo && !rigInfo.supported && <p role="alert">この人物の骨格はポーズに対応していません。別の人物素材を使用してください。理由: {rigInfo.reason}。未認識: {rigInfo.missing.join('、') || 'なし'}{rigInfo.ambiguous.length ? `／重複: ${rigInfo.ambiguous.join('、')}` : ''}</p>}
     <div className="scene-actions"><label>動作
       <select aria-label="3D動作" value={clip} onChange={e => setClip(e.target.value)}><option value="">指定なし</option>{clipNames.map(name => <option key={name} value={name}>{name}</option>)}</select>
     </label><label>時点（秒）<input aria-label="動作の時点（秒）" type="number" min="0" step="0.01" disabled={!clip} value={time} onChange={e => setTime(e.target.value)}/></label>
@@ -42,10 +46,16 @@ function ActorPose({ scene, assets, chosen, rigInfo, update, busy }) {
       <label>手<select aria-label="固定する手" value={hand} onChange={e => setHand(e.target.value)}><option value="right">右</option><option value="left">左</option></select></label>
       <label>向く相手<select aria-label="向く相手" value={lookAt} onChange={e => setLookAt(e.target.value)}><option value="">指定なし</option>{scene.objects.filter(o => o.id !== chosen.id).map(o => <option key={o.id} value={o.id}>{o.id.slice(0,8)}</option>)}</select></label>
       <label><input type="checkbox" checked={ground} disabled={chosen.airborne} onChange={e => setGround(e.target.checked)}/>足を床に合わせる</label>
+      <label><input type="checkbox" checked={secondHand} disabled={!ballId} onChange={e=>setSecondHand(e.target.checked)}/>反対の手もボールに合わせる</label>
+      {secondHand && ['X','Y','Z'].map((axis,i)=><label key={axis}>反対の手の接点{axis}（m）<input type="number" step="0.01" value={secondOffset[i]} onChange={e=>setSecondOffset(v=>v.map((n,j)=>i===j?e.target.value:n))}/></label>)}
+      <label>固定する足<select value={plantFoot} disabled={chosen.airborne} onChange={e=>setPlantFoot(e.target.value)}><option value="">指定なし</option><option value="left">左足</option><option value="right">右足</option></select></label>
+      {plantFoot && ['X','Y','Z'].map((axis,i)=><label key={axis}>足先{axis}（m）<input type="number" step="0.01" value={footPosition[i]} onChange={e=>setFootPosition(v=>v.map((n,j)=>i===j?e.target.value:n))}/></label>)}
       <button disabled={busy || !usable} onClick={() => update({ type:'pose',id:chosen.id,contacts:[
         ...(ground && !chosen.airborne ? [{type:'ground_snap'}] : []),
         ...(lookAt ? [{type:'look_at',targetId:lookAt}] : []),
         ...(ballId ? [{type:'ball_attach',targetId:ballId,hand}] : []),
+        ...(ballId && secondHand ? [{type:'hand_target',targetId:ballId,side:hand==='right'?'left':'right',offset:secondOffset.map(Number)}] : []),
+        ...(plantFoot && !chosen.airborne ? [{type:'foot_plant',side:plantFoot,position:footPosition.map(Number)}] : []),
       ] })}>接触を保存</button>
     </div>
     <button disabled={busy || (!chosen.pose && !chosen.contacts?.length)} onClick={() => update({type:'pose',id:chosen.id,pose:undefined,contacts:[]})}>ポーズと接触を解除</button>

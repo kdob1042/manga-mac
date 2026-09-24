@@ -1,18 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AnimationClip, Bone, Group, Mesh, BoxGeometry, MeshBasicMaterial, QuaternionKeyframeTrack } from 'three';
+import { AnimationClip, Bone, Group, Mesh, BoxGeometry, MeshBasicMaterial, QuaternionKeyframeTrack, SkinnedMesh, Skeleton, Vector3 } from 'three';
 import { applyActorPose, basketballMoment, inspectRig, resolveSceneContacts } from '../src/scene-pose.js';
 
 function rig() {
   const root = new Group();
-  const names = ['Hips', 'LeftArm', 'LeftForeArm', 'LeftHand', 'RightArm', 'RightForeArm', 'RightHand',
-    'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'RightUpLeg', 'RightLeg', 'RightFoot'];
-  for (const name of names) {
-    const bone = new Bone(); bone.name = `mixamorig${name}`;
-    if (name === 'RightHand') bone.position.set(0.5, 1.5, 0);
-    if (name.endsWith('Foot')) bone.position.set(0, 0.2, 0);
-    root.add(bone);
+  const make = (name, parent, x, y) => { const bone = new Bone(); bone.name = `mixamorig${name}`; bone.position.set(x,y,0); parent.add(bone); return bone; };
+  const hips = make('Hips',root,0,1);
+  for (const [side,sign] of [['Left',-1],['Right',1]]) {
+    const arm = make(`${side}Arm`,hips,sign*.3,.6);
+    const forearm = make(`${side}ForeArm`,arm,sign*.2,-.2);
+    make(`${side}Hand`,forearm,0,-.2);
+    const leg = make(`${side}UpLeg`,hips,sign*.1,-.45);
+    const shin = make(`${side}Leg`,leg,0,-.4);
+    make(`${side}Foot`,shin,0,-.15);
   }
+  const mesh = new SkinnedMesh(new BoxGeometry(),new MeshBasicMaterial());
+  const bones = [];hips.traverse(node=>{if(node.isBone)bones.push(node);});
+  root.add(mesh);mesh.bind(new Skeleton(bones));
   return root;
 }
 
@@ -30,7 +35,7 @@ test('rig inspection rejects a displayable mesh and reports usable semantic limb
 
 test('partial rigs never claim a pose or contact succeeded even if the requested hand is present', () => {
   const root = rig(), leg = root.getObjectByName('mixamorigLeftLeg');
-  root.remove(leg);
+  leg.parent.remove(leg);
   const before = root.getObjectByName('mixamorigRightHand').quaternion.clone();
   const pose = applyActorPose(root,{pose:{bones:{rightHand:[0.5,0,0]}}});
   assert.equal(pose.applied,false);
@@ -66,9 +71,9 @@ test('ball follows only the hand; floor snap skips airborne actor and duplicate 
     { id: 'b', airborne: true, contacts: [{ type: 'ground_snap' }, { type: 'ball_attach', targetId: 'ball' }] },
   ];
   const result = resolveSceneContacts(new Map([['a', player], ['b', other], ['ball', ball]]), actors);
-  assert.ok(Math.abs(player.position.y + 0.2) < 1e-8);
+  assert.ok(Math.abs(player.position.y) < 1e-8);
   assert.equal(other.position.y, 2);
-  assert.deepEqual(ball.position.toArray().map(n => Number(n.toFixed(4))), [1.5, 1.3, 0]);
+  assert.deepEqual(ball.position.toArray().map(n => Number(n.toFixed(4))), [1.5, 1.2, 0]);
   assert.equal(result.at(-1).reason, 'unavailable_target');
   assert.equal(result[2].reason, 'airborne');
 });
@@ -91,4 +96,52 @@ test('look-at rotates the actor toward a target without moving either object', (
   assert.ok(Math.abs(actor.rotation.y - Math.PI / 2) < 1e-8);
   assert.deepEqual(actor.position.toArray(), [0, 0, 0]);
   assert.deepEqual(target.position.toArray(), [3, 0, 0]);
+});
+
+test('bone names without a bound, connected skeleton cannot claim an acting rig', () => {
+  const root = rig();
+  root.children.find(node=>node.isSkinnedMesh).removeFromParent();
+  assert.equal(inspectRig(root).reason,'unbound_skeleton');
+  const bound = rig(), elbow = bound.getObjectByName('mixamorigRightForeArm');
+  bound.add(elbow);
+  assert.equal(inspectRig(bound).reason,'invalid_joint_chain');
+});
+
+test('a second hand reaches a stationary ball and an impossible target restores its last pose', () => {
+  const scene = new Group(), actor = rig(), ball = new Group();scene.add(actor,ball);
+  ball.position.set(0,1.2,0);
+  const hand = actor.getObjectByName('mixamorigLeftHand');
+  const contact = {type:'hand_target',targetId:'ball',side:'left'};
+  const result = resolveSceneContacts(new Map([['actor',actor],['ball',ball]]),[{id:'actor',contacts:[contact]}]);
+  assert.equal(result[0].applied,true);
+  assert.ok(hand.getWorldPosition(ball.position.clone()).distanceTo(ball.position) < .035);
+  const pose = actor.getObjectByName('mixamorigLeftArm').quaternion.clone();
+  ball.position.set(5,5,0);
+  assert.equal(resolveSceneContacts(new Map([['actor',actor],['ball',ball]]),[{id:'actor',contacts:[contact]}])[0].reason,'unreachable');
+  assert.ok(actor.getObjectByName('mixamorigLeftArm').quaternion.equals(pose));
+});
+
+test('one-way hand attachment and opposite-hand target do not move the ball twice', () => {
+  const scene = new Group(), actor = rig(), ball = new Group();scene.add(actor,ball);
+  const contacts = [{type:'ball_attach',targetId:'ball',hand:'right',offset:[-.25,0,0]},
+    {type:'hand_target',targetId:'ball',side:'left',offset:[-.25,0,0]}];
+  const result = resolveSceneContacts(new Map([['actor',actor],['ball',ball]]),[{id:'actor',contacts}]);
+  assert.equal(result[0].applied,true);
+  assert.equal(result[1].applied,true);
+  const center = ball.position.clone();
+  assert.ok(actor.getObjectByName('mixamorigLeftHand').getWorldPosition(new Vector3()).distanceTo(ball.localToWorld(new Vector3(-.25,0,0))) < .035);
+  assert.ok(ball.position.equals(center));
+  const cycle = resolveSceneContacts(new Map([['actor',actor],['ball',ball]]),[{id:'actor',contacts:[
+    {type:'ball_attach',targetId:'ball',hand:'right'}, {type:'hand_target',targetId:'ball',side:'right'}]}]);
+  assert.equal(cycle[1].reason,'cyclic_contact');
+});
+
+test('planted foot uses world coordinates and rejects an airborne actor', () => {
+  const scene = new Group(), actor = rig();scene.add(actor);
+  const target = [-.1,.03,.05];
+  const contact = {type:'foot_plant',side:'left',position:target};
+  const result = resolveSceneContacts(new Map([['actor',actor]]),[{id:'actor',contacts:[contact]}]);
+  assert.equal(result[0].applied,true);
+  assert.ok(actor.getObjectByName('mixamorigLeftFoot').getWorldPosition(actor.position.clone()).distanceTo({x:target[0],y:target[1],z:target[2]}) < .035);
+  assert.equal(resolveSceneContacts(new Map([['actor',actor]]),[{id:'actor',airborne:true,contacts:[contact]}])[0].reason,'airborne');
 });
