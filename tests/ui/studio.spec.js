@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 test('opens a sample, preserves source on reload, and reports unavailable native operations', async ({ page }) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: '画面のサンプルを見る' }).click();
+  await page.getByRole('button', { name: 'サンプルを見る' }).click();
   await expect(page.locator('.panel')).toHaveCount(4);
   await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
   await page.reload();
@@ -33,7 +33,7 @@ test('planning connection has no face estimator; keys are ephemeral', async ({ p
 
 test('switches manga content between Japanese source and shared English localization', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '画面のサンプルを見る' }).click();
+  await page.getByRole('button', { name: 'サンプルを見る' }).click();
   await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
   await page.evaluate(() => new Promise((resolve, reject) => {
     const open = indexedDB.open('manga-mac', 1);

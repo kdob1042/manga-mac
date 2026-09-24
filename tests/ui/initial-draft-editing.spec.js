@@ -35,9 +35,11 @@ test('one start creates six-panel draft, resumes lettering only, edits third pan
    }};
  });
  await page.goto('/');await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await page.getByRole('button',{name:'閉じる',exact:true}).click();
+ await page.getByRole('button',{name:'原稿',exact:true}).click();
  await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();
  await expect(page.getByRole('alert').filter({hasText:'文字配置の接続失敗'})).toBeVisible();
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
+ await page.getByRole('button',{name:'原稿',exact:true}).click();
  await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();await expect(page.getByRole('img',{name:'書き出しページの確認'})).toBeVisible();
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(6);
  const before=await page.evaluate(()=>window.saved);expect(before.panels.every(p=>p.image&&p.lettering)).toBe(true);expect(before.layout.pages[0].slots.length).toBe(6);
