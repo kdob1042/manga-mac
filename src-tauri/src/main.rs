@@ -85,7 +85,9 @@ fn repo_valid(repo: &str) -> bool {
 fn local_source_path(repo: &str, app_data: &std::path::Path) -> Result<Option<PathBuf>, String> {
     let configured_repo = std::env::var("MANGA_MAC_LOCAL_SOURCE_REPO").ok();
     let configured_path = std::env::var_os("MANGA_MAC_LOCAL_SOURCE_PATH");
-    let (configured_repo, configured_path) = if configured_repo.is_none() && configured_path.is_none() {
+    let (configured_repo, configured_path) = if configured_repo.is_none()
+        && configured_path.is_none()
+    {
         let settings_path = app_data.join("local-source.json");
         if !settings_path.exists() {
             return Ok(None);
@@ -137,7 +139,13 @@ async fn fetch_local_branch(path: &std::path::Path, branch: &str) -> Result<(), 
     command
         .arg("-C")
         .arg(path)
-        .args(["fetch", "--no-tags", "--no-recurse-submodules", "origin", &refspec])
+        .args([
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "origin",
+            &refspec,
+        ])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "never")
         .kill_on_drop(true);
@@ -152,7 +160,11 @@ async fn fetch_local_branch(path: &std::path::Path, branch: &str) -> Result<(), 
     }
     Ok(())
 }
-async fn local_source_blob(path: &std::path::Path, sha: &str, file: &str) -> Result<Vec<u8>, String> {
+async fn local_source_blob(
+    path: &std::path::Path,
+    sha: &str,
+    file: &str,
+) -> Result<Vec<u8>, String> {
     local_git(path, &["cat-file", "blob", &format!("{sha}:{file}")]).await
 }
 async fn github(repo: &str, path: &str, token: &str, raw: bool) -> Result<String, String> {
@@ -182,7 +194,12 @@ async fn github(repo: &str, path: &str, token: &str, raw: bool) -> Result<String
     response.text().await.map_err(err)
 }
 #[tauri::command]
-async fn github_get(repo: String, path: String, token: String, state: State<'_, AppState>) -> Result<String, String> {
+async fn github_get(
+    repo: String,
+    path: String,
+    token: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
     if !repo_valid(&repo) || !matches!(path.as_str(), "commits/main" | "commits/dev") {
         return Err("Unsupported GitHub operation".into());
     }
@@ -1601,7 +1618,8 @@ mod source_asset_tests {
 
     #[tokio::test]
     async fn local_source_fetch_advances_tracking_branch_without_checkout() {
-        let root = std::env::temp_dir().join(format!("manga-source-fetch-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("manga-source-fetch-{}", uuid::Uuid::new_v4()));
         let remote = root.join("remote.git");
         let seed = root.join("seed");
         let local = root.join("local");
@@ -1613,7 +1631,11 @@ mod source_asset_tests {
                 .args(args)
                 .output()
                 .unwrap();
-            assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
         };
         git(&root, &["init", "--bare", remote.to_str().unwrap()]);
         git(&root, &["init", seed.to_str().unwrap()]);
@@ -1623,17 +1645,44 @@ mod source_asset_tests {
         std::fs::write(seed.join("manuscript.txt"), "first").unwrap();
         git(&seed, &["add", "manuscript.txt"]);
         git(&seed, &["commit", "-m", "first"]);
-        git(&seed, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        git(
+            &seed,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
         git(&seed, &["push", "origin", "dev"]);
-        git(&root, &["clone", "--no-checkout", remote.to_str().unwrap(), local.to_str().unwrap()]);
-        let old = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"]).await.unwrap();
+        git(
+            &root,
+            &[
+                "clone",
+                "--no-checkout",
+                remote.to_str().unwrap(),
+                local.to_str().unwrap(),
+            ],
+        );
+        let old = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"])
+            .await
+            .unwrap();
         std::fs::write(seed.join("manuscript.txt"), "second").unwrap();
         git(&seed, &["commit", "-am", "second"]);
         git(&seed, &["push", "origin", "dev"]);
         fetch_local_branch(&local, "dev").await.unwrap();
-        let new = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"]).await.unwrap();
+        let new = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"])
+            .await
+            .unwrap();
         assert_ne!(old, new);
-        assert_eq!(local_git(&local, &["cat-file", "blob", &format!("{}:manuscript.txt", String::from_utf8_lossy(&new).trim())]).await.unwrap(), b"second");
+        assert_eq!(
+            local_git(
+                &local,
+                &[
+                    "cat-file",
+                    "blob",
+                    &format!("{}:manuscript.txt", String::from_utf8_lossy(&new).trim())
+                ]
+            )
+            .await
+            .unwrap(),
+            b"second"
+        );
         assert!(!local.join("manuscript.txt").exists());
         assert!(fetch_local_branch(&local, "untrusted").await.is_err());
         std::fs::remove_dir_all(root).unwrap();
