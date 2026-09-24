@@ -64,6 +64,8 @@ test('imports manuscript while recording a declared image with invalid bytes',as
  assert.equal(retried,true);
  assert.deepEqual(recovered.references.map(reference=>reference.characterId),['yu','chihiro']);
  assert.equal(recovered.unavailableReferences,undefined);
+ assert.notEqual(recovered.id,snapshot.id);
+ assert.equal(sourceSummary(snapshot,recovered).changed,true);
  await assert.rejects(syncSource('owner/story','','P01',null,async(command,args)=>{
   if(command==='github_asset')throw Error('connection failed');
   return invoke(command,args);
