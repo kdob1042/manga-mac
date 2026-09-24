@@ -18,9 +18,12 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   const atomResult=useMemo(()=>{try{return {atoms:snapshot?atomize(snapshot):[],error:''};}catch(error){return {atoms:[],error:error.message};}},[snapshot]);
   const atoms=atomResult.atoms.filter(atom=>!sceneIds?.length||sceneIds.includes(atom.source.sceneId));
   const selected=selection===null?atoms.map(atom=>atom.id):atoms.filter(atom=>selection.includes(atom.id)).map(atom=>atom.id);
-  const candidates=project.jobs.filter(job=>job.kind==='name_plan'&&job.status==='candidate'&&(job.nameCandidate||job.legacyNameRaw));
+  const episodeScenes=new Set((snapshot?.scenes??[]).filter(scene=>!episodeId||scene.episodeId===episodeId).map(scene=>scene.id));
+  const candidateMatchesEpisode=job=>!episodeId||job.repositoryPlan?.episodeId===episodeId||job.nameCandidate?.sourcePolicy?.some(entry=>episodeScenes.has(entry.source.sceneId));
+  const candidates=project.jobs.filter(job=>job.kind==='name_plan'&&job.status==='candidate'&&(job.nameCandidate||job.legacyNameRaw)&&candidateMatchesEpisode(job));
   const job=candidates.find(job=>job.id===chosen)??candidates.at(-1),candidate=job?.nameCandidate;
-  const name=project.namePlan?.format===FORMAT?project.namePlan:null;
+  const savedName=project.namePlan?.format===FORMAT?project.namePlan:null;
+  const name=savedName&&savedName.snapshotId===project.active&&(!episodeId||savedName.sourcePolicy?.some(entry=>episodeScenes.has(entry.source.sceneId)))?savedName:null;
   const displayProject=candidate?{...project,panels:candidate.panels,layout:candidate.layout,layoutHistory:candidate.layoutHistory??[],layoutRedo:candidate.layoutRedo??[]}:project;
   const candidateCurrent=useRef(displayProject);candidateCurrent.current=displayProject;
   const pages=candidate?candidate.layout.pages:name?project.layout.pages.filter(page=>name.pageIds.includes(page.id)):[];
