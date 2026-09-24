@@ -83,7 +83,7 @@
 .workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > div:not([hidden]) > .toolbar { display: none; }
 .workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) { padding-bottom: 0; }
 .layout-editor:has(> .layout-candidate.is-preview) { width: 100%; max-width: none; margin: 0; padding: 8px 12px 12px; border-radius: 0; background: transparent; }
-.layout-editor > .layout-candidate.is-preview { position: sticky; top: 0; z-index: 4; width: min(100%, 800px, calc((100dvh - 170px) * .708)); margin: 0 auto; padding: 7px 12px; border-radius: 8px 8px 0 0; }
+.layout-editor > .layout-candidate.is-preview { position: sticky; top: 0; z-index: 4; width: min(100%, calc((100dvh - 170px) * .708)); margin: 0 auto; padding: 7px 12px; border-radius: 8px 8px 0 0; }
 .layout-candidate.is-preview .candidate-decision { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; }
 .layout-candidate.is-preview .candidate-decision > strong { margin-right: auto; white-space: nowrap; }
 .layout-candidate.is-preview .candidate-decision > span { flex-basis: 100%; }
@@ -91,7 +91,7 @@
 .layout-editor > .layout-candidate.is-preview .toolbar button { padding: 7px 11px; }
 .layout-candidate.is-preview .candidate-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 3px 0 0; }
 .layout-candidate.is-preview .candidate-pager button { padding: 2px 11px; font-size: 18px; line-height: 1.2; }
-.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { width: min(100%, 800px, calc((100dvh - 170px) * .708)); max-height: none; margin: 0 auto; padding: 10px; overflow: auto; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { width: min(100%, calc((100dvh - 170px) * .708)); max-height: none; margin: 0 auto; padding: 10px; overflow: auto; }
 .layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll .layout-canvas { max-width: 100%; margin: 0 auto; }
 @media (max-width: 760px) {
   .layout-editor:has(> .layout-candidate.is-preview) { padding: 4px; }
