@@ -35,7 +35,7 @@ async function setup(page) {
 async function connect(page,vision=false){await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();if(vision)await page.getByLabel('対象認識・文字配置に作画画像をこの接続へ送る').check();await page.getByRole('button',{name:'閉じる',exact:true}).click();}
 
 test('selected-scene draft retains old manuscript; saved edit comparison survives restart without connection',async({page})=>{
- await setup(page);await connect(page);await page.getByLabel('制作方法',{exact:true}).selectOption('direct');
+ await setup(page);await connect(page);
  await page.getByText('制作する場面・保存した原稿',{exact:true}).click();await page.getByRole('group',{name:'制作する場面',exact:true}).getByLabel('a',{exact:true}).uncheck();await page.getByLabel('既存原稿を残して別の初稿を作る').check();
  await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();await expect(page.getByRole('img',{name:'書き出しページの確認'})).toBeVisible();
  expect(await page.evaluate(()=>window.saved.panels.map(p=>p.sceneId))).toEqual(['b']);expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(1);
