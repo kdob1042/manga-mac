@@ -337,7 +337,7 @@ function App() {
       if(entry?.work_id&&entry.work_id===current.current.workId){
         await commit({...current.current,sourceSelection:{...current.current.sourceSelection,workId:entry.work_id,episodeId:episode,sceneId:selectedSceneId,episodeIds:selectedEpisodeIds,branch:sourceBranch}});
       }
-      if(next.id===snapshot?.id || !sourceSummary(snapshot,next).changed) {setPending(null);setNotice('更新なし');}
+      if(!sourceSummary(snapshot,next).changed) {setPending(null);setNotice('更新なし');}
       else { setPending(next); setNotice('差分あり'); }
     } catch(e) { setNotice('確認失敗'); throw e; }
   }
