@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { pagePNG } from './render.js';
 
-export default function PageProof({ panels, snapshots, localizations, locale, page, imageCrops, draft = false, children }) {
-  const input = useMemo(() => ({ panels, snapshots, localizations, locale, page, imageCrops, draft }),
-    [panels, snapshots, localizations, locale, page, imageCrops, draft]);
+export default function PageProof({ panels, snapshots, localizations, locale, page, imageCrops, draft = false, hideUnplacedCaptions = false, children }) {
+  const input = useMemo(() => ({ panels, snapshots, localizations, locale, page, imageCrops, draft, hideUnplacedCaptions }),
+    [panels, snapshots, localizations, locale, page, imageCrops, draft, hideUnplacedCaptions]);
   const [result, setResult] = useState(null);
   useEffect(() => {
     if (!page?.slots.length || !panels.length) return;
     let stale = false;
-    pagePNG(panels, snapshots, localizations, locale, page, draft, imageCrops)
+    pagePNG(panels, snapshots, localizations, locale, page, draft, imageCrops, {hideUnplacedCaptions})
       .then(image => { if (!stale) setResult({ input, image }); })
       .catch(error => { if (!stale) setResult({ input, error: error.message ?? String(error) }); });
     return () => { stale = true; };

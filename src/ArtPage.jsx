@@ -1,5 +1,6 @@
 import React, {useEffect,useRef,useState} from 'react';
 import PageProof from './PageProof.jsx';
+import {panelHasText} from './core.js';
 import {inside,resizeQuadEdge,validQuad} from './layout.js';
 
 // The page uses the export renderer; region edits still address the original image.
@@ -50,7 +51,7 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
   }
   return <section className="art-page-workspace" aria-label="作画ページ">
     <PageProof panels={panels} snapshots={project.snapshots} localizations={project.localizations}
-      locale={project.output_locale} page={page} imageCrops={project.layout?.imageCrops} draft>
+      locale={project.output_locale} page={page} imageCrops={project.layout?.imageCrops} draft hideUnplacedCaptions>
       <svg ref={svg} className="art-page-targets" viewBox="0 0 1600 2260" aria-label="ページのコマを選択・ドラッグで枠を調整" onPointerMove={moveFrame} onPointerUp={endFrame} onPointerCancel={cancelFrame} onLostPointerCapture={()=>{if(frame.current)cancelFrame();}}>
         {displayed.map((shape,index)=>{const slot=page.slots[index],active=selected===slot.panelId;return slot.panelId && <polygon key={slot.id} data-testid={`art-slot-${index}`} points={shape.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')}
             role="button" tabIndex={0} aria-label={`${index+1}コマ目を選択`}
@@ -64,6 +65,8 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
           </g>;});})}
       </svg>
     </PageProof>
+    {panels.some(panel => panel.namePlanVersion !== 2 && panelHasText(panel) && panel.lettering?.mode !== 'balloons' && (!panel.lettering || panel.letteringStatus === 'draft')) &&
+      <p className="art-lettering-notice">文字配置待ち：未配置の原稿文は画像に重ねていません。コマを選ぶと原稿を確認できます。</p>}
     {chosen && <p className="art-frame-hint">コマの辺をドラッグして大きさを調整。中をドラッグすると移動、角をドラッグすると形を変更。Escで取消。</p>}
     {chosen && sourceText && <p className="art-panel-source">{sourceText}</p>}
     {chosen?.image && <div className="art-original-edit">

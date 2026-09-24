@@ -329,7 +329,9 @@ export async function pageLayers(
       }
       ctx.restore();
     }
-    if (layer !== 'art' && !(!p.image && draft && p.sourceRefs?.length && p.namePlanVersion!==2)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
+    const unplacedCaption = draft && output.hideUnplacedCaptions && p.namePlanVersion !== 2 &&
+      p.lettering?.mode !== 'balloons' && (!p.lettering || p.letteringStatus === 'draft');
+    if (layer !== 'art' && !unplacedCaption && !(!p.image && draft && p.sourceRefs?.length && p.namePlanVersion!==2)) await drawSlotLettering(ctx,p,slot,snapshots,localizations,locale,draft,resolveText);
     ctx.restore();
     if (layer !== 'art') strokeFrame(ctx,slot.points);
   }
