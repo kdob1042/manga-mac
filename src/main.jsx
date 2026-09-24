@@ -207,7 +207,8 @@ function App() {
       workId:work.id, workRoot:work.root, manifestPath:detail.entryPath,
       catalogCommit:detail.sha, scene:sceneId, format:work.manuscriptFormat,
     });
-    setLibrary(previous=>previous ? {...previous,entries:result.entries,active:result.id} : previous);
+    // Keep the native workspace as active until backup_open actually changes it.
+    setLibrary(previous=>previous ? {...previous,entries:result.entries} : previous);
     return result;
   }
   async function selectLibraryWork(workId) {
@@ -263,9 +264,9 @@ function App() {
     const hasContent=['snapshots','panels','artworks','characters','style_references','history','jobs','localizations','captures','videoShots','videoRevisions','videoHistory'].some(key=>Array.isArray(current.current[key])&&current.current[key].length>0)||current.current.layout?.pages?.length>0;
     const reuseEmpty=!!entry&&!entry.work_id&&entry.repo?.toLowerCase()===detail.repo.toLowerCase()&&!hasContent;
     const id=existing?.id??(reuseEmpty?entry.id:null);
+    if(!entry||id!==library?.active)await commit(current.current);
     const result=await persistLibrarySelection(work,detail,episode,selectedSceneId,id);
     if(result.id!==library?.active){
-      await commit(current.current);
       sessionStorage.setItem('manga-import-resume',JSON.stringify({branch:sourceBranch,episode,scene:selectedSceneId,episodeIds:selectedEpisodeIds}));
       await call('backup_open',{workspace:result.id});
       return;
