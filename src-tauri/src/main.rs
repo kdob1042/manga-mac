@@ -6,8 +6,8 @@ mod local_video;
 mod media;
 mod policy_transport;
 mod runway;
-mod tapnow;
 pub mod storage;
+mod tapnow;
 mod tripo;
 
 mod compositor;
@@ -1543,4 +1543,3 @@ mod source_asset_tests {
         assert_eq!(source_asset_mime(b"<svg></svg>"), None);
     }
 }
-
