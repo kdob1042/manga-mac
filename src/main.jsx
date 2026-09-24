@@ -437,6 +437,7 @@ function App() {
   }
   const pageThumbnails = useMemo(() => layout.pages.map((item,i) => <button className={`thumbnail ${page===i?'active':''}`} aria-current={page===i?'page':undefined} aria-label={`${i+1}ページ目 · ${draftPageStatus(project,item)}`} key={item.id??i} onClick={()=>{setPage(i);setSelected(null);setRect(null);}}><div className="mini-grid">{pagePanels(project,item).map(p=><div key={p.id}>{p.image?<img loading="lazy" decoding="async" src={p.image} alt=""/>:<span>未作画</span>}</div>)}</div><span>PAGE {String(i+1).padStart(2,'0')} · {draftPageStatus(project,item)}</span></button>),[project,layout,page]);
   const selectedImageModel = imageModel(imageModelId);
+  const chosenCapture = project.captures?.find(c => c.id === chosen?.capture_revision);
   const emptyWorkspace = !snapshot && !project.panels.length && !pending && medium!=='video';
   async function switchWorkspace(id) {
     if (!id || id === library?.active) return;
@@ -468,7 +469,8 @@ function App() {
       {chosen && <details><summary>同じ場面の未作画をまとめて生成</summary><button disabled={!!busy||!desktop()||!chosen} onClick={()=>run('セクションを作画',()=>producePanels({current:()=>current.current,commit,panelIds:current.current.panels.filter(p=>p.sceneId===chosen.sceneId&&!p.image).map(p=>p.id),imageModelId,cancelled:()=>cancel.current,notify:setBusy}))}>対象セクションの未作画を生成</button></details>}
     </section>
     {chosen && stage==='art' && <section className="shot-controls" aria-label="作画候補">
-      {chosen.capture_revision && <button disabled={!!busy || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>}
+      {chosenCapture?.origin === 'three' && <button disabled={!!busy || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>}
+      {chosenCapture && chosenCapture.origin !== 'three' && <p className="muted">旧撮影画像は保持されています。3D構図を編集する場合はGLB素材を配置して撮り直してください。</p>}
       {project.jobs.filter(j => ['generate','edit','retake','compositor','decompose','layer_edit'].includes(j.kind) && !j.finishing && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
         <p>{job.status === 'unknown' ? '応答未確定：再実行する前に結果を確認してください' : '作画候補：採用前の原稿を保持しています'}</p>
         {job.status === 'unknown' && ['generate','edit','retake'].includes(job.kind) && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = job.media?.adapter_id==='runway-image'?await call('recover_cloud_image',{jobId:job.id,connectionId:current.current.mediaDefaults?.imageConnection}):await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
