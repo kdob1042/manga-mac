@@ -112,6 +112,11 @@ test('source selection action remains visible while reading a long manuscript',a
 });
 
 test('initial import restores keyboard focus and keeps the action inside narrow windows',async({page})=>{
+  await page.addInitScript(()=>{window.__TAURI_INTERNALS__={invoke:async command=>{
+    if(command==='load_project'||command==='acceptance_context')return null;
+    if(command==='source_library')return {active:'',entries:[]};
+    throw Error('Fixture catalog unavailable');
+  }};});
   for(const width of [1280,1440,760]){
     await page.setViewportSize({width,height:width===760?800:900});
     await page.goto('/');

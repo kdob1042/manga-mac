@@ -20,7 +20,7 @@ test('frame-break toggle, overflow drag, undo and PNG/CBZ share geometry without
  await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
  await page.getByLabel('枠数',{exact:true}).selectOption('2');
  await page.getByRole('button',{name:'テンプレートを適用'}).click();
- await page.getByTestId('layout-slot-0').click({position:{x:60,y:45}});
+ await page.getByTestId('layout-slot-0').click();
  await page.getByRole('button',{name:'枠破り',exact:true}).click();
  await expect(page.getByTestId('overflow-slot-0')).toBeVisible();
  await page.getByTestId('layout-slot-0').click({position:{x:60,y:45}});
