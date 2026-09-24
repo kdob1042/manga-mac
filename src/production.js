@@ -7,7 +7,7 @@ import {
   finishDraftLettering,
   reviewDraft,
 } from './draft.js';
-import { beginJob, finishJob } from './revisions.js';
+import { beginJob, finishJob, imageHash } from './revisions.js';
 import { imageModel } from './media.js';
 import { imageRequest } from './image-input.js';
 import { effectiveContinuity } from './continuity.js';
@@ -234,12 +234,12 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
   const previousId=effectiveContinuity(panel)?.previousPanelId;
   const previous=previousId && p.panels.find(x=>x.id===previousId);
   const model=imageModel(imageModelId ?? p.mediaDefaults?.image),capacity=model.input.max_references;
-  const extraReferences=(panel.referenceKeys??[]).flatMap(ref=>{
+  const extraReferences=(await Promise.all((panel.referenceKeys??[]).map(async ref=>{
     const saved=p.nameReferences?.[referenceKey(p.workId,p.activeNameEpisodeId,ref.key,ref.role)];
-    if(!saved)return [];
-    if(saved.role!==ref.role||!saved.image||!saved.hash)throw Error(`参照画像 ${ref.key} の登録が不正です`);
-    return [{...saved,role:ref.role,name:`${ref.role}: ${ref.key}`}];
-  });
+    if(!saved)return null;
+    if(saved.role!==ref.role||!saved.image)throw Error(`参照画像 ${ref.key} の登録が不正です`);
+    return {...saved,hash:await imageHash(saved.image),role:ref.role,name:`${ref.role}: ${ref.key}`};
+  }))).filter(Boolean);
   if(panel.compositionReference){
     const selection=panel.compositionReference;
     if(selection.kind!=='capture')throw Error('選んだ構図資料が未対応です');
@@ -255,7 +255,9 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
   const job={...await beginJob(p,panel,panel.image?'retake':'generate',imageModelId,undefined,continuityReference?.id),...(panel.namePlanVersion===3?{input_references:references.map(({role,name,hash})=>({role,name,hash:hash??null})),input_direction:{prompt:panel.prompt,continuity:effectiveContinuity(panel)}}:{})};
   await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
   try{
-   const result=await generate(panel,p.characters,null,'',job,null,p.style_references??[],null,null,imageModelId,'direct',{...(continuityReference?{continuityReference}:{}),extraReferences});
+   const generationArgs=[panel,p.characters,null,'',job,null,p.style_references??[],null,null,imageModelId,'direct'];
+   if(panel.namePlanVersion===3||continuityReference)generationArgs.push({...(continuityReference?{continuityReference}:{}),...(panel.namePlanVersion===3?{extraReferences}:{})});
+   const result=await generate(...generationArgs);
    await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
   }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
