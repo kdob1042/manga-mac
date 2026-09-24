@@ -17,7 +17,12 @@ export default function PageProof({ panels, snapshots, localizations, locale, pa
   if (!page?.slots.length || !panels.length) return <p className="stage-hint">このページにはコマがありません。コマ割り編集で配置してください。</p>;
   // A previous page or saved version is never a preview of the current input,
   // including the render before its replacement effect has started.
-  if (result?.input !== input) return <p role="status" className="stage-hint">ページを描画中…</p>;
-  if (result.error) return <p role="alert" className="message error">ページを表示できません: {result.error}</p>;
-  return <div className="page-proof-frame"><img className="page-proof" src={result.image} alt={draft ? '作画ページの確認' : '書き出しページの確認'}/>{children}</div>;
+  const loading=result?.input!==input;
+  // Keep the page's physical box through async renders and image decoding.
+  // Removing it here collapses the scroller and moves the next drag target.
+  return <div className="page-proof-frame" aria-busy={loading}>
+    {loading?<p role="status" className="page-proof-status">ページを描画中…</p>
+      :result.error?<p role="alert" className="page-proof-status message error">ページを表示できません: {result.error}</p>
+      :<><img className="page-proof" width="1600" height="2260" draggable="false" src={result.image} alt={draft ? '作画ページの確認' : '書き出しページの確認'}/>{children}</>}
+  </div>;
 }

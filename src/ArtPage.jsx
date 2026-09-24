@@ -1,7 +1,7 @@
 import React, {useEffect,useRef,useState} from 'react';
 import PageProof from './PageProof.jsx';
 import {panelHasText} from './core.js';
-import {inside,resizeQuadEdge,validQuad} from './layout.js';
+import {dragSlotFrame} from './layout.js';
 
 // The page uses the export renderer; region edits still address the original image.
 export default function ArtPage({project, page, panels, selected, onSelect, onResize, rect, onRect, busy, sourceText}) {
@@ -9,7 +9,7 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
   const frame = useRef(null),frameDraft=useRef(null),svg=useRef(null);
   const [draft,setDraft]=useState(null);
   const chosen = panels.find(panel => panel.id === selected);
-  const displayed=page.slots.map(slot=>draft?.id===slot.id?{...slot,points:draft.points}:slot);
+  const displayed=page.slots.map(slot=>draft?.slot.id===slot.id?draft.slot:slot);
   function cancelFrame(){frame.current=null;frameDraft.current=null;setDraft(null);}
   useEffect(()=>{cancelFrame();},[page.id,project.layout]);
   useEffect(()=>{const key=event=>{if(event.key==='Escape')cancelFrame();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
@@ -20,29 +20,25 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
   function startFrame(event,slot,{edge=null,vertex=null}={}){
     if(busy||event.button!==0)return;
     event.preventDefault();event.stopPropagation();onSelect(slot.panelId);
-    frame.current={pointer:event.pointerId,slot,edge,vertex,start:framePoint(event)};
+    // A missed handle selects the panel; moving it is an explicit modifier.
+    if(edge===null&&vertex===null&&!event.altKey)return;
+    const box=svg.current.getBoundingClientRect();
+    frame.current={pointer:event.pointerId,slot,edge,vertex,start:framePoint(event),width:box.width,height:box.height};
     frameDraft.current=null;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    svg.current.setPointerCapture(event.pointerId);
   }
   function moveFrame(event){
     const gesture=frame.current;if(!gesture||gesture.pointer!==event.pointerId)return;
-    const at=framePoint(event);let points=gesture.slot.points.map(point=>[...point]);
-    if(gesture.vertex!==null)points[gesture.vertex]=at;
-    else if(gesture.edge!==null)points=resizeQuadEdge(points,gesture.edge,[at[0]-gesture.start[0],at[1]-gesture.start[1]]);
-    else {
-      const all=[...points,...(gesture.slot.overflow?.points??[])];
-      const dx=Math.max(-Math.min(...all.map(p=>p[0])),Math.min(1-Math.max(...all.map(p=>p[0])),at[0]-gesture.start[0]));
-      const dy=Math.max(-Math.min(...all.map(p=>p[1])),Math.min(1-Math.max(...all.map(p=>p[1])),at[1]-gesture.start[1]));
-      points.forEach(point=>{point[0]+=dx;point[1]+=dy;});
-    }
-    if(!validQuad(points)||(gesture.slot.overflow&&!points.every(point=>inside(point,gesture.slot.overflow.points))))return;
-    frameDraft.current=points;setDraft({id:gesture.slot.id,points});
+    const at=framePoint(event),delta=at.map((v,i)=>v-gesture.start[i]);
+    if(!frameDraft.current&&Math.hypot(delta[0]*gesture.width,delta[1]*gesture.height)<3)return;
+    const next=dragSlotFrame(gesture.slot,gesture,delta,{page,width:gesture.width,height:gesture.height,snap:!event.shiftKey});
+    frameDraft.current=next.slot;setDraft(next);
   }
   function endFrame(event){
     if(!frame.current||frame.current.pointer!==event.pointerId)return;
-    const gesture=frame.current,points=frameDraft.current;
+    const gesture=frame.current,slot=frameDraft.current;
     cancelFrame();
-    if(points&&JSON.stringify(points)!==JSON.stringify(gesture.slot.points))onResize(gesture.slot.id,points);
+    if(slot&&JSON.stringify(slot)!==JSON.stringify(gesture.slot))onResize(gesture.slot.id,slot.points,slot.overflow);
   }
   function point(event) {
     const box = event.currentTarget.getBoundingClientRect();
@@ -58,16 +54,19 @@ export default function ArtPage({project, page, panels, selected, onSelect, onRe
             aria-pressed={active} className={active?'selected':''}
             onPointerDown={event=>startFrame(event,slot)}
             onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(slot.panelId);}}}/>;})}
-        {displayed.map((shape,index)=>{const slot=page.slots[index];return selected===slot.panelId&&slot.panelId&&shape.points.map((point,edge)=>{const next=shape.points[(edge+1)%4];return <g key={`${slot.id}-${edge}`}>
-            <line data-testid={`art-edge-${edge}`} className="art-frame-edge" x1={point[0]*1600} y1={point[1]*2260} x2={next[0]*1600} y2={next[1]*2260} onPointerDown={event=>startFrame(event,slot,{edge})}/>
+        {draft?.guides.map(({axis,value})=><line key={`${axis}-${value}`} className="frame-snap-guide" x1={axis===0?value*1600:0} y1={axis===1?value*2260:0} x2={axis===0?value*1600:1600} y2={axis===1?value*2260:2260}/>)}
+        {displayed.map((shape,index)=>{const slot=page.slots[index];return selected===slot.panelId&&slot.panelId&&<g key={slot.id}>
+          {shape.points.map((point,edge)=>{const next=shape.points[(edge+1)%4];return <g key={edge}>
+            <line data-testid={`art-edge-${edge}`} className="art-frame-edge" style={{cursor:edge%2?'ew-resize':'ns-resize'}} x1={point[0]*1600} y1={point[1]*2260} x2={next[0]*1600} y2={next[1]*2260} onPointerDown={event=>startFrame(event,slot,{edge})}/>
             <circle className="art-frame-handle" data-testid={`art-handle-${edge}`} cx={(point[0]+next[0])*800} cy={(point[1]+next[1])*1130} r="24" onPointerDown={event=>startFrame(event,slot,{edge})}/>
-            <circle className="art-frame-corner" cx={point[0]*1600} cy={point[1]*2260} r="24" onPointerDown={event=>startFrame(event,slot,{vertex:edge})}/>
-          </g>;});})}
+          </g>;})}
+          {shape.points.map((point,vertex)=><circle key={vertex} data-testid={`art-corner-${vertex}`} className="art-frame-corner" cx={point[0]*1600} cy={point[1]*2260} r="24" onPointerDown={event=>startFrame(event,slot,{vertex})}/>)}
+        </g>;})}
       </svg>
     </PageProof>
     {panels.some(panel => panel.namePlanVersion !== 2 && panelHasText(panel) && panel.lettering?.mode !== 'balloons' && (!panel.lettering || panel.letteringStatus === 'draft')) &&
       <p className="art-lettering-notice">文字配置待ち：未配置の原稿文は画像に重ねていません。コマを選ぶと原稿を確認できます。</p>}
-    {chosen && <p className="art-frame-hint">コマの辺をドラッグして大きさを調整。中をドラッグすると移動、角をドラッグすると形を変更。Escで取消。</p>}
+    {chosen && <p className="art-frame-hint">辺で大きさ、角で形を調整。端に近づけると揃います。移動はOption（Alt）＋ドラッグ、Shiftで端合わせ解除、Escで取消。</p>}
     {chosen && sourceText && <p className="art-panel-source">{sourceText}</p>}
     {chosen?.image && <div className="art-original-edit">
       <p>画像の中身を部分修正する範囲は、この元画像上をドラッグして指定します。</p>
