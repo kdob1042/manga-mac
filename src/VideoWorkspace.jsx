@@ -6,13 +6,11 @@ import { createVideoShot, adoptVideoCandidate, undoVideo, beginVideoJob, validat
 import { adjacentPanelPairs, createSelectedAdjacentVideoShots } from './video-transition';
 import { videoStatusLabel, resolveVideoTask } from './video-remote';
 import { draftVideoMotion } from './video-plan';
-import ShotControls from './ShotControls';
-import { videoSources } from './shots';
 import { defaultVideoModelId, videoModels, videoModel, videoConnection, videoEstimateCredits, validateVideoModelRequest } from './media.js';
 import { executeVideo } from './media-runtime.js';
 import { createPanelVideoShots, panelVideoRecipe, savedVideoBatches, runVideoBatch } from './video-batch.js';
 
-const loadCapture = (sessionId, requestId) => call('blender_capture', { sessionId, requestId });
+const loadCapture = (sessionId, requestId) => call('legacy_capture_read', { sessionId, requestId });
 export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot, requestedPairId, onPairConsumed, requestedPanelIds = [], onPanelsConsumed }) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
   const [sceneId, setSceneId] = useState(''), [imageId, setImageId] = useState(''), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState('');
@@ -22,14 +20,12 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const [duration, setDuration] = useState(5), [editDuration, setEditDuration] = useState(5);
   const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [videoConnections, setVideoConnections] = useState({}), [videoModelId, setVideoModelId] = useState(project.mediaDefaults?.video ?? defaultVideoModelId), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
   const [localExecutable, setLocalExecutable] = useState(''), [localModelDir, setLocalModelDir] = useState(''), [localFfmpeg, setLocalFfmpeg] = useState('');
-  const [captureSourceId, setCaptureSourceId] = useState(''), [captureCharacters, setCaptureCharacters] = useState([]);
   const [transitionPairIds, setTransitionPairIds] = useState([]), [transitionPrompt, setTransitionPrompt] = useState(''), [transitionRatio, setTransitionRatio] = useState('960:960'), [transitionDuration, setTransitionDuration] = useState(5);
   const [batchPanelIds, setBatchPanelIds] = useState([]), [batchPrompt, setBatchPrompt] = useState(''), [batchRatio, setBatchRatio] = useState('960:960'), [batchDuration, setBatchDuration] = useState(5);
   const [batchRows, setBatchRows] = useState({}), [batchId, setBatchId] = useState(''), [batchApproval, setBatchApproval] = useState('');
   const [savedBatchDraft, setSavedBatchDraft] = useState('');
   const [batchRunning, setBatchRunning] = useState(false), [batchStopping, setBatchStopping] = useState(false);
   const batchStop = useRef(false), batchLock = useRef(false), batchSource = useRef(project.active);
-  const sources = useMemo(() => videoSources(project), [project.shot_batches]), captureSource = sources.find(s => s.id === captureSourceId);
   const pairOptions = useMemo(() => adjacentPanelPairs(project), [project]), pairOptionKey = pairOptions.map(pair => pair.id + ':' + pair.valid).join('|');
   useEffect(() => {
     const available = new Set(pairOptions.filter(pair => pair.valid).map(pair => pair.id));
@@ -107,13 +103,6 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   const enabledBatchItems = batchItems.filter(item => item.row.enabled);
   const canSaveBatch = batchDraftFingerprint !== savedBatchDraft && enabledBatchItems.length > 0 && enabledBatchItems.every(({ row, recipe }) => recipe.valid && row.prompt.trim() && !requestError(row.duration, row.ratio, row.prompt));
   useEffect(() => { setEditPrompt(shot?.prompt ?? ''); setEditRatio(shot?.ratio ?? '960:960'); setEditDuration(shot?.duration ?? selectedVideoModel.input.default_duration_sec ?? videoDurations[0]); setAcceptDeletion(false); setCheckedTask(''); }, [selected, shot?.prompt, shot?.ratio, shot?.duration, selectedVideoModel.input.default_duration_sec, videoDurations]);
-  async function prepareCapture() {
-    const p = current.current;
-    if(!p.snapshots.find(s=>s.id===p.active)?.scenes.some(s=>s.id===sceneId))throw Error('現在の場面を選択してください');
-    const batch={id:crypto.randomUUID(),scope_type:'videoSource',status:'complete',bindings:[{id:crypto.randomUUID(),snapshotId:p.active,source_revision:p.active,sceneId,characterIds:[...captureCharacters]}]};
-    await commit({...p,shot_batches:[...(p.shot_batches??[]),batch]});
-    setCaptureSourceId(batch.bindings[0].id);
-  }
   async function refresh() {
     const latest = await loadProject();
     if (!latest) throw Error('作品を再読込できません');
@@ -219,19 +208,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
     {!snapshot ? <p>接続・人物設定から原作を取得してください。</p> : <fieldset disabled={busy}>
       <legend>動画を準備</legend>
       <details open={!selected && !batchPanelIds.length && !transitionPairIds.length}><summary>画像から新しいショットを追加</summary>
-      <label>原作の場面<select aria-label="原作の場面" value={sceneId} onChange={e => { setSceneId(e.target.value); setCaptureCharacters([]); }}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
-      <details><summary>開いているBlender GUIから動画用に撮影</summary>
-        <p>接続・人物設定で開いた素材から専用ショットを作ります。漫画のコマは不要です。別のコマ・動画のカメラやフレームは変更しません。</p>
-        <label>撮影する人物<select aria-label="撮影する人物" multiple value={captureCharacters} onChange={e => setCaptureCharacters([...e.target.selectedOptions].map(o => o.value))}>{project.characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
-        <button disabled={!desktop() || !sceneId} onClick={() => run('動画用の撮影を準備', prepareCapture)}>動画用の撮影ショットを作る</button>
-        <label>動画用の撮影ショット<select aria-label="動画用の撮影ショット" value={captureSourceId} onChange={e => setCaptureSourceId(e.target.value)}><option value="">撮影対象を選択</option>{sources.map(s => <option key={s.id} value={s.id}>{s.sceneId} · {s.id.slice(0, 8)}</option>)}</select></label>
-        <ShotControls project={project} current={current} commit={commit} panels={[]} chosen={captureSource} busy={busy} run={run} scopeType="videoSource" captureSize={ratio.split(':').map(Number)}/>
-        {captureSource?.capture_revision && <button onClick={() => {
-          if (captureSource.snapshotId !== project.active) { notify('旧原作の撮影です。現在の場面で新しい撮影ショットを作ってください。'); return; }
-          setSceneId(captureSource.sceneId); setImageId(`capture|${captureSource.capture_revision}`);
-          notify('撮影を開始画像に選びました。動きの指示を入力してショットを保存してください。');
-        }}>この撮影を開始画像に使う</button>}
-      </details>
+      <label>原作の場面<select aria-label="原作の場面" value={sceneId} onChange={e => setSceneId(e.target.value)}><option value="">場面を選択</option>{snapshot.scenes.map(s => <option key={s.id} value={s.id}>{s.id}</option>)}</select></label>
       <label>開始画像<select aria-label="開始画像" value={imageId} onChange={e => setImageId(e.target.value)}><option value="">保存済みの画像を選択</option>{images.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
       <label>動きの指示<textarea aria-label="動きの指示" value={prompt} maxLength={selectedVideoModel.input.max_prompt_utf16} onChange={e => setPrompt(e.target.value)} placeholder="カメラがゆっくり寄る。人物は小さくうなずく。"/></label>
       <label>動画の寸法<select aria-label="動画の寸法" value={ratio} onChange={e => setRatio(e.target.value)}>{videoRatios.map(r => <option key={r}>{r}</option>)}</select></label>

@@ -7,13 +7,11 @@ function emptyResult(reason) {
     runWeb: false,
     runStorage: false,
     runLlm: false,
-    runBlender: false,
     runMac: false,
     runRelease: false,
     runUi: false,
     runLive: false,
     runRestic: false,
-    runBlenderRender: false,
     runAudit: false,
     reason
   };
@@ -23,20 +21,17 @@ function mark(result, component) {
   if (component === "web") result.runWeb = true;
   if (component === "storage") result.runStorage = true;
   if (component === "llm") result.runLlm = true;
-  if (component === "blender") result.runBlender = true;
 }
 
 function markAll(result) {
   mark(result, "web");
   mark(result, "storage");
   mark(result, "llm");
-  mark(result, "blender");
   result.runMac = true;
   result.runRelease = true;
   result.runUi = true;
   result.runLive = true;
   result.runRestic = true;
-  result.runBlenderRender = true;
   result.runAudit = true;
 }
 
@@ -140,11 +135,8 @@ export function classifyFiles(files, context = {}) {
     } else if (file.startsWith("tests/storage/")) {
       mark(result, "storage");
       result.runRestic = true;
-    } else if (file.startsWith("tests/blender/")) {
-      mark(result, "blender");
     } else if (file.startsWith("tests/")) {
       mark(result, "web");
-      if (file === "tests/live-contract.test.js") result.runLive = true;
     } else if (file.startsWith("src-tauri/") && isCargoManifest(file)) {
       markAll(result);
     } else if (file.startsWith("src-tauri/src/")) {
@@ -159,9 +151,6 @@ export function classifyFiles(files, context = {}) {
         result.runWeb = true;
       } else if (/(^|\/)(llm|llm_tests|policy_transport)\.rs$/.test(file)) {
         mark(result, "llm");
-      } else if (file.endsWith("/blender.rs")) {
-        mark(result, "blender");
-        result.runBlenderRender = true;
       } else if (file.endsWith("/live_export.rs")) {
         mark(result, "storage");
         mark(result, "web");
@@ -185,9 +174,6 @@ export function classifyFiles(files, context = {}) {
       mark(result, "web");
       result.runMac = true;
       result.runRelease = true;
-    } else if (file.startsWith("blender/")) {
-      mark(result, "blender");
-      result.runBlenderRender = true;
     } else if (file === "scripts/install-backup-tools.sh") {
       mark(result, "storage");
       result.runRestic = true;
@@ -231,15 +217,13 @@ export function outputLines(result) {
     ["run_web", result.runWeb],
     ["run_storage", result.runStorage],
     ["run_llm", result.runLlm],
-    ["run_blender", result.runBlender],
     ["run_mac", result.runMac],
     ["run_release", result.runRelease],
     ["run_ui", result.runUi],
     ["run_live", result.runLive],
     ["run_restic", result.runRestic],
-    ["run_blender_render", result.runBlenderRender],
     ["run_audit", result.runAudit],
-    ["run_heavy", result.runWeb || result.runStorage || result.runLlm || result.runBlender || result.runMac || result.runRelease],
+    ["run_heavy", result.runWeb || result.runStorage || result.runLlm || result.runMac || result.runRelease],
     ["reason", result.reason]
   ].map(pair => pair[0] + "=" + pair[1]).join("\n");
 }

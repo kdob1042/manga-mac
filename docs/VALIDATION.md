@@ -1,3 +1,12 @@
+> 以下のBlender試験記録は旧版の履歴です。現行版ではBlender連携を削除し、3Dステージの実機受入に置き換えます。
+
+## 2026-09-24 Three.js移行のLinux検証
+
+- 基準: `dev` b9b0175、同じLinux/Node/Vite toolchainで `npm ci && npm run build`。比較対象は #279 の統合ブランチ。`npm test` は409件成功（追加の撮影入力テスト後は410件）、Web build成功。
+- 初期JS: 586.58 kB → 547.88 kB。Three.js関連は3D画面を開いた時に読み込むchunkへ分離した。2D初回画面のサイズ減と、3D表示時の追加読込を区別する。
+- `dist/`全体: 918,619 → 1,543,402 bytes（+624,783 bytes）。Three.jsを含むためWeb配布物全体は増加する。Blender.appをMacから自動削除せず、アプリ本体/DMG/起動/メモリの軽量化は未測定。
+- Rust/CargoとWebGL実canvasの実行はこの環境では未実施。PR CIと #266 の実Macで、GLB取込・静止ポーズ・撮影原本→画像AI・採用/Undo・旧作品復元を別々に確認する。実Tripoの有料生成は実行していない。
+
 # 実装・検証記録
 
 仕様は[設計書](IMPLEMENTATION_PLAN.md)、検証の実行方法は[開発案内](DEVELOPMENT.md)。本書は実施時点の証跡を残す履歴であり、現在の機能一覧ではない。

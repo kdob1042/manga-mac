@@ -106,7 +106,7 @@ export function validateVideoShot(project, shot) {
   return shot;
 }
 
-// loadCapture is the existing blender_capture IPC, supplied at the UI boundary.
+// loadCapture reads only a previously pinned legacy capture for existing video shots.
 export async function resolveStartImage(project, reference, loadCapture) {
   exactKeys(reference, ['kind', 'id', 'hash']);
   let image, dependencies;
