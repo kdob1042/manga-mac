@@ -637,7 +637,7 @@ TapNow公式のMCP接続先は `mcp.tapnow.ai`、OAuth issuerは `oauth.tapnow.a
 
 14件の中に費用見積りtoolはなく、各toolに`outputSchema`はない。キャンセルtoolも確認できない。モデルのtier別・尺別Tapies上限、送信後の実応答構造、URLの有効期間、再起動後の再認証と回収は未検証。`upload_image`を経由した参照画像編集、終端フレーム、任意寸法を対応済みに含めない。
 
-`scripts/tapnow-mcp-probe.mjs` は公開OAuth設定を確認する。認可済みのBearerを環境から渡した場合だけ読み取り専用の `tools/list` を呼ぶ。Macアプリの「TapNow接続（ツール確認）」はnative OAuth登録（`application_type: native`）、PKCE、ループバック認証、起動中だけのトークン保持を行い、`mcp.tools.read` の範囲で `tools/list` を表示する。認証先は公式URLに固定し、任意のURLやtokenを作品へ保存しない。`tools/call` と有料生成はまだ行わない。Inspectorでの認証とMacアプリのnative OAuth登録は別であり、後者の実ログインとread単独スコープは未検証。送信・照会の実応答とモデル別費用を確認した後、入力制約と照会結果の成功・失敗・処理中の解釈を固定する。モデル・設定別Tapiesの送信前上限を検証できるまでは有料要求を開始しない。確認できるまでTapNowを `media-registry.json` へ `implemented` として載せず、画像・動画の生成先として表示しない。対応できる操作が分かった段階で、画像は既存 `generate_image`、動画は既存 `video_submit`／`video_task` とJob・receiptへadapterを接続する。既存Runway画像／動画とローカルMGKの実装は引き続き使用する。
+`scripts/tapnow-mcp-probe.mjs` は公開OAuth設定を確認する。認可済みのBearerを環境から渡した場合だけ読み取り専用の `tools/list` を呼ぶ。Macアプリの「TapNow接続（ツール確認）」はnative OAuth登録（`application_type: native`）、PKCE、ループバック認証、起動中だけのトークン保持を行い、`mcp.tools.read` の範囲でMCP初期化・`tools/list` まで成功してから接続済みにする。認証先は公式URLに固定し、任意のURLやtokenを作品へ保存しない。`tools/call` と有料生成はまだ行わない。Inspectorでの認証とMacアプリのnative OAuth登録は別であり、後者の実ログインとread単独スコープは未検証。送信・照会の実応答とモデル別費用を確認した後、入力制約と照会結果の成功・失敗・処理中の解釈を固定する。モデル・設定別Tapiesの送信前上限を検証できるまでは有料要求を開始しない。確認できるまでTapNowを `media-registry.json` へ `implemented` として載せず、画像・動画の生成先として表示しない。対応できる操作が分かった段階で、画像は既存 `generate_image`、動画は既存 `video_submit`／`video_task` とJob・receiptへadapterを接続する。既存Runway画像／動画とローカルMGKの実装は引き続き使用する。
 
 
 ## Tripo参照画像→Blender素材連携（#201、2026-09-20）

@@ -24,6 +24,17 @@ async fn response_json(response: reqwest::Response) -> Result<Value, String> {
     response.json().await.map_err(|_| "TapNowの認証設定を読み取れません".into())
 }
 
+async fn registration_error(response: reqwest::Response) -> String {
+    let status = response.status();
+    let code = response.json::<Value>().await.ok()
+        .and_then(|body| body["error"].as_str().map(str::to_owned))
+        .filter(|code| matches!(code.as_str(), "invalid_client_metadata" | "invalid_redirect_uri" | "invalid_scope"));
+    match code {
+        Some(code) => format!("TapNowがMacアプリのOAuth登録を受け付けません (HTTP {status}, {code})"),
+        None => format!("TapNowがMacアプリのOAuth登録を受け付けません (HTTP {status})"),
+    }
+}
+
 fn validate_metadata(resource: &Value, auth: &Value) -> Result<(), String> {
     if resource["resource"] != MCP || auth["issuer"] != ISSUER
         || !resource["authorization_servers"].as_array().is_some_and(|v| v.iter().any(|x| x == ISSUER))
@@ -82,9 +93,7 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
             "grant_types":["authorization_code"], "response_types":["code"], "token_endpoint_auth_method":"none",
             "scope":"mcp.tools.read"}))
         .send().await.map_err(|_| "TapNowへアプリを登録できません")?;
-    if !registration.status().is_success() {
-        return Err(format!("TapNowがMacアプリのOAuth登録を受け付けません (HTTP {})。生成は行っていません", registration.status()));
-    }
+    if !registration.status().is_success() { return Err(registration_error(registration).await); }
     let registration = response_json(registration).await?;
     let client_id = registration["client_id"].as_str().ok_or("TapNowからクライアントIDが返されません")?;
     let mut authorize = Url::parse(auth["authorization_endpoint"].as_str().unwrap()).map_err(|_| "認証先が不正です")?;
@@ -110,8 +119,10 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     if token["scope"].as_str().is_some_and(|scope| !scope.split_whitespace().any(|s| s == "mcp.tools.read")) {
         return Err("TapNowの読み取り権限が付与されませんでした".into());
     }
+    // 認可だけではMCP接続を確認できない。tools/listが成功してから接続済みにする。
+    let tools = list_tools_with_bearer(bearer).await?;
     *connection.0.lock().map_err(|_| "TapNow接続を保持できません")? = Some(bearer.to_owned());
-    Ok(json!({"connected":true,"scope":"mcp.tools.read"}))
+    Ok(json!({"connected":true,"scope":"mcp.tools.read","tools":tools["tools"]}))
 }
 
 pub fn disconnect(connection: &Connection) -> Result<(), String> {
@@ -122,11 +133,16 @@ pub fn connected(connection: &Connection) -> Result<bool, String> {
     Ok(connection.0.lock().map_err(|_| "TapNow接続を確認できません")?.is_some())
 }
 
-fn decode_mcp(body: &str, sse: bool) -> Result<Value, String> {
-    if !sse { return serde_json::from_str(body).map_err(|_| "TapNowのMCP応答が不正です".into()); }
+fn decode_mcp(body: &str, sse: bool, expected_id: i32) -> Result<Value, String> {
+    if !sse {
+        let value: Value = serde_json::from_str(body).map_err(|_| "TapNowのMCP応答が不正です")?;
+        return if value["id"] == expected_id { Ok(value) } else { Err("TapNowのMCP応答IDが不正です".into()) };
+    }
     for line in body.lines() {
         if let Some(data) = line.strip_prefix("data: ").or_else(|| line.strip_prefix("data:")) {
-            if let Ok(value) = serde_json::from_str::<Value>(data.trim()) { return Ok(value); }
+            if let Ok(value) = serde_json::from_str::<Value>(data.trim()) {
+                if value["id"] == expected_id { return Ok(value); }
+            }
         }
     }
     Err("TapNowのMCP応答が空です".into())
@@ -135,6 +151,10 @@ fn decode_mcp(body: &str, sse: bool) -> Result<Value, String> {
 pub async fn list_tools(connection: &Connection) -> Result<Value, String> {
     let bearer = connection.0.lock().map_err(|_| "TapNow接続を確認できません")?
         .clone().ok_or("TapNowへ接続してください")?;
+    list_tools_with_bearer(&bearer).await
+}
+
+async fn list_tools_with_bearer(bearer: &str) -> Result<Value, String> {
     let http = client()?;
     let mut session: Option<String> = None;
     for (id, method, params) in [
@@ -159,7 +179,7 @@ pub async fn list_tools(connection: &Connection) -> Result<Value, String> {
         if method == "notifications/initialized" { continue; }
         let sse = response.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok())
             .is_some_and(|v| v.starts_with("text/event-stream"));
-        let value = decode_mcp(&response.text().await.map_err(|_| "TapNowのMCP応答を読めません")?, sse)?;
+        let value = decode_mcp(&response.text().await.map_err(|_| "TapNowのMCP応答を読めません")?, sse, id)?;
         if value.get("error").is_some() { return Err("TapNowのMCPが要求を拒否しました".into()); }
         if method == "tools/list" {
             let tools = value["result"]["tools"].as_array().ok_or("TapNowのツール形式が不正です")?;
@@ -184,6 +204,7 @@ mod tests {
         assert!(validate_metadata(&resource, &auth).is_ok());
         let mut wrong = auth.clone(); wrong["token_endpoint"] = json!("https://other.example/token");
         assert!(validate_metadata(&resource, &wrong).is_err());
-        assert_eq!(decode_mcp("event: message\ndata: {\"result\":{\"tools\":[]}}\n\n", true).unwrap()["result"]["tools"], json!([]));
+        assert_eq!(decode_mcp("event: notification\ndata: {\"method\":\"progress\"}\n\nevent: message\ndata: {\"id\":3,\"result\":{\"tools\":[]}}\n\n", true, 3).unwrap()["result"]["tools"], json!([]));
+        assert!(decode_mcp("{\"id\":2,\"result\":{}}", false, 3).is_err());
     }
 }

@@ -10,9 +10,9 @@ export default function TapNowSettings({busy,run}) {
   useEffect(()=>{if(desktop()) call('tapnow_status').then(setConnected).catch(()=>{});},[]);
   return <details><summary>TapNow接続（ツール確認）</summary>
     <fieldset disabled={!!busy||!desktop()}>
-      <p>TapNowのMacアプリ向け接続を検証します。認証画面を開き、読み取り権限でツール仕様を確認します。画像・動画の生成はまだ使えません。</p>
+      <p>TapNowのMacアプリ向け接続を検証します。認証画面を開き、ツール一覧を取得できたときだけ接続済みになります。画像・動画の生成はまだ使えません。</p>
       {!connected ? <button onClick={()=>run('TapNowの認証を待っています',async()=>{
-        await call('tapnow_connect');setConnected(true);setTools(null);
+        const result=await call('tapnow_connect');setTools(result.tools);setConnected(true);
       })}>TapNowに接続</button> : <>
         <button onClick={()=>run('TapNowのツールを確認中',async()=>setTools((await call('tapnow_tools')).tools))}>ツール仕様を確認</button>
         <button onClick={()=>run('TapNowを切断中',async()=>{await call('tapnow_disconnect');setConnected(false);setTools(null);})}>接続を解除</button>
