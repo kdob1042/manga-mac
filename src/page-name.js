@@ -1,6 +1,5 @@
 import { adoptPages, editNamePage, editNameScene, nameRevision, restoreNameRevision, validateEpisode } from '../contracts/name-plan/page.mjs';
 import { validateLayout } from './layout.js';
-import {imageHash} from './revisions.js';
 
 const copy = value => structuredClone(value);
 export const episodeKey = (workId, episodeId) => JSON.stringify([workId, episodeId]);
@@ -49,7 +48,7 @@ export function projectNameEpisode(project, episode) {
   for (const person of episode.characters) if (!characters.some(c => c.id === person.id)) characters.push({ ...person, id: person.id, image: null, hash: '' });
   const legacyNamePlans = project.legacyNamePlans ?? [project.namePlan,...(project.otherNamePlans??[])].filter(Boolean);
   return { ...project, workId: episode.workId, title: episode.title, characters, panels, layout,
-    legacyNamePlans, namePlan: null, otherNamePlans: [], panelProduction: stored, activeNameEpisodeId: episode.episodeId };
+    legacyNamePlans, namePlan: null, otherNamePlans: [], sourceApplication:{version:1,units:[]}, panelProduction: stored, activeNameEpisodeId: episode.episodeId };
 }
 
 export function commitNameEpisode(project, episode, reason, { saveRevision = true } = {}) {
@@ -140,10 +139,10 @@ export function saveNameRevision(project, episodeId, reason = '手動で版を�
   return { ...project, nameRevisions: { ...(project.nameRevisions ?? {}), [id]: [ ...(project.nameRevisions?.[id] ?? []), nameRevision(current, reason) ] } };
 }
 
-export async function registerNameReference(project, episodeId, assetKey, role, image) {
+export function registerNameReference(project, episodeId, assetKey, role, image) {
   if(!['costume','background','composition'].includes(role)||typeof assetKey!=='string'||!assetKey.trim())throw Error('参照画像の役割・キーが不正です');
-  const hash=await imageHash(image),id=referenceKey(project.workId,episodeId,assetKey,role);
-  return {...project,nameReferences:{...(project.nameReferences??{}),[id]:{id,key:assetKey,role,workId:project.workId,episodeId,image,hash}}};
+  const id=referenceKey(project.workId,episodeId,assetKey,role);
+  return {...project,nameReferences:{...(project.nameReferences??{}),[id]:{id,key:assetKey,role,workId:project.workId,episodeId,image}}};
 }
 
 export function restoreProjectNameRevision(project, episodeId, revisionId) {
