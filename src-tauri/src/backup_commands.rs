@@ -279,10 +279,3 @@ pub fn initial_root(base: &Path) -> Result<PathBuf, String> {
         Ok(base.to_path_buf())
     }
 }
-
-#[tauri::command]
-pub fn backup_rebind_blender(binary: String, state: State<AppState>) -> Result<(), String> {
-    let _gate = backup::gate(&state.base, ".backup-operation.lock")?;
-    let mut db = state.db.lock().map_err(err)?;
-    crate::blender::rebind_restored(&mut db, &state.root, &binary)
-}

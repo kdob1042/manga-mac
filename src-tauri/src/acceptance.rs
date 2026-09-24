@@ -171,7 +171,7 @@ pub fn preflight(helper: Option<&Path>) -> Value {
             {"id":"model_cache","status":"NOT_RUN","required":false},
             {"id":"llm_connectivity","status":"NOT_RUN","required":false},
             {"id":"source_connectivity","status":"NOT_RUN","required":false},
-            {"id":"blender_connectivity","status":"NOT_RUN","required":false}],
+            {"id":"scene_staging","status":"NOT_RUN","required":false}],
         "readOnly":true
     })
 }

@@ -1,5 +1,4 @@
 import {producePanels} from './production.js';
-import { openLiveShot } from './live-blender';
 import {finalizeProducedSource} from './source-patch.js';
 import {createProjectWriter} from './project-writer.js';
 import {sourceSummary} from './source-sync.js';
@@ -14,7 +13,6 @@ import { editContext, editBase, planEdit, undoEdit, saveEditProposal, loadEditPr
 import { draftPageStatus, preserveDraft } from './draft';
 import PanelMotionControls from './PanelMotionControls';
 import { pagePanels, ensureLayout } from './layout.js';
-import { directPanel, activeDirection, abandonDirection } from './directing';
 import { askLLM } from './llm';
 import LetteringControls from './LetteringControls';
 import { editRoute } from './edit-route';
@@ -33,7 +31,6 @@ import FinishingControls from './FinishingControls.jsx';
 import './style.css';
 import { defaultConnection, cancelLLMRequests } from './llm';
 import { useBackupSchedule } from './useBackupSchedule.js';
-import ShotControls from './ShotControls';
 import { recoverImageResult } from './image-recovery';
 import { beginJob, finishJob, adoptCandidate, abandonJob } from './revisions';
 import { createEnglishLocalization, currentEnglishLocalization, textForPanel } from './localization';
@@ -51,6 +48,7 @@ const LivePreviewControls = lazy(() => import('./LivePreviewControls.jsx'));
 const LayoutEditor = lazy(() => import('./LayoutEditor.jsx'));
 const ContentReplan = lazy(() => import('./ContentReplan.jsx'));
 const SourceUpdate = lazy(() => import('./SourceUpdate.jsx'));
+const SceneControls = lazy(() => import('./SceneControls.jsx'));
 
 // Open on demand, then retain inputs and unfinished proposals between stages.
 function StagePane({active, children, ...props}) {
@@ -68,7 +66,6 @@ function App() {
   const [stage,setStage] = useState('source');
   const [loadAttempt,setLoadAttempt] = useState(0), [loadError,setLoadError] = useState('');
   const [batchPanels,setBatchPanels]=useState([]);
-  const [productionMode, setProductionMode] = useState('direct');
   const [medium, setMedium] = useState('manga');
   const [videoOpened, setVideoOpened] = useState(false);
   useEffect(() => { if (medium === 'video') setVideoOpened(true); }, [medium]);
@@ -351,31 +348,15 @@ function App() {
     setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
-    return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode, imageModelId,
-      setBusy, setNotice, stagePanel, planScene, generatePanel, askLLM, imageOf, pagePNG,
+    return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode: 'direct', imageModelId,
+      setBusy, setNotice, stagePanel: async()=>{throw Error('この演出経路は終了しました。コマの3D構図を開いてください');}, planScene, generatePanel, askLLM, imageOf, pagePNG,
       showProof: (_image, pageIndex=0) => { setPage(pageIndex); setStage('finish'); } });
-  }
-  async function stagePanel(panelId, instruction = '') {
-    if (!model.connectionId) throw Error('先に演出AIの接続を登録・テストしてください');
-    const shot=current.current.panels.find(p=>p.id===panelId);
-    if(!shot)throw Error('対象コマがありません');
-    if(!shot.live_binding){const binding=await openLiveShot(call,current.current,shot);await commit({...current.current,panels:current.current.panels.map(p=>p.id===panelId?{...p,live_binding:binding}:p)});}
-    return directPanel({ current: () => current.current, commit, call, panelId, instruction,
-      cancelled: () => cancel.current, notify: setBusy,
-      ask: async (prompt, schema) => JSON.parse(await askLLM(model, { purpose: 'direction', prompt, schema })) });
-  }
-  async function directChosen() {
-    if (!chosen) throw Error('コマを選択してください');
-    const result = await stagePanel(chosen.id, instruction.trim());
-    if (result?.live) { setNotice('live編集結果を詳細調整で確認し、候補として保存してください'); return; }
-    if (!cancel.current) await drawChosen(chosen.id);
-    setInstruction('');
   }
   async function drawChosen(panelId = selected) {
     const p = current.current, panel = p.panels.find(x => x.id === panelId);
     if (!panel) throw Error('対象コマを選択してください');
     const capture = p.captures?.find(c => c.id === panel.capture_revision);
-    if (!capture) throw Error('先にBlenderで撮影してください');
+    if (!capture) throw Error('先にこのコマの3D構図を撮影してください');
     const job = await beginJob(p, panel, 'retake', imageModelId);
     await commit({ ...p, jobs: [...p.jobs, job] });
     try {
@@ -410,7 +391,7 @@ function App() {
       perform:async(op,context)=>{
         setSelected(op.panelId);
         if(['resolution','upscale','finishing','video_prepare','video_assign'].includes(op.kind)){message=await panelAction(()=>current.current,commit,op,id=>{setRequestedShot(id);setMedium('video');},imageModelId);return;}
-        if(op.kind==='direction') {const result=await stagePanel(op.panelId,op.args.instruction);if(!result?.live&&!cancel.current)await drawChosen(op.panelId);return;}
+        if(op.kind==='direction') throw Error('この演出経路は終了しました。対象コマの3D構図を開いてください');
         if(op.kind==='region') {
           const p=current.current,panel=p.panels.find(p=>p.id===op.panelId),job=await beginJob(p,panel,'edit',imageModelId);
           await commit({...p,jobs:[...p.jobs,job]});
@@ -495,7 +476,7 @@ function App() {
         <button disabled={!!busy} onClick={() => run('要求を解決中', async () => commit(abandonJob(current.current, job.id)))}>採用せず解決する</button>
       </div>)}
     </section>}
-    {chosen && <StagePane key={`art-tools:${chosen.id}`} active={medium==='manga'&&stage==='art'} aria-label="作画の追加操作">    {<React.Suspense fallback={null}><LayeredControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense>}
+    {chosen && <StagePane key={`art-tools:${chosen.id}`} active={medium==='manga'&&stage==='art'} aria-label="作画の追加操作">    {<React.Suspense fallback={null}><SceneControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} model={model} active={medium==='manga'&&stage==='art'}/><LayeredControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense>}
     {<React.Suspense fallback={null}><CompositorControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense> }
     {<PanelMotionControls project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} active={medium==='manga'&&stage==='art'} onShot={id => { setRequestedShot(id); setMedium('video'); }} onAdjacentPair={id => { setRequestedPairId(id); setMedium('video'); }}/>}
 </StagePane>}
@@ -506,17 +487,6 @@ function App() {
 </StagePane>}
     <StagePane active={medium==='manga'&&stage==='finish'} aria-label="仕上げの作業">
     <SectionCompletion project={project} current={current} commit={commit} run={run} busy={!!busy} onSelect={id=>{setSelected(id);const i=layout.pages.findIndex(p=>p.slots.some(s=>s.panelId===id));if(i>=0)setPage(i);}}/><LivePreviewControls key={`${project.workId}:${snapshot?.episodeId}`} writer={writer.current} current={current} ready={ready}/></StagePane>
-    {chosen && stage==='art' && (productionMode==='blender'||activeDirection(project,chosen.id)) && <section className="shot-controls" aria-label="AI演出">
-      <h3>このコマの演出</h3><p>下の欄に「勇の肩越しから」「もう少し寄って」などを入力してください。構図・演技の変更は撮影からやり直し、旧作画を残して候補を作ります。</p>
-      <button disabled={!!busy || !desktop()} onClick={() => run('Blenderで演出中', directChosen)}>Blenderで演出して漫画化</button>
-      {activeDirection(project, chosen.id) && <><p role="status">{activeDirection(project, chosen.id).message || '停止した演出があります。保存済みの結果を確認して再開します。'}</p>
-        <button disabled={!!busy || !desktop()} onClick={() => run('演出を再開中', async () => { const result=await stagePanel(chosen.id); if (!result?.live&&!cancel.current) await drawChosen(chosen.id); })}>演出を再開</button>
-        <button disabled={!!busy} onClick={() => run('演出を取り下げ', () => commit(abandonDirection(current.current, activeDirection(current.current, chosen.id).id)))}>演出を取り下げる</button>
-      </>}
-    </section>}
-    <details className="shot-details" hidden={stage!=='art'}><summary>詳細調整・Blenderの保存結果を確認</summary>
-    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run} cancelled={()=>cancel.current}/>
-    </details>
     <div className="composer" hidden={!panels.length||stage==='source'}><div className="scope">{chosen?`選択中：${chosen.sceneId}`:`${page+1}ページ目のコマを読書順で指定できます`}</div><div className="input-row"><input aria-label="編集の指示" onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing&&e.nativeEvent.keyCode!==229&&!busy&&panels.length&&instruction.trim()){e.preventDefault();run('編集内容を確認中',edit);}}} value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder="3コマ目の吹き出しを右上に"/><button className="primary" disabled={!!busy||!panels.length||!instruction.trim()} onClick={()=>run('編集内容を確認中',edit)}>修正する ↑</button></div><label><input type="checkbox" checked={autoApply} onChange={e=>setAutoApply(e.target.checked)}/>文字・枠・画像配置は自動適用する（Undo可能）</label><small>Enterで確認 · 部分修正は画像をドラッグして範囲を選択</small></div>
     {project.jobs.filter(j=>j.kind==='edit_execution'&&['partial','unknown'].includes(j.status)).map(j=><p role="status" key={j.id}>編集は途中です：{j.completed}/{j.operations.length}操作を保存。作画候補・未確定要求を確認してください。自動再送はしません。</p>)}
     <EditProposals project={project} current={current} commit={commit} run={run} busy={!!busy} onSelect={c=>{setEditCandidate(c);setPage(current.current.layout.pages.findIndex(p=>p.id===c.context.pageId));}}/>
