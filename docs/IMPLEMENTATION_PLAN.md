@@ -624,6 +624,12 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 
 受入では、registryと要求の一致、任意名の拒否、既存Jobのモデル固定、candidate／adopt／Undo／unknown復旧の維持をNodeで確認する。Rust／Swiftの実機ビルドとMac内FLUXの視覚・性能、Runwayの有料送信は別のMac環境で検証し、Linuxのfixture成功で代替しない。
 
+### TapNow 接続の契約確認（#291、2026-09-24）
+
+TapNow公式のMCP接続先は `mcp.tapnow.ai`、OAuth issuerは `oauth.tapnow.ai`。公開設定では `mcp.tools.read`／`mcp.tools.invoke` とS256認可を確認した。一方、未認可の `tools/list` はHTTP 401で、生成・編集のtool schema、課金見積り、task IDの照会・成果物取得・復旧の可否は確認できない。公式のエージェント向け説明だけでアプリ向けAPIが成立したとは扱わない。
+
+`scripts/tapnow-mcp-probe.mjs` は公開OAuth設定を確認する。認可済みのBearerを環境から渡した場合だけ読み取り専用の `tools/list` を呼び、認証情報を出力・保存せずtool schemaを表示する。OAuthクライアントの登録・認可、`tools/call`、有料生成は行わない。認可後のschemaと復旧能力を確認するまでTapNowを `media-registry.json` へ `implemented` として載せず、native接続・UIに架空の選択肢を作らない。対応できる操作が分かった段階で、画像は既存 `generate_image`、動画は既存 `video_submit`／`video_task` とJob・receiptへ小さなadapterを接続する。既存Runway画像／動画とローカルMGKの実装は引き続き使用する。
+
 
 ## Tripo参照画像→Blender素材連携（#201、2026-09-20）
 
