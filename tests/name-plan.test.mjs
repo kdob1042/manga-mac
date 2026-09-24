@@ -81,8 +81,8 @@ test('quoted text cannot be classified away', () => {
   const f = fixture(1, '# 頭\n\n「省略しない」'); f.plan.coverage[0].presentation = 'visual';
   assert.throws(() => validatePlan(f.plan, f.atoms, []), /原文/);
 });
-test('changed source/settings/references and different work are rejected', async () => {
-  for (const mutate of [f => f.project.snapshots[0].scenes[0].text += '変化', f => f.project.snapshots[0].settings = ['changed'], f => f.project.snapshots[0].characters = [{ id: 'c1', name: 'changed' }], f => f.file.source.workId = 'other']) {
+test('legacy positional source and different work are rejected', async () => {
+  for (const mutate of [f => f.project.snapshots[0].scenes[0].text += '変化', f => f.file.source.workId = 'other']) {
     const f = await fileFixture(); mutate(f); await assert.rejects(() => bindSource(f.file, f.project));
   }
 });

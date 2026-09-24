@@ -1,13 +1,14 @@
 import { validateLayout, layoutWarnings } from './layout.js';
 import { FORMAT, POLICY_VERSION, parseNameFile, validatePlan, fileSchema, validateSchema, canonical, sha256, fail, treeLeaves } from '../contracts/name-plan/schema.mjs';
-import { bindSource, atomize, sourceDescriptor, sourceCharacterIds, intersects, clipRefs, orderedCoverage, resolveRef, sourceParagraphs, requiredTextForSource } from '../contracts/name-plan/source.mjs';
+import { bindSource, atomize, sourceDescriptor, embeddedSourceDescriptor, hasEmbeddedSource, namePartKey, sourceCharacterIds, intersects, clipRefs, orderedCoverage, resolveRef, sourceParagraphs, requiredTextForSource } from '../contracts/name-plan/source.mjs';
+import { allNamePlans, assertUniqueNameParts, nameSourceSnapshot } from './name-parts.js';
 import { compileNameLayout } from '../contracts/name-plan/layout.mjs';
 import { diagnosePlan } from '../contracts/name-plan/qa.mjs';
 export { FORMAT, requiredTextForSource };
 const same = (a, b) => canonical(a) === canonical(b);
 const printed = presentation => ['dialogue', 'thought', 'narration'].includes(presentation);
 const stripImage = ({ image, ...panel }) => ({ ...panel, imagePresent: !!image });
-const charIdentity = project => (project.characters ?? []).map(({ id, name, description, hash }) => ({ id, name: name ?? '', description: description ?? '', hash: hash ?? '' }));
+const charIdentity = project => (project.characters ?? []).map(({ id, source }) => ({ id, sourceId: source?.character_id ?? id, scope: source?.scope ?? '' })).sort((a,b)=>a.id.localeCompare(b.id));
 const sourceScope = snapshot => snapshot.workId ? `${snapshot.repo}#${snapshot.workId}` : snapshot.repo;
 function sourceCharacterBinding(project, snapshot) {
   const expectedScope = sourceScope(snapshot), allowed = new Set(sourceCharacterIds(snapshot)), result = new Map();
@@ -23,6 +24,7 @@ function projectCharacterIds(project, snapshot, ids) {
   const bindings = sourceCharacterBinding(project, snapshot);
   return ids.map(id => {
     const local = bindings.get(id);
+    if (!local && snapshot.embeddedName) return project.characters?.find(character => character.id === id)?.id ?? `source:${sourceScope(snapshot)}:${id}`;
     if (!local) fail('character', `原稿人物${id}の基準画・アプリ内対応がありません`);
     return local;
   });
@@ -47,7 +49,7 @@ function portableCharacterPlan(project, snapshot, plan) {
   return portable;
 }
 export async function nameReadToken(project) {
-  return sha256({ workId: project.workId ?? null, active: project.active, panels: project.panels.map(stripImage), layout: project.layout ?? null, application: project.sourceApplication ?? null, name: project.namePlan?.format===FORMAT?{fileHash:project.namePlan.fileHash,status:project.namePlan.status,locks:project.namePlan.locks,geometryOverride:project.namePlan.geometryOverride}:null, characters: charIdentity(project), settings: project.snapshots.find(s => s.id === project.active)?.settings ?? [] });
+  return sha256({ workId: project.workId ?? null, active: project.active, panels: project.panels.map(stripImage), layout: project.layout ?? null, application: project.sourceApplication ?? null, names: allNamePlans(project).map(state=>({id:state.id,fileHash:state.fileHash,status:state.status,locks:state.locks,geometryOverride:state.geometryOverride})), characters: charIdentity(project) });
 }
 function shortHash(value) { let a = 2166136261; for (const c of value) { a ^= c.codePointAt(0); a = Math.imul(a, 16777619); } return (a >>> 0).toString(16).padStart(8, '0'); }
 export function localNamePlan(file, namespace) {
@@ -75,7 +77,8 @@ function initialMetrics(plan, atoms, coverage) {
 export async function createNameCandidate(project, raw, { textMetrics, profile, namespace } = {}) {
   const file = typeof raw === 'string' ? parseNameFile(raw) : validateSchema(structuredClone(raw), fileSchema);
   const bound = await bindSource(file, project), validated = validatePlan(file.plan, bound.atoms, sourceCharacterIds(bound.snapshot), bound.contextAtoms);
-  const fileHash = await sha256(file), ns = namespace ?? `np${fileHash.slice(0, 12)}`;
+  const fileHash = await sha256(file), identity = hasEmbeddedSource(file) ? await sha256(namePartKey(file)) : fileHash;
+  const ns = namespace ?? `np${identity.slice(0, 12)}`;
   if(typeof ns!=='string'||!/^[A-Za-z0-9][A-Za-z0-9:_-]{0,39}$/.test(ns))fail('namespace','ネームの内部識別子が不正です');
   const plan = localNamePlan(file, ns);
   const metrics = textMetrics ?? initialMetrics(plan, validated.atomMap, validated.coverage);
@@ -95,19 +98,19 @@ export async function createNameCandidate(project, raw, { textMetrics, profile, 
     return { atomId: atom.id, source: { ...atom.source }, kind: atom.kind, presentation: entry.presentation, requiredText: printed(entry.presentation) ? [{ ...atom.source }] : [], reason: entry.reason };
   });
   const previous = { base: await nameReadToken(project), source: bound.descriptor };
-  return { version: 2, id: `name-candidate:${fileHash}`, namespace: ns, file, fileHash, previous, panels, layout: compiled.layout, sourcePolicy, compilerVersion: compiled.compilerVersion, profile: compiled.profile, metrics, diagnostics: compiled.diagnostics, qa: diagnosePlan(plan, compiled.layout), status: 'candidate' };
+  return { version: 2, id: `name-candidate:${fileHash}`, namespace: ns, file, fileHash, previous, panels, layout: compiled.layout, sourcePolicy, ...(hasEmbeddedSource(file) ? { sourceSnapshot: bound.snapshot } : {}), compilerVersion: compiled.compilerVersion, profile: compiled.profile, metrics, diagnostics: compiled.diagnostics, qa: diagnosePlan(plan, compiled.layout), status: 'candidate' };
 }
 function refsCover(targets, actual) {
   for (const target of targets) if (!orderedCoverage([target], clipRefs(actual, target))) return false;
   return true;
 }
 export function nameCheckpoint(project, label) {
-  const keys = ['panels', 'layout', 'sourceApplication', 'draftScope', 'namePlan', 'layoutHistory', 'layoutRedo', 'panelMotions', 'motionHistory', 'characters', 'style_references', 'output_locale'];
+  const keys = ['panels', 'layout', 'sourceApplication', 'draftScope', 'namePlan', 'otherNamePlans', 'layoutHistory', 'layoutRedo', 'panelMotions', 'motionHistory', 'characters', 'style_references', 'output_locale'];
   const state = Object.fromEntries(keys.map(key => [key, structuredClone(project[key] ?? (key === 'sourceApplication' ? { version: 1, units: [] } : key === 'output_locale' ? 'ja' : key === 'draftScope' || key === 'namePlan' ? null : []))]));
   return { ...state, id: crypto.randomUUID(), active: project.active, draftCheckpoint: true, label, at: new Date().toISOString() };
 }
 // Name edits share the normal Undo stack; draft switching retains its own checkpoint.
-export const NAME_EDIT_FIELDS = ['panels','layout','sourceApplication','draftScope','namePlan','layoutHistory','layoutRedo','panelMotions','motionHistory'];
+export const NAME_EDIT_FIELDS = ['panels','layout','sourceApplication','draftScope','namePlan','otherNamePlans','layoutHistory','layoutRedo','panelMotions','motionHistory'];
 export function nameEditState(project) { return Object.fromEntries(NAME_EDIT_FIELDS.map(key => [key, structuredClone(project[key] ?? null)])); }
 export function recordNameEdit(previous, next, label) {
   const before=nameEditState(previous), after=nameEditState(next);
@@ -121,7 +124,7 @@ export async function editNameCandidateLayout(project,candidate,layout) {
   return {...candidate,layout:structuredClone(layout),compiledLayout:structuredClone(candidate.compiledLayout??candidate.layout),manualLayout:true};
 }
 export async function adoptNameCandidate(project, candidate, mode = 'replace') {
-  if (!['replace', 'separate'].includes(mode) || candidate.status !== 'candidate' || candidate.previous.base !== await nameReadToken(project)) fail('stale', '候補の基準版が変わりました。現在の作品から再確認してください');
+  if (!['replace', 'separate', 'replace-part'].includes(mode) || candidate.status !== 'candidate' || candidate.previous.base !== await nameReadToken(project)) fail('stale', '候補の基準版が変わりました。現在の作品から再確認してください');
   await bindSource(candidate.file, project);
   if (project.jobs.some(job => ['running', 'unknown'].includes(job.status) && job.kind !== 'name_plan')) fail('busy', '実行中・応答未確定の制作を先に解決してください');
   const checked = await createNameCandidate(project, candidate.file, { profile: candidate.profile, textMetrics: candidate.metrics, namespace: candidate.namespace });
@@ -129,6 +132,7 @@ export async function adoptNameCandidate(project, candidate, mode = 'replace') {
   validateLayout(candidate.layout,candidate.panels);
   const candidateWarnings=layoutWarnings(candidate.layout,candidate.panels);
   if(candidateWarnings.length)fail('candidate_layout',candidateWarnings.join(' / '));
+  if (hasEmbeddedSource(candidate.file)) return adoptEmbeddedPart(project, candidate, checked, mode);
   const targets = candidate.sourcePolicy.map(entry => entry.source), targetScenes = new Set(targets.map(ref => ref.sceneId));
   const oldPanels = project.panels, oldPages = project.layout?.pages ?? [];
   let start = oldPages.length, end = start, remove = new Set();
@@ -173,6 +177,48 @@ export async function adoptNameCandidate(project, candidate, mode = 'replace') {
     jobs: [...project.jobs.map(job => job.kind === 'name_plan' && job.nameCandidate?.id === candidate.id ? { ...job, status: 'complete' } : job), { id: crypto.randomUUID(), kind: 'draft_layout', status: 'complete', source_revision: project.active, draft_id: id, origin: 'name-plan-v2' }],
   };
 }
+function adoptEmbeddedPart(project, candidate, checked, mode) {
+  const states = allNamePlans(project), key = namePartKey(candidate.file);
+  const old = states.find(state => namePartKey(state.file) === key);
+  if (old && mode !== 'replace-part') fail('part_exists', `ネーム${candidate.file.source.number}は採用済みです。「この番号を更新」で置き換えてください`);
+  if (mode === 'separate') fail('part_mode', '原文入りネームは番号ごとに追加してください');
+  const removed = new Set(old?.panelIds ?? []), removedPages = new Set(old?.pageIds ?? []);
+  for (const page of project.layout?.pages ?? []) {
+    if (!page.slots.some(slot => removed.has(slot.panelId))) continue;
+    if (!removedPages.has(page.id) || page.slots.some(slot => slot.panelId && !removed.has(slot.panelId))) fail('part_scope', '他のネームと同じページにあるため、この番号だけを置き換えられません');
+    if (old.locks?.pages?.[page.id] || page.slots.some(slot => old.locks?.panelPoints?.[slot.panelId])) fail('locked', '固定したページ・コマを含むネームです');
+  }
+  const keptStates = states.filter(state => state !== old), panels = project.panels.filter(panel => !removed.has(panel.id));
+  if (candidate.panels.some(panel => panels.some(existing => existing.id === panel.id))) fail('duplicate', '既存コマとIDが重複します');
+  const pages = (project.layout?.pages ?? []).filter(page => !removedPages.has(page.id));
+  const following = new Set(keptStates.filter(state => hasEmbeddedSource(state.file) && state.file.source.episodeId === candidate.file.source.episodeId && state.file.source.number > candidate.file.source.number).flatMap(state => state.pageIds));
+  const at = pages.findIndex(page => following.has(page.id));
+  pages.splice(at < 0 ? pages.length : at, 0, ...structuredClone(candidate.layout.pages));
+  const all = [...panels, ...structuredClone(candidate.panels)];
+  const ordered = pages.flatMap(page => page.slots.filter(slot => slot.panelId).map(slot => all.find(panel => panel.id === slot.panelId)));
+  const snapshot = checked.sourceSnapshot;
+  const characters = [...project.characters];
+  for (const character of snapshot.characters) {
+    const id = projectCharacterIds(project, snapshot, [character.id])[0];
+    if (!characters.some(item => item.id === id)) characters.push({ id, name: character.name, description: '', image: null, hash: '', version: 1,
+      source: { id: `${sourceScope(snapshot)}:${character.id}`, repo: snapshot.repo, scope: sourceScope(snapshot), character_id: character.id, snapshot_id: snapshot.id } });
+  }
+  const id = `name:${candidate.fileHash}`;
+  const state = { format: FORMAT, status: 'adopted', id, namespace: candidate.namespace, file: structuredClone(candidate.file), fileHash: candidate.fileHash,
+    snapshotId: snapshot.id, draftId: id, panelIds: candidate.panels.map(panel => panel.id), pageIds: candidate.layout.pages.map(page => page.id),
+    sourcePolicy: structuredClone(candidate.sourcePolicy), compilerVersion: candidate.compilerVersion, profile: candidate.profile, metrics: candidate.metrics,
+    compiledLayout: structuredClone(checked.layout), geometryOverride: !!candidate.manualLayout, locks: { pages: {}, panelPoints: {} }, qa: candidate.qa, importedAt: new Date().toISOString() };
+  const next = { ...project, workId: snapshot.workId, title: project.title || candidate.file.title, active: project.active ?? snapshot.id,
+    snapshots: project.snapshots.some(item => item.id === snapshot.id) ? project.snapshots : [...project.snapshots, snapshot], characters,
+    panels: ordered, layout: { ...project.layout, version: 1, pages, knownPanelIds: ordered.map(panel => panel.id) },
+    namePlan: state, otherNamePlans: keptStates, history: [...project.history, nameCheckpoint(project, old ? `ネーム${candidate.file.source.number}更新前` : 'ネーム追加前')],
+    layoutHistory: [], layoutRedo: [], editRedo: [],
+    sourceApplication: { version: 1, units: (project.sourceApplication?.units ?? []).filter(unit => !old?.sourcePolicy.some(entry => intersects(entry.source, unit.source))) },
+    jobs: project.jobs.map(job => job.nameCandidate?.id === candidate.id ? { ...job, status: 'complete' } : job) };
+  validateV2State(next);
+  return recordNameEdit(project,next,old ? `ネーム${candidate.file.source.number}を更新` : `ネーム${candidate.file.source.number}を追加`);
+}
+
 export function nameLetteringProblems(panel) {
   if (panel?.namePlanVersion !== 2) return [];
   const required = panel.requiredText, boxes = panel.lettering?.boxes;
@@ -188,10 +234,19 @@ export function nameLetteringProblems(panel) {
 }
 
 export function validateV2State(project, { complete = false } = {}) {
+  assertUniqueNameParts(project);
+  for (const state of project.otherNamePlans ?? []) validateSingleV2State({ ...project, namePlan: state }, { complete: false });
+  return validateSingleV2State(project, { complete });
+}
+function validateSingleV2State(project, { complete = false } = {}) {
   const state = project.namePlan;
   if (state?.format && ![FORMAT,'manga-mac/name-plan/v1'].includes(state.format))fail('unsupported_name','保存ネームの版に対応していません');
   if (state?.format !== FORMAT) return true;
   validateSchema(state.file,fileSchema);
+  if (hasEmbeddedSource(state.file)) {
+    const snapshot = project.snapshots.find(item => item.id === state.snapshotId);
+    if (!snapshot || state.file.source.scenes.some(scene => snapshot.scenes.find(item => item.id === scene.id)?.text !== scene.text)) fail('embedded_source', 'ネームに保存した原文が一致しません');
+  }
   if(!['adopted','stale'].includes(state.status))fail('saved_name','保存ネームの状態が不正です');
   if (!Array.isArray(state.sourcePolicy) || !Array.isArray(state.panelIds) || !Array.isArray(state.pageIds)) fail('saved_name', '保存したネームの形式が不正です');
   const policies = state.sourcePolicy, atomMaps=new Map();
@@ -234,7 +289,7 @@ export function refreshNameMetadata(project) {
   const next = { ...project, namePlan: { ...project.namePlan } }, state = next.namePlan;
   const currentPages = project.layout.pages.filter(page => state.pageIds.includes(page.id));
   state.geometryOverride = !same(currentPages, state.compiledLayout.pages);
-  if (state.snapshotId !== project.active || state.panelIds.some(id=>!project.panels.some(panel=>panel.id===id))) state.status = 'stale';
+  if ((!hasEmbeddedSource(state.file) && state.snapshotId !== project.active) || state.panelIds.some(id=>!project.panels.some(panel=>panel.id===id))) state.status = 'stale';
   validateV2State(next); return next;
 }
 export async function patchNameLayout(project, pageId, nextTree) {
@@ -261,13 +316,14 @@ export function setNameLock(project, pageId, locked) {
   if (locked) next.pages[pageId] = structuredClone(page); else delete next.pages[pageId];
   return recordNameEdit(project,{ ...project, namePlan: { ...project.namePlan, locks: next } },locked ? 'ネームページを固定' : 'ネームページの固定解除');
 }
-export async function createNameFile(project, plan, selectedAtomIds, provenance) {
-  const snapshot = project.snapshots.find(snapshot => snapshot.id === project.active), all = atomize(snapshot);
+export async function createNameFile(project, plan, selectedAtomIds, provenance, options = {}) {
+  const snapshot = nameSourceSnapshot(project), all = snapshot ? atomize(snapshot) : [];
   if (!snapshot) fail('source', '原稿を先に取り込んでください');
   const atoms = selectedAtomIds?.length ? all.filter(atom => selectedAtomIds.includes(atom.id)) : all;
   const portable = portableCharacterPlan(project, snapshot, plan);
   validatePlan(portable, atoms, sourceCharacterIds(snapshot), all);
-  return { format: FORMAT, title: project.title ?? 'ネーム', stage: 'name-only', readingDirection: 'rtl', source: await sourceDescriptor(project, snapshot, atoms, portable.panels.flatMap(panel => panel.contextAtomIds)), policyVersion: POLICY_VERSION, provenance, plan: portable };
+  const source = options.embedded !== false ? embeddedSourceDescriptor(project, snapshot, atoms, portable, { number: options.number ?? project.namePlan?.file?.source?.number ?? 1, episodeId: options.episodeId }) : await sourceDescriptor(project, snapshot, atoms, portable.panels.flatMap(panel => panel.contextAtomIds));
+  return { format: FORMAT, title: project.title ?? 'ネーム', stage: 'name-only', readingDirection: 'rtl', source, policyVersion: POLICY_VERSION, provenance, plan: portable };
 }
 export function canFinalizeNameRef(project, ref) {
   if (project.namePlan?.format !== FORMAT) return true;

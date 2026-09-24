@@ -211,10 +211,15 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
 export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false}){
  const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
  if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
- const selected=targets.filter(p=>regenerate||!p.image);
+ const requested=targets.filter(p=>regenerate||!p.image),missingReferences=[];
+ const selected=requested.filter(panel=>{
+  const missing=panel.characterIds.filter(id=>!frozen.characters.find(c=>c.id===id&&c.image&&c.hash));
+  if(!missing.length)return true;
+  missingReferences.push({panelId:panel.id,characterIds:missing.map(id=>frozen.characters.find(c=>c.id===id)?.source?.character_id??id)});
+  return false;
+ });
  for(const panel of selected){
   if(frozen.jobs.some(j=>j.panelId===panel.id&&['running','unknown','candidate'].includes(j.status)))throw Error('未確定の要求・保存済み候補を先に確認してください');
-  for(const id of panel.characterIds)if(!frozen.characters.find(c=>c.id===id&&c.image&&c.hash))throw Error('人物の参照画像がありません');
  }
  for(const [i,original] of selected.entries()){
   if(cancelled())break;
@@ -235,4 +240,6 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
    await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
   }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
+ if(missingReferences.length)notify(`参照画像がありません: ${[...new Set(missingReferences.flatMap(item=>item.characterIds))].join('、')}。該当コマは未作画です`);
+ return {missingReferences};
 }

@@ -117,6 +117,41 @@ export function sourceCharacterIdentity(snapshot) {
 }
 export const sourceCharacterIds = snapshot => sourceCharacterIdentity(snapshot).map(character => character.id);
 
+export const hasEmbeddedSource = file => file?.source?.kind === 'embedded';
+export const namePartKey = file => hasEmbeddedSource(file) ? canonical([file.source.repo, file.source.workId, file.source.episodeId, file.source.number]) : null;
+
+export function embeddedSourceDescriptor(project, snapshot, atoms, plan, { episodeId, number = 1 } = {}) {
+  const contextIds = new Set(plan.panels.flatMap(panel => panel.contextAtomIds));
+  const included = [...atoms, ...atomize(snapshot).filter(atom => contextIds.has(atom.id))];
+  const sceneIds = new Set(included.map(atom => atom.source.sceneId));
+  const primaryEpisodes = new Set(atoms.map(atom => snapshot.scenes.find(scene => scene.id === atom.source.sceneId)?.episodeId ?? snapshot.episodeId));
+  episodeId ??= primaryEpisodes.size === 1 ? [...primaryEpisodes][0] : null;
+  if (!episodeId || [...primaryEpisodes].some(id => id && id !== episodeId)) fail('episode', '一つの話を選んでネームを作成してください');
+  const used = new Set([...plan.panels.flatMap(panel => panel.characterIds), ...plan.coverage.map(entry => entry.speakerId).filter(Boolean)]);
+  const characters = sourceCharacterIdentity(snapshot).filter(character => used.has(character.id)).map(({ id, name }) => ({ id, name }));
+  return { kind: 'embedded', repo: snapshot.repo, workId: snapshot.workId ?? project.workId, episodeId, number,
+    branch: snapshot.sync?.source_branch ?? 'dev', ...(/^[0-9a-f]{40}$/.test(snapshot.sha ?? '') ? { commit: snapshot.sha } : {}),
+    scenes: snapshot.scenes.filter(scene => sceneIds.has(scene.id)).map(scene => ({ id: scene.id, episodeId: scene.episodeId ?? episodeId, text: scene.text })),
+    selectedAtomIds: atoms.map(atom => atom.id), characters };
+}
+
+export async function bindEmbeddedSource(file, project = {}) {
+  const source = file.source;
+  const current = project.snapshots?.find(snapshot => snapshot.id === project.active);
+  if ((project.workId && project.workId !== source.workId) || (current?.repo && current.repo !== source.repo)) fail('work', '別作品のネームは取り込めません');
+  if (new Set(source.scenes.map(scene => scene.id)).size !== source.scenes.length) fail('scene_order', '保存原文の場面IDが重複しています');
+  // This digest is only a local immutable snapshot key; it is never compared
+  // with the latest manuscript, settings, or reference images.
+  const snapshot = { id: `name-source:${await sha256(source)}`, repo: source.repo, workId: source.workId,
+    sha: source.commit ?? '', episodeId: source.episodeId, episodeIds: [source.episodeId], embeddedName: true,
+    scenes: structuredClone(source.scenes), characters: structuredClone(source.characters), settings: [], references: [],
+    sync: { source_branch: source.branch }, manifest: { work: { title: file.title } } };
+  const all = atomize(snapshot), atoms = selectAtoms(all, source.selectedAtomIds);
+  if (atoms.some(atom => snapshot.scenes.find(scene => scene.id === atom.source.sceneId).episodeId !== source.episodeId)) fail('episode', '対象本文が指定話の外にあります');
+  sourceCharacterIds(snapshot);
+  return { snapshot, atoms, contextAtoms: all, descriptor: source };
+}
+
 export async function sourceDescriptor(project, snapshot, atoms, contextAtomIds = []) {
   const contexts = contextAtomIds.length ? atomize(snapshot).filter(atom => contextAtomIds.includes(atom.id)) : [];
   const sceneIds = [...new Set([...atoms, ...contexts].map(atom => atom.source.sceneId))];
@@ -128,6 +163,7 @@ export async function sourceDescriptor(project, snapshot, atoms, contextAtomIds 
   };
 }
 export async function bindSource(file, project) {
+  if (hasEmbeddedSource(file)) return bindEmbeddedSource(file, project);
   const snapshot = project.snapshots?.find(snapshot => snapshot.id === project.active);
   if (!snapshot || file.source.repo !== snapshot.repo || file.source.workId !== (snapshot.workId ?? project.workId)) fail('work', '同じ作品の原稿を先に取り込んでください');
   const ids = file.source.scenes.map(scene => scene.id);
@@ -138,12 +174,11 @@ export async function bindSource(file, project) {
   }
   const all = atomize(snapshot, ids), atoms = selectAtoms(all, file.source.selectedAtomIds);
   const current = await sourceDescriptor(project, snapshot, atoms);
-  if (current.settingsHash !== file.source.settingsHash || current.referencesHash !== file.source.referencesHash) fail('references_changed', '人物参照または設定が変わっています。再確認してネームを更新してください');
   return { snapshot, atoms, contextAtoms: all, descriptor: current };
 }
 export function requiredTextForSource(project, target) {
-  const state = project.namePlan;
-  if (state?.format !== 'manga-mac/name-plan/v2' || state.snapshotId !== project.active || state.status !== 'adopted') return [target];
+  const state = [project.namePlan, ...(project.otherNamePlans ?? [])].find(state => state?.format === 'manga-mac/name-plan/v2' && state.snapshotId === target.snapshotId && state.status === 'adopted');
+  if (!state) return [target];
   const policy = state.sourcePolicy ?? [];
   const clipped = policy.filter(entry => intersects(entry.source, target));
   const coverage = clipped.map(entry => ({ ...entry.source, startCp: Math.max(entry.source.startCp, target.startCp), endCp: Math.min(entry.source.endCp, target.endCp) }));

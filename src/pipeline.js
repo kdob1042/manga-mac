@@ -172,7 +172,7 @@ export async function generatePanel(panel, characters, original = null, instruct
   if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
-    if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
+    if (!c?.image || !c?.hash) throw Error(`人物 ${c?.source?.character_id ?? id}（${c?.name ?? id}）の参照画像がありません`);
     return { id, name: c.name, hash: c.hash, image: c.image, role:'character' };
   });
   for (const style of styles) {

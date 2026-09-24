@@ -1,15 +1,18 @@
 import React, {lazy,Suspense,useRef,useState} from 'react';
+import { nameSourceSnapshot } from './name-parts.js';
 import {startDraft,restoreDraft} from './draft';
 const NamePlanControls=lazy(()=>import('./NamePlanControls.jsx'));
 
 export default function DraftControls({project,current,commit,run,busy,onSwitch,onProduce,model,cancelled,canProduce=true,sourceToken='',episodeId=''}) {
-  const snapshot=project.snapshots.find(s=>s.id===project.active);
+  const snapshot=nameSourceSnapshot(project);
   const [selection,setSelection]=useState(null),[separate,setSeparate]=useState(false),[nameOpened,setNameOpened]=useState(false);
   const detailsRef=useRef(null);
   if(!snapshot)return null;
   const ids=selection??(project.draftScope?.snapshotId===project.active?project.draftScope.sceneIds:snapshot.scenes.map(s=>s.id));
   const selectedIds=new Set(ids),allSelected=ids.length===snapshot.scenes.length;
   const saved=project.history.filter(h=>h.draftCheckpoint);
+  if(snapshot.embeddedName)return <div className="draft-controls"><Suspense fallback={<p>ネームを読み込み中…</p>}><NamePlanControls project={project} current={current} commit={commit} run={run} busy={busy} model={model} onSwitch={onSwitch} cancelled={cancelled} sourceToken={sourceToken} episodeId={project.namePlan?.file.source.episodeId??snapshot.episodeId}/></Suspense>
+    <button className="primary full" disabled={busy||!canProduce||project.namePlan?.status!=='adopted'} onClick={()=>run('制作を開始',async()=>{onSwitch();await onProduce();})}>このネームで制作</button></div>;
   return <div className="draft-controls">
     {!project.namePlan&&<button className="primary full" disabled={busy} onClick={()=>{detailsRef.current.open=true;setNameOpened(true);}}>ネームを確認</button>}
     <details ref={detailsRef} onToggle={e=>{if(e.currentTarget.open)setNameOpened(true);}}><summary>制作する場面・ネーム・保存した原稿</summary>

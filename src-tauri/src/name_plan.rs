@@ -185,8 +185,7 @@ fn quoted_ranges(text: &str) -> Vec<(usize, usize)> {
     }
     result
 }
-fn state(project: &Value, current: &Value, schema: &Value) -> Result<()> {
-    let name = &current["namePlan"];
+fn state(project: &Value, current: &Value, schema: &Value, name: &Value) -> Result<()> {
     if name["format"] != FORMAT {
         return Ok(());
     }
@@ -217,7 +216,11 @@ fn state(project: &Value, current: &Value, schema: &Value) -> Result<()> {
             .as_array()
             .and_then(|ss| ss.iter().find(|s| s["id"] == declared["id"]))
             .ok_or("Missing name scene")?;
-        if scene["sourceHash"] != declared["sha256"] {
+        if file["source"]["kind"] == "embedded" {
+            if scene["text"] != declared["text"] {
+                return Err("Embedded name source text mismatch".into());
+            }
+        } else if scene["sourceHash"] != declared["sha256"] {
             return Err("Name source hash mismatch".into());
         }
     }
@@ -395,7 +398,23 @@ pub(super) fn validate(project: &Value) -> Result<()> {
         if depth > 64 {
             return Err("Name history nesting limit".into());
         }
-        state(project, current, &schema)?;
+        let mut part_keys = HashSet::new();
+        let mut owned_panels = HashSet::new();
+        for name in std::iter::once(&current["namePlan"]).chain(current["otherNamePlans"].as_array().into_iter().flatten()) {
+            if name["format"] != "manga-mac/name-plan/v2" { continue; }
+            let source = &name["file"]["source"];
+            if source["kind"] == "embedded" {
+                let key = serde_json::json!([source["repo"], source["workId"], source["episodeId"], source["number"]]).to_string();
+                if !part_keys.insert(key) { return Err("Duplicate numbered name".into()); }
+            }
+            for id in name["panelIds"].as_array().into_iter().flatten() {
+                if !owned_panels.insert(id.to_string()) { return Err("Panel belongs to multiple names".into()); }
+            }
+        }
+        state(project, current, &schema, &current["namePlan"])?;
+        for name in current["otherNamePlans"].as_array().into_iter().flatten() {
+            state(project, current, &schema, name)?;
+        }
         for key in ["history", "editRedo"] {
             for entry in current[key].as_array().into_iter().flatten() {
                 pending.push((entry, depth + 1));
@@ -416,6 +435,23 @@ mod tests {
             "../../tests/fixtures/name-plan-v2-project.json"
         ))
         .unwrap()
+    }
+    #[test]
+    fn embedded_parts_roundtrip_without_a_separate_manuscript() {
+        let (mut db, root) = setup();
+        let p: Value = serde_json::from_str(include_str!("../../tests/fixtures/name-parts-project.json")).unwrap();
+        validate(&p).unwrap();
+        save_checked(&mut db, &root, &p.to_string()).unwrap();
+        let restored: Value = serde_json::from_str(&load(&db, &root).unwrap().unwrap()).unwrap();
+        assert_eq!(restored["namePlan"], p["namePlan"]);
+        assert_eq!(restored["otherNamePlans"], p["otherNamePlans"]);
+        assert_eq!(restored["panels"], p["panels"]);
+        let mut broken = restored.clone();
+        broken["otherNamePlans"][0]["file"]["source"]["scenes"][0]["text"] = json!("changed text");
+        assert!(validate(&broken).is_err());
+        let mut duplicate = restored.clone();
+        duplicate["otherNamePlans"][0] = duplicate["namePlan"].clone();
+        assert!(validate(&duplicate).is_err());
     }
     #[test]
     fn bound_name_policy_is_validated_on_native_save() {

@@ -3,9 +3,10 @@ import { atomize, selectAtoms } from '../contracts/name-plan/source.mjs';
 import { NamePlanError, fail, canonical, validateSchema, treeLeaves } from '../contracts/name-plan/schema.mjs';
 import { qaSchema, qaPrompt, validateQA } from '../contracts/name-plan/qa.mjs';
 import { createNameFile, createNameCandidate, nameReadToken, localNamePlan, patchNameLayout, setNameLock } from './name-v2.js';
+import { nameSourceSnapshot } from './name-parts.js';
 // Caller supplies the existing LLM/Job/save/stop boundary. No second provider or queue.
 export async function generateNameCandidate({ current, commit, ask, model, selectedAtomIds, sceneIds, instruction = '', cancelled = () => false, notify = () => {} }) {
-  const initial = current(), base = await nameReadToken(initial), snapshot = initial.snapshots.find(snapshot => snapshot.id === initial.active);
+  const initial = current(), base = await nameReadToken(initial), snapshot = nameSourceSnapshot(initial);
   if (!snapshot) fail('source', '原稿を先に取り込んでください');
   const all = atomize(snapshot), wanted = selectedAtomIds?.length ? selectedAtomIds : all.filter(atom => !sceneIds?.length || sceneIds.includes(atom.source.sceneId)).map(atom => atom.id);
   const atoms = selectAtoms(all, wanted), selectedSet = new Set(wanted);
@@ -17,7 +18,8 @@ export async function generateNameCandidate({ current, commit, ask, model, selec
     const latest = current();
     if (latest.workId !== initial.workId) fail('work_changed', '作品が切り替わりました');
     const jobs = latest.jobs.some(job => job.id === id) ? latest.jobs.map(job => job.id === id ? { ...job, ...patch } : job) : [...latest.jobs, { ...job, ...patch }];
-    await commit({ ...latest, jobs });
+    const snapshot=patch.nameCandidate?.sourceSnapshot;
+    await commit({ ...latest, jobs, snapshots:snapshot&&!latest.snapshots.some(s=>s.id===snapshot.id)?[...latest.snapshots,snapshot]:latest.snapshots });
   };
   await saveJob({}); let previous = null;
   for (let attempt = 0; attempt < 2; attempt++) {

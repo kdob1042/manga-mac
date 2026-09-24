@@ -1,6 +1,11 @@
+import { fetchSourceHead } from './story-library.js';
+import { call } from './bridge.js';
+import { allNamePlans, nameSourceSnapshot, selectNamePart } from './name-parts.js';
+import { stageEmbeddedName } from './name-entry.js';
+import CharacterReferences from './CharacterReferences.jsx';
 import LayoutEditor from './LayoutEditor.jsx';
 import React, { useMemo, useState, useRef } from 'react';
-import { atomize } from '../contracts/name-plan/source.mjs';
+import { atomize, hasEmbeddedSource, namePartKey } from '../contracts/name-plan/source.mjs';
 import { MAX_BYTES } from '../contracts/name-plan/schema.mjs';
 import { FORMAT, createNameCandidate, adoptNameCandidate, editNameCandidateLayout, setNameLock, nameReadToken } from './name-v2.js';
 import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA } from './name-v2-ai.js';
@@ -33,20 +38,23 @@ function ContinuityEditor({panel,project,disabled,onSave}) {
 
 // Reuses the existing draft, Job, renderer, connection and atomic writer boundaries.
 export default function NamePlanControls({project,current,commit,run,busy,model,sceneIds,onSwitch,cancelled=()=>false,sourceToken='',episodeId=''}) {
+  const [partNumber,setPartNumber]=useState(1);
   const [instruction,setInstruction]=useState(''),[selection,setSelection]=useState(null),[chosen,setChosen]=useState('');
   const [preview,setPreview]=useState(null),[pageIndex,setPageIndex]=useState(0),[width,setWidth]=useState(430);
   const [edit,setEdit]=useState(null),[visionConsent,setVisionConsent]=useState(false),[message,setMessage]=useState('');
-  const snapshot=project.snapshots.find(s=>s.id===project.active);
+  const snapshot=nameSourceSnapshot(project);
   const atomResult=useMemo(()=>{try{return {atoms:snapshot?atomize(snapshot):[],error:''};}catch(error){return {atoms:[],error:error.message};}},[snapshot]);
   const atoms=atomResult.atoms.filter(atom=>!sceneIds?.length||sceneIds.includes(atom.source.sceneId));
   const selected=selection===null?atoms.map(atom=>atom.id):atoms.filter(atom=>selection.includes(atom.id)).map(atom=>atom.id);
   const episodeScenes=new Set((snapshot?.scenes??[]).filter(scene=>!episodeId||scene.episodeId===episodeId).map(scene=>scene.id));
-  const candidateMatchesEpisode=job=>!episodeId||job.repositoryPlan?.episodeId===episodeId||job.nameCandidate?.sourcePolicy?.some(entry=>episodeScenes.has(entry.source.sceneId));
+  const candidateMatchesEpisode=job=>hasEmbeddedSource(job.nameCandidate?.file)||!episodeId||job.repositoryPlan?.episodeId===episodeId||job.nameCandidate?.sourcePolicy?.some(entry=>episodeScenes.has(entry.source.sceneId));
   const candidates=project.jobs.filter(job=>job.kind==='name_plan'&&job.status==='candidate'&&(job.nameCandidate||job.legacyNameRaw)&&candidateMatchesEpisode(job));
   const job=candidates.find(job=>job.id===chosen)??candidates.at(-1),candidate=job?.nameCandidate;
   const savedName=project.namePlan?.format===FORMAT?project.namePlan:null;
-  const name=savedName&&savedName.snapshotId===project.active&&(!episodeId||savedName.sourcePolicy?.some(entry=>episodeScenes.has(entry.source.sceneId)))?savedName:null;
-  const displayProject=candidate?{...project,panels:candidate.panels,layout:candidate.layout,layoutHistory:candidate.layoutHistory??[],layoutRedo:candidate.layoutRedo??[]}:project;
+  const name=savedName&&(hasEmbeddedSource(savedName.file)||savedName.snapshotId===project.active)?savedName:null;
+  const nameParts=allNamePlans(project).sort((a,b)=>(a.file.source.episodeId??'').localeCompare(b.file.source.episodeId??'')||(a.file.source.number??0)-(b.file.source.number??0));
+  const replacing=candidate&&nameParts.some(state=>namePartKey(state.file)&&namePartKey(state.file)===namePartKey(candidate.file));
+  const displayProject=candidate?{...project,panels:candidate.panels,snapshots:candidate.sourceSnapshot&&!project.snapshots.some(s=>s.id===candidate.sourceSnapshot.id)?[...project.snapshots,candidate.sourceSnapshot]:project.snapshots,layout:candidate.layout,layoutHistory:candidate.layoutHistory??[],layoutRedo:candidate.layoutRedo??[]}:project;
   const candidateCurrent=useRef(displayProject);candidateCurrent.current=displayProject;
   const pages=candidate?candidate.layout.pages:name?project.layout.pages.filter(page=>name.pageIds.includes(page.id)):[];
   const page=pages[Math.min(pageIndex,Math.max(0,pages.length-1))];
@@ -59,6 +67,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_BYTES)throw Error('ネームJSONは4MiB以内で指定してください');
     try{data=JSON.parse(raw);}catch{throw Error('ネームJSONを読み取れません');}
     if(provenance)validateRepositoryNameTarget(base,data,provenance);
+    if(hasEmbeddedSource(data)){const next=await stageEmbeddedName(base,raw,provenance);if(current.current!==base)throw Error('取込中に作品が変わりました');await commit(next);setChosen(next.jobs.at(-1).id);setPageIndex(0);const candidate=next.jobs.at(-1).nameCandidate,target=candidate.layout.pages[0];setPreview(await pagePNG(target.slots.map(slot=>candidate.panels.find(panel=>panel.id===slot.panelId)).filter(Boolean),next.snapshots,next.localizations??[],next.output_locale??'ja',target,true,candidate.layout.imageCrops));setMessage('原文入りネームを読み込みました。確認して採用してください。');return;}
     const id=crypto.randomUUID();
     const entry={id,kind:'name_plan',status:'candidate',source_revision:base.active,at:new Date().toISOString(),...(provenance?{repositoryPlan:provenance}:{})};
     if(data?.format===FORMAT)entry.nameCandidate=await createNameCandidate(base,data);
@@ -79,9 +88,11 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   async function readRepositoryPlan() {
     await safeRun('GitHubのネームを取得',async()=>{
       if(!snapshot)throw Error('原稿を先に取り込んでください');
-      const base=current.current, fetched=await fetchRepositoryNamePlan(snapshot,episodeId,sourceToken);
-      if(current.current!==base||current.current.active!==snapshot.id)throw Error('取得中に作品または原稿版が変わりました');
-      await stageRaw(fetched.raw,{repo:fetched.repo,path:fetched.path,commit:fetched.commit,episodeId:fetched.episodeId});
+      const base=current.current, numbered=snapshot.embeddedName;
+      const context=numbered?{...snapshot,...await fetchSourceHead(snapshot.repo,sourceToken,call,snapshot.sync?.source_branch??'dev')}:snapshot;
+      const fetched=await fetchRepositoryNamePlan(context,episodeId,sourceToken,call,numbered?partNumber:null);
+      if(current.current!==base)throw Error('取得中に作品または原稿版が変わりました');
+      const {raw,...provenance}=fetched;await stageRaw(raw,provenance);
     });
   }
   async function generate(ids=selected,customInstruction=instruction,{localEdit=false}={}) {
@@ -106,7 +117,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     await safeRun('仮ネームを描画',async()=>{
       if(!page)throw Error('表示するページがありません');
       const panels=page.slots.map(slot=>displayProject.panels.find(panel=>panel.id===slot.panelId)).filter(Boolean);
-      setPreview(await pagePNG(panels,project.snapshots,project.localizations,project.output_locale,page,true,displayProject.layout.imageCrops));
+      setPreview(await pagePNG(panels,displayProject.snapshots,project.localizations,project.output_locale,page,true,displayProject.layout.imageCrops));
     });
   }
   async function visualQA() {
@@ -132,11 +143,14 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   const continuityPairs=(page?.slots??[]).map(slot=>project.panels.find(panel=>panel.id===slot.panelId)).filter(panel=>panel?.image&&effectiveContinuity(panel)?.previousPanelId&&project.panels.some(previous=>previous.id===effectiveContinuity(panel).previousPanelId&&previous.image&&previous.sceneId===panel.sceneId));
   const findings=candidate?.qa?.findings??name?.qa?.findings??[];
   return <section className="name-plan-controls" aria-label="ネームAIと保存ネーム">
+    {nameParts.length>0&&<label>採用したネーム<select aria-label="採用したネーム" value={name?.id??''} disabled={busy} onChange={e=>safeRun('ネームを選択',async()=>{await commit(selectNamePart(current.current,e.target.value));setPageIndex(0);setPreview(null);setSelection(null);})}>{nameParts.map(state=><option key={state.id} value={state.id}>{state.file.source.episodeId} · ネーム{state.file.source.number??'（旧形式）'} · {state.file.title}</option>)}</select></label>}
     <h4>{name?'ネームを編集':candidates.length?'ネーム候補を確認':'ネームを読み込む'}</h4>
+    <CharacterReferences project={project} current={current} commit={commit} run={run} busy={busy}/>
     {atomResult.error&&<p role="alert">{atomResult.error}</p>}
-    <button className={!name&&!candidates.length?'primary':''} disabled={busy||!snapshot||!episodeId} onClick={readRepositoryPlan}>同じGitHub版のネームを読み込む</button>
-    <small><code>{snapshot?.library?.root??snapshot?.sync?.source_root??''}/manga/{episodeId||'<episodeId>'}/name-plan.json</code> を原稿と同じcommitから取得します。AI接続は不要で、取得だけでは採用・作画しません。</small>
-    <details><summary>別のネームJSONを取り込む</summary>
+    {snapshot?.embeddedName&&<label>GitHubのネーム番号<input type="number" min="1" max="999999" value={partNumber} onChange={e=>setPartNumber(Number(e.target.value))}/></label>}
+    <button className={!name&&!candidates.length?'primary':''} disabled={busy||!snapshot||!episodeId} onClick={readRepositoryPlan}>{snapshot?.embeddedName?'GitHubの番号付きネームを読み込む':'同じGitHub版のネームを読み込む'}</button>
+    <small hidden={snapshot?.embeddedName}><code>{snapshot?.library?.root??snapshot?.sync?.source_root??''}/manga/{episodeId||'<episodeId>'}/name-plan.json</code> を原稿と同じcommitから取得します。AI接続は不要で、取得だけでは採用・作画しません。</small>
+    <details open><summary>ネームJSONを追加</summary>
       <label>ネームJSON<input type="file" aria-label="ネームJSONを取り込む" accept=".json,application/json" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';readFile(file);}}/></label>
     </details>
     {fallbackAvailable&&<details><summary>ネームがない場合の代替生成</summary>
@@ -151,7 +165,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
     </details>}
     {candidates.length>0&&<div><label>保存したネーム候補<select aria-label="保存したネーム候補" disabled={busy} value={job?.id??''} onChange={e=>{setChosen(e.target.value);setPageIndex(0);setPreview(null);}}>{candidates.map(j=><option key={j.id} value={j.id}>{j.nameCandidate?.file.title??'旧形式ネーム'} · {j.nameCandidate?.layout.pages.length??'?'}ページ</option>)}</select></label>
       {candidate&&<p>{candidate.layout.pages.length}ページ／{candidate.panels.length}コマ。掲載文字と絵による対応を分離済み。</p>}
-      <button disabled={busy} onClick={()=>adopt()}>このネーム候補を採用</button>{candidate&&<button disabled={busy} onClick={()=>adopt('separate')}>旧稿を残して別初稿に採用</button>}
+      <button disabled={busy} onClick={()=>adopt(replacing?'replace-part':'replace')}>{replacing?'この番号を更新':'このネーム候補を採用'}</button>{candidate&&!hasEmbeddedSource(candidate.file)&&<button disabled={busy} onClick={()=>adopt('separate')}>旧稿を残して別初稿に採用</button>}
       <button disabled={busy} onClick={()=>safeRun('候補を取り下げ',()=>commit({...current.current,jobs:current.current.jobs.map(j=>j.id===job.id?{...j,status:'abandoned'}:j)}))}>候補を取り下げる</button>
       {candidate&&<details><summary>候補のコマ枠を手修正</summary><LayoutEditor project={displayProject} current={candidateCurrent} commit={async p=>{const base=current.current,j=base.jobs.find(j=>j.id===job.id);if(!j?.nameCandidate)throw Error('候補が変更されました');const updated=await editNameCandidateLayout(base,j.nameCandidate,p.layout);if(current.current!==base)throw Error('候補の編集中に作品が変わりました');await commit({...base,jobs:base.jobs.map(x=>x.id===j.id?{...x,nameCandidate:{...updated,layoutHistory:p.layoutHistory??[],layoutRedo:p.layoutRedo??[]}}:x)});setPreview(null);}} run={run} busy={busy} pageIndex={Math.min(pageIndex,Math.max(0,displayProject.layout.pages.length-1))} setPage={setPageIndex} model={{...model,connectionId:''}} selected={null} onSelect={()=>{}} cancelled={cancelled}/></details>}
       {candidate&&<details><summary>原稿の掲載方針を確認</summary>{candidate.sourcePolicy.map(entry=><p key={entry.atomId}>{entry.atomId} · {entry.presentation} · {entry.reason}</p>)}</details>}

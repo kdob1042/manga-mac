@@ -240,6 +240,9 @@ pub fn token(project: &Value) -> String {
     if project["namePlan"]["format"] == "manga-mac/name-plan/v2" {
         content["namePlan"] = project["namePlan"].clone();
     }
+    if project["otherNamePlans"].is_array() {
+        content["otherNamePlans"] = project["otherNamePlans"].clone();
+    }
     hash(&content.to_string())
 }
 #[cfg(test)]
