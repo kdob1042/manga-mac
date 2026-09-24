@@ -144,6 +144,12 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     ...(workId ? {library: {repository: repo, branch, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
+  if (previous?.sha === sha && previous.unavailableReferences?.length
+    && JSON.stringify(previous.references.map(({path, hash}) => [path, hash]))
+      !== JSON.stringify(references.map(({path, hash}) => [path, hash]))) {
+    const fingerprint = await sha256(JSON.stringify(references.map(({path, hash}) => [path, hash])));
+    snapshot.id += `:refs-${fingerprint.slice(0, 12)}`;
+  }
   return snapshot;
 }
 export async function planScene(scene, snapshot, characters, model, ask = askLLM) {
