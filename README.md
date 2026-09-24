@@ -1,6 +1,6 @@
 # Manga Mac
 
-GitHubの原稿を読み取り専用で取り込み、コマ割り・参照付き作画・文字配置・出力まで進めるMacアプリです。通常は2Dで制作し、構図調整にはBlender、レイヤー編集にはCompositorを使えます。
+GitHubの原稿を読み取り専用で取り込み、コマ割り・参照付き作画・文字配置・出力まで進めるMacアプリです。構図調整にはアプリ内の3Dステージ、レイヤー編集にはCompositorを使えます。
 
 **原稿を選ぶ → ネームを確定 → 作画 → 仕上げ → 書き出す。** 原文・旧画像・採用履歴を保持し、再生成した候補は確認して採用します。
 
@@ -23,6 +23,6 @@ npm run build
 npm run dev
 ```
 
-ブラウザでは組版を確認できます。GitHub認証・Blender・推論はMacのIPC経由です。開発変更は最新devを起点にdev向けPRへまとめます。
+ブラウザでは組版を確認できます。GitHub認証・推論はMacのIPC経由です。開発変更は最新devを起点にdev向けPRへまとめます。
 
 主な依存: [Tauri 2](https://v2.tauri.app/) / [MediaGenerationKit](https://github.com/drawthingsai/media-generation-kit/tree/8868a9685d9c299816f43efd455ffca437f0)（固定版、LGPLv3。再配布時の義務を維持）。

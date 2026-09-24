@@ -141,9 +141,15 @@ fn relative(path: &str) -> bool {
 fn allowed(path: &str) -> bool {
     relative(path)
         && (path == "manga.sqlite3"
-            || ["artifacts/", "media/", "blender/", "image-results/"]
-                .iter()
-                .any(|prefix| path.starts_with(prefix)))
+            || [
+                "artifacts/",
+                "media/",
+                "scene-assets/",
+                "blender/",
+                "image-results/",
+            ]
+            .iter()
+            .any(|prefix| path.starts_with(prefix)))
 }
 fn inventory(root: &Path, dir: &Path, files: &mut BTreeMap<String, Entry>) -> Result<()> {
     if !fs::symlink_metadata(dir).map_err(err)?.file_type().is_dir() {
@@ -279,6 +285,42 @@ fn validate_project(project: &Value, root: &Path) -> Result<()> {
     reject_secrets(project)?;
     if let Some(captures) = project["captures"].as_array() {
         for capture in captures {
+            if capture["origin"] == "three" {
+                let expected = capture["image"]["hash"]
+                    .as_str()
+                    .ok_or("撮影画像のhashがありません")?;
+                if expected.len() != 64
+                    || !expected
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                {
+                    return Err("撮影画像のhashが不正です".into());
+                }
+                let original = &capture["original"];
+                if original["artifact_id"].as_str() != Some(expected)
+                    || original["hash"].as_str() != Some(expected)
+                    || original["prefix"] != "data:image/png;base64"
+                    || digest(&root.join("artifacts").join(expected))?.hash != expected
+                {
+                    return Err("3D撮影画像が欠損・変更されています".into());
+                }
+                for asset in capture["assets"]
+                    .as_array()
+                    .ok_or("3D素材一覧がありません")?
+                {
+                    let hash = asset["hash"].as_str().ok_or("3D素材のhashがありません")?;
+                    if hash.len() != 64
+                        || !hash
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                        || digest(&root.join("scene-assets").join(format!("{hash}.glb")))?.hash
+                            != hash
+                    {
+                        return Err("3D素材が欠損・変更されています".into());
+                    }
+                }
+                continue;
+            }
             let request = capture["request_id"]
                 .as_str()
                 .ok_or("撮影要求IDがありません")?;
@@ -385,17 +427,6 @@ pub fn prepare(db: &Connection, root: &Path, target: &Path, id: &str, at: u64) -
     if !uuid(id) {
         return Err("Invalid series".into());
     }
-    if table(db, "blender_jobs")?
-        && db
-            .query_row::<bool, _, _>(
-                "SELECT EXISTS(SELECT 1 FROM blender_jobs WHERE status='running')",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(err)?
-    {
-        return Err("Blender処理中です。完了後にバックアップしてください".into());
-    }
     fs::create_dir(target).map_err(err)?;
     let result = (|| {
         let mut copy = Connection::open(target.join("manga.sqlite3")).map_err(err)?;
@@ -435,7 +466,13 @@ pub fn prepare(db: &Connection, root: &Path, target: &Path, id: &str, at: u64) -
                 .map_err(err)?;
             }
         }
-        for name in ["artifacts", "media", "blender", "image-results"] {
+        for name in [
+            "artifacts",
+            "media",
+            "scene-assets",
+            "blender",
+            "image-results",
+        ] {
             let source = root.join(name);
             if source.exists() {
                 copy_tree(&source, &target.join(name))?;
@@ -658,6 +695,10 @@ mod tests {
             .unwrap();
         let artifact = super::super::put_video(&root, video.as_slice(), None).unwrap();
         project["videoRevisions"] = json!([{"id":"video","artifact":artifact}]);
+        // New GLB library and old captures must both survive workspace migration.
+        let assets = root.join("scene-assets");
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(assets.join("sample.glb"), b"saved scene asset").unwrap();
         let folder = root.join("blender/fixture");
         fs::create_dir_all(&folder).unwrap();
         fs::write(
@@ -690,6 +731,10 @@ mod tests {
             json!(target.join("blender/fixture/checkpoint.blend"))
         );
         assert_eq!(session["binary"], "");
+        assert_eq!(
+            fs::read(target.join("scene-assets/sample.glb")).unwrap(),
+            b"saved scene asset"
+        );
         super::super::verify_video(&target, &artifact).unwrap();
         fs::write(
             root.join("media")

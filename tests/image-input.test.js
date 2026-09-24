@@ -24,7 +24,7 @@ test('dimensions and page fitting preserve aspect using padding rather than dist
 test('known camera/layout commands cannot silently become image edits', () => {
  assert.deepEqual(editRoute('カメラを少し寄って'), { kind: 'camera', factor: 1.2 });
  assert.deepEqual(editRoute('焦点距離を80mmに'), { kind: 'camera', lens: 80 });
- assert.equal(editRoute('二人を近づける').kind, 'blender');
+ assert.equal(editRoute('二人を近づける').kind, 'scene');
  assert.equal(editRoute('吹き出しを移動').kind, 'layout');
  assert.equal(editRoute('口元だけ笑わせて').kind, 'region');
 });

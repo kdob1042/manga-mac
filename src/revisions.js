@@ -1,7 +1,7 @@
 import { ensureLayout } from './layout.js';
 import { placementKey } from './placement.js';
 import { defaultImageModelId, defaultVideoModelId, imageExecution, imageModel, videoModel } from './media.js';
-// Manga revisions only: Blender remains the owner of 3D state.
+// Manga revisions and scene staging are saved separately; keep adopted images immutable.
 export async function digest(bytes) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
 }
