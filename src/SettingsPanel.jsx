@@ -1,7 +1,7 @@
 import React, {useEffect,useRef} from "react";
 import LLMSettings from "./LLMSettings";
 import JevSettings from "./JevSettings";
-import BlenderSettings from "./BlenderSettings";
+import TripoSettings from "./TripoSettings";
 import BackupSettings from "./BackupSettings";
 import { protocolLabel } from "./source-protocol";
 import { call } from "./bridge";
@@ -67,7 +67,7 @@ export default function SettingsPanel({
     <strong>使用中の原稿</strong>
     <span>{snapshot.repo} / {snapshot.sync?.source_branch??sourceBranch} @ {snapshot.sha.slice(0, 8)}</span>
     <span>{protocolLabel(snapshot)}</span>
-    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync)}>GitHub側の更新を確認</button></details>
+    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync,'原稿の更新確認')}>GitHub側の更新を確認</button></details>
     <details><summary>人物と画風の参照</summary>
     <small>原稿で宣言された人物参照画像は、原稿版を取り込むと同じcommitから自動登録されます。</small>
     <div className="characters">{project.characters.map(c => <div key={c.id}>
@@ -118,11 +118,11 @@ export default function SettingsPanel({
     <small>必要なモデルだけ、この操作でダウンロードします。</small>
     <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
     <TapNowSettings busy={busy} run={run}/>
-    <h3>Blenderで撮影する</h3>
-    <BlenderSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
+    <h3>04 / 3D素材</h3>
+    <TripoSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />
     <h3>作品JSONの書き出し</h3>
-    <small>このJSONだけでは動画・Blender素材は復元できません。完全な復元にはクラウドバックアップを使用します。</small>
+    <small>このJSONだけでは動画・3D素材は復元できません。完全な復元にはクラウドバックアップを使用します。</small>
     <button disabled={!ready || !!busy} onClick={() => run("作品をバックアップ", async () => {
       await download(new Blob([JSON.stringify(project)], {
         type: "application/json"

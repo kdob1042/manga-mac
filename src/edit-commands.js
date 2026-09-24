@@ -33,7 +33,7 @@ export const commands = {
   lettering: { label: '文字配置', generation: false },
   crop: { label: '画像配置', generation: false },
   layout: { label: 'コマ割り', generation: false },
-  direction: { label: 'Blender演出', generation: true },
+  direction: { label: '3D構図', generation: true },
   region: { label: '指定領域の修正', generation: true },
   resolution: {label:'解像度診断',generation:false,runner:true},
   upscale: {label:'補間拡大候補',generation:false,runner:true},

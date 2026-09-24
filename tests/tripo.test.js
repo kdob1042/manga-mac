@@ -28,3 +28,12 @@ test('Tripo job rejects a missing or non-image reference', () => {
   const badHash = { ...project, characters: [{ id: 'character-1', image, hash: 'bad' }] };
   assert.throws(() => beginTripoJob(badHash, { characterId: 'character-1' }), /参照画像/);
 });
+
+test('Tripo can request a missing prop from a pinned image without a character', () => {
+  const project = { ...emptyProject(), active: 'snapshot-1' };
+  const next = beginTripoJob(project, { kind: 'prop', name: 'バスケットボール', reference: { image, hash: imageHash } });
+  assert.equal(next.jobs[0].manifest.source.asset_kind, 'prop');
+  assert.equal(next.jobs[0].manifest.source.asset_name, 'バスケットボール');
+  assert.equal(next.jobs[0].manifest.image.hash, imageHash);
+  assert.throws(() => beginTripoJob(project, { kind: 'environment', reference: { image, hash: imageHash } }), /素材名/);
+});

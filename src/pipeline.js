@@ -3,6 +3,7 @@ import { completeImage } from './image-recovery.js';
 import { generationSize, imageRequest } from './image-input.js';
 import { call } from './bridge.js';
 import { executeImage } from './media-runtime.js';
+import { verifySceneCapture } from './scene-capture.js';
 import { askLLM } from './llm.js';
 import { orderedScenes, safePath, sourceUnits, validatePlan } from './core.js';
 import { referenceDeclarations, normalizeSourceManifest } from './source-protocol.js';
@@ -107,13 +108,24 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     settings.push({ ...s, text });
   }
   const references = [];
+  const unavailableReferences = [];
   for (const declaration of referenceDeclarations(model, settings)) {
     let asset;
     try {
       asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
     } catch (error) {
-      if (!legacySourceRoot) throw error;
-      asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+      if (legacySourceRoot) {
+        try {
+          asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
+      if (!asset) {
+        if (!String(error?.message ?? error).includes('参照画像の実形式がPNG/JPEG/WebPではありません')) throw error;
+        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format'});
+        continue;
+      }
     }
     references.push({ ...declaration, ...asset });
   }
@@ -122,6 +134,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   const snapshot = {
     id: workId ? `${repo}@${sha}:${workId}:${scope}${sceneSuffix}` : `${repo}@${sha}:${scope}${sceneSuffix}`,
     repo, sha, episodeId: episodeIds[0], episodeIds, manifest, scenes, settings, references,
+    ...(unavailableReferences.length ? {unavailableReferences} : {}),
     ...(workId ? {workId} : {}),
     ...(selectedSceneId ? {selectedSceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),
@@ -158,12 +171,10 @@ export async function generatePanel(panel, characters, original = null, instruct
     refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
   }
   let source = original, mapping = null;
-  if (inputMode !== 'direct' && !source && panel.shot_binding && !capture) throw Error('Blenderショットの撮影原本が必要です');
+  if (inputMode !== 'direct' && !source && (panel.scene3d || panel.shot_binding) && !capture) throw Error('構図の撮影原本が必要です');
   if (!source && capture) {
-    if (capture.id !== panel.capture_revision || capture.panel_id !== panel.id || capture.session_id !== panel.shot_binding?.session_id) throw Error('撮影版とコマの対応が一致しません');
-    const response = await call('blender_capture', { sessionId: capture.session_id, requestId: capture.request_id });
-    if (response.state.image.hash !== capture.image.hash || response.state.checkpoint.hash !== capture.checkpoint.hash || await imageHash(response.preview) !== capture.image.hash) throw Error('撮影画像の版が一致しません');
-    source = response.preview;
+    if (capture.origin !== 'three') throw Error('旧3D撮影原本は再利用できません。GLB素材から構図を作り直してください');
+    source = await verifySceneCapture(panel, capture);
     if (panel.image) refs.push({ id: panel.artwork_revision ?? panel.id, name: 'Previous accepted expression / style', image: panel.image, hash: await imageHash(panel.image) });
     instruction = [...(panel.instructions ?? []), instruction].filter(Boolean).join('\n');
   }

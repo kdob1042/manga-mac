@@ -64,3 +64,18 @@ test('fetches selected dev branch head and pins all library files to it',async()
  assert.equal(calls.find(call=>call.command==='github_get').args.path,'commits/dev');
  assert.ok(calls.filter(call=>call.command==='github_file').every(call=>call.args.sha===devSha));
 });
+
+test('accepts the verified library authority and rejects an early cutover',async()=>{
+ const verified={...catalog,works:catalog.works.map(work=>({...work,authority:'library',importStatus:'verified'}))};
+ const libraryMap={...sourceMap,authority:'library'};
+ const invoke=async(command,args)=>{
+  if(command==='github_get')return JSON.stringify({sha});
+  if(args.path==='library.json')return JSON.stringify(verified);
+  if(args.path==='migrations/source-map.json')return JSON.stringify(libraryMap);
+  throw Error('unexpected '+args.path);
+ };
+ assert.equal((await fetchStoryLibrary('owner/library','',invoke,'dev')).sourceMap.authority,'library');
+ const incomplete={...verified,works:[{...verified.works[0],authority:'origin',importStatus:'imported'},verified.works[1]]};
+ await assert.rejects(fetchStoryLibrary('owner/library','',async(command,args)=>
+  args?.path==='library.json'?JSON.stringify(incomplete):invoke(command,args),'dev'),/正本/);
+});

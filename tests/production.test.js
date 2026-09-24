@@ -33,7 +33,7 @@ function harness(project) {
     commit: async (next) => (current = ensureLayout(next)),
     cancelled: () => false,
     model: {},
-    productionMode: 'blender',
+    productionMode: 'direct',
     setBusy() {},
     setNotice() {},
     showProof() {},
@@ -97,4 +97,19 @@ test('image failure persists an unknown job before propagating the error', async
   assert.equal(args.current().jobs.length, 1);
   assert.equal(args.current().jobs[0].status, 'unknown');
   assert.equal(args.current().panels[0].image, null);
+});
+
+// A legacy capture on a panel must never invoke the deleted Blender execution path.
+test('draft generation uses direct image input for a panel carrying a legacy capture', async () => {
+  const project = fixture();
+  project.panels[0].image = null;
+  project.panels[0].capture_revision = 'capture:old';
+  project.panels[0].shot_binding = { session_id: 'old-session' };
+  project.layoutHistory = [{ layout: project.layout }];
+  const args = harness(project);
+  const calls = [];
+  await produceDraft({ ...args, generatePanel: async (...values) => { calls.push(values); throw Error('after direct request'); } }).catch(error => assert.match(error.message, /after direct request/));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][5], null);
+  assert.equal(calls[0][10], 'direct');
 });

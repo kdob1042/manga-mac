@@ -18,13 +18,13 @@ export default function SourceLibrary({
       <h3>原稿ライブラリ</h3>
       <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · ${catalog.branch??sourceBranch} @ ${catalog.sha.slice(0,8)}` : ''}</p>
       <label>原稿ブランチ
-        <select aria-label="原稿ブランチ" disabled={busy} value={sourceBranch} onChange={e=>run('原稿ブランチを変更',()=>onSourceBranch(e.target.value))}>
+        <select aria-label="原稿ブランチ" disabled={busy} value={sourceBranch} onChange={e=>run('原稿ブランチを変更',()=>onSourceBranch(e.target.value),'原稿ブランチの取得')}>
           {SOURCE_BRANCHES.map(branch=><option key={branch} value={branch}>{branch}</option>)}
         </select>
       </label>
-      {!catalog&&<button disabled={busy} onClick={()=>run('原稿一覧を読み込み中',onRefreshCatalog)}>原稿一覧を再試行</button>}
+      {!catalog&&<button disabled={busy} onClick={()=>run('原稿一覧を読み込み中',onRefreshCatalog,'原稿カタログの取得')}>原稿一覧を再試行</button>}
       {!!catalog&&<label>作品を選ぶ
-        <select aria-label="原稿ライブラリの作品" disabled={busy} value={selectedWorkId||''} onChange={e=>run('作品を読み込み中',()=>onSelectWork(e.target.value))}>
+        <select aria-label="原稿ライブラリの作品" disabled={busy} value={selectedWorkId||''} onChange={e=>run('作品を読み込み中',()=>onSelectWork(e.target.value),'作品・話の取得')}>
           <option value="" disabled>作品を選択</option>
           {works.map(work=><option key={work.id} value={work.id}>{work.title} · {work.id}</option>)}
         </select>
@@ -41,7 +41,7 @@ export default function SourceLibrary({
         <button type="button" onClick={()=>onSelectAllEpisodes(true)}>全話</button>
         <small>次回の取込対象: {selectedEpisodeIds.length}話</small>
       </fieldset>}
-      {!!selectedEpisode&&<label>シーンを選ぶ
+      {!!selectedEpisode&&<label>閲覧するシーン
         <select aria-label="原稿ライブラリのシーン" disabled={busy} value={selectedSceneId||''} onChange={e=>run('シーンを選択中',()=>onSelectScene(e.target.value))}>
           {selectedEpisode.scenes.map(scene=><option key={scene.id} value={scene.id}>{scene.title} · {scene.id}</option>)}
         </select>

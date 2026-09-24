@@ -19,7 +19,7 @@ export default function BackupSettings({ disabled }) {
   return <div className="backup-settings">
     <h3>05 / クラウドバックアップ</h3>
     <p>週1回＋手動保存。最新の正常版は期限なしで保持し、それ以外は完了から21日後に自動削除します。</p>
-    <small>作品DB・原稿・参照画像・候補と履歴・動画・固定済みBlender素材を送信します。未保存のBlender編集、アプリ管理外の書き出し、AIモデル、認証情報は対象外です。</small>
+    <small>作品DB・原稿・参照画像・候補と履歴・動画・旧版の固定撮影素材を送信します。未保存の外部編集、アプリ管理外の書き出し、AIモデル、認証情報は対象外です。</small>
     {!desktop() && <p>クラウドへの接続・保存・復元はMacアプリで利用できます。</p>}
     {data && <dl className="backup-status"><dt>保存先</dt><dd>{data.config?.repository ?? '未設定（自動保存は無効）'}</dd><dt>自動保存</dt><dd>{data.config?.enabled ? '有効' : '無効'}</dd><dt>状態</dt><dd>{phases[data.status.phase] ?? '未実施'}</dd><dt>最終成功</dt><dd>{date(data.status.last_success)}</dd><dt>最終全量検証</dt><dd>{date(data.status.last_verified)}</dd><dt>未保存の変更</dt><dd>{data.changed ? 'バックアップ未確認の変更あり' : '保存済みの作品版と一致'}</dd><dt>次回週次保存</dt><dd>{data.next_backup ? date(data.next_backup) : '設定後、次の実行可能時'}</dd><dt>再試行予定</dt><dd>{data.status.next_attempt ? date(data.status.next_attempt) : 'なし'}</dd><dt>旧版整理</dt><dd>{data.status.cleanup || '未実施'}</dd></dl>}
     {data?.status.failure && <p role="alert">{data.status.failure}</p>}

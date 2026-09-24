@@ -566,7 +566,13 @@ fn save_in_transaction(
                     .as_array()
                     .and_then(|ss| ss.iter().find(|s| s["id"] == snapshot["id"]));
                 if next != Some(snapshot) {
-                    return Err("Immutable source snapshot cannot be replaced".into());
+                    // The UI receives hydrated image data, while the saved snapshot
+                    // contains artifact references. Both represent the same source.
+                    let mut hydrated = snapshot.clone();
+                    hydrate(&mut hydrated, &root.join("artifacts"))?;
+                    if next != Some(&hydrated) {
+                        return Err("Immutable source snapshot cannot be replaced".into());
+                    }
                 }
             }
         }
@@ -821,6 +827,29 @@ mod tests {
         changed["snapshots"][0]["scenes"][0]["sourceHash"] = json!(hash(b"rewritten"));
         assert!(save(&mut db, &dir, &changed.to_string()).is_err());
         assert_eq!(load(&db, &dir).unwrap(), before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn hydrated_source_image_survives_metadata_save_without_allowing_rewrite() {
+        let (mut db, dir) = setup();
+        let mut p = fixture();
+        p["version"] = json!(5);
+        p["sourceApplication"] = json!({"version":1,"units":[]});
+        for scene in p["snapshots"][0]["scenes"].as_array_mut().unwrap() {
+            scene["sourceHash"] = json!(hash(scene["text"].as_str().unwrap().as_bytes()));
+        }
+        p["snapshots"][0]["references"] = json!([{"image":"data:image/png;base64,aGVsbG8="}]);
+        let snapshot = &p["snapshots"][0];
+        let r = json!({"snapshotId":snapshot["id"],"sceneId":snapshot["scenes"][0]["id"],"startCp":0,"endCp":1});
+        p["panels"][0]["sourceRefs"] = json!([r]);
+        save(&mut db, &dir, &p.to_string()).unwrap();
+        let mut loaded: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        loaded["revision"] = json!(loaded["revision"].as_u64().unwrap_or(0) + 1);
+        loaded["sourceSelection"] = json!({"episodeId":"P01"});
+        save_checked(&mut db, &dir, &loaded.to_string()).unwrap();
+        let mut changed: Value = serde_json::from_str(&load(&db, &dir).unwrap().unwrap()).unwrap();
+        changed["snapshots"][0]["references"][0]["image"] = json!("data:image/png;base64,d29ybGQ=");
+        assert!(save_checked(&mut db, &dir, &changed.to_string()).is_err());
         fs::remove_dir_all(dir).unwrap();
     }
     #[test]

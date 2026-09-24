@@ -1,9 +1,10 @@
 import {producePanels} from './production.js';
-import { openLiveShot } from './live-blender';
 import {finalizeProducedSource} from './source-patch.js';
 import {createProjectWriter} from './project-writer.js';
 import {sourceSummary} from './source-sync.js';
 import SourceLibrary from './SourceLibrary.jsx';
+import SourceConnectionNotice from './SourceConnectionNotice.jsx';
+import {sourceConnectionError} from './source-connection-error.js';
 import { produceDraft } from './production.js';
 import {recognizeRegions,regionForEdit} from './visual-regions';
 import EditProposals from './EditProposals';
@@ -14,7 +15,6 @@ import { editContext, editBase, planEdit, undoEdit, saveEditProposal, loadEditPr
 import { draftPageStatus, preserveDraft } from './draft';
 import PanelMotionControls from './PanelMotionControls';
 import { pagePanels, ensureLayout } from './layout.js';
-import { directPanel, activeDirection, abandonDirection } from './directing';
 import { askLLM } from './llm';
 import LetteringControls from './LetteringControls';
 import { editRoute } from './edit-route';
@@ -33,7 +33,6 @@ import FinishingControls from './FinishingControls.jsx';
 import './style.css';
 import { defaultConnection, cancelLLMRequests } from './llm';
 import { useBackupSchedule } from './useBackupSchedule.js';
-import ShotControls from './ShotControls';
 import { recoverImageResult } from './image-recovery';
 import { beginJob, finishJob, adoptCandidate, abandonJob } from './revisions';
 import { createEnglishLocalization, currentEnglishLocalization, textForPanel } from './localization';
@@ -51,6 +50,7 @@ const LivePreviewControls = lazy(() => import('./LivePreviewControls.jsx'));
 const LayoutEditor = lazy(() => import('./LayoutEditor.jsx'));
 const ContentReplan = lazy(() => import('./ContentReplan.jsx'));
 const SourceUpdate = lazy(() => import('./SourceUpdate.jsx'));
+const SceneControls = lazy(() => import('./SceneControls.jsx'));
 
 // Open on demand, then retain inputs and unfinished proposals between stages.
 function StagePane({active, children, ...props}) {
@@ -62,13 +62,13 @@ function StagePane({active, children, ...props}) {
 function App() {
   const [exportOpen,setExportOpen]=useState(false), [exportVisited,setExportVisited]=useState(false);
   const [importOpen,setImportOpen]=useState(false);
+  const [sourceFailure,setSourceFailure]=useState(null), [sourceSettingsOpen,setSourceSettingsOpen]=useState(false);
   const [library,setLibrary]=useState(null), [libraryCatalog,setLibraryCatalog]=useState(null), [selectedWorkId,setSelectedWorkId]=useState(''), [selectedSceneId,setSelectedSceneId]=useState(''), [selectedEpisodeIds,setSelectedEpisodeIds]=useState([]), [sourceBranch,setSourceBranch]=useState('main');
   const [jev,setJev]=useState(null),[editCandidate,setEditCandidate]=useState(null),[autoApply,setAutoApply]=useState(false);
   const [requestedShot, setRequestedShot] = useState(null), [requestedPairId, setRequestedPairId] = useState(null), [requestedVideoPanels, setRequestedVideoPanels] = useState([]);
   const [stage,setStage] = useState('source');
   const [loadAttempt,setLoadAttempt] = useState(0), [loadError,setLoadError] = useState('');
   const [batchPanels,setBatchPanels]=useState([]);
-  const [productionMode, setProductionMode] = useState('direct');
   const [medium, setMedium] = useState('manga');
   const [videoOpened, setVideoOpened] = useState(false);
   useEffect(() => { if (medium === 'video') setVideoOpened(true); }, [medium]);
@@ -78,6 +78,9 @@ function App() {
   useBackupSchedule(ready, !!busy);
   const current = useRef(project), cancel = useRef(false), drag = useRef(null), lock = useRef(false);
   const importClose = useRef(null);
+  const sourceRetry = useRef(null), sourceTokenInput = useRef(null);
+  const tokenRef = useRef(token); tokenRef.current = token;
+  useEffect(()=>{if(importOpen&&sourceSettingsOpen)sourceTokenInput.current?.focus();},[importOpen,sourceSettingsOpen]);
   useEffect(()=>{
     if(!importOpen)return;
     const previous=document.activeElement;
@@ -118,7 +121,7 @@ function App() {
     let lib=null;
     if (desktop()) {
       try { lib = await call('source_library'); }
-      catch (e) { if (!stopped) setNotice(`原稿一覧を読み込めませんでした。保存済み作品は編集できます。${e.message ?? e}`); }
+      catch (e) { if (!stopped) { setNotice('原稿一覧を読み込めませんでした。保存済み作品は編集できます。'); setSourceFailure(sourceConnectionError(e,{operation:'登録済み作品の一覧',build:import.meta.env.VITE_BUILD_SHA})); sourceRetry.current=()=>run('原稿一覧を読み込み中',async()=>restoreSourceLibrary(await call('source_library')),'登録済み作品の一覧'); } }
       if (stopped) return;
       if (lib) restoreSourceLibrary(lib, loaded);
     }
@@ -137,8 +140,11 @@ function App() {
   }).catch(e => { if (!stopped) setLoadError(`保存作品を読み込めません: ${e.message}`); }); return () => { stopped = true; }; }, [loadAttempt]);
   const writer=useRef(null);if(!writer.current)writer.current=createProjectWriter({current:()=>current.current,save:saveProject,accept:p=>{current.current=p;setProject(p);}});
   function commit(p) { return writer.current.commit(p); }
-  async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
+  async function run(label, fn, sourceOperation='') { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setSourceFailure(null); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { if (sourceOperation) { setSourceFailure(sourceConnectionError(e,{operation:sourceOperation,branch:sourceBranch,build:import.meta.env.VITE_BUILD_SHA})); sourceRetry.current=()=>run(label,fn,sourceOperation); } else setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
   const snapshot = project.snapshots.find(s => s.id === project.active);
+  const unavailableReferenceMessage = source => source?.unavailableReferences?.length
+    ? `原稿の参照画像${source.unavailableReferences.length}件は画像形式が不正なため取り込めませんでした（${source.unavailableReferences.map(item=>item.name).join('、')}）。原稿本文と他の参照画像は取り込めます。`
+    : '';
   useEffect(()=>{
     const viewKey=library?.active??project.workId;
     if(!ready||!viewKey)return;
@@ -174,29 +180,31 @@ function App() {
     if (locale === 'en' && !currentEnglishLocalization(current.current, snapshot)) setNotice('英訳が未作成です。「英訳を作る」を実行してください。');
   }
   async function refreshLibraryCatalog(branch=sourceBranch) {
-    const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, token, call, branch);
+    const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, tokenRef.current, call, branch);
     const entry = library?.entries.find(item => item.id === library.active);
-    const workId = entry?.work_id ?? current.current.workId ?? '';
-    if (workId) {
-      const detail = await fetchStoryLibraryWork(loaded, workId, token, call);
+    const workId = entry?.work_id ?? current.current.sourceSelection?.workId ?? current.current.workId ?? '';
+    const savedWork = findLibraryWork(loaded.catalog, workId);
+    if (savedWork && savedWork.formats.includes('manga') && ['imported', 'verified'].includes(savedWork.importStatus)) {
+      const detail = await fetchStoryLibraryWork(loaded, workId, tokenRef.current, call);
       setLibraryCatalog({...loaded,...detail});
       setSelectedWorkId(workId);
       const available=detail.outline.map(item=>item.id);
-      const browse=available.includes(entry?.episode) ? entry.episode : (detail.outline[0]?.id ?? 'P01');
+      const browse=available.includes(episode) ? episode : available.includes(entry?.episode) ? entry.episode : (detail.outline[0]?.id ?? 'P01');
       const browseItem=detail.outline.find(item=>item.id===browse);
       setEpisode(browse);
-      setSelectedSceneId(browseItem?.scenes.some(scene=>scene.id===entry?.scene) ? entry.scene : (browseItem?.scenes[0]?.id ?? ''));
+      setSelectedSceneId(browseItem?.scenes.some(scene=>scene.id===selectedSceneId) ? selectedSceneId : browseItem?.scenes.some(scene=>scene.id===entry?.scene) ? entry.scene : (browseItem?.scenes[0]?.id ?? ''));
       const kept=selectedEpisodeIds.filter(id=>available.includes(id));
       setSelectedEpisodeIds(kept.length ? kept : [browse]);
     } else {
       setLibraryCatalog(loaded);
+      setSelectedWorkId('');
     }
     setNotice(`原稿一覧を読み込みました（${loaded.catalog.works.length}作品、${loaded.branch} @${loaded.sha.slice(0,8)}）。`);
   }
   function openImport() {
     setSettings(false);
     setImportOpen(true);
-    if (!libraryCatalog) void run('原稿一覧を読み込み中', () => refreshLibraryCatalog());
+    if (!libraryCatalog) void run('原稿一覧を読み込み中', () => refreshLibraryCatalog(),'原稿カタログの取得');
   }
   function showScene(p,sceneId){
     const panel=p.panels.find(panel=>panel.sceneId===sceneId||(panel.sourceRefs??[]).some(r=>r.sceneId===sceneId));
@@ -214,14 +222,13 @@ function App() {
     return result;
   }
   async function selectLibraryWork(workId) {
-    setPending(null);
     if (!libraryCatalog) throw Error('先に原稿一覧を更新してください');
-    const detail=await fetchStoryLibraryWork(libraryCatalog,workId,token,call);
+    const detail=await fetchStoryLibraryWork(libraryCatalog,workId,tokenRef.current,call);
     const work=detail.work;
     if (!work.formats.includes('manga')) throw Error('選択作品は漫画制作対象ではありません');
     const first=detail.outline[0], firstScene=detail.outline[0]?.scenes[0];
     if (!first || !firstScene) throw Error('選択作品に話・シーンがありません');
-    setLibraryCatalog({...detail}); setSelectedWorkId(work.id); setEpisode(first.id); setSelectedSceneId(firstScene.id); setSelectedEpisodeIds([first.id]);
+    setPending(null);setLibraryCatalog({...detail}); setSelectedWorkId(work.id); setEpisode(first.id); setSelectedSceneId(firstScene.id); setSelectedEpisodeIds([first.id]);
   }
   async function selectLibraryEpisode(episodeId) {
     setPending(null);
@@ -255,8 +262,8 @@ function App() {
   }
   async function changeSourceBranch(branch) {
     if(!['dev','main'].includes(branch))throw Error('原稿ブランチはdevまたはmainを選んでください');
-    setSourceBranch(branch);setLibraryCatalog(null);setPending(null);
     await refreshLibraryCatalog(branch);
+    setSourceBranch(branch);setPending(null);
   }
   async function confirmImport() {
     const detail=libraryCatalog, work=detail?.work;
@@ -290,23 +297,21 @@ function App() {
         setEpisode(selection.episode);
         setSelectedSceneId(selection.scene);
         setSelectedEpisodeIds(selection.episodeIds);
-      });
+      },'原稿カタログの取得');
     }
   },[ready]);
   async function checkSync(options={}) {
-    setPending(null);
     try {
       const entry=options.entry??library?.entries.find(item=>item.id===library.active);
       const targetRepo=options.detail?.repo??repo;
       let libraryOptions={branch:sourceBranch,episodeIds:[episode]};
       if(entry?.work_id){
-        const loaded=options.detail??await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,token,call,sourceBranch);
-        const detail=options.detail??await fetchStoryLibraryWork(loaded,entry.work_id,token,call);
+        const loaded=await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,tokenRef.current,call,sourceBranch);
+        const detail=await fetchStoryLibraryWork(loaded,entry.work_id,tokenRef.current,call);
         setLibraryCatalog({...loaded,...detail});
         const available=new Set(detail.outline.map(item=>item.id));
         const requested=(selectedEpisodeIds.length?selectedEpisodeIds:[episode]).filter(id=>available.has(id));
         if(!requested.length||requested.length!==(selectedEpisodeIds.length?selectedEpisodeIds:[episode]).length)throw Error('取り込む話を選び直してください');
-        const selectedScene=requested.length===1&&requested[0]===episode ? (selectedSceneId||entry.scene) : null;
         if(!options.detail){
           const saved=await call('source_register',{
             name:detail.work.title,repo:detail.repo,episode,id:entry.id,workId:entry.work_id,workRoot:detail.work.root,
@@ -316,17 +321,17 @@ function App() {
         }
         libraryOptions={
           commit:detail.sha,branch:sourceBranch,workId:entry.work_id,workRoot:detail.work.root,sourceRoot:detail.sourceRoot,
-          manifestPath:detail.entryPath,episodeIds:requested,...(selectedScene?{sceneId:selectedScene}:{}),format:detail.work.manuscriptFormat,
+          manifestPath:detail.entryPath,episodeIds:requested,format:detail.work.manuscriptFormat,
         };
       } else if(library && entry) {
         const saved=await call('source_register',{name:entry.name,repo:entry.repo,episode,id:entry.id});
         setLibrary({...library,entries:saved.entries});
       }
-      const next=await syncSource(targetRepo,token,episode,snapshot,call,libraryOptions);
+      const next=await syncSource(targetRepo,tokenRef.current,episode,snapshot,call,libraryOptions);
       if(entry?.work_id&&entry.work_id===current.current.workId){
         await commit({...current.current,sourceSelection:{...current.current.sourceSelection,workId:entry.work_id,episodeId:episode,sceneId:selectedSceneId,episodeIds:selectedEpisodeIds,branch:sourceBranch}});
       }
-      if(next.id===snapshot?.id || !sourceSummary(snapshot,next).changed) setNotice('更新なし');
+      if(next.id===snapshot?.id || !sourceSummary(snapshot,next).changed) {setPending(null);setNotice('更新なし');}
       else { setPending(next); setNotice('差分あり'); }
     } catch(e) { setNotice('確認失敗'); throw e; }
   }
@@ -348,34 +353,18 @@ function App() {
       ...(pending.workId ? {workId:pending.workId,sourceSelection:{workId:pending.workId,episodeId:browseEpisode,sceneId:browseScene,episodeIds:pendingEpisodes,branch:sourceBranch}} : {}),
     });
     setSelectedEpisodeIds(pendingEpisodes);
-    setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
+    setNotice(`原作と基準画${pending.references.length}件を取り込みました。${pending.unavailableReferences?.length ? `形式が不正な基準画${pending.unavailableReferences.length}件は除外しました。` : ''}${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
-    return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode, imageModelId,
-      setBusy, setNotice, stagePanel, planScene, generatePanel, askLLM, imageOf, pagePNG,
+    return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode: 'direct', imageModelId,
+      setBusy, setNotice, stagePanel: async()=>{throw Error('この演出経路は終了しました。コマの3D構図を開いてください');}, planScene, generatePanel, askLLM, imageOf, pagePNG,
       showProof: (_image, pageIndex=0) => { setPage(pageIndex); setStage('finish'); } });
-  }
-  async function stagePanel(panelId, instruction = '') {
-    if (!model.connectionId) throw Error('先に演出AIの接続を登録・テストしてください');
-    const shot=current.current.panels.find(p=>p.id===panelId);
-    if(!shot)throw Error('対象コマがありません');
-    if(!shot.live_binding){const binding=await openLiveShot(call,current.current,shot);await commit({...current.current,panels:current.current.panels.map(p=>p.id===panelId?{...p,live_binding:binding}:p)});}
-    return directPanel({ current: () => current.current, commit, call, panelId, instruction,
-      cancelled: () => cancel.current, notify: setBusy,
-      ask: async (prompt, schema) => JSON.parse(await askLLM(model, { purpose: 'direction', prompt, schema })) });
-  }
-  async function directChosen() {
-    if (!chosen) throw Error('コマを選択してください');
-    const result = await stagePanel(chosen.id, instruction.trim());
-    if (result?.live) { setNotice('live編集結果を詳細調整で確認し、候補として保存してください'); return; }
-    if (!cancel.current) await drawChosen(chosen.id);
-    setInstruction('');
   }
   async function drawChosen(panelId = selected) {
     const p = current.current, panel = p.panels.find(x => x.id === panelId);
     if (!panel) throw Error('対象コマを選択してください');
     const capture = p.captures?.find(c => c.id === panel.capture_revision);
-    if (!capture) throw Error('先にBlenderで撮影してください');
+    if (!capture) throw Error('先にこのコマの3D構図を撮影してください');
     const job = await beginJob(p, panel, 'retake', imageModelId);
     await commit({ ...p, jobs: [...p.jobs, job] });
     try {
@@ -410,7 +399,7 @@ function App() {
       perform:async(op,context)=>{
         setSelected(op.panelId);
         if(['resolution','upscale','finishing','video_prepare','video_assign'].includes(op.kind)){message=await panelAction(()=>current.current,commit,op,id=>{setRequestedShot(id);setMedium('video');},imageModelId);return;}
-        if(op.kind==='direction') {const result=await stagePanel(op.panelId,op.args.instruction);if(!result?.live&&!cancel.current)await drawChosen(op.panelId);return;}
+        if(op.kind==='direction') throw Error('この演出経路は終了しました。対象コマの3D構図を開いてください');
         if(op.kind==='region') {
           const p=current.current,panel=p.panels.find(p=>p.id===op.panelId),job=await beginJob(p,panel,'edit',imageModelId);
           await commit({...p,jobs:[...p.jobs,job]});
@@ -456,6 +445,7 @@ function App() {
   }
   const pageThumbnails = useMemo(() => layout.pages.map((item,i) => <button className={`thumbnail ${page===i?'active':''}`} aria-current={page===i?'page':undefined} aria-label={`${i+1}ページ目 · ${draftPageStatus(project,item)}`} key={item.id??i} onClick={()=>{setPage(i);setSelected(null);setRect(null);}}><div className="mini-grid">{pagePanels(project,item).map(p=><div key={p.id}>{p.image?<img loading="lazy" decoding="async" src={p.image} alt=""/>:<span>未作画</span>}</div>)}</div><span>PAGE {String(i+1).padStart(2,'0')} · {draftPageStatus(project,item)}</span></button>),[project,layout,page]);
   const selectedImageModel = imageModel(imageModelId);
+  const chosenCapture = project.captures?.find(c => c.id === chosen?.capture_revision);
   const emptyWorkspace = !snapshot && !project.panels.length && !pending && medium!=='video';
   async function switchWorkspace(id) {
     if (!id || id === library?.active) return;
@@ -465,30 +455,32 @@ function App() {
   const draftTools = <DraftControls model={model} cancelled={()=>cancel.current} key={project.active} project={project} current={current} commit={commit} run={run} busy={!!busy} canProduce={desktop()} sourceToken={token} episodeId={episode} onSwitch={()=>{setPage(0);setSelected(null);setRect(null);setEditCandidate(null);setStage('art');}} onProduce={produce}/>;
   function point(e) { const box = e.currentTarget.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)), Math.max(0, Math.min(1, (e.clientY - box.top) / box.height))]; }
   if (!ready) return <div className="startup-state"><h1>Manga Mac</h1>{loadError ? <><p role="alert">{loadError}</p><button className="primary" onClick={() => setLoadAttempt(value => value + 1)}>もう一度読み込む</button></> : <p role="status">作品を読み込み中…</p>}</div>;
-  return <div className="app"><header><div className="brand">M<span>↗</span></div><div><strong>Manga Mac</strong><small>原作から、漫画へ。</small></div><div className="spacer"/>{(library?.entries?.length>1||(!emptyWorkspace&&library?.entries?.length>0))&&<label className="project-picker">作品<select aria-label="登録済み作品" value={library.active} disabled={!!busy} onChange={e=>run('作品を切り替え中',()=>switchWorkspace(e.target.value))}>{!library.entries.some(e=>e.id===library.active)&&<option value={library.active}>未接続の作品</option>}{library.entries.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>}{!emptyWorkspace&&<button disabled={!!busy} onClick={openImport}>原稿を開く</button>}{desktop()&&!emptyWorkspace&&!library&&<button disabled={!!busy} onClick={()=>run('原稿一覧を読み込み中',async()=>restoreSourceLibrary(await call('source_library')))}>原稿一覧を再読込</button>}<button aria-label="接続・人物設定" disabled={!!busy || !ready} onClick={() => setSettings(!settings)}>設定</button>{project.panels.length > 0 && <details className="export-menu" open={exportOpen} onToggle={e=>{setExportOpen(e.currentTarget.open);if(e.currentTarget.open)setExportVisited(true);}}><summary>書き出す</summary>{exportVisited&&<Suspense fallback={<div className="export-options">読み込み中…</div>}><ExportControls project={layoutProject} current={current} pageIndex={page} busy={!!busy} run={run} notify={setNotice} active={exportOpen} onInspect={({pageIndex,panelId,outputWidth,requiredWidth,requiredHeight,unknown,stage:targetStage='finish',message})=>{setNotice(message??(unknown?'画像寸法を確認できません':`${outputWidth}px出力に必要な元画像: ${requiredWidth} × ${requiredHeight}px`));setMedium('manga');setPage(pageIndex);setSelected(panelId??null);setRect(null);setStage(targetStage);setExportOpen(false);}}/></Suspense>}</details>}</header>
-    <div className="workspace"><aside hidden={emptyWorkspace}><div className="aside-title">{stage==='source'?'原稿':'ページ'}</div><h2>{project.title}</h2><p className="muted">{snapshot ? `原稿 ${snapshot.sha.slice(0, 8)}` : '原稿未接続'} · {project.panels.length} コマ</p>{snapshot&&stage==='source'&&<><p className="muted">{snapshot.scenes.length}場面 · {snapshot.sync?.source_branch??sourceBranch}</p><button disabled={!!busy} onClick={()=>run('原稿の更新を確認中',checkSync)}>更新を確認</button><details className="source-contract"><summary>原稿の情報</summary><p className="muted">{protocolLabel(snapshot)}</p></details></>}{stage!=='source'&&<><div className="aside-title pages-label">ページ <span>{layout.pages.length}</span></div>{pageThumbnails}</>}</aside>
-    <main>{emptyWorkspace ? <section className="empty-entry"><h1>漫画の原稿を開く</h1><p>作品と話を選ぶと、原稿を確認して制作を始められます。</p>{error&&<p role="alert" className="message error">{error}</p>}{busy&&<p role="status">{busy}</p>}<button className="primary" disabled={!!busy} onClick={openImport}>原稿を開く</button><button disabled={!!busy} onClick={()=>setMedium('video')}>動画</button>{!desktop()&&<button disabled={!!busy} onClick={()=>run('サンプルを開く',sample)}>サンプルを見る</button>}</section> : <><div className="toolbar" aria-label="制作する媒体"><button aria-pressed={medium === 'manga'} disabled={!!busy} onClick={() => setMedium('manga')}>漫画</button><button aria-pressed={medium === 'video'} disabled={!!busy} onClick={() => setMedium('video')}>動画</button></div><div hidden={medium !== 'video'}>{busy && <div role="status" className="message progress">{busy}</div>}{error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}<Suspense fallback={<p role="status">動画制作を読み込み中…</p>}>{(videoOpened || medium === 'video') && <VideoWorkspace project={project} current={current} commit={commit} run={run} busy={!!busy} notify={setNotice} model={model} requestedShot={requestedShot} requestedPairId={requestedPairId} onPairConsumed={() => setRequestedPairId(null)} requestedPanelIds={requestedVideoPanels} onPanelsConsumed={() => setRequestedVideoPanels([])}/>}</Suspense></div><div hidden={medium !== 'manga'}><div className="toolbar"><span>{project.panels.length ? `PAGE ${String(page + 1).padStart(2, '0')}` : '制作をはじめましょう'}</span><div className="spacer"/>{(stage==='finish'||project.output_locale==='en')&&<label className="output-language">作品言語<select aria-label="作品言語" value={project.output_locale} disabled={!!busy || !ready} onChange={e => run('作品言語を変更', () => selectOutputLocale(e.target.value))}><option value="ja">日本語（原文）</option><option value="en">English</option></select></label>}{stage==='finish'&&project.output_locale === 'en' && <button disabled={!!busy || !snapshot} onClick={() => run(english ? '英訳を更新中' : '英訳を作成中', translateEnglish)}>{english ? '英訳を更新' : '英訳を作る'}</button>}<button disabled={!!busy || !project.history.length} onClick={() => run('元に戻す', async () => { await commit(undoEdit(current.current)); })}>↶ 元に戻す</button><button disabled={!!busy || !project.editRedo?.length} onClick={()=>run('やり直す',()=>commit(undoEdit(current.current,true)))}>↷ やり直す</button></div>
+  return <div className="app"><header><div className="brand">M<span>↗</span></div><div><strong>Manga Mac</strong><small>原作から、漫画へ。</small></div><div className="spacer"/>{(library?.entries?.length>1||(!emptyWorkspace&&library?.entries?.length>0))&&<label className="project-picker">作品<select aria-label="登録済み作品" value={library.active} disabled={!!busy} onChange={e=>run('作品を切り替え中',()=>switchWorkspace(e.target.value))}>{!library.entries.some(e=>e.id===library.active)&&<option value={library.active}>未接続の作品</option>}{library.entries.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}</select></label>}{!emptyWorkspace&&<button disabled={!!busy||!desktop()} onClick={openImport}>原稿を開く</button>}{desktop()&&!emptyWorkspace&&!library&&<button disabled={!!busy} onClick={()=>run('原稿一覧を読み込み中',async()=>restoreSourceLibrary(await call('source_library')),'登録済み作品の一覧')}>原稿一覧を再読込</button>}<button aria-label="接続・人物設定" disabled={!!busy || !ready} onClick={() => setSettings(!settings)}>設定</button>{project.panels.length > 0 && <details className="export-menu" open={exportOpen} onToggle={e=>{setExportOpen(e.currentTarget.open);if(e.currentTarget.open)setExportVisited(true);}}><summary>書き出す</summary>{exportVisited&&<Suspense fallback={<div className="export-options">読み込み中…</div>}><ExportControls project={layoutProject} current={current} pageIndex={page} busy={!!busy} run={run} notify={setNotice} active={exportOpen} onInspect={({pageIndex,panelId,outputWidth,requiredWidth,requiredHeight,unknown,stage:targetStage='finish',message})=>{setNotice(message??(unknown?'画像寸法を確認できません':`${outputWidth}px出力に必要な元画像: ${requiredWidth} × ${requiredHeight}px`));setMedium('manga');setPage(pageIndex);setSelected(panelId??null);setRect(null);setStage(targetStage);setExportOpen(false);}}/></Suspense>}</details>}</header>
+    <div className="workspace"><aside hidden={emptyWorkspace}><div className="aside-title">{stage==='source'?'原稿':'ページ'}</div><h2>{project.title}</h2><p className="muted">{snapshot ? `原稿 ${snapshot.sha.slice(0, 8)}` : '原稿未接続'} · {project.panels.length} コマ</p>{snapshot&&stage==='source'&&<><p className="muted">{snapshot.scenes.length}場面 · {snapshot.sync?.source_branch??sourceBranch}</p><button disabled={!!busy} onClick={()=>run('原稿の更新を確認中',checkSync,'原稿の更新確認')}>更新を確認</button><details className="source-contract"><summary>原稿の情報</summary><p className="muted">{protocolLabel(snapshot)}</p></details></>}{stage!=='source'&&<><div className="aside-title pages-label">ページ <span>{layout.pages.length}</span></div>{pageThumbnails}</>}</aside>
+    <main>{emptyWorkspace ? <section className="empty-entry"><h1>漫画の原稿を開く</h1><p>作品と話を選ぶと、原稿を確認して制作を始められます。</p>{error&&<p role="alert" className="message error">{error}</p>}{sourceFailure&&!importOpen&&<SourceConnectionNotice failure={sourceFailure} busy={!!busy} onRetry={()=>sourceRetry.current?.()} onSettings={()=>{setImportOpen(true);setSourceSettingsOpen(true);}} onSelection={()=>setImportOpen(true)}/>}{!desktop()&&<p className="muted">原稿の取込みはMacアプリで利用できます。ブラウザではサンプルを確認できます。</p>}{busy&&<p role="status">{busy}</p>}<button className="primary" disabled={!!busy||!desktop()} onClick={openImport}>原稿を開く</button><button disabled={!!busy} onClick={()=>setMedium('video')}>動画</button>{!desktop()&&<button disabled={!!busy} onClick={()=>run('サンプルを開く',sample)}>サンプルを見る</button>}</section> : <><div className="toolbar" aria-label="制作する媒体"><button aria-pressed={medium === 'manga'} disabled={!!busy} onClick={() => setMedium('manga')}>漫画</button><button aria-pressed={medium === 'video'} disabled={!!busy} onClick={() => setMedium('video')}>動画</button></div><div hidden={medium !== 'video'}>{busy && <div role="status" className="message progress">{busy}</div>}{error && <div role="alert" className="message error">{error}</div>}{sourceFailure&&!importOpen&&<SourceConnectionNotice failure={sourceFailure} busy={!!busy} onRetry={()=>sourceRetry.current?.()} onSettings={()=>{setImportOpen(true);setSourceSettingsOpen(true);}} onSelection={()=>setImportOpen(true)}/>} {notice && <div role="status" className="message">{notice}</div>}<Suspense fallback={<p role="status">動画制作を読み込み中…</p>}>{(videoOpened || medium === 'video') && <VideoWorkspace project={project} current={current} commit={commit} run={run} busy={!!busy} notify={setNotice} model={model} requestedShot={requestedShot} requestedPairId={requestedPairId} onPairConsumed={() => setRequestedPairId(null)} requestedPanelIds={requestedVideoPanels} onPanelsConsumed={() => setRequestedVideoPanels([])}/>}</Suspense></div><div hidden={medium !== 'manga'}><div className="toolbar"><span>{project.panels.length ? `PAGE ${String(page + 1).padStart(2, '0')}` : '制作をはじめましょう'}</span><div className="spacer"/>{(stage==='finish'||project.output_locale==='en')&&<label className="output-language">作品言語<select aria-label="作品言語" value={project.output_locale} disabled={!!busy || !ready} onChange={e => run('作品言語を変更', () => selectOutputLocale(e.target.value))}><option value="ja">日本語（原文）</option><option value="en">English</option></select></label>}{stage==='finish'&&project.output_locale === 'en' && <button disabled={!!busy || !snapshot} onClick={() => run(english ? '英訳を更新中' : '英訳を作成中', translateEnglish)}>{english ? '英訳を更新' : '英訳を作る'}</button>}<button disabled={!!busy || !project.history.length} onClick={() => run('元に戻す', async () => { await commit(undoEdit(current.current)); })}>↶ 元に戻す</button><button disabled={!!busy || !project.editRedo?.length} onClick={()=>run('やり直す',()=>commit(undoEdit(current.current,true)))}>↷ やり直す</button></div>
 
     <nav className="workflow-nav" aria-label="漫画の制作工程">{[['source','原稿'],['layout','コマ割り編集'],['art','作画'],['finish','仕上げ']].map(([id,label],i)=><button key={id} aria-label={label} aria-pressed={stage===id} disabled={id!=='source'&&!project.panels.length} onClick={()=>{setStage(id);setRect(null);}}><span>{i+1}</span>{label}</button>)}</nav>
-    <p className="stage-hint">{stage==='source'?'原稿を選び、漫画にする範囲を確認します。':stage==='layout'?'コマの大きさ・配置・本文の割当を調整します。':stage==='art'?'コマを選んで作画。下の欄から自然な言葉で修正できます。':'書き出しと同じページです。文字と画質を確認して完了にします。'}</p>
+    <p className="stage-hint">{!desktop()&&stage==='source'?'原稿の取込みはMacアプリで利用できます。ブラウザではサンプルを確認できます。':stage==='source'?'原稿を選び、漫画にする範囲を確認します。':stage==='layout'?'コマの大きさ・配置・本文の割当を調整します。':stage==='art'?'コマを選んで作画。下の欄から自然な言葉で修正できます。':'書き出しと同じページです。文字と画質を確認して完了にします。'}</p>
     {medium==='manga'&&stage==='art'&&project.namePlan?.format==='manga-mac/name-plan/v2'&&<section className="source-reader">{draftTools}</section>}
     <section className="drawing-action" hidden={stage!=='art'||!panels.length} aria-label="作画の実行"><div><strong>作画</strong><small>{batchPanels.length?`${batchPanels.length}コマを選択中` : chosen?`${panels.findIndex(p=>p.id===chosen.id)+1}コマ目を選択中`:'ページ上でコマを選択'} · {selectedImageModel.display_name}</small></div><button className="primary" disabled={!!busy||!desktop()||!drawingIds.length} onClick={()=>run('選択コマを作画',()=>producePanels({current:()=>current.current,commit,panelIds:drawingIds,imageModelId,regenerate:!batchPanels.length&&!!chosen?.image,cancelled:()=>cancel.current,notify:setBusy}))}>{!batchPanels.length&&chosen?.image?'このコマの再生成候補を作る':drawingIds.length?`選択した${drawingIds.length}コマを作画`:'作画するコマを選ぶ'}</button></section>
     <StagePane active={medium==='manga'&&stage==='layout'} aria-label="配置の作業"><LayoutEditor project={layoutProject} active={medium==='manga'&&stage==='layout'} current={current} commit={commit} run={run} busy={!!busy} pageIndex={page} setPage={setPage} model={model} selected={selected} onSelect={id=>{setSelected(id);setRect(null);}} cancelled={()=>cancel.current}/></StagePane>
     {stage==='finish' && panels.length>0 && <label className="finish-panel-select">仕上げるコマ<select aria-label="仕上げるコマ" value={selected??''} onChange={e=>{setSelected(e.target.value||null);setRect(null);}}><option value="">コマを選ぶ</option>{panels.map((p,i)=><option value={p.id} key={p.id}>{i+1}コマ目 · {p.sceneId}</option>)}</select></label>}
     {medium==='manga' && stage==='finish' && <PageProof panels={panels} snapshots={project.snapshots} localizations={project.localizations} locale={project.output_locale} page={pageData} imageCrops={layout.imageCrops}/>}
-    {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}{busy && <div role="status" className="message progress">◌ {busy}<button onClick={() => { cancel.current = true; cancelLLMRequests().catch(() => setError('LLMの停止状態を確認できませんでした')); setNotice('LLMへ停止を要求しました。画像処理は現在のコマが終わったところで停止します'); }}>ここまでで停止</button></div>}
-    {pending && <section className="message" aria-label="原稿の取込差分"><strong>差分あり · 原稿 {pending.sha.slice(0,8)}</strong><p>取り込むまで現在の正本と漫画は変わりません。</p>{['scenes','settings','references'].map((key,i)=><div key={key}><strong>{['場面','設定','人物・参照画像'][i]}</strong><ul>{sourceSummary(snapshot,pending)[key].map(item=><li key={item}>{item}</li>)}</ul></div>)}{sourceSummary(snapshot,pending).structure&&<p>作品情報・原稿構成に変更があります。</p>}<button disabled={!!busy} onClick={() => run('原稿を取り込み中', applySync)}>取り込む</button><button disabled={!!busy} onClick={() => {setPending(null);setNotice('取込みを見送りました');}}>後で</button></section>}
-    <StagePane active={medium==='manga'&&stage==='source'} aria-label="原稿の作業">{snapshot&&<><details className="production-option"><summary>初稿の作画方法</summary><label className="production-mode">制作方法<select aria-label="制作方法" disabled={!!busy} value={productionMode} onChange={e=>setProductionMode(e.target.value)}><option value="direct">画像AIで直接作画</option><option value="blender">Blenderで演出・作画</option></select></label></details>{draftTools}<section className="source-reader" aria-label="原稿と漫画への反映状態"><h2>原稿と漫画への反映状態</h2><SourceUpdate active={medium==='manga'&&stage==='source'} project={project} busy={!!busy} current={current} commit={commit} acceptSaved={p=>{current.current=p;setProject(p);}} run={run} model={model} imageModelId={imageModelId} cancelled={()=>cancel.current} exclusive={fn=>writer.current.exclusive(fn)}/></section><ContentReplan project={project} current={current} commit={commit} run={run} busy={!!busy} model={model}/></>}</StagePane>
+    {error && <div role="alert" className="message error">{error}</div>}{sourceFailure&&!importOpen&&<SourceConnectionNotice failure={sourceFailure} busy={!!busy} onRetry={()=>sourceRetry.current?.()} onSettings={()=>{setImportOpen(true);setSourceSettingsOpen(true);}} onSelection={()=>setImportOpen(true)}/>} {notice && <div role="status" className="message">{notice}</div>}{busy && <div role="status" className="message progress">◌ {busy}<button onClick={() => { cancel.current = true; cancelLLMRequests().catch(() => setError('LLMの停止状態を確認できませんでした')); setNotice('LLMへ停止を要求しました。画像処理は現在のコマが終わったところで停止します'); }}>ここまでで停止</button></div>}
+    {pending && <section className="message" aria-label="原稿の取込差分"><strong>差分あり · 原稿 {pending.sha.slice(0,8)}</strong><p>取り込むまで現在の正本と漫画は変わりません。</p>{unavailableReferenceMessage(pending)&&<p role="alert" className="message error">{unavailableReferenceMessage(pending)}</p>}{['scenes','settings','references'].map((key,i)=><div key={key}><strong>{['場面','設定','人物・参照画像'][i]}</strong><ul>{sourceSummary(snapshot,pending)[key].map(item=><li key={item}>{item}</li>)}</ul></div>)}{sourceSummary(snapshot,pending).structure&&<p>作品情報・原稿構成に変更があります。</p>}<button disabled={!!busy} onClick={() => run('原稿を取り込み中', applySync,'原稿の取込み')}>取り込む</button><button disabled={!!busy} onClick={() => {setPending(null);setNotice('取込みを見送りました');}}>後で</button></section>}
+    {snapshot && unavailableReferenceMessage(snapshot) && <p role="alert" className="message error">{unavailableReferenceMessage(snapshot)}</p>}
+    <StagePane active={medium==='manga'&&stage==='source'} aria-label="原稿の作業">{snapshot&&<>{draftTools}<section className="source-reader" aria-label="原稿と漫画への反映状態"><h2>原稿と漫画への反映状態</h2><SourceUpdate active={medium==='manga'&&stage==='source'} project={project} busy={!!busy} current={current} commit={commit} acceptSaved={p=>{current.current=p;setProject(p);}} run={run} model={model} imageModelId={imageModelId} cancelled={()=>cancel.current} exclusive={fn=>writer.current.exclusive(fn)}/></section><ContentReplan project={project} current={current} commit={commit} run={run} busy={!!busy} model={model}/></>}</StagePane>
     <section hidden={!!pending || (project.panels.length>0 ? stage!=='art' : stage!=='source')} className="art-workspace"><div>{!panels.length ? (snapshot ? <div className="welcome"><h1>{project.panels.length?'このページは空です':'原稿を取り込みました'}</h1><p>{project.panels.length?'コマ割り編集で枠とコマを割り当ててください。':'原稿の範囲を選んで漫画に反映するか、「漫画にする」で初稿を作れます。'}</p>{project.panels.length>0&&<button onClick={()=>setStage('layout')}>コマ割り編集へ</button>}</div> : <div className="welcome"><button className="primary" onClick={openImport}>原稿を開く</button></div>) : <div className="page"><div className="panel-grid">{panels.map((p, i) => <article key={p.id} tabIndex={0} role="button" aria-label={`${i+1}コマ目を選択`} aria-pressed={selected===p.id} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSelected(p.id);setRect(null);}}} className={`panel ${selected === p.id ? 'selected' : ''}`} onClick={() => { if (selected !== p.id) { setSelected(p.id); setRect(null); } }}><div className="art" onPointerDown={e => { if (busy || !p.image) return; setSelected(p.id); drag.current = point(e); e.currentTarget.setPointerCapture(e.pointerId); setRect(null); }} onPointerUp={e => { if (!drag.current) return; const end = point(e), start = drag.current; drag.current = null; const r = [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1])]; if (r[2] > .01 && r[3] > .01) setRect(r); }}>{p.image ? <img draggable="false" src={p.image} alt={`コマ ${i + 1}`}/> : <div className="placeholder"><span>0{i + 1}</span><p>作画を待っています</p></div>}{selected === p.id && rect && <div className="region" style={{ left: `${rect[0] * 100}%`, top: `${rect[1] * 100}%`, width: `${rect[2] * 100}%`, height: `${rect[3] * 100}%` }}/>}</div><div className={`caption ${project.output_locale === 'en' && !project.localizations.some(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) ? 'missing-translation' : ''}`}>{panelText(p)}</div><div className="panel-meta">{p.sceneId} · {p.status === 'review' ? '見た目の確認待ち' : '演出計画'}</div></article>)}</div><div className="folio">{page + 1}</div></div>}
     </div></section>
-    <section className="drawing-controls" hidden={stage!=='art'||!panels.length} aria-label="参照付き作画"><h3>作画するコマ</h3><label className="production-mode">制作方法<select aria-label="制作方法" disabled={!!busy} value={productionMode} onChange={e=>setProductionMode(e.target.value)}><option value="direct">画像AIで直接作画</option><option value="blender">Blenderで演出・作画</option></select></label>{!desktop()&&<p className="muted">画像生成はMacアプリで使えます。</p>}<p>{selectedImageModel.display_name} · {selectedImageModel.locality==='local'?'Mac内':'クラウドへの画像送信'}。原稿割当・枠・配置は保持します。</p>
+    <section className="drawing-controls" hidden={stage!=='art'||!panels.length} aria-label="参照付き作画"><h3>作画するコマ</h3>{!desktop()&&<p className="muted">画像生成はMacアプリで使えます。</p>}<p>{selectedImageModel.display_name} · {selectedImageModel.locality==='local'?'Mac内':'クラウドへの画像送信'}。原稿割当・枠・配置は保持します。</p>
       {panels.length>1&&<label><input type="checkbox" aria-label="表示ページの全コマを選択" disabled={!!busy} checked={batchPanels.length===panels.length} onChange={e=>setBatchPanels(e.target.checked?panels.map(p=>p.id):[])}/>全コマ</label>}{panels.map((p,i)=><label key={p.id}><input type="checkbox" disabled={!!busy} checked={batchPanels.includes(p.id)} onChange={e=>setBatchPanels(e.target.checked?[...batchPanels,p.id]:batchPanels.filter(id=>id!==p.id))}/>{i+1}コマ目 · {p.image?'採用済み':'未作画'}</label>)}
       {chosen&&<Suspense fallback={null}><PanelContextComparison key={chosen.id} project={layoutProject} panelId={chosen.id}/></Suspense>}
       <button hidden={!batchPanels.length} disabled={!!busy||!batchPanels.length} onClick={()=>{setRequestedVideoPanels([...batchPanels]);setMedium('video');}}>選択コマを動画化</button>
       {chosen && <details><summary>同じ場面の未作画をまとめて生成</summary><button disabled={!!busy||!desktop()||!chosen} onClick={()=>run('セクションを作画',()=>producePanels({current:()=>current.current,commit,panelIds:current.current.panels.filter(p=>p.sceneId===chosen.sceneId&&!p.image).map(p=>p.id),imageModelId,cancelled:()=>cancel.current,notify:setBusy}))}>対象セクションの未作画を生成</button></details>}
     </section>
     {chosen && stage==='art' && <section className="shot-controls" aria-label="作画候補">
-      {chosen.capture_revision && <button disabled={!!busy || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>}
+      {chosenCapture?.origin === 'three' && <button disabled={!!busy || !desktop()} onClick={() => run('撮影原本から漫画化中', () => drawChosen())}>撮影原本からこのコマを漫画化</button>}
+      {chosenCapture && chosenCapture.origin !== 'three' && <p className="muted">旧撮影画像は保持されています。3D構図を編集する場合はGLB素材を配置して撮り直してください。</p>}
       {project.jobs.filter(j => ['generate','edit','retake','compositor','decompose','layer_edit'].includes(j.kind) && !j.finishing && j.panelId === chosen.id && ['candidate', 'unknown'].includes(j.status)).map(job => <div key={job.id}>
         <p>{job.status === 'unknown' ? '応答未確定：再実行する前に結果を確認してください' : '作画候補：採用前の原稿を保持しています'}</p>
         {job.status === 'unknown' && ['generate','edit','retake'].includes(job.kind) && <button disabled={!!busy || !desktop()} onClick={() => run('保存済み作画を回収中', async () => { const receipt = job.media?.adapter_id==='runway-image'?await call('recover_cloud_image',{jobId:job.id,connectionId:current.current.mediaDefaults?.imageConnection}):await call('recover_image', { jobId: job.id }); await commit(await recoverImageResult(current.current, job.id, receipt)); setNotice('保存済み作画を候補として回収しました。再生成はしていません。'); })}>保存済み作画を回収する</button>}
@@ -496,7 +488,7 @@ function App() {
         <button disabled={!!busy} onClick={() => run('要求を解決中', async () => commit(abandonJob(current.current, job.id)))}>採用せず解決する</button>
       </div>)}
     </section>}
-    {chosen && <StagePane key={`art-tools:${chosen.id}`} active={medium==='manga'&&stage==='art'} aria-label="作画の追加操作">    {<React.Suspense fallback={null}><LayeredControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense>}
+    {chosen && <StagePane key={`art-tools:${chosen.id}`} active={medium==='manga'&&stage==='art'} aria-label="作画の追加操作">    {<React.Suspense fallback={null}><SceneControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} model={model} active={medium==='manga'&&stage==='art'}/><LayeredControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense>}
     {<React.Suspense fallback={null}><CompositorControls key={chosen.id} project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy}/></React.Suspense> }
     {<PanelMotionControls project={project} panel={chosen} current={current} commit={commit} run={run} busy={!!busy} active={medium==='manga'&&stage==='art'} onShot={id => { setRequestedShot(id); setMedium('video'); }} onAdjacentPair={id => { setRequestedPairId(id); setMedium('video'); }}/>}
 </StagePane>}
@@ -506,24 +498,13 @@ function App() {
 </StagePane>}
     <StagePane active={medium==='manga'&&stage==='finish'} aria-label="仕上げの作業">
     <SectionCompletion project={project} current={current} commit={commit} run={run} busy={!!busy} onSelect={id=>{setSelected(id);const i=layout.pages.findIndex(p=>p.slots.some(s=>s.panelId===id));if(i>=0)setPage(i);}}/><LivePreviewControls key={`${project.workId}:${snapshot?.episodeId}`} writer={writer.current} current={current} ready={ready}/></StagePane>
-    {chosen && stage==='art' && (productionMode==='blender'||activeDirection(project,chosen.id)) && <section className="shot-controls" aria-label="AI演出">
-      <h3>このコマの演出</h3><p>下の欄に「勇の肩越しから」「もう少し寄って」などを入力してください。構図・演技の変更は撮影からやり直し、旧作画を残して候補を作ります。</p>
-      <button disabled={!!busy || !desktop()} onClick={() => run('Blenderで演出中', directChosen)}>Blenderで演出して漫画化</button>
-      {activeDirection(project, chosen.id) && <><p role="status">{activeDirection(project, chosen.id).message || '停止した演出があります。保存済みの結果を確認して再開します。'}</p>
-        <button disabled={!!busy || !desktop()} onClick={() => run('演出を再開中', async () => { const result=await stagePanel(chosen.id); if (!result?.live&&!cancel.current) await drawChosen(chosen.id); })}>演出を再開</button>
-        <button disabled={!!busy} onClick={() => run('演出を取り下げ', () => commit(abandonDirection(current.current, activeDirection(current.current, chosen.id).id)))}>演出を取り下げる</button>
-      </>}
-    </section>}
-    <details className="shot-details" hidden={stage!=='art'}><summary>詳細調整・Blenderの保存結果を確認</summary>
-    <ShotControls key={chosen?.id ?? `page-${page}`} project={project} current={current} commit={commit} panels={panels} chosen={chosen} busy={!!busy} run={run} cancelled={()=>cancel.current}/>
-    </details>
     <div className="composer" hidden={!panels.length||stage==='source'}><div className="scope">{chosen?`選択中：${chosen.sceneId}`:`${page+1}ページ目のコマを読書順で指定できます`}</div><div className="input-row"><input aria-label="編集の指示" onKeyDown={e=>{if(e.key==='Enter'&&!e.nativeEvent.isComposing&&e.nativeEvent.keyCode!==229&&!busy&&panels.length&&instruction.trim()){e.preventDefault();run('編集内容を確認中',edit);}}} value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder="3コマ目の吹き出しを右上に"/><button className="primary" disabled={!!busy||!panels.length||!instruction.trim()} onClick={()=>run('編集内容を確認中',edit)}>修正する ↑</button></div><label><input type="checkbox" checked={autoApply} onChange={e=>setAutoApply(e.target.checked)}/>文字・枠・画像配置は自動適用する（Undo可能）</label><small>Enterで確認 · 部分修正は画像をドラッグして範囲を選択</small></div>
     {project.jobs.filter(j=>j.kind==='edit_execution'&&['partial','unknown'].includes(j.status)).map(j=><p role="status" key={j.id}>編集は途中です：{j.completed}/{j.operations.length}操作を保存。作画候補・未確定要求を確認してください。自動再送はしません。</p>)}
     <EditProposals project={project} current={current} commit={commit} run={run} busy={!!busy} onSelect={c=>{setEditCandidate(c);setPage(current.current.layout.pages.findIndex(p=>p.id===c.context.pageId));}}/>
     {editCandidate&&<section className="edit-candidate" aria-label="編集候補"><strong>{editCandidate.plan.reason}</strong>{editCandidate.context.visual&&<><p>認識した範囲を確認してください。矩形内の別の描写も変更される場合があります。</p>{editCandidate.context.visual.regions.map((r,i)=><figure key={i}><figcaption>{r.label}</figcaption><div className="recognized-region"><img src={project.panels.find(p=>p.id===r.panelId)?.image} alt="対象認識の元画像"/><span style={{left:`${r.rect[0]*100}%`,top:`${r.rect[1]*100}%`,width:`${r.rect[2]*100}%`,height:`${r.rect[3]*100}%`}}/></div></figure>)}</>}<ul>{editCandidate.plan.operations.map((op,i)=><li key={i}>{editCandidate.context.panels.find(p=>p.id===op.panelId)?.number ?? 'ページ'}{op.kind==='layout'?'':'コマ目'} · {commands[op.kind].label}</li>)}</ul><button disabled={!!busy} onClick={()=>run('編集を適用中',()=>applyEdit(editCandidate))}>この編集を適用</button><button disabled={!!busy} onClick={()=>run('候補を取り下げ',async()=>{if(editCandidate.jobId)await commit(resolveEditProposal(current.current,editCandidate.jobId,'abandoned'));setEditCandidate(null);})}>候補を取り消す</button></section>}
     </div></>}</main>
     {settings && <Suspense fallback={<p role="status">設定を読み込み中…</p>}><SettingsPanel setSettings={setSettings} repo={repo} library={library} busy={busy} setRepo={setRepo} setPending={setPending} setNotice={setNotice} episode={episode} setEpisode={setEpisode} token={token} setToken={setToken} snapshot={snapshot} ready={ready} run={run} checkSync={checkSync} project={project} name={name} setName={setName} description={description} setDescription={setDescription} addCharacter={addCharacter} commit={commit} current={current} model={model} setModel={setModel} jev={jev} setJev={setJev} imageModelId={imageModelId} setImageModelId={setImageModelId} sourceBranch={sourceBranch}/></Suspense>}
-    {importOpen&&<div className="import-overlay"><section role="dialog" aria-modal="true" aria-label="原稿を開く" className="import-dialog"><div className="setting-head"><h2>原稿を開く</h2><button ref={importClose} onClick={()=>setImportOpen(false)}>閉じる</button></div><p>作品と話を選び、差分を確認してから取り込みます。</p>{error&&<p role="alert" className="message error">{error}</p>}{busy&&<p role="status">{busy}</p>}<SourceLibrary library={library??{entries:[],active:''}} setLibrary={setLibrary} busy={!!busy} run={run} commit={commit} current={current} catalog={libraryCatalog} selectedWorkId={selectedWorkId} selectedEpisodeId={episode} selectedSceneId={selectedSceneId} selectedEpisodeIds={selectedEpisodeIds} sourceBranch={sourceBranch} onRefreshCatalog={()=>refreshLibraryCatalog()} onSelectWork={selectLibraryWork} onSelectEpisode={selectLibraryEpisode} onSelectScene={selectLibraryScene} onToggleImportEpisode={toggleImportEpisode} onSelectAllEpisodes={selectImportEpisodes} onSourceBranch={changeSourceBranch} onConfirmImport={()=>run('原稿の変更を確認中',confirmImport)}/><details><summary>非公開の原稿・接続設定</summary><label>読み取り専用トークン<input type="password" autoComplete="off" value={token} onChange={e=>{setToken(e.target.value);setLibraryCatalog(null);}}/></label><small>トークンは起動中だけ保持します。</small></details></section></div>}
+    {importOpen&&<div className="import-overlay"><section role="dialog" aria-modal="true" aria-label="原稿を開く" className="import-dialog"><div className="setting-head"><h2>原稿を開く</h2><button ref={importClose} onClick={()=>setImportOpen(false)}>閉じる</button></div><p>作品と話を選び、差分を確認してから取り込みます。</p>{error&&<p role="alert" className="message error">{error}</p>}{sourceFailure&&<SourceConnectionNotice failure={sourceFailure} busy={!!busy} onRetry={()=>sourceRetry.current?.()} onSettings={()=>{setSourceSettingsOpen(true);}} onSelection={()=>document.querySelector('[aria-label="原稿ライブラリの作品"]')?.focus()}/>} {!desktop()&&<p className="muted">原稿の取込みはMacアプリで利用できます。ブラウザではサンプルを確認できます。</p>}{busy&&<p role="status">{busy}</p>}<SourceLibrary library={library??{entries:[],active:''}} setLibrary={setLibrary} busy={!!busy} run={run} commit={commit} current={current} catalog={libraryCatalog} selectedWorkId={selectedWorkId} selectedEpisodeId={episode} selectedSceneId={selectedSceneId} selectedEpisodeIds={selectedEpisodeIds} sourceBranch={sourceBranch} onRefreshCatalog={()=>refreshLibraryCatalog()} onSelectWork={selectLibraryWork} onSelectEpisode={selectLibraryEpisode} onSelectScene={selectLibraryScene} onToggleImportEpisode={toggleImportEpisode} onSelectAllEpisodes={selectImportEpisodes} onSourceBranch={changeSourceBranch} onConfirmImport={()=>run('原稿の変更を確認中',confirmImport,'初回取込み')}/><details open={sourceSettingsOpen} onToggle={e=>setSourceSettingsOpen(e.currentTarget.open)}><summary>非公開の原稿・接続設定</summary><label>読み取り専用トークン<input ref={sourceTokenInput} type="password" autoComplete="off" value={token} onChange={e=>{tokenRef.current=e.target.value;setToken(e.target.value);}}/></label><small>トークンは起動中だけ保持します。</small></details></section></div>}
 
     </div></div>;
 }

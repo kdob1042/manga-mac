@@ -16,7 +16,8 @@
     "diff": "9.0.0",
     "jszip": "3.10.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

@@ -168,5 +168,5 @@ test('library retry restores the saved work and second episode before importing 
   await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
   const saved=await page.evaluate(()=>window.savedProject);
   expect(saved.sourceSelection).toMatchObject({workId:'work-a',episodeId:'P02',sceneId:'P02-02'});
-  expect(saved.snapshots.at(-1).scenes.map(scene=>scene.id)).toEqual(['P02-02']);
+  expect(saved.snapshots.at(-1).scenes.map(scene=>scene.id)).toEqual(['P02-01','P02-02']);
 });

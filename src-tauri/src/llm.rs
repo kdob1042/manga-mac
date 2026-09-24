@@ -31,6 +31,7 @@ pub enum Provider {
 pub enum Purpose {
     Plan,
     Direction,
+    Scene,
     Layout,
     Translation,
     Edit,
@@ -364,6 +365,7 @@ impl Connections {
                 request.purpose,
                 Purpose::Translation
                     | Purpose::Direction
+                    | Purpose::Scene
                     | Purpose::Layout
                     | Purpose::Edit
                     | Purpose::Lettering
@@ -564,7 +566,7 @@ async fn complete_jev<H: rig_core::http_client::HttpClientExt>(
     let state: Value = serde_json::from_str(&request.prompt).map_err(|_| failure())?;
     let body = json!({"model":connection.model,"state":state,"questions":{"operation":{
         "type":"choice","instructions":"漫画の修正指示を分類。判定だけを行い本文を書き換えない。複数の種類ならcompound、不明ならunclear。",
-        "criteria":{"lettering":"吹き出し・文字の配置やスタイル","crop":"再作画せず画像の位置と拡大率を変更","layout":"コマ枠の配置と形","direction":"カメラ・人物間距離・ポーズなどBlender演出","region":"画像の一部だけ描き直す","compound":"複数種の操作","readonly":"原作本文の変更","resolution":"必要解像度を診断","upscale":"補間拡大候補","finishing":"元画像から配置に合わせて仕上げ候補を再生成","video_prepare":"動画生成の準備","video_assign":"既存の採用動画を割当","unsupported":"対応操作にない要求","unclear":"対象や意図が不明"}
+        "criteria":{"lettering":"吹き出し・文字の配置やスタイル","crop":"再作画せず画像の位置と拡大率を変更","layout":"コマ枠の配置と形","direction":"カメラ・人物間距離・ポーズなど3D構図","region":"画像の一部だけ描き直す","compound":"複数種の操作","readonly":"原作本文の変更","resolution":"必要解像度を診断","upscale":"補間拡大候補","finishing":"元画像から配置に合わせて仕上げ候補を再生成","video_prepare":"動画生成の準備","video_assign":"既存の採用動画を割当","unsupported":"対応操作にない要求","unclear":"対象や意図が不明"}
     }}});
     let req = HttpRequest::builder()
         .method("POST")
@@ -641,7 +643,7 @@ struct ProbeOutput {
 struct DirectionOutput {
     status: String,
     reason: String,
-    operation: Option<crate::blender::Operation>,
+    operation: Option<Value>,
 }
 fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
     match purpose {
@@ -763,18 +765,39 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
                 return Err(failure());
             }
             match (output.status.as_str(), output.operation) {
-                ("action", Some(op))
-                    if !matches!(
-                        op,
-                        crate::blender::Operation::Inspect
-                            | crate::blender::Operation::Catalog
-                            | crate::blender::Operation::Capture { .. }
-                    ) =>
-                {
-                    crate::blender::validate_operation(&op)?;
-                }
                 ("ready" | "blocked", None) => {}
+                // Legacy direction commands have no execution endpoint.
                 _ => return Err(failure()),
+            }
+        }
+
+        Purpose::Scene => {
+            let op = value.as_object().ok_or_else(failure)?;
+            if value.to_string().len() > 16384 {
+                return Err(failure());
+            }
+            let kind = op.get("type").and_then(Value::as_str).ok_or_else(failure)?;
+            let allowed: &[&str] = match kind {
+                "add" => &["type", "object"],
+                "remove" => &["type", "id"],
+                "transform" => &["type", "id", "position", "rotation", "scale"],
+                "pose" => &["type", "id", "pose", "contacts"],
+                "camera" => &["type", "camera"],
+                _ => return Err(failure()),
+            };
+            if op.keys().any(|key| !allowed.contains(&key.as_str())) {
+                return Err(failure());
+            }
+            for required in if kind == "add" {
+                &["object"][..]
+            } else if kind == "camera" {
+                &["camera"][..]
+            } else {
+                &["id"][..]
+            } {
+                if !op.contains_key(*required) {
+                    return Err(failure());
+                }
             }
         }
 
