@@ -30,7 +30,7 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
  await page.reload();await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
  await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await page.evaluate(()=>window.failSave=true);await page.getByRole('button',{name:'取り込む',exact:true}).click();
- await expect(page.getByRole('alert')).toContainText('保存失敗');expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(baseline);
+ await expect(page.getByRole('alert',{name:'原稿接続の診断'})).toContainText('原稿を取得できませんでした');expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(baseline);
  await page.evaluate(()=>window.failSave=false);await page.getByRole('button',{name:'取り込む',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
  const saved=await page.evaluate(()=>localStorage.getItem('saved'));expect(JSON.parse(saved).active).toContain('bbbbbbbb');
@@ -75,7 +75,7 @@ test('generic sources use declarations at a pinned commit across A B A, and reje
  // Unknown version is reported before requesting any scene/asset and does not adopt.
  const before=await page.evaluate(()=>localStorage.getItem('example/one'));
  await page.evaluate(()=>{window.__TAURI_INTERNALS__.invoke=new Proxy(window.__TAURI_INTERNALS__.invoke,{apply:async(target,self,args)=>args[0]==='github_file'&&args[1].path==='manifest.json'?JSON.stringify({schema_version:5,episodes:[]}):target(...args)});});
- await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();await expect(page.getByRole('alert').filter({hasText:'schema 5 は未対応'})).toBeVisible();expect(await page.evaluate(()=>localStorage.getItem('example/one'))).toBe(before);
+ await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();await expect(page.getByRole('alert',{name:'原稿接続の診断'})).toContainText('原稿を取得できませんでした');expect(await page.getByRole('alert',{name:'原稿接続の診断'})).not.toContainText('schema 5');expect(await page.evaluate(()=>localStorage.getItem('example/one'))).toBe(before);
 });
 
 test('story-source/v1 imports the common work entry, work-root files and fixed person IDs',async({page})=>{

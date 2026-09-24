@@ -66,7 +66,7 @@ export default function SettingsPanel({
     <strong>使用中の原稿</strong>
     <span>{snapshot.repo} / {snapshot.sync?.source_branch??sourceBranch} @ {snapshot.sha.slice(0, 8)}</span>
     <span>{protocolLabel(snapshot)}</span>
-    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync)}>GitHub側の更新を確認</button></details>
+    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync,'原稿の更新確認')}>GitHub側の更新を確認</button></details>
     <details><summary>人物と画風の参照</summary>
     <small>原稿で宣言された人物参照画像は、原稿版を取り込むと同じcommitから自動登録されます。</small>
     <div className="characters">{project.characters.map(c => <div key={c.id}>
