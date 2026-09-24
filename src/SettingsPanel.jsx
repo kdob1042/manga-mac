@@ -7,6 +7,7 @@ import { protocolLabel } from "./source-protocol";
 import { call } from "./bridge";
 import { download } from "./export.js";
 import CloudImageSettings from './CloudImageSettings.jsx';
+import TapNowSettings from './TapNowSettings.jsx';
 import {imageModels,imageModel} from './media.js';
 export default function SettingsPanel({
   setSettings,
@@ -66,7 +67,7 @@ export default function SettingsPanel({
     <strong>使用中の原稿</strong>
     <span>{snapshot.repo} / {snapshot.sync?.source_branch??sourceBranch} @ {snapshot.sha.slice(0, 8)}</span>
     <span>{protocolLabel(snapshot)}</span>
-    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync)}>GitHub側の更新を確認</button></details>
+    </div>}<button disabled={!!busy||!ready} onClick={()=>run('旧形式の原稿を確認中',checkSync,'原稿の更新確認')}>GitHub側の更新を確認</button></details>
     <details><summary>人物と画風の参照</summary>
     <small>原稿で宣言された人物参照画像は、原稿版を取り込むと同じcommitから自動登録されます。</small>
     <div className="characters">{project.characters.map(c => <div key={c.id}>
@@ -116,6 +117,7 @@ export default function SettingsPanel({
     })}>画像モデルを準備する</button>
     <small>必要なモデルだけ、この操作でダウンロードします。</small>
     <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
+    <TapNowSettings busy={busy} run={run}/>
     <h3>04 / 3D素材</h3>
     <TripoSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />

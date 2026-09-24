@@ -11,7 +11,7 @@
 | 漫画の逐次制作工程 | `src/production.js`、`src/pipeline.js` | 5〜7 |
 | 原稿の版・選択反映 | `src/source-*.js`、`src/story-library.js` | 4、6 |
 | 原稿更新案のネーム・セクション完了 | `src/NameEditor.jsx`、`src/name-edit.js`、`src/section-completion.js` | 原稿からセクション完了まで |
-| ネームAI・GitHub / JSON取込 | `src/NamePlanControls.jsx`、`src/name-repository.js`、`src/name-v2.js`、`contracts/name-plan/` | 23、[受渡し手順](NAME_PLAN_IMPORT.md) |
+| ネームAI・GitHub / JSON取込 | `src/NamePlanControls.jsx`、`src/name-repository.js`、`src/name-v2.js`、`contracts/name-plan/`、`tools/manga-director/validate.mjs`（診断のみ） | 23、[受渡し手順](NAME_PLAN_IMPORT.md) |
 | モデル選択・生成境界 | `src/media.js`、`src/media-runtime.js`、`src/image-executor.js`、`src-tauri/src/media.rs` | 18 |
 | レイヤー・Compositor | `src/compositor.js`、`src/layered.js`、`src/layer-edit.js`、`src-tauri/src/compositor.rs` | 18の関連節 |
 | コマ・画像配置・文字 | `src/layout.js`、`src/layout-ai.js`、`src/render.js`、`src/PageProof.jsx`、`src/lettering.js`、`src/LetteringControls.jsx` | 8、16 |

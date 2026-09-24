@@ -10,8 +10,10 @@
 .source-applied { padding:1rem; }
 .source-change > p { padding:0 1rem; }
 .source-manuscript input:focus-visible,.source-manuscript button:focus-visible { outline:3px solid #26659c; outline-offset:3px; }
+.source-manuscript [data-source-scenes]:focus { outline: 3px solid #5b9270; outline-offset: 3px; }
 .source-manuscript aside { width:auto; }
-.source-manuscript .toolbar { flex-wrap:wrap; height:auto; gap:.5rem; }
+.source-manuscript .toolbar { position: sticky; top: 0; z-index: 2; flex-wrap:wrap; height:auto; gap:.5rem; background: #fafbf8; border: 1px solid #dce0d7; border-radius: 8px; }
+.source-manuscript [data-source-scenes] { scroll-margin-top: 90px; }
 .source-reader { margin:1rem; }
 .source-reader > summary { cursor:pointer; padding:.75rem; font-weight:600; }
 
