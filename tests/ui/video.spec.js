@@ -69,6 +69,7 @@ test('selected manga panels become editable video recipes before any batch submi
   await page.reload();
   const drawing = page.getByRole('region', { name: '参照付き作画' });
   await drawing.getByRole('checkbox', {name:/^1コマ目/}).check();
+  await drawing.getByText('動画の詳細設定', { exact: true }).click();
   await drawing.getByRole('button', { name: '選択コマを動画化' }).click();
   await expect(page.getByText('選択コマの動画レシピ・バッチ生成')).toBeVisible();
   await expect(page.getByLabel('s:p0の動き')).toBeVisible();
@@ -108,6 +109,7 @@ for (const scope of ['common', 'individual']) test(`video model changes invalida
   await page.goto('/');
   const drawing = page.getByRole('region',{name:'参照付き作画'});
   await drawing.getByRole('checkbox',{name:/^1コマ目/}).check();
+  await drawing.getByText('動画の詳細設定', { exact: true }).click();
   await drawing.getByRole('button',{name:'選択コマを動画化'}).click();
   await page.getByLabel('共通の動き').fill('人物がゆっくりうなずく');
   if (scope === 'common') {

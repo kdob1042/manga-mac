@@ -11,14 +11,16 @@ import { executeVideo } from './media-runtime.js';
 import { createPanelVideoShots, panelVideoRecipe, savedVideoBatches, runVideoBatch } from './video-batch.js';
 
 const loadCapture = (sessionId, requestId) => call('legacy_capture_read', { sessionId, requestId });
-export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot, requestedPairId, onPairConsumed, requestedPanelIds = [], onPanelsConsumed }) {
+export default function VideoWorkspace({ project, current, commit, run, busy, notify, model, requestedShot, requestedPairId, onPairConsumed, requestedPanelIds = [], onPanelsConsumed, videoConnections = {}, setVideoConnections = () => {}, openSetup = false, onSetupOpened }) {
   const snapshot = project.snapshots.find(s => s.id === project.active);
   const [sceneId, setSceneId] = useState(''), [imageId, setImageId] = useState(''), [prompt, setPrompt] = useState(''), [selected, setSelected] = useState('');
   useEffect(() => { if (requestedShot) { setSelected(requestedShot); setPlayback(null); } }, [requestedShot]);
   const [playback, setPlayback] = useState(null), [playError, setPlayError] = useState('');
   const [ratio, setRatio] = useState('960:960'), [editRatio, setEditRatio] = useState('960:960');
   const [duration, setDuration] = useState(5), [editDuration, setEditDuration] = useState(5);
-  const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [videoConnections, setVideoConnections] = useState({}), [videoModelId, setVideoModelId] = useState(project.mediaDefaults?.video ?? defaultVideoModelId), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
+  const [apiKey, setApiKey] = useState(''), [budget, setBudget] = useState(180), [approved, setApproved] = useState(false), [videoModelId, setVideoModelId] = useState(project.mediaDefaults?.video ?? defaultVideoModelId), [acceptDeletion, setAcceptDeletion] = useState(false), [editPrompt, setEditPrompt] = useState('');
+  const setupRef = useRef(null);
+  useEffect(() => { if (openSetup && setupRef.current) { setupRef.current.open = true; onSetupOpened?.(); } }, [openSetup, onSetupOpened]);
   const [localExecutable, setLocalExecutable] = useState(''), [localModelDir, setLocalModelDir] = useState(''), [localFfmpeg, setLocalFfmpeg] = useState('');
   const [transitionPairIds, setTransitionPairIds] = useState([]), [transitionPrompt, setTransitionPrompt] = useState(''), [transitionRatio, setTransitionRatio] = useState('960:960'), [transitionDuration, setTransitionDuration] = useState(5);
   const [batchPanelIds, setBatchPanelIds] = useState([]), [batchPrompt, setBatchPrompt] = useState(''), [batchRatio, setBatchRatio] = useState('960:960'), [batchDuration, setBatchDuration] = useState(5);
@@ -171,7 +173,7 @@ export default function VideoWorkspace({ project, current, commit, run, busy, no
   return <section className="video-workspace" aria-label="動画制作">
     {batchRunning && <button disabled={batchStopping} onClick={() => { batchStop.current = true; setBatchStopping(true); }}>次のコマから停止</button>}
     <h2>動画ショット</h2><p>動きを決める → 生成 → 再生して採用</p>
-    <details><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
+    <details ref={setupRef}><summary>動画API接続</summary><fieldset disabled={busy || !desktop()}>
       <label>動画の生成先<select aria-label="動画の生成先" value={videoModelId} onChange={e => run('動画モデルを選択', async () => { const next = e.target.value; setVideoModelId(next); setApproved(false); setBatchApproval(''); const descriptor = videoModel(next); const nextRatio = descriptor.input.ratios[0], nextDuration = descriptor.input.default_duration_sec ?? descriptor.input.durations_sec[0]; setRatio(nextRatio); setDuration(nextDuration); setBatchRatio(nextRatio); setBatchDuration(nextDuration); await commit({ ...current.current, mediaDefaults: { ...current.current.mediaDefaults, video: next } }); })}>{videoModels.map(item => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label>
       <p>{selectedVideoModel.display_name} · 選択した接続の対応機能・入力条件を送信前に検証します。A→Bは終端画像対応の接続だけで実行します。</p>
       {localVideo ? <>
