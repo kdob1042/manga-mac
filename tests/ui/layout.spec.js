@@ -71,6 +71,9 @@ test('AI layout uses registered router and explicit adoption without regeneratin
  const pending=await page.evaluate(()=>window.savedProject);
  expect(pending.jobs.at(-1).status).toBe('candidate');
  expect(pending.layout.pages[0].slots[0].points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')).toBe(initial);
+ await page.setViewportSize({width:1440,height:1600});
+ await page.getByLabel('候補の表示倍率').fill('75');
+ await page.screenshot({path:'test-results/free-layout-ai-candidate.png',fullPage:true});
  await page.getByRole('button',{name:'このコマ割りを採用',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',proposed);
  const saved=await page.evaluate(()=>window.savedProject);expect(saved.panels[0].image).toBe(legacy.panels[0].image);expect(saved.jobs.at(-1).status).toBe('complete');
  expect((await page.evaluate(()=>window.nativeCalls)).some(c=>/generate_image|blender_execute|video_generate/.test(c))).toBe(false);
