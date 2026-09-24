@@ -98,15 +98,14 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   function setCrop(value){update(l=>{l.imageCrops??={};if(value)l.imageCrops[slot.panelId]=value;else delete l.imageCrops[slot.panelId];},'画像配置を保存');}
   async function propose(){
     const frozen=structuredClone(current.current),base=layoutBase(frozen);
-    if(localNameMode&&model?.provider!=='ollama')throw Error('確定ネームの局所AI修正はOllama（ローカル）を接続してください');
-    if(localNameMode&&!model?.connectionId)throw Error('局所編集に使うOllamaを設定から接続してください');
+    if(localNameMode&&!model?.connectionId)throw Error('局所編集に使うAI接続を設定してください');
     const scope=localNameMode?[frozen.layout.pages[pageIndex]?.id].filter(Boolean):(whole?frozen.layout.pages.map(p=>p.id):frozen.layout.pages.slice(pageIndex,pageIndex+rangeLength).map(p=>p.id));
     if(frozen.jobs.filter(j=>j.kind==='layout'&&j.input_hash===base).length>=3)throw Error('この基準版での提案は3回までです。候補を確認するか手動編集してください');
     const job={id:crypto.randomUUID(),kind:'layout',scope:{type:'pageLayout',ids:scope},input_hash:base,status:'running',source_revision:frozen.active,base_revision:frozen.revision,attempts:1,at:new Date().toISOString()};
     await commit({...current.current,jobs:[...current.current.jobs,job]});
     try {
-      const localPrefix=localNameMode?'確定済みネームの現在ページだけを局所修正する。ページ数、コマID、読書順、本文、画像、対象外ページを変更しない。指示にない改善を加えない。\n':'';
-      const proposal=await proposeLayout(frozen,scope,`${localPrefix}${instruction}\n選択コマ: ${slot?.panelId??selected??'なし'}`, (prompt,schema)=>askLLM(model,{prompt,schema,purpose:'layout'}));
+      const microEditPrefix=localNameMode?'確定済みネームの現在ページだけを微修正する。ページ数、コマID、読書順、本文、画像、対象外ページを変更しない。指示にない改善を加えない。\n':'';
+      const proposal=await proposeLayout(frozen,scope,`${microEditPrefix}${instruction}\n選択コマ: ${slot?.panelId??selected??'なし'}`, (prompt,schema)=>askLLM(model,{prompt,schema,purpose:'layout'}));
       if(localNameMode&&proposal.replacementCount!==1)throw Error('局所修正ではページ数を変更できません');
       if(cancelled?.())throw Error('コマ割りの提案を停止しました');
       const previews=[];
