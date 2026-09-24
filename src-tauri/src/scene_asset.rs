@@ -284,7 +284,8 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
         let offset = view["byteOffset"].as_u64().unwrap_or(0);
         let length = view["byteLength"].as_u64().ok_or_else(invalid)?;
         let end = offset.checked_add(length).ok_or_else(invalid)?;
-        if length == 0 || buffer_size.is_none_or(|size| end > size)
+        if length == 0
+            || buffer_size.is_none_or(|size| end > size)
             || binary.is_none_or(|bytes| end > bytes.len() as u64)
         {
             return Err(invalid());
@@ -297,7 +298,9 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
             return Err("未対応の疎な3Dメッシュです".into());
         }
         let index = accessor["bufferView"].as_u64().ok_or_else(invalid)? as usize;
-        let view = views.and_then(|items| items.get(index)).ok_or_else(invalid)?;
+        let view = views
+            .and_then(|items| items.get(index))
+            .ok_or_else(invalid)?;
         let components: u64 = match accessor["type"].as_str() {
             Some("SCALAR") => 1,
             Some("VEC2") => 2,
@@ -317,7 +320,10 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
         let stride = view["byteStride"].as_u64().unwrap_or(element);
         let count = accessor["count"].as_u64().ok_or_else(invalid)?;
         let offset = accessor["byteOffset"].as_u64().unwrap_or(0);
-        if count == 0 || stride < element || stride > 252 || !offset.is_multiple_of(size)
+        if count == 0
+            || stride < element
+            || stride > 252
+            || !offset.is_multiple_of(size)
             || (count - 1)
                 .checked_mul(stride)
                 .and_then(|n| n.checked_add(offset))
@@ -330,13 +336,16 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
     for mesh in gltf["meshes"].as_array().into_iter().flatten() {
         for primitive in mesh["primitives"].as_array().into_iter().flatten() {
             let attributes = primitive["attributes"].as_object().ok_or_else(invalid)?;
-            if !attributes.contains_key("POSITION") || attributes.values().any(|index| {
-                index.as_u64().is_none_or(|index| {
+            if !attributes.contains_key("POSITION")
+                || attributes.values().any(|index| {
+                    index.as_u64().is_none_or(|index| {
+                        accessors.is_none_or(|items| items.get(index as usize).is_none())
+                    })
+                })
+                || primitive["indices"].as_u64().is_some_and(|index| {
                     accessors.is_none_or(|items| items.get(index as usize).is_none())
                 })
-            }) || primitive["indices"].as_u64().is_some_and(|index| {
-                accessors.is_none_or(|items| items.get(index as usize).is_none())
-            }) {
+            {
                 return Err(invalid());
             }
         }
@@ -348,7 +357,10 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
         for (key, collection) in [("mesh", "meshes"), ("skin", "skins"), ("camera", "cameras")] {
             if let Some(reference) = node.get(key) {
                 let index = reference.as_u64().ok_or_else(invalid)? as usize;
-                if gltf[collection].as_array().is_none_or(|items| items.get(index).is_none()) {
+                if gltf[collection]
+                    .as_array()
+                    .is_none_or(|items| items.get(index).is_none())
+                {
                     return Err(invalid());
                 }
             }
@@ -385,13 +397,17 @@ fn validate_references(gltf: &Value, binary: Option<&[u8]>) -> Result<(), String
     }
     for scene in gltf["scenes"].as_array().into_iter().flatten() {
         for node in scene["nodes"].as_array().into_iter().flatten() {
-            if nodes.is_none_or(|items| items.get(node.as_u64().ok_or_else(invalid)? as usize).is_none()) {
+            let index = node.as_u64().ok_or_else(invalid)? as usize;
+            if nodes.is_none_or(|items| items.get(index).is_none()) {
                 return Err(invalid());
             }
         }
     }
     if let Some(index) = gltf["scene"].as_u64() {
-        if gltf["scenes"].as_array().is_none_or(|items| items.get(index as usize).is_none()) {
+        if gltf["scenes"]
+            .as_array()
+            .is_none_or(|items| items.get(index as usize).is_none())
+        {
             return Err(invalid());
         }
     }

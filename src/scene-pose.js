@@ -181,7 +181,8 @@ export function resolveSceneContacts(instances, objects = []) {
   for (const actor of actors) {
     const root = objectOf(byId.get(actor.id));
     if (!root?.updateMatrixWorld) continue;
-    for (const contact of actor.contacts ?? []) {
+    const order = {ground_snap:0,look_at:1,ball_attach:2,hand_target:3,foot_plant:4};
+    for (const contact of [...(actor.contacts ?? [])].sort((a,b)=>(order[a?.type]??5)-(order[b?.type]??5))) {
       if (!inspectRig(root).supported) {
         diagnostics.push({ id: actor.id, type: contact?.type ?? null, reason: 'incompatible_rig' }); continue;
       }

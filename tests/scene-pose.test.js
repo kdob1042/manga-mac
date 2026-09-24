@@ -136,6 +136,15 @@ test('one-way hand attachment and opposite-hand target do not move the ball twic
   assert.equal(cycle[1].reason,'cyclic_contact');
 });
 
+test('a reversed contact list still places the ball after turning the actor', () => {
+  const scene = new Group(), actor = rig(), ball = new Group(), target = new Group();scene.add(actor,ball,target);
+  target.position.set(3,0,0);
+  const contacts=[{type:'ball_attach',targetId:'ball',hand:'right',offset:[0,0,0]}, {type:'look_at',targetId:'target'}];
+  const result=resolveSceneContacts(new Map([['actor',actor],['ball',ball],['target',target]]),[{id:'actor',contacts}]);
+  assert.equal(result.every(item=>item.applied),true);
+  assert.ok(ball.getWorldPosition(new Vector3()).distanceTo(actor.getObjectByName('mixamorigRightHand').getWorldPosition(new Vector3()))<1e-6);
+});
+
 test('planted foot uses world coordinates and rejects an airborne actor', () => {
   const scene = new Group(), actor = rig();scene.add(actor);
   const target = [-.1,.03,.05];

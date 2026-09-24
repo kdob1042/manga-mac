@@ -34,7 +34,13 @@ export function validateScene(scene, assetIds) {
       (c.type==='foot_plant' && object.airborne)))) fail();
     ids.add(object.id);
   }
-  for(const object of scene.objects) for(const contact of object.contacts??[]) if(contact.targetId && (!ids.has(contact.targetId)||contact.targetId===object.id)) fail();
+  for(const object of scene.objects) for(const contact of object.contacts??[]) {
+    if(contact.targetId && (!ids.has(contact.targetId)||contact.targetId===object.id)) fail();
+    if(['ball_attach','hand_target'].includes(contact.type) && assetIds instanceof Map){
+      const target=scene.objects.find(item=>item.id===contact.targetId);
+      if(assetIds.get(target?.assetId)?.kind!=='prop')fail();
+    }
+  }
   return scene;
 }
 
@@ -70,7 +76,7 @@ export function applySceneOperation(scene, operation, assetIds) {
 export function updatePanelScene(project,panelId,operation){
   const panel=project.panels.find(item=>item.id===panelId);
   if(!panel) throw Error('対象のコマがありません');
-  const assetIds=new Set((project.sceneAssets??[]).map(asset=>asset.id));
+  const assetIds=new Map((project.sceneAssets??[]).map(asset=>[asset.id,asset]));
   const scene=applySceneOperation(panel.scene3d??createScene(),operation,assetIds);
   const panels=project.panels.map(item=>item.id===panelId?{...item,scene3d:scene}:item);
   return {...project,panels,history:[...project.history,{panels:project.panels,layout:project.layout,edit:true,after:{panels,layout:project.layout},label:'3D構図を編集'}],editRedo:[]};

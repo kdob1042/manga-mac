@@ -30,6 +30,13 @@ test('reject unregistered or malformed GLB references, nonfinite transforms, dup
   assert.equal(a.objects.length,1);
 });
 
+test('a hand contact cannot silently move another character as if it were a ball',()=>{
+  const another={...actor,id:'other',assetId:'person2'};
+  const scene={...createScene(),objects:[actor,another]};
+  const project={panels:[{id:'p',scene3d:scene}],layout:{pages:[]},history:[],sceneAssets:[{id:'person',kind:'character'},{id:'person2',kind:'character'}]};
+  assert.throws(()=>updatePanelScene(project,'p',{type:'pose',id:'player',contacts:[{type:'ball_attach',targetId:'other',hand:'right'}]}),/不正/);
+});
+
 test('basketball setup replaces a full shot atomically and rejects unsupported input before history changes',()=>{
   const project={panels:[{id:'court'}],layout:{pages:[]},history:[],sceneAssets:[{id:'person'}]};
   const scene={...createScene(),objects:[{...actor,airborne:true,pose:{bones:{rightArm:[.2,0,0]}}}]};

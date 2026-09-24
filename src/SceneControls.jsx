@@ -57,7 +57,7 @@ export default function SceneControls({project,panel,current,commit,run,busy,mod
     <div className="scene-actions"><label>撮影幅<input type="number" min="64" max="4096" step="1" value={captureWidth} onChange={e=>setCaptureWidth(Number(e.target.value))}/></label><label>撮影高さ<input type="number" min="64" max="4096" step="1" value={captureHeight} onChange={e=>setCaptureHeight(Number(e.target.value))}/></label>
       <button disabled={!!busy} onClick={()=>run('構図を撮影中',async()=>{const shown=JSON.stringify(scene),base=current.current;
         if(JSON.stringify(base.panels.find(item=>item.id===panel.id)?.scene3d??createScene())!==shown)throw Error('表示中の構図が保存版と異なります。読み込み直してください');
-        validateScene(scene,new Set((base.sceneAssets??[]).map(asset=>asset.id)));
+        validateScene(scene,new Map((base.sceneAssets??[]).map(asset=>[asset.id,asset])));
         const png=await viewport.current.capture({width:captureWidth,height:captureHeight});
         if(JSON.stringify(current.current.panels.find(item=>item.id===panel.id)?.scene3d??createScene())!==shown)throw Error('撮影中に構図が変わりました。再撮影してください');
         await commit(await recordSceneCapture(current.current,panel.id,png,captureWidth,captureHeight));
