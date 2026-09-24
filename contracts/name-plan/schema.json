@@ -382,6 +382,106 @@
                   "right",
                   "neutral"
                 ]
+              },
+              "continuity": {
+                "type": "object",
+                "properties": {
+                  "location": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 160
+                  },
+                  "timeOfDay": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "storyIntent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "previousPanelId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,159}$",
+                    "maxLength": 160
+                  },
+                  "characters": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9:_-]{0,159}$",
+                          "maxLength": 160
+                        },
+                        "costume": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "visualState": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "emotion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        },
+                        "holding": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "minItems": 0,
+                          "maxItems": 8,
+                          "uniqueItems": false
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 0,
+                    "maxItems": 32,
+                    "uniqueItems": false
+                  },
+                  "props": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    },
+                    "minItems": 0,
+                    "maxItems": 16,
+                    "uniqueItems": false
+                  },
+                  "spatial": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 300
+                  },
+                  "hardConstraints": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 180
+                    },
+                    "minItems": 0,
+                    "maxItems": 12,
+                    "uniqueItems": false
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
               }
             },
             "required": [

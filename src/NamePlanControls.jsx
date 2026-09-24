@@ -8,6 +8,7 @@ import { importNamePlan } from './name-import.js';
 import { askLLM } from './llm.js';
 import { fetchRepositoryNamePlan, validateRepositoryNameTarget } from './name-repository.js';
 import { pagePNG } from './render.js';
+import {runContinuityQA,assertContinuityQACurrent} from './continuity-qa.js';
 
 // Reuses the existing draft, Job, renderer, connection and atomic writer boundaries.
 export default function NamePlanControls({project,current,commit,run,busy,model,sceneIds,onSwitch,cancelled=()=>false,sourceToken='',episodeId=''}) {
@@ -98,6 +99,16 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
       await commit({...current.current,namePlan:{...current.current.namePlan,qa}});setMessage('AIの指摘を保存しました。内容は自動変更していません。');
     });
   }
+  async function continuityQA(panelId) {
+    await safeRun('連続コマの画像を確認',async()=>{
+      if(!visionConsent||!model?.visualEditing||candidate)throw Error('画像入力対応と送信内容を確認してください');
+      const qa=await runContinuityQA({project:current.current,panelId,imageCapable:true,ask:args=>askLLM(model,args)});
+      await assertContinuityQACurrent(current.current,qa);
+      await commit({...current.current,namePlan:{...current.current.namePlan,continuityQA:{...(current.current.namePlan.continuityQA??{}),[panelId]:qa}}});
+      setMessage('連続コマの見た目を検査しました。指摘だけを保存し、画像は変更していません。');
+    });
+  }
+  const continuityPairs=(page?.slots??[]).map(slot=>project.panels.find(panel=>panel.id===slot.panelId)).filter(panel=>panel?.image&&panel.continuity?.previousPanelId&&project.panels.some(previous=>previous.id===panel.continuity.previousPanelId&&previous.image&&previous.sceneId===panel.sceneId));
   const findings=candidate?.qa?.findings??name?.qa?.findings??[];
   return <section className="name-plan-controls" aria-label="ネームAIと保存ネーム">
     <h4>{name?'ネームを編集':candidates.length?'ネーム候補を確認':'ネームを読み込む'}</h4>
@@ -137,8 +148,13 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
         <small>{editConnected?'設定済みAIで現在ページだけを解釈します。OllamaでもクラウドAIでも利用できます。':'AI未接続でも手動編集とネーム取込は使えます。'}</small>
         <button disabled={busy||!editConnected||!instruction.trim()||name.status==='stale'} onClick={()=>safeRun('局所編集案を作成',async()=>setEdit(await proposeNameEdit(current.current,page.id,instruction,(prompt,schema)=>askLLM(model,{purpose:'edit',prompt,schema})) ))}>AIで修正案を作る</button>
         {edit&&<div><p>{edit.reason}（{edit.kind}）</p><button disabled={busy} onClick={()=>edit.kind==='replan'?generate(pageAtomSelection(current.current,edit.pageId),edit.instruction,{localEdit:true}):safeRun('編集案を採用',async()=>{await commit(await applyNameEdit(current.current,edit));setEdit(null);setPreview(null);})}>{edit.kind==='replan'?'このページだけ再構成':'編集案を適用'}</button><button onClick={()=>setEdit(null)}>見送る</button></div>}
-        <label><input type="checkbox" checked={visionConsent} onChange={e=>setVisionConsent(e.target.checked)} disabled={busy}/>選択ページ画像を設定済み画像対応AIへ送り、指摘だけを受け取る</label>
+        <label><input type="checkbox" checked={visionConsent} onChange={e=>setVisionConsent(e.target.checked)} disabled={busy}/>選択ページまたは連続コマ画像を設定済み画像対応AIへ送り、指摘だけを受け取る</label>
         <button disabled={busy||!connected||!visionConsent||!model?.visualEditing||name.status==='stale'} onClick={visualQA}>読者視点でページを検査</button>
+        {continuityPairs.length>0&&<details><summary>連続コマの見た目を確認</summary>{continuityPairs.map(panel=>{
+          const qa=name.continuityQA?.[panel.id],previous=project.panels.find(p=>p.id===panel.continuity.previousPanelId);
+          const currentQA=qa&&qa.panelRevision===(panel.artwork_revision??null)&&qa.previousRevision===(previous?.artwork_revision??null)&&qa.base;
+          return <div key={panel.id}><button disabled={busy||!connected||!visionConsent||!model?.visualEditing||name.status==='stale'} onClick={()=>continuityQA(panel.id)}>{panel.id} の前後画像を検査</button>{currentQA&&<small>指摘 {qa.findings.length}件 · 未承認</small>}{currentQA&&qa.findings.map((finding,i)=><p key={i}>{finding.severity}: {finding.evidence} → {finding.suggestion}</p>)}</div>;
+        })}</details>}
       </>}
     </div>}
     {findings.length>0&&<details><summary>演出・視覚の注意（{findings.length}件）</summary>{findings.map((finding,i)=><p key={i}>{finding.message??finding.evidence} {finding.suggestion??''}</p>)}</details>}

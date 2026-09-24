@@ -65,12 +65,17 @@ function canonicalInput(value) {
   if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalInput(value[key])]));
   return value;
 }
-async function inputHash(project, panel, media, version) {
+async function inputHash(project, panel, media, version, continuityReference = null) {
   if (version !== undefined && version !== 2) throw Error('未対応の制作要求ハッシュ形式です');
   const input = inputState(project, panel, media);
+  if (continuityReference) {
+    const previous = project.panels.find(p => p.id === continuityReference.panelId);
+    input.continuityReference = previous?.sceneId === panel.sceneId && previous.image
+      ? { panelId: previous.id, hash: await imageHash(previous.image) } : null;
+  }
   return digest(new TextEncoder().encode(JSON.stringify(version === 2 ? canonicalInput(input) : input)));
 }
-export async function beginJob(project, panel, kind = 'generate', imageModelId = null, resolveExecution = imageExecution) {
+export async function beginJob(project, panel, kind = 'generate', imageModelId = null, resolveExecution = imageExecution, continuityReferenceId = null) {
   const media = ['generate', 'edit', 'retake', 'decompose', 'layer_edit'].includes(kind)
     ? resolveExecution(imageModelId ?? project.mediaDefaults?.image ?? defaultImageModelId)
     : null;
@@ -78,8 +83,11 @@ export async function beginJob(project, panel, kind = 'generate', imageModelId =
   if (project.jobs.some(j => j.panelId === panel.id && ['unknown', 'running'].includes(j.status))) throw Error('応答未確定の制作要求があります');
   const cloud=media?.adapter_id==='runway-image';
   if(cloud&&!project.mediaDefaults?.imageConnection)throw Error('クラウド静止画の接続・予算を登録してください');
+  const previous = continuityReferenceId && project.panels.find(p => p.id === continuityReferenceId);
+  if (continuityReferenceId && (panel.continuity?.previousPanelId !== continuityReferenceId || !previous?.image || previous.sceneId !== panel.sceneId)) throw Error('同一場面の採用済み前コマだけを参照できます');
+  const continuityReference = previous ? {panelId: previous.id, hash: await imageHash(previous.image)} : null;
   return { ...(cloud?{cloud_connection:project.mediaDefaults.imageConnection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
-    base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), input_hash_version: 2, input_hash: await inputHash(project, panel, media, 2),
+    base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), ...(continuityReference ? {continuity_reference: continuityReference} : {}), input_hash_version: 2, input_hash: await inputHash(project, panel, media, 2, continuityReference),
     status: 'running', attempts: 1, cost: { kind: cloud?'cloud':'local', amount: cloud?5:null, currency: cloud?'credits':null }, started_at: Date.now(), at: new Date().toISOString() };
 }
 export async function finishJob(project, job, generated, cancelled = false, candidateOnly = false) {
@@ -87,7 +95,7 @@ export async function finishJob(project, job, generated, cancelled = false, cand
   if (!currentJob || currentJob.status !== 'running') throw Error('制作要求は有効ではありません');
   const panel = project.panels.find(p => p.id === job.panelId);
   const hash = await imageHash(generated.image);
-  const valid = !cancelled && !candidateOnly && panel && job.input_hash === await inputHash(project, panel, job.media ?? null, job.input_hash_version);
+  const valid = !cancelled && !candidateOnly && panel && job.input_hash === await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference);
   const id = `artwork:${job.id}`;
   const result = { ...generated, artwork_revision: id, capture_revision: generated.capture_revision ?? null };
   const artwork = { id, hash, parent_revision: job.base_revision, capture_revision: result.capture_revision, job_id: job.id, panel: result };
@@ -101,7 +109,7 @@ export async function adoptCandidate(project, jobId) {
   const job = project.jobs.find(j => j.id === jobId), panel = project.panels.find(p => p.id === job?.panelId);
   if (job?.placement_key && job.placement_key !== placementKey(project,job.panelId)) throw Error('配置が変わったため、この候補は採用できません');
   const artwork = project.artworks.find(a => a.id === job?.output_revision);
-  if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await inputHash(project, panel, job.media ?? null, job.input_hash_version) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
+  if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
   return { ...project, panels: project.panels.map(p => p.id === panel.id ? structuredClone(artwork.panel) : p),
     history: [...project.history, { panels: project.panels, label: '作画候補を採用', at: new Date().toISOString() }],
     jobs: project.jobs.map(j => j.id === jobId ? { ...j, status: 'complete' } : j) };
