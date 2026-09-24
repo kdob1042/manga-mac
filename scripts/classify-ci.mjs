@@ -120,8 +120,11 @@ export function classifyFiles(files, context = {}) {
       if (file.endsWith(".jsx") || file.endsWith(".css") || file === "src/main.jsx") {
         result.runUi = true;
       }
-      if (file === "src/bridge.js") {
+      // These modules cross the UI/native/packaged-runtime boundary. Unit tests alone
+      // cannot validate the calls, helper placement, or persisted results.
+      if (["src/bridge.js", "src/image-executor.js", "src/media-runtime.js", "src/production.js", "src/revisions.js", "src/media-registry.json"].includes(file)) {
         result.runMac = true;
+        result.runUi = true;
       }
       if (file.includes("live-export") || file.includes("video") || ["src/render.js", "src/page-art.js", "src/layout.js", "src/image-crop.js"].includes(file)) {
         result.runLive = true;
@@ -149,13 +152,13 @@ export function classifyFiles(files, context = {}) {
         mark(result, "storage");
         result.runRestic = true;
         result.runWeb = true;
-      } else if (/(^|\/)(llm|llm_tests|policy_transport)\.rs$/.test(file)) {
+      } else if (/(^|\/)(llm|llm_tests|policy_transport|runway)\.rs$/.test(file)) {
         mark(result, "llm");
       } else if (file.endsWith("/live_export.rs")) {
         mark(result, "storage");
         mark(result, "web");
         result.runLive = true;
-      } else if (/(web_asset|draft|layout|lettering|runway)\.rs$/.test(file)) {
+      } else if (/(web_asset|draft|layout|lettering)\.rs$/.test(file)) {
         mark(result, "web");
       } else {
         markAll(result);
@@ -180,6 +183,9 @@ export function classifyFiles(files, context = {}) {
     } else if (file === "scripts/audit_osv.py") {
       mark(result, "llm");
       result.runAudit = true;
+    } else if (file === "scripts/verify-mac-distribution.mjs" || file === "scripts/package-mac-acceptance.mjs") {
+      result.runMac = true;
+      result.runRelease = true;
     } else if (
       file === "scripts/live-e2e.mjs" ||
       file === "scripts/sync-live-contract.mjs"

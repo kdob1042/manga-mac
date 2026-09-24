@@ -49,6 +49,34 @@ test("unrelated frontend logic skips browser and publication integration", () =>
   assert.equal(result.runRelease, true);
 });
 
+test("image execution and persistence boundaries require browser and Mac checks", () => {
+  for (const path of [
+    "src/image-executor.js", "src/media-runtime.js", "src/bridge.js",
+    "src/production.js", "src/revisions.js", "src/media-registry.json"
+  ]) {
+    const result = classifyFiles([path]);
+    assert.equal(result.runWeb, true, path);
+    assert.equal(result.runUi, true, path);
+    assert.equal(result.runMac, true, path);
+    assert.equal(result.runRelease, true, path);
+  }
+});
+
+test("Runway changes exercise the Rust harness that imports Runway", () => {
+  const result = classifyFiles(["src-tauri/src/runway.rs"]);
+  assert.equal(result.runLlm, true);
+  assert.equal(result.runMac, true);
+  assert.equal(result.runRelease, true);
+});
+
+test("distribution verification changes run packaging checks", () => {
+  for (const path of ["scripts/verify-mac-distribution.mjs", "scripts/package-mac-acceptance.mjs"]) {
+    const result = classifyFiles([path]);
+    assert.equal(result.runMac, true, path);
+    assert.equal(result.runRelease, true, path);
+  }
+});
+
 test("LLM application changes also require native compilation", () => {
   const result = classifyFiles(["src-tauri/src/llm.rs"]);
   assert.equal(result.runLlm, true);

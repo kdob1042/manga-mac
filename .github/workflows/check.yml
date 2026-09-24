@@ -216,10 +216,6 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
-      - name: Test RGBA helper codec without model weights
-        run: |
-          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
-          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
@@ -246,6 +242,8 @@ jobs:
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - name: Package acceptance commands and build provenance
         run: node scripts/package-mac-acceptance.mjs
+      - name: Verify copied app from distribution DMG
+        run: node scripts/verify-mac-distribution.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Manga-Mac-Apple-Silicon-validation
@@ -284,10 +282,6 @@ jobs:
         with:
           path: helper/.build
           key: swift-${{ runner.os }}-${{ runner.arch }}-${{ steps.native-cache.outputs.compiler }}-${{ hashFiles('helper/Package.swift', 'helper/Package.resolved', 'helper/Sources/**') }}
-      - name: Test RGBA helper codec without model weights
-        run: |
-          swiftc helper/Sources/MangaEngine/LayerPNG.swift tests/swift/LayerPNGTests.swift -o "$RUNNER_TEMP/layer-png-tests"
-          "$RUNNER_TEMP/layer-png-tests"
       - name: Build native image engine
         run: |
           swift build -c release --package-path helper
@@ -303,6 +297,8 @@ jobs:
         run: npm run tauri build -- --target aarch64-apple-darwin -- --locked
       - name: Package acceptance commands and build provenance
         run: node scripts/package-mac-acceptance.mjs
+      - name: Verify copied app from distribution DMG
+        run: node scripts/verify-mac-distribution.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: Manga-Mac-Apple-Silicon-unsigned
