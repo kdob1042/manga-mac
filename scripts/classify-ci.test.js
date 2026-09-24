@@ -7,13 +7,11 @@ function assertNoHeavy(result) {
     "runWeb",
     "runStorage",
     "runLlm",
-    "runBlender",
     "runMac",
     "runRelease",
     "runUi",
     "runLive",
     "runRestic",
-    "runBlenderRender",
     "runAudit"
   ]) {
     assert.equal(result[key], false, key);
@@ -39,7 +37,6 @@ test("frontend component changes run unit/build and UI checks", () => {
   assert.equal(result.runRelease, true);
   assert.equal(result.runStorage, false);
   assert.equal(result.runLlm, false);
-  assert.equal(result.runBlender, false);
   assert.equal(result.runMac, false);
   assert.equal(result.runLive, false);
 });
@@ -58,7 +55,6 @@ test("LLM application changes also require native compilation", () => {
   assert.equal(result.runMac, true);
   assert.equal(result.runRelease, true);
   assert.equal(result.runStorage, false);
-  assert.equal(result.runBlender, false);
   assert.equal(result.runAudit, false);
 });
 
@@ -71,20 +67,11 @@ test("storage implementation changes run storage integration and native compilat
   assert.equal(result.runWeb, true);
 });
 
-test("Blender fixture changes run the real render without the app bundle", () => {
-  const result = classifyFiles(["blender/test_real.py"]);
-  assert.equal(result.runBlender, true);
-  assert.equal(result.runBlenderRender, true);
-  assert.equal(result.runMac, false);
-  assert.equal(result.runRelease, false);
-});
-
 test("dependency changes use the full safety net and audit", () => {
   const result = classifyFiles(["src-tauri/Cargo.lock"]);
   assert.equal(result.runWeb, true);
   assert.equal(result.runStorage, true);
   assert.equal(result.runLlm, true);
-  assert.equal(result.runBlender, true);
   assert.equal(result.runMac, true);
   assert.equal(result.runRelease, true);
   assert.equal(result.runAudit, true);
@@ -114,7 +101,6 @@ test("manual runs deliberately execute the full suite", () => {
   assert.equal(result.runWeb, true);
   assert.equal(result.runStorage, true);
   assert.equal(result.runLlm, true);
-  assert.equal(result.runBlender, true);
   assert.equal(result.runMac, true);
   assert.equal(result.runRelease, true);
 });
@@ -125,7 +111,6 @@ test("publication geometry and pinned contracts require actual exporter checks",
     assert.equal(result.runWeb,true,path);
     assert.equal(result.runLive,true,path);
     assert.equal(result.runLlm,false,path);
-    assert.equal(result.runBlender,false,path);
   }
   assert.equal(classifyFiles(["src-tauri/src/live_export.rs"]).runStorage,true);
 });
@@ -135,7 +120,6 @@ test("story-source contract changes run the web contract checks only", () => {
   assert.equal(result.runWeb, true);
   assert.equal(result.runStorage, false);
   assert.equal(result.runLlm, false);
-  assert.equal(result.runBlender, false);
   assert.equal(result.runMac, false);
   assert.equal(result.runUi, false);
 });

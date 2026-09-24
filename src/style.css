@@ -184,3 +184,14 @@ button:focus-visible,input:focus-visible { outline: 3px solid #5b9270; outline-o
   .drawing-controls { margin: 16px 12px; padding: 12px; }
   .drawing-action { margin: 0 12px; padding: 10px; flex-wrap: wrap; }
 }
+.scene-controls { padding: 16px; margin: 16px 0; border: 1px solid #bec8d1; border-radius: 12px; }
+.scene-heading,.scene-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 10px 0; }
+.scene-heading h3 { margin: 0; margin-right: auto; }
+.scene-controls label { display: inline-flex; gap: 6px; align-items: center; }
+.scene-viewport { position: relative; width: 100%; height: min(55vh,480px); min-height: 260px; overflow: hidden; border-radius: 8px; background: #e9edf1; }
+.scene-viewport canvas { display: block; width: 100%; height: 100%; }
+.scene-viewport-error { position: absolute; z-index: 1; background: #fff; color: #9d1a1a; padding: 8px; margin: 8px; }
+.scene-transform { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.scene-transform fieldset { border: 1px solid #bec8d1; border-radius: 8px; display: flex; gap: 6px; }
+.scene-transform input[type=number] { width: 68px; }
+.scene-import input { max-width: 160px; }

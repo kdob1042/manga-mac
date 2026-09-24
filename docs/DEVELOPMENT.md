@@ -19,11 +19,11 @@
 | 前後コマ・修正候補の比較 | `src/artwork-comparison.js`、`src/PanelContextComparison.jsx`、`src/CandidateComparison.jsx` | 8 |
 | 採用・履歴・保存 | `src/revisions.js`、`src/project-writer.js`、`src/bridge.js`、`src-tauri/src/storage.rs` | 4、9 |
 | 動画の編集・候補 | `src/VideoWorkspace.jsx`、`src/video*.js`、`src-tauri/src/local_video.rs`、`src-tauri/src/runway.rs` | 12 |
-| Blender接続・Tripo | `src/live-blender.js`、`src/tripo.js`、`src-tauri/src/blender_live.rs`、`src-tauri/src/tripo.rs`、`blender/live/` | Live Blender、Tripo |
+| 3D素材・Tripo | `src/tripo.js`、`src-tauri/src/scene_asset.rs`、`src-tauri/src/tripo.rs` | シーン素材、Tripo |
 | 配信とプレビュー出力 | `src/live-export.js`、`src/live-preview.js` | Live Manga配信用出力 |
 | バックアップ | `src/useBackupSchedule.js`、`src/BackupSettings.jsx`、`src-tauri/src/backup.rs` | 14 |
 
-UIは操作を接続し、工程は既存Jobと保存経路を使う。ドメイン計算へReactやIPCを持ち込まない。Blender機能は既存API/MCP/アドオンを再利用する。新しい抽象層を作る前に既存責務へ配置できるか確認する。
+UIは操作を接続し、工程は既存Jobと保存経路を使う。ドメイン計算へReactやIPCを持ち込まない。3D編集はシーンデータとGLB素材を使う。新しい抽象層を作る前に既存責務へ配置できるか確認する。
 
 ## 設定の正本
 
@@ -55,12 +55,12 @@ UIは操作を接続し、工程は既存Jobと保存経路を使う。ドメイ
 
 - 最新dev → 作業ブランチ → dev向けPR。default branchがmainでも通常作業の起点はdev。main/devへ直接pushしない。
 - 着手はIssueへ `/start`。自動作成したDraft PRを再利用する。状態・復旧は [PROJECT_AUTOMATION.md](PROJECT_AUTOMATION.md)、設計反映・部分完了は [ISSUE_WORKFLOW.md](ISSUE_WORKFLOW.md) が正本。
-- PR/dev pushのLinuxチェックは変更分類に従う。共通Rust・依存・未知の変更は全系統。UI、Live連携、実Blender、依存監査は該当変更で実行する。
+- PR/dev pushのLinuxチェックは変更分類に従う。共通Rust・依存・未知の変更は全系統。UI、Live配信連携、依存監査は該当変更で実行する。
 - native/Tauri変更をdevへマージした後は `macOS validation`。失敗した版はmainへ昇格しない。検証済みのまとまりをdev → mainのPRで反映し、mainでは `macOS release package` が配布DMGを作る。
 - 重大な配布不具合のみhotfix → main。main固有の修正は必要に応じ別PRでdevにも反映する。履歴だけを合わせるmain → dev同期はしない。
 - 原稿repositoryのmainは読取り元であり、アプリ開発ブランチと混同しない。
 
-Web: `npm ci` 後に `npm test`、`npm run build`、`npm run test:ui`。UI試験でChromiumが未導入なら `npx playwright install --with-deps chromium`。変更したnative領域は `tests/storage`、`tests/llm`、`tests/blender` の該当Cargo manifestで検証する。正確な実行オプションはCIに集約する。
+Web: `npm ci` 後に `npm test`、`npm run build`、`npm run test:ui`。UI試験でChromiumが未導入なら `npx playwright install --with-deps chromium`。変更したnative領域は `tests/storage`、`tests/llm` の該当Cargo manifestで検証する。正確な実行オプションはCIに集約する。
 
 Mac開発起動:
 
@@ -77,10 +77,4 @@ npm run tauri dev
 
 Rust releaseはthin LTO・単一codegen unit・debug情報除去を使用する。panic方式や検証を弱めない。Mac配布サイズは同一toolchain/targetでDMGと実行ファイルを比較する。Webの初期JS削減をDMG全体や推論速度の改善率として報告しない。
 
-文書、実装、共通テスト、Macビルド、実Blender、実機画質・性能の結果を分けて報告する。実機では2人の参照、範囲外画素保持、再起動/Undo、オフライン、速度/メモリを確認し、詳細は [VALIDATION.md](VALIDATION.md) に残す。
-
-## Blender接続だけを検証する
-
-`python3 blender/test_live_gui.py /Applications/Blender.app/Contents/MacOS/Blender /tmp/manga-live-acceptance` は試験用GUIと人工シーンを新規起動する。利用者のinstance・作品に接続せず、試験で起動したプロセスだけを終了する。出力先にviewport / camera画像、環境、観測版、結果を保存する。
-
-Actionsの `Live Blender macOS GUI` は同じ試験に本番Rustクライアントの往復を追加する。いずれもアプリ画面の通し試験・実LLM・実機品質の代わりにはしない。対象Macでの残確認は [#266](https://github.com/kdob1042/manga-mac/issues/266) を使う。
+文書、実装、共通テスト、Macビルド、実機画質・性能の結果を分けて報告する。実機では2人の参照、範囲外画素保持、再起動/Undo、オフライン、速度/メモリを確認し、詳細は [VALIDATION.md](VALIDATION.md) に残す。

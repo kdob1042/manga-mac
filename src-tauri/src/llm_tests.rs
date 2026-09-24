@@ -276,15 +276,15 @@ fn typed_outputs_reject_wrong_field_types_and_removed_face_purpose() {
 }
 
 #[test]
-fn direction_uses_typed_blender_operations_and_rejects_code_and_invalid_bounds() {
+fn old_direction_actions_are_rejected_without_blender() {
     for value in [
-        json!({"status":"action","reason":"寄る","operation":{"kind":"camera","lens":80}}),
         json!({"status":"ready","reason":"撮影へ","operation":null}),
         json!({"status":"blocked","reason":"素材不足","operation":null}),
     ] {
         assert!(validate_output(Purpose::Direction, &value).is_ok());
     }
     for operation in [
+        json!({"kind":"camera","lens":80}),
         json!({"kind":"python","code":"anything"}),
         json!({"kind":"capture","width":768,"height":768}),
         json!({"kind":"aim","location":[0,0,0],"target":[0,0,0],"lens":50}),
@@ -297,6 +297,27 @@ fn direction_uses_typed_blender_operations_and_rejects_code_and_invalid_bounds()
         )
         .is_err());
     }
+}
+
+#[test]
+fn scene_operations_accept_only_typed_edits() {
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"camera","camera":{"fov":40}})
+    )
+    .is_ok());
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"transform","id":"actor","position":[1,0,2]})
+    )
+    .is_ok());
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"camera","camera":{},"code":"run()"})
+    )
+    .is_err());
+    assert!(validate_output(Purpose::Scene, &json!({"type":"python","code":"run()"})).is_err());
+    assert!(validate_output(Purpose::Scene, &json!({"type":"remove"})).is_err());
 }
 
 #[test]

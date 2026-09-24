@@ -1,6 +1,5 @@
 import {generatePanel} from './pipeline.js';
 import {withResource} from './execution.js';
-import { activeDirection } from './directing.js';
 import { affectedScenes, revise } from './core.js';
 import {
   draftScenes,
@@ -94,12 +93,6 @@ export async function produceDraft({
     if (cancelled()) break;
     const panel = current().panels.find((p) => p.id === id);
     if (panel.image) continue;
-    if (
-      productionMode === 'blender' &&
-      (!panel.capture_revision || activeDirection(current(), id))
-    )
-      { const staged = await stagePanel(id); if(staged?.live) throw Error("live編集結果を詳細調整で確認し、候補保存・採用してから続行してください"); }
-    if (cancelled()) break;
     setBusy(`${id} を作画中`);
     p = current();
     const livePanel = p.panels.find((x) => x.id === id),
@@ -112,11 +105,12 @@ export async function produceDraft({
         null,
         '',
         job,
-        p.captures?.find((c) => c.id === livePanel.capture_revision),
+        null,
         p.style_references ?? [],
         null,
         null,
         imageModelId,
+        'direct',
       );
       await commit(await finishJob(current(), job, generated, cancelled()));
     } catch (e) {
@@ -211,7 +205,7 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
 }
 
 // Freeze the batch before the first request. Each saved job is the recovery boundary.
-export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false,capture=false}){
+export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false}){
  const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
  if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
  const selected=targets.filter(p=>regenerate||!p.image);
@@ -226,7 +220,7 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
   const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId);
   await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
   try{
-   const result=await generate(panel,frozen.characters,null,'',job,capture?frozen.captures?.find(c=>c.id===panel.capture_revision):null,frozen.style_references??[],null,null,imageModelId,capture?'capture':'direct');
+   const result=await generate(panel,frozen.characters,null,'',job,null,frozen.style_references??[],null,null,imageModelId,'direct');
    await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
   }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }

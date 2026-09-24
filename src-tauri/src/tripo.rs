@@ -4,7 +4,7 @@
 //! native connection registry only; project JSON stores the selected image hash,
 //! model/task metadata and the verified downloaded asset, never credentials.
 
-use crate::{llm::TripoConnection, policy_transport::PolicyTransport, storage};
+use crate::{llm::TripoConnection, policy_transport::PolicyTransport, scene_asset, storage};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -21,7 +21,7 @@ pub const API_BASE: &str = "https://api.tripo3d.ai/v2/openapi";
 pub const MODEL_VERSION: &str = "v2.5-20250123";
 const MAX_IMAGE: usize = 20 * 1024 * 1024;
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
-const MAX_MODEL: u64 = 512 * 1024 * 1024;
+const MAX_MODEL: u64 = 128 * 1024 * 1024;
 
 fn failure() -> String {
     "Tripo要求を完了できませんでした。新規送信せず、保存済みtaskの状態を確認してください".into()
@@ -100,9 +100,19 @@ fn allowed_manifest(manifest: &Value) -> Result<(), String> {
         return Err("生成指示が不正です".into());
     }
     let source = manifest["source"].as_object().ok_or("生成元がありません")?;
-    if source.get("character_id").and_then(Value::as_str).is_none()
-        || source.get("snapshot_id").and_then(Value::as_str).is_none()
-    {
+    let character = source
+        .get("character_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty());
+    let asset = source
+        .get("asset_kind")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| matches!(kind, "prop" | "environment"))
+        && source
+            .get("asset_name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| !name.trim().is_empty() && name.len() <= 100);
+    if (character == asset) || source.get("snapshot_id").and_then(Value::as_str).is_none() {
         return Err("生成元の人物・原稿版がありません".into());
     }
     Ok(())
@@ -398,7 +408,10 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
     if addresses.is_empty() {
         return Err("Tripo出力先が許可できないネットワークです".into());
     }
-    std::fs::create_dir_all(assets).map_err(|_| failure())?;
+    let verified_directory = scene_asset::directory(assets.parent().ok_or_else(failure)?)?;
+    if verified_directory != assets {
+        return Err(failure());
+    }
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -419,7 +432,6 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
     {
         return Err(failure());
     }
-    let path = assets.join(format!("tripo-{task}.glb"));
     let temporary = assets.join(format!(".tripo-{task}.pending"));
     let mut file = std::fs::OpenOptions::new()
         .write(true)
@@ -432,7 +444,7 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
         size = size.checked_add(chunk.len() as u64).ok_or_else(failure)?;
         if size > MAX_MODEL {
             let _ = std::fs::remove_file(&temporary);
-            return Err("Tripoモデルは512MB以下にしてください".into());
+            return Err("Tripoモデルは128MB以下にしてください".into());
         }
         digest.update(&chunk);
         std::io::Write::write_all(&mut file, &chunk).map_err(|_| failure())?;
@@ -440,37 +452,24 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
     file.sync_all().map_err(|_| failure())?;
     let hash = format!("{:x}", digest.finalize());
     let bytes = std::fs::read(&temporary).map_err(|_| failure())?;
-    if bytes.len() < 4 || &bytes[..4] != b"glTF" {
-        let _ = std::fs::remove_file(&temporary);
-        return Err("Tripoの出力がGLBではありません".into());
-    }
-    std::fs::rename(&temporary, &path).map_err(|_| failure())?;
-    Ok(
-        json!({"file":path.file_name().and_then(|name|name.to_str()).ok_or_else(failure)?,"hash":hash,"bytes":size}),
-    )
+    let result = if bytes.len() as u64 != size || format!("{:x}", Sha256::digest(&bytes)) != hash {
+        Err(failure())
+    } else {
+        scene_asset::publish(assets.parent().ok_or_else(failure)?, &bytes)
+    };
+    let _ = std::fs::remove_file(&temporary);
+    result
 }
 fn asset_path(assets: &Path, file: &str) -> Result<PathBuf, String> {
-    let name = Path::new(file)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .ok_or_else(failure)?;
-    if name != file || !file.to_ascii_lowercase().ends_with(".glb") {
-        return Err("保存済みTripo素材のpathが不正です".into());
-    }
-    let root = std::fs::canonicalize(assets).map_err(|_| failure())?;
-    let path = root.join(file);
-    if std::fs::symlink_metadata(&path)
-        .map_err(|_| failure())?
-        .file_type()
-        .is_symlink()
-        || std::fs::canonicalize(&path)
+    let hash = file.strip_suffix(".glb").ok_or_else(failure)?;
+    scene_asset::verified_path(
+        assets.parent().ok_or_else(failure)?,
+        file,
+        hash,
+        std::fs::metadata(assets.join(file))
             .map_err(|_| failure())?
-            .parent()
-            != Some(root.as_path())
-    {
-        return Err("保存済みTripo素材のpathが不正です".into());
-    }
-    Ok(path)
+            .len(),
+    )
 }
 pub async fn collect(
     db: &Mutex<Connection>,

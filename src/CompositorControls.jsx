@@ -37,7 +37,7 @@ export default function CompositorControls({project,panel,current,commit,run,bus
    const p=current.current, source=p.panels.find(item=>item.id===panel.id),capture=(useCapture||!source.image)?p.captures?.find(c=>c.id===source.capture_revision):null;
    const next=await beginCompositor(p,source,capture);
    let original=source.image,bundle=capture?null:source.compositor?.bundle;
-   if(capture){const value=await call('blender_capture',{sessionId:capture.session_id,requestId:capture.request_id});original=value.preview;if(await imageHash(original)!==capture.image.hash)throw Error('撮影原本のhashが一致しません');}
+   if(capture){const value=await call('legacy_capture_read',{sessionId:capture.session_id,requestId:capture.request_id});original=value.preview;if(await imageHash(original)!==capture.image.hash)throw Error('撮影原本のhashが一致しません');}
    if(!bundle){const image=await imageOf(original), canvas=document.createElement('canvas');canvas.width=image.width;canvas.height=image.height;canvas.getContext('2d').drawImage(image,0,0);bundle=rasterBundle(canvas.toDataURL('image/png'),image.width,image.height);}
    await commit({...p,jobs:[...p.jobs,next]});
    try{setState(await call('compositor_start',{sessionId:next.id,bundle}));}

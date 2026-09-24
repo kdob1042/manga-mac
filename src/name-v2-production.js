@@ -38,7 +38,7 @@ function contractKey(project) {
 }
 // Uses the same batch jobs, lettering stage, renderer and checked native save as ordinary production.
 export async function produceNameDraft(args) {
-  const { current, commit, cancelled, model, productionMode, setBusy, setNotice, showProof, stagePanel, generatePanel, askLLM, imageOf, pagePNG, imageModelId } = args;
+  const { current, commit, cancelled, model, setBusy, setNotice, showProof, generatePanel, askLLM, imageOf, pagePNG, imageModelId } = args;
   const initial = current();
   if (initial.namePlan?.format !== FORMAT || initial.namePlan.status !== 'adopted' || initial.namePlan.snapshotId !== initial.active) fail('name', '原稿と一致する確定ネームを採用してください');
   await bindSource(initial.namePlan.file, initial); validateV2State(initial);
@@ -52,16 +52,9 @@ export async function produceNameDraft(args) {
   });
   if (!same(panels, initial.panels)) await commit({ ...initial, panels });
   const frozen = contractKey(current()), changed = () => frozen !== contractKey(current()), stop = () => cancelled() || changed();
-  if (productionMode === 'blender') for (const id of ids) {
-    if (stop()) break;
-    const panel = current().panels.find(panel => panel.id === id);
-    if (panel.image) continue;
-    const result = await stagePanel(id);
-    if (result?.live) fail('blender_review', 'Blenderの編集結果を候補保存・採用してから再開してください');
-  }
   if (stop()) { setNotice('停止しました。確定ネームと保存済み結果は保持しています'); return; }
   const batch = args.generateBatch ?? (await import('./production.js')).producePanels;
-  await batch({ current, commit, panelIds: ids, generate: generatePanel, cancelled: stop, notify: setBusy, imageModelId, capture: productionMode === 'blender' });
+  await batch({ current, commit, panelIds: ids, generate: generatePanel, cancelled: stop, notify: setBusy, imageModelId });
   if (stop()) { setNotice('停止しました。生成済み画像は保持し、入力が変わった結果は候補のままです'); return; }
   const finish = args.finishText ?? (await import('./draft.js')).finishDraftLettering;
   let recognize = null;

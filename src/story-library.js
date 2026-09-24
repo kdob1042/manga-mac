@@ -78,6 +78,7 @@ export async function fetchStoryLibrary(repo, token, invokeCall, branch = 'main'
   const catalog = validateCatalog(parseJson(catalogText, 'library.json'));
   const sourceMap = validateSourceMap(parseJson(sourceMapText, 'migrations/source-map.json'), {
     catalogWorkIds: new Set(catalog.works.map(work => work.id)),
+    catalogWorks: catalog.works,
   });
   return {repo, branch:selectedBranch, sha, catalog, sourceMap};
 }

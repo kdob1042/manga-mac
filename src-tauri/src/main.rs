@@ -8,12 +8,10 @@ mod policy_transport;
 mod runway;
 pub mod storage;
 mod tripo;
-mod web_asset;
 
-mod blender;
-mod blender_gui;
-mod blender_live;
 mod compositor;
+mod legacy_capture;
+mod scene_asset;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -30,8 +28,6 @@ struct AppState {
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
     local_video: Mutex<Option<(String, local_video::Registration)>>,
-    live_blender: blender_live::Live,
-    blender_gui: blender_gui::Launcher,
     compositor_gate: tokio::sync::Mutex<()>,
 }
 #[tauri::command]
@@ -82,6 +78,91 @@ fn repo_valid(repo: &str) -> bool {
                     .all(|c| c.is_ascii_alphanumeric() || b"._-".contains(&c))
         })
 }
+fn local_source_path(repo: &str, app_data: &std::path::Path) -> Result<Option<PathBuf>, String> {
+    let configured_repo = std::env::var("MANGA_MAC_LOCAL_SOURCE_REPO").ok();
+    let configured_path = std::env::var_os("MANGA_MAC_LOCAL_SOURCE_PATH");
+    let (configured_repo, configured_path) = if configured_repo.is_none()
+        && configured_path.is_none()
+    {
+        let settings_path = app_data.join("local-source.json");
+        if !settings_path.exists() {
+            return Ok(None);
+        }
+        let settings: Value = serde_json::from_slice(&std::fs::read(&settings_path).map_err(err)?)
+            .map_err(|e| format!("ローカル原稿の設定を読めません: {e}"))?;
+        (
+            settings["repo"].as_str().map(String::from),
+            settings["path"].as_str().map(std::ffi::OsString::from),
+        )
+    } else {
+        (configured_repo, configured_path)
+    };
+    match (configured_repo, configured_path) {
+        (None, None) => Ok(None),
+        (Some(name), Some(path)) if name == repo && repo_valid(&name) => {
+            let path = PathBuf::from(path);
+            if !path.is_absolute() || !path.is_dir() {
+                return Err("ローカル原稿リポジトリのパスが不正です".into());
+            }
+            Ok(Some(path))
+        }
+        (Some(_), Some(_)) => Ok(None),
+        _ => Err("ローカル原稿リポジトリの設定が不足しています".into()),
+    }
+}
+async fn local_git(path: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, String> {
+    let output = tokio::process::Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(args)
+        .output()
+        .await
+        .map_err(err)?;
+    if !output.status.success() {
+        return Err(format!(
+            "ローカル原稿の読み取りに失敗しました: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(output.stdout)
+}
+async fn fetch_local_branch(path: &std::path::Path, branch: &str) -> Result<(), String> {
+    if !matches!(branch, "dev" | "main") {
+        return Err("原稿ブランチが不正です".into());
+    }
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    let mut command = tokio::process::Command::new("git");
+    command
+        .arg("-C")
+        .arg(path)
+        .args([
+            "fetch",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "origin",
+            &refspec,
+        ])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(60), command.output())
+        .await
+        .map_err(|_| "原稿リポジトリの更新がタイムアウトしました".to_string())?
+        .map_err(|_| "原稿リポジトリの更新を開始できませんでした".to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "origin/{branch} を取得できません。接続またはGitの認証を確認してください"
+        ));
+    }
+    Ok(())
+}
+async fn local_source_blob(
+    path: &std::path::Path,
+    sha: &str,
+    file: &str,
+) -> Result<Vec<u8>, String> {
+    local_git(path, &["cat-file", "blob", &format!("{sha}:{file}")]).await
+}
 async fn github(repo: &str, path: &str, token: &str, raw: bool) -> Result<String, String> {
     if !repo_valid(repo) {
         return Err("Invalid repository".into());
@@ -109,9 +190,25 @@ async fn github(repo: &str, path: &str, token: &str, raw: bool) -> Result<String
     response.text().await.map_err(err)
 }
 #[tauri::command]
-async fn github_get(repo: String, path: String, token: String) -> Result<String, String> {
-    if path != "commits/main" {
+async fn github_get(
+    repo: String,
+    path: String,
+    token: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    if !repo_valid(&repo) || !matches!(path.as_str(), "commits/main" | "commits/dev") {
         return Err("Unsupported GitHub operation".into());
+    }
+    if let Some(local) = local_source_path(&repo, &state.base)? {
+        let branch = path.strip_prefix("commits/").expect("validated path");
+        fetch_local_branch(&local, branch).await?;
+        let reference = format!("refs/remotes/origin/{branch}^{{commit}}");
+        let output = local_git(&local, &["rev-parse", "--verify", &reference]).await?;
+        let sha = String::from_utf8(output).map_err(err)?.trim().to_string();
+        if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("ローカル原稿のcommitが不正です".into());
+        }
+        return Ok(serde_json::json!({"sha": sha}).to_string());
     }
     github(&repo, &path, &token, false).await
 }
@@ -121,6 +218,7 @@ async fn github_file(
     path: String,
     sha: String,
     token: String,
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
     if sha.len() != 40
         || !sha.bytes().all(|b| b.is_ascii_hexdigit())
@@ -130,6 +228,12 @@ async fn github_file(
         || path.contains(['\\', '?', '#', '%'])
     {
         return Err("Invalid immutable source path".into());
+    }
+    if !repo_valid(&repo) {
+        return Err("Invalid repository".into());
+    }
+    if let Some(local) = local_source_path(&repo, &state.base)? {
+        return String::from_utf8(local_source_blob(&local, &sha, &path).await?).map_err(err);
     }
     github(&repo, &format!("contents/{path}?ref={sha}"), &token, true).await
 }
@@ -163,6 +267,7 @@ async fn github_asset(
     path: String,
     sha: String,
     token: String,
+    state: State<'_, AppState>,
 ) -> Result<Value, String> {
     if !repo_valid(&repo)
         || sha.len() != 40
@@ -171,28 +276,32 @@ async fn github_asset(
     {
         return Err("Invalid immutable source asset path".into());
     }
-    let mut req = client()?
-        .get(format!(
-            "https://api.github.com/repos/{repo}/contents/{path}?ref={sha}"
-        ))
-        .header("Accept", "application/vnd.github.raw+json");
-    if !token.is_empty() {
-        req = req.bearer_auth(token);
-    }
-    let response = req.send().await.map_err(err)?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "GitHub {} — 参照画像の接続権限・レート制限を確認してください",
-            response.status()
-        ));
-    }
-    if response
-        .content_length()
-        .is_some_and(|size| size > 20 * 1024 * 1024)
-    {
-        return Err("参照画像は20MB以下にしてください".into());
-    }
-    let bytes = response.bytes().await.map_err(err)?;
+    let bytes = if let Some(local) = local_source_path(&repo, &state.base)? {
+        local_source_blob(&local, &sha, &path).await?
+    } else {
+        let mut req = client()?
+            .get(format!(
+                "https://api.github.com/repos/{repo}/contents/{path}?ref={sha}"
+            ))
+            .header("Accept", "application/vnd.github.raw+json");
+        if !token.is_empty() {
+            req = req.bearer_auth(token);
+        }
+        let response = req.send().await.map_err(err)?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "GitHub {} — 参照画像の接続権限・レート制限を確認してください",
+                response.status()
+            ));
+        }
+        if response
+            .content_length()
+            .is_some_and(|size| size > 20 * 1024 * 1024)
+        {
+            return Err("参照画像は20MB以下にしてください".into());
+        }
+        response.bytes().await.map_err(err)?.to_vec()
+    };
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("参照画像は20MB以下にしてください".into());
     }
@@ -296,7 +405,6 @@ fn source_register(
         std::fs::create_dir(&root).map_err(err)?;
         let db = rusqlite::Connection::open(root.join("manga.sqlite3")).map_err(err)?;
         storage::initialize(&db)?;
-        blender::initialize(&db)?;
     }
     let entries = storage::source_library::register(
         &state.base,
@@ -530,9 +638,6 @@ async fn tripo_task(
     job_id: String,
     connection_id: String,
     action: String,
-    app: tauri::AppHandle,
-    directory_work: Option<String>,
-    scope: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _guard = state
@@ -543,16 +648,11 @@ async fn tripo_task(
     match action.as_str() {
         "status" => tripo::status(&state.db, &job_id, &connection).await,
         "collect" => {
-            let documents = app.path().document_dir().map_err(err)?;
-            let work = directory_work.ok_or("素材フォルダの対象がありません")?;
-            let shot_scope = scope.ok_or("生成素材の対象がありません")?;
-            let paths = blender_gui::workspace(&documents, &work, &shot_scope)?;
-            let assets = paths["assets"].as_str().ok_or("素材フォルダが不正です")?;
             tripo::collect(
                 &state.db,
                 &job_id,
                 &connection,
-                std::path::Path::new(assets),
+                &state.root.join("scene-assets"),
             )
             .await
         }
@@ -589,7 +689,7 @@ fn resolve_video_image(
                         && c["dependencies_pinned"] == true
                 })
                 .ok_or("固定撮影版がありません")?;
-            let response = blender::capture(
+            let response = legacy_capture::capture(
                 db,
                 root,
                 c["session_id"].as_str().ok_or("Missing session")?,
@@ -694,10 +794,7 @@ async fn local_video_submit(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _video = state.video.try_lock().map_err(|_| "動画処理中です")?;
-    let _engine = state
-        .engine
-        .try_lock()
-        .map_err(|_| "他のAI・Blender処理中です")?;
+    let _engine = state.engine.try_lock().map_err(|_| "他のAI処理中です")?;
     let config = state
         .local_video
         .lock()
@@ -1106,199 +1203,31 @@ fn export_file(app: tauri::AppHandle, name: String, data: String) -> Result<Stri
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
-async fn blender_fork(
-    session_id: String,
-    expected_revision: u64,
-    ids: Vec<String>,
-    state: State<'_, AppState>,
-) -> Result<Vec<Value>, String> {
-    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
-    let mut db = state.db.lock().map_err(err)?;
-    blender::fork_shots(&mut db, &session_id, expected_revision, ids)
-}
-#[tauri::command]
-fn blender_capture(
+fn legacy_capture_read(
     session_id: String,
     request_id: String,
     state: State<AppState>,
 ) -> Result<Value, String> {
     let db = state.db.lock().map_err(err)?;
-    blender::capture(&db, &state.root, &session_id, &request_id)
+    legacy_capture::capture(&db, &state.root, &session_id, &request_id)
 }
+
 #[tauri::command]
-fn blender_register(input: blender::Registration, state: State<AppState>) -> Result<Value, String> {
-    let db = state.db.lock().map_err(err)?;
-    blender::register(&db, input)
+fn scene_asset_import(data: String, state: State<AppState>) -> Result<Value, String> {
+    scene_asset::import_base64(&state.root, &data)
 }
+
 #[tauri::command]
-fn blender_status(session_id: String, state: State<AppState>) -> Result<Value, String> {
-    let db = state.db.lock().map_err(err)?;
-    blender::status(&db, &session_id)
-}
-#[tauri::command]
-fn blender_latest(state: State<AppState>) -> Result<Option<Value>, String> {
-    let db = state.db.lock().map_err(err)?;
-    blender::latest(&db)
-}
-#[tauri::command]
-async fn blender_execute(
-    request: blender::Request,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
-    blender::execute(&state.db, &state.root, request).await
-}
-#[tauri::command]
-async fn blender_download_web_asset(
-    session_id: String,
-    expected_revision: u64,
-    input: web_asset::DownloadRequest,
-    state: State<'_, AppState>,
-) -> Result<web_asset::DownloadedAsset, String> {
-    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
-    {
-        let db = state.db.lock().map_err(err)?;
-        let current = blender::status(&db, &session_id)?;
-        if current["revision"].as_u64() != Some(expected_revision)
-            || current["jobs"].as_array().is_some_and(|jobs| {
-                jobs.iter().any(|job| {
-                    matches!(
-                        job["status"].as_str(),
-                        Some("running" | "unknown" | "candidate")
-                    )
-                })
-            })
-        {
-            return Err("Blenderの版または要求状態を再確認してください".into());
-        }
-    }
-    web_asset::download(&state.root, input).await
-}
-#[tauri::command]
-async fn blender_recover(
-    session_id: String,
-    request_id: String,
-    expected_revision: u64,
-    action: blender::RecoveryAction,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    let _guard = state.engine.try_lock().map_err(|_| "Blenderは処理中です")?;
-    let mut db = state.db.lock().map_err(err)?;
-    blender::recover(
-        &mut db,
-        &state.root,
-        &session_id,
-        &request_id,
-        expected_revision,
-        action,
-    )
-}
-#[tauri::command]
-async fn blender_gui_start(
+fn scene_asset_url(
     app: tauri::AppHandle,
-    input: Value,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    let documents = app.path().document_dir().map_err(err)?;
-    blender_gui::launch(
-        &state.blender_gui,
-        &state.live_blender,
-        &state.base,
-        &documents,
-        input,
-    )
-    .await
-}
-#[tauri::command]
-fn blender_workspace(app: tauri::AppHandle, input: Value) -> Result<Value, String> {
-    let documents = app.path().document_dir().map_err(err)?;
-    let paths = blender_gui::workspace(
-        &documents,
-        input["directory_work"].as_str().ok_or("Missing work")?,
-        input["scope"].as_str().ok_or("Missing shot")?,
-    )?;
-    if input["open_assets"] == true {
-        #[cfg(target_os = "macos")]
-        if !std::process::Command::new("/usr/bin/open")
-            .arg(paths["assets"].as_str().ok_or("Missing assets")?)
-            .status()
-            .map_err(err)?
-            .success()
-        {
-            return Err("素材フォルダを開けませんでした".into());
-        }
-    }
-    Ok(paths)
-}
-#[tauri::command]
-async fn blender_live(
-    action: String,
-    input: Value,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    if action == "connect" {
-        let file = input["file"].as_str().ok_or("Missing Blender file")?;
-        blender_live::validate_working_file(file, &[&state.base, &state.root])?;
-    }
-    blender_live::command(&state.live_blender, &action, input).await
-}
-#[tauri::command]
-fn blender_working_copy(
-    app: tauri::AppHandle,
-    session_id: String,
-    request_id: String,
+    file: String,
+    hash: String,
+    bytes: u64,
     state: State<AppState>,
 ) -> Result<String, String> {
-    let db = state.db.lock().map_err(err)?;
-    let saved = blender::capture(&db, &state.root, &session_id, &request_id)?;
-    let parent = app.path().download_dir().map_err(err)?.join("Manga Mac");
-    std::fs::create_dir_all(&parent).map_err(err)?;
-    let folder = parent.join(format!("blender-working-{}", uuid::Uuid::new_v4()));
-    std::fs::create_dir(&folder).map_err(err)?;
-    let target = folder.join("working.blend");
-    std::fs::copy(
-        state
-            .root
-            .join("blender")
-            .join(request_id)
-            .join("checkpoint.blend"),
-        &target,
-    )
-    .map_err(err)?;
-    if format!("{:x}", Sha256::digest(std::fs::read(&target).map_err(err)?))
-        != saved["state"]["checkpoint"]["hash"]
-            .as_str()
-            .ok_or("Missing checkpoint hash")?
-    {
-        return Err("作業用コピーの検証に失敗しました".into());
-    }
-    Ok(target.to_string_lossy().into())
-}
-#[tauri::command]
-async fn blender_live_candidate(input: Value, state: State<'_, AppState>) -> Result<Value, String> {
-    let _engine = state.engine.lock().await;
-    let result = blender_live::command(&state.live_blender, "candidate", input).await?;
-    let mut db = state.db.lock().map_err(err)?;
-    let observation: Value = [
-        "instance",
-        "epoch",
-        "revision",
-        "file",
-        "scene",
-        "view_layer",
-    ]
-    .into_iter()
-    .map(|key| (key.to_owned(), result[key].clone()))
-    .collect::<serde_json::Map<String, Value>>()
-    .into();
-    let mut saved = blender::store_live_candidate(
-        &mut db,
-        &state.root,
-        &uuid::Uuid::new_v4().to_string(),
-        result,
-    )?;
-    saved["live_observation"] = observation;
-    Ok(saved)
+    let path = scene_asset::verified_path(&state.root, &file, &hash, bytes)?;
+    app.asset_protocol_scope().allow_file(&path).map_err(err)?;
+    Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -1402,7 +1331,6 @@ fn main() {
             };
             let db = rusqlite::Connection::open(dir.join("manga.sqlite3"))?;
             storage::initialize(&db).map_err(std::io::Error::other)?;
-            blender::initialize(&db).map_err(std::io::Error::other)?;
             app.manage(AppState {
                 base,
                 acceptance: Mutex::new(acceptance),
@@ -1413,8 +1341,6 @@ fn main() {
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
                 local_video: Mutex::new(None),
-                live_blender: blender_live::Live::default(),
-                blender_gui: blender_gui::Launcher::default(),
                 compositor_gate: tokio::sync::Mutex::new(()),
             });
             Ok(())
@@ -1431,22 +1357,11 @@ fn main() {
             backup_commands::backup_run,
             backup_commands::backup_restore,
             backup_commands::backup_open,
-            backup_commands::backup_rebind_blender,
             compositor_start,
             compositor_call,
-            blender_live,
-            blender_gui_start,
-            blender_workspace,
-            blender_live_candidate,
-            blender_working_copy,
-            blender_fork,
-            blender_capture,
-            blender_register,
-            blender_download_web_asset,
-            blender_execute,
-            blender_status,
-            blender_latest,
-            blender_recover,
+            legacy_capture_read,
+            scene_asset_import,
+            scene_asset_url,
             github_get,
             github_file,
             github_asset,
@@ -1501,7 +1416,79 @@ fn main() {
 
 #[cfg(test)]
 mod source_asset_tests {
-    use super::{source_asset_mime, source_asset_path_valid};
+    use super::{fetch_local_branch, local_git, source_asset_mime, source_asset_path_valid};
+
+    #[tokio::test]
+    async fn local_source_fetch_advances_tracking_branch_without_checkout() {
+        let root =
+            std::env::temp_dir().join(format!("manga-source-fetch-{}", uuid::Uuid::new_v4()));
+        let remote = root.join("remote.git");
+        let seed = root.join("seed");
+        let local = root.join("local");
+        std::fs::create_dir(&root).unwrap();
+        let git = |dir: &std::path::Path, args: &[&str]| {
+            let result = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        };
+        git(&root, &["init", "--bare", remote.to_str().unwrap()]);
+        git(&root, &["init", seed.to_str().unwrap()]);
+        git(&seed, &["config", "user.name", "Test"]);
+        git(&seed, &["config", "user.email", "test@example.test"]);
+        git(&seed, &["checkout", "-b", "dev"]);
+        std::fs::write(seed.join("manuscript.txt"), "first").unwrap();
+        git(&seed, &["add", "manuscript.txt"]);
+        git(&seed, &["commit", "-m", "first"]);
+        git(
+            &seed,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        git(&seed, &["push", "origin", "dev"]);
+        git(
+            &root,
+            &[
+                "clone",
+                "--no-checkout",
+                remote.to_str().unwrap(),
+                local.to_str().unwrap(),
+            ],
+        );
+        let old = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"])
+            .await
+            .unwrap();
+        std::fs::write(seed.join("manuscript.txt"), "second").unwrap();
+        git(&seed, &["commit", "-am", "second"]);
+        git(&seed, &["push", "origin", "dev"]);
+        fetch_local_branch(&local, "dev").await.unwrap();
+        let new = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"])
+            .await
+            .unwrap();
+        assert_ne!(old, new);
+        assert_eq!(
+            local_git(
+                &local,
+                &[
+                    "cat-file",
+                    "blob",
+                    &format!("{}:manuscript.txt", String::from_utf8_lossy(&new).trim())
+                ]
+            )
+            .await
+            .unwrap(),
+            b"second"
+        );
+        assert!(!local.join("manuscript.txt").exists());
+        assert!(fetch_local_branch(&local, "untrusted").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn source_asset_paths_are_repository_relative_images_only() {

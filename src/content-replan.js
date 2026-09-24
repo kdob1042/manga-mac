@@ -105,7 +105,7 @@ function validateResponse(response, units, characters) {
 
 function replanPrompt(context, instruction) {
   return JSON.stringify({
-    task: '既存コマの内容分割だけを再計画する。ページ、枠形状、画像、文字配置、Blender、動画は変更しない。',
+    task: '既存コマの内容分割だけを再計画する。ページ、枠形状、画像、文字配置、3D構図、動画は変更しない。',
     constraints: [
       'mutableUnits のunitIdsを全て一度ずつ、原文の順序のまま割り当てる',
       'unitの本文を創作・省略・並べ替えしない',
