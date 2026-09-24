@@ -143,7 +143,12 @@ pub async fn list_tools(connection: &Connection) -> Result<Value, String> {
         let mut request = http.post(MCP).bearer_auth(&bearer).header(header::ACCEPT, "application/json, text/event-stream")
             .header("MCP-Protocol-Version", "2025-03-26");
         if let Some(ref value) = session { request = request.header("Mcp-Session-Id", value); }
-        let response = request.json(&json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params}))
+        let payload = if method == "notifications/initialized" {
+            json!({"jsonrpc":"2.0", "method":method})
+        } else {
+            json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params})
+        };
+        let response = request.json(&payload)
             .send().await.map_err(|_| "TapNowのツール一覧を取得できません")?;
         if !response.status().is_success() { return Err(format!("TapNowのMCP接続に失敗しました (HTTP {})", response.status())); }
         if let Some(value) = response.headers().get("Mcp-Session-Id") {
