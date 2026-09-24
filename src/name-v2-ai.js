@@ -56,7 +56,26 @@ export async function proposeNameEdit(project, pageId, instruction, ask) {
   if (!page || !instruction.trim()) fail('scope', '対象ページと編集指示を指定してください');
   const { planSchema } = await import('../contracts/name-plan/schema.mjs');
   const schema = { ...editSchema, properties: { ...editSchema.properties, tree: { $ref: '#/$defs/tree' } }, $defs: planSchema.$defs };
-  const prompt = canonical({ task: '指定ページだけの編集案。コマ数・原稿内容が変わる要求はkind=replan、枠の大小・位置だけならkind=layoutとtree、固定ならkind=lockとlockedを返す。layoutのleaf IDと順序を保持する。実行コードやpointsは出力しない。', instruction, page, panels: plan.panels.filter(panel => treeLeaves(page.tree).includes(panel.id)), locks: state.locks });
+  const currentLayout=project.layout.pages.find(item=>item.id===pageId);
+  const prompt = canonical({
+    role: 'manga-mac/page-edit-interpreter',
+    task: '現在のネームを作り直さず、指定ページだけの局所編集意図を型付きJSONへ変換する。漫画全体の演出、別ページ、原稿本文は変更しない。',
+    constraints: [
+      '枠の大小・段組み・位置だけならkind=layoutとtreeを返し、leaf IDと読書順を保持する',
+      'コマの追加・削除・原稿割当変更が明示された時だけkind=replanを返す。対象はこのページの原稿範囲だけ',
+      'ページ固定の変更だけならkind=lockとlockedを返す',
+      '台詞・ナレーション本文を創作、要約、削除、並べ替えしない',
+      '別ページ、固定領域、画像、動画、3D構図、作画内容を変更しない',
+      '座標points、任意コード、コマンド、URLを出力しない',
+      '指示にない改善を追加しない',
+    ],
+    instruction,
+    page,
+    currentLayout,
+    manualGeometry: !!state.geometryOverride,
+    panels: plan.panels.filter(panel => treeLeaves(page.tree).includes(panel.id)),
+    locks: state.locks,
+  });
   const response = await ask(prompt, schema), value = typeof response === 'string' ? JSON.parse(response) : response;
   // Validate action-specific fields without accepting missing tree/boolean values.
   if (!value || !['layout', 'replan', 'lock'].includes(value.kind) || typeof value.reason !== 'string' || !value.reason.trim() || value.reason.length > 2000 || Object.keys(value).some(key => !['kind', 'reason', 'tree', 'locked'].includes(key))) fail('edit', '編集案の形式が不正です');
