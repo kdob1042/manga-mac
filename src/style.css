@@ -248,3 +248,8 @@ button:focus-visible,input:focus-visible { outline: 3px solid #5b9270; outline-o
 .scene-transform fieldset { border: 1px solid #bec8d1; border-radius: 8px; display: flex; gap: 6px; }
 .scene-transform input[type=number] { width: 68px; }
 .scene-import input { max-width: 160px; }
+
+.mini-page { position: relative; width: 100%; aspect-ratio: 1600 / 2260; background: #fff; }
+.mini-page-panel { position: absolute; display: grid; place-items: center; overflow: hidden; background: #e3e5df; }
+.mini-page-panel img { width: 100%; height: 100%; object-fit: cover; }
+.mini-page-panel span { color: #999; font-size: 9px; white-space: nowrap; }
