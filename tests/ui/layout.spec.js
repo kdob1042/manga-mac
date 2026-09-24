@@ -65,9 +65,13 @@ test('AI layout uses registered router and explicit adoption without regeneratin
  await page.goto('/');await page.getByRole('button',{name:'接続・人物設定',exact:true}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();await page.getByRole('button',{name:'閉じる',exact:true}).click();
  await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();const initial=await page.getByTestId('layout-slot-0').getAttribute('points');
  await page.getByText('演出AIでこのページを配置',{exact:true}).click();await page.getByLabel('コマ割りの指示',{exact:true}).fill('最初のコマを斜めに');await page.getByRole('button',{name:'コマ割りを提案',exact:true}).click();
- await expect(page.getByRole('button',{name:'このコマ割りを採用',exact:true})).toBeEnabled();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',initial);
- expect(await page.evaluate(()=>window.savedProject.jobs.at(-1).status)).toBe('candidate');
- await page.getByRole('button',{name:'このコマ割りを採用',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).not.toHaveAttribute('points',initial);
+ await expect(page.getByRole('button',{name:'このコマ割りを採用',exact:true})).toBeEnabled();
+ const proposed=await page.getByTestId('layout-slot-0').getAttribute('points');expect(proposed).not.toBe(initial);
+ await expect(page.getByRole('img',{name:'AIコマ割り候補（未採用）'})).toBeVisible();
+ const pending=await page.evaluate(()=>window.savedProject);
+ expect(pending.jobs.at(-1).status).toBe('candidate');
+ expect(pending.layout.pages[0].slots[0].points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')).toBe(initial);
+ await page.getByRole('button',{name:'このコマ割りを採用',exact:true}).click();await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points',proposed);
  const saved=await page.evaluate(()=>window.savedProject);expect(saved.panels[0].image).toBe(legacy.panels[0].image);expect(saved.jobs.at(-1).status).toBe('complete');
  expect((await page.evaluate(()=>window.nativeCalls)).some(c=>/generate_image|blender_execute|video_generate/.test(c))).toBe(false);
  await page.screenshot({path:'test-results/free-layout-ai.png',fullPage:true});

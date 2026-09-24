@@ -19,10 +19,12 @@ test('stages defer expensive views, retain unfinished layout input and collect e
   await openSaved(page);
   await expect(page.getByRole('region',{name:'コマ割り編集'})).toHaveCount(0);
   await expect(page.getByRole('region',{name:'セクションの完了管理'})).toHaveCount(0);
-  expect(await page.evaluate(()=>window.canvasExports)).toBe(0);
+  await expect(page.getByRole('img',{name:'作画ページの確認'})).toBeVisible();
+  const artExports=await page.evaluate(()=>window.canvasExports);
+  expect(artExports).toBeGreaterThan(0);
   await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
   await expect(page.getByTestId('layout-slot-0')).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>window.canvasExports)).toBeGreaterThan(0);
+  await expect.poll(()=>page.evaluate(()=>window.canvasExports)).toBeGreaterThan(artExports);
   await page.getByText('演出AIでこのページを配置',{exact:true}).click();
   await page.getByLabel('コマ割りの指示',{exact:true}).fill('最初のコマを大きく');
   const rendered=await page.evaluate(()=>window.canvasExports);

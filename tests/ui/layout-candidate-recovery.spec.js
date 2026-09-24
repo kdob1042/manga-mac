@@ -21,43 +21,101 @@ async function seed(page, { stale = false } = {}) {
   }, { fixture: legacy, stale });
   await page.reload();
   await page.getByRole('button', { name: 'コマ割り編集', exact: true }).click();
-  await page.getByText('演出AIでこのページを配置', { exact: true }).click();
+}
+
+async function geometry(page) {
+  return page.evaluate(async () => {
+    const project = await (await import('/src/bridge.js')).loadProject();
+    const points = slot => slot.points.map(([x, y]) => `${x * 1600},${y * 2260}`).join(' ');
+    return {
+      adopted: project.layout.pages.map(p => points(p.slots[0])),
+      candidates: Object.fromEntries(project.jobs.filter(j => j.layout_candidate?.layout?.pages).map(j =>
+        [j.id, j.layout_candidate.layout.pages.map(p => points(p.slots[0]))]
+      )),
+    };
+  });
 }
 
 test('three saved attempts reopen without a connection, render the target only, and discard stays discarded', async ({ page }) => {
   await seed(page);
+  const expected = await geometry(page);
   const picker = page.getByLabel('保存したコマ割り候補', { exact: true });
   await expect(picker).toHaveValue('saved-0');
   await expect(page.getByRole('img', { name: /AIコマ割り候補/ })).toHaveCount(1);
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-0'][0]);
+  expect(expected.adopted[0]).not.toBe(expected.candidates['saved-0'][0]);
   await page.locator('.thumbnail').nth(1).click();
   await expect(picker).toHaveValue('saved-2');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-2'][1]);
   await picker.selectOption('saved-1');
-  await expect(page.getByText('変更対象: 2ページ。本文・作画・人物は保持。', { exact: true })).toBeVisible();
+  await expect(page.getByText(/変更対象: 2ページ。本文・作画・人物は保持。/)).toBeVisible();
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-1'][1]);
   await page.getByRole('button', { name: '候補を破棄', exact: true }).click();
   await expect(picker.locator('option[value="saved-1"]')).toHaveCount(0);
+  await expect(picker).toHaveValue('');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.adopted[1]);
+  expect((await geometry(page)).adopted).toEqual(expected.adopted);
+  await picker.selectOption('saved-2');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-2'][1]);
   await page.reload();
   await page.getByRole('button', { name: 'コマ割り編集', exact: true }).click();
   await page.locator('.thumbnail').nth(1).click();
-  await page.getByText('演出AIでこのページを配置', { exact: true }).click();
   await expect(picker).toHaveValue('saved-2');
   await expect(picker.locator('option[value="saved-1"]')).toHaveCount(0);
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-2'][1]);
   await page.getByRole('button', { name: 'このコマ割りを採用', exact: true }).click();
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-2'][1]);
   await expect(page.locator('.thumbnail').nth(1)).toHaveAttribute('aria-current', 'page');
   const saved = await page.evaluate(async () => (await import('/src/bridge.js')).loadProject());
   expect(saved.jobs.map(job => job.status)).toEqual(['candidate', 'abandoned', 'complete']);
   expect(saved.panels.every(panel => panel.image === legacy.panels[0].image)).toBe(true);
 });
 
+test('a multi-page proposal previews every proposed page before changing the adopted layout', async ({ page }) => {
+  await seed(page);
+  await page.evaluate(async () => {
+    const { loadProject, saveProject } = await import('/src/bridge.js');
+    const { validateProposal, layoutBase } = await import('/src/layout-ai.js');
+    const project = await loadProject();
+    const pages = structuredClone(project.layout.pages);
+    pages[0].slots[0].points[0][0] += .03;
+    pages[1].slots[0].points[0][0] += .04;
+    project.jobs.push({ id: 'both-pages', kind: 'layout', status: 'candidate', input_hash: layoutBase(project), layout_candidate: {
+      ...validateProposal(project, { reason: '二ページを一緒に配置', pages }, pages.map(p => p.id)), jobId: 'both-pages',
+    } });
+    await saveProject(project);
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'コマ割り編集', exact: true }).click();
+  const expected = await geometry(page);
+  const picker = page.getByLabel('保存したコマ割り候補', { exact: true });
+  await expect(picker).toHaveValue('both-pages');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['both-pages'][0]);
+  await page.getByRole('button', { name: '候補の次ページ', exact: true }).click();
+  await expect(page.getByText('候補 2 / 2 ページ')).toBeVisible();
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['both-pages'][1]);
+  await expect(page.locator('.thumbnail').first()).toHaveAttribute('aria-current', 'page');
+  expect((await geometry(page)).adopted).toEqual(expected.adopted);
+  await page.getByRole('button', { name: '候補を破棄', exact: true }).click();
+  await expect(picker).toHaveValue('');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.adopted[0]);
+  await picker.selectOption('saved-0');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-0'][0]);
+  await picker.selectOption('');
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.adopted[0]);
+  expect((await geometry(page)).adopted).toEqual(expected.adopted);
+});
+
 test('a saved proposal cannot overwrite layout edited after its creation', async ({ page }) => {
   await seed(page, { stale: true });
   await page.locator('.thumbnail').nth(1).click();
+  const before = await geometry(page);
   await expect(page.getByRole('button', { name: 'このコマ割りを採用', exact: true })).toBeDisabled();
   await expect(page.getByText(/作品が変更されたため、この候補は採用できません/)).toBeVisible();
   await expect(page.getByRole('img', { name: /AIコマ割り候補/ })).toHaveCount(0);
-  const before = await page.evaluate(async () => (await (await import('/src/bridge.js')).loadProject()).layout);
+  await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', before.adopted[1]);
   await page.getByRole('button', { name: '候補を破棄', exact: true }).click();
-  const after = await page.evaluate(async () => (await (await import('/src/bridge.js')).loadProject()).layout);
-  expect(after).toEqual(before);
+  expect((await geometry(page)).adopted).toEqual(before.adopted);
 });
 
 test('a damaged saved proposal can be discarded while the layout editor remains usable', async ({ page }) => {
@@ -70,7 +128,6 @@ test('a damaged saved proposal can be discarded while the layout editor remains 
   });
   await page.reload();
   await page.getByRole('button', { name: 'コマ割り編集', exact: true }).click();
-  await page.getByText('演出AIでこのページを配置', { exact: true }).click();
   await page.getByLabel('保存したコマ割り候補', { exact: true }).selectOption('broken');
   await expect(page.getByRole('alert')).toContainText('対象ページを確認できません');
   await expect(page.getByRole('button', { name: 'このコマ割りを採用', exact: true })).toBeDisabled();

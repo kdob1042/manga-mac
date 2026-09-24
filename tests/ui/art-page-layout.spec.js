@@ -39,10 +39,11 @@ test('art page uses the saved export geometry and selects panels without changin
   expect(await proof.getAttribute('src')).toBe(await expected(1));
   const original=page.getByRole('img',{name:'部分修正する元画像'});
   await expect(original).toBeVisible();
+  await original.scrollIntoViewIfNeeded();
   const box=await original.boundingBox();
-  await page.mouse.move(box.x+box.width*.2,box.y+box.height*.2);
+  await page.mouse.move(box.x+box.width*.15,box.y+box.height*.1);
   await page.mouse.down();
-  await page.mouse.move(box.x+box.width*.6,box.y+box.height*.6);
+  await page.mouse.move(box.x+box.width*.4,box.y+box.height*.35);
   await page.mouse.up();
   await expect(page.locator('.art-original-image .region')).toBeVisible();
   await page.getByRole('button',{name:'仕上げ',exact:true}).click();

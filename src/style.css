@@ -56,6 +56,21 @@
 
 .layout-editor input[type="range"] { width: 180px; margin: 0; }
 .layout-editor input[type="checkbox"] { width: auto; }
+.layout-candidate { margin: 16px 0 12px; padding: 14px 18px; border: 1px solid #d5dccf; border-radius: 10px; background: #f8faf6; color: #344b39; font-size: 12px; line-height: 1.6; }
+.layout-candidate > strong { display: block; font-size: 15px; }
+.layout-candidate > p { margin: 6px 0; }
+.layout-candidate .toolbar { position: static; min-height: 0; padding: 8px 0 0; background: transparent; }
+.layout-candidate .toolbar button:first-child:not(:last-child) { font-weight: 600; }
+.layout-candidate.is-preview { margin-bottom: 0; border-color: #86a88b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; background: #eef5ed; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:first-child,
+.layout-editor:has(> .layout-candidate.is-preview) > p,
+.layout-editor:has(> .layout-candidate.is-preview) > details,
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-candidate ~ .toolbar:not(:has(input[aria-label="表示倍率"])),
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-candidate ~ small { display: none; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:has(input[aria-label="表示倍率"]) { position: static; padding: 8px 0; background: transparent; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:has(input[aria-label="表示倍率"]) > :not(:has(input[aria-label="表示倍率"])) { display: none; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { max-height: none; margin-top: 0; padding: clamp(10px, 3vw, 28px); border: 1px solid #86a88b; border-top: 0; border-radius: 0 0 10px 10px; background: #e7e9e4; }
+.layout-editor:has(> .layout-candidate.is-preview) .layout-canvas { background: #fff; box-shadow: 0 4px 24px #23332821; }
 .upscale-compare { display: flex; gap: 12px; }
 .upscale-compare figure { margin: 0; width: 45%; }
 .upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }
