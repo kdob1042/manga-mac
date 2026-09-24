@@ -112,6 +112,31 @@ fn local_source_path(repo: &str, app_data: &std::path::Path) -> Result<Option<Pa
         _ => Err("ローカル原稿リポジトリの設定が不足しています".into()),
     }
 }
+fn github_origin_matches(origin: &str, repo: &str) -> bool {
+    let url = origin.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    [
+        format!("https://github.com/{repo}"),
+        format!("ssh://git@github.com/{repo}"),
+        format!("git@github.com:{repo}"),
+    ]
+    .iter()
+    .any(|expected| url.eq_ignore_ascii_case(expected))
+}
+async fn verified_local_source_path(
+    repo: &str,
+    app_data: &std::path::Path,
+) -> Result<Option<PathBuf>, String> {
+    let local = local_source_path(repo, app_data)?;
+    if let Some(path) = &local {
+        let origin = String::from_utf8(local_git(path, &["remote", "get-url", "origin"]).await?)
+            .map_err(err)?;
+        if !github_origin_matches(&origin, repo) {
+            return Err("ローカル原稿のoriginが選択したGitHubリポジトリと一致しません".into());
+        }
+    }
+    Ok(local)
+}
 async fn local_git(path: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = tokio::process::Command::new("git")
         .arg("-C")
@@ -201,7 +226,7 @@ async fn github_get(
     if !repo_valid(&repo) || !matches!(path.as_str(), "commits/main" | "commits/dev") {
         return Err("Unsupported GitHub operation".into());
     }
-    if let Some(local) = local_source_path(&repo, &state.base)? {
+    if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         let branch = path.strip_prefix("commits/").expect("validated path");
         fetch_local_branch(&local, branch).await?;
         let reference = format!("refs/remotes/origin/{branch}^{{commit}}");
@@ -210,7 +235,7 @@ async fn github_get(
         if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("ローカル原稿のcommitが不正です".into());
         }
-        return Ok(serde_json::json!({"sha": sha}).to_string());
+        return Ok(serde_json::json!({"sha": sha, "transport": "local"}).to_string());
     }
     github(&repo, &path, &token, false).await
 }
@@ -234,7 +259,7 @@ async fn github_file(
     if !repo_valid(&repo) {
         return Err("Invalid repository".into());
     }
-    if let Some(local) = local_source_path(&repo, &state.base)? {
+    if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         return String::from_utf8(local_source_blob(&local, &sha, &path).await?).map_err(err);
     }
     github(&repo, &format!("contents/{path}?ref={sha}"), &token, true).await
@@ -278,7 +303,7 @@ async fn github_asset(
     {
         return Err("Invalid immutable source asset path".into());
     }
-    let bytes = if let Some(local) = local_source_path(&repo, &state.base)? {
+    let bytes = if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         local_source_blob(&local, &sha, &path).await?
     } else {
         let mut req = client()?
@@ -1439,7 +1464,7 @@ fn main() {
 
 #[cfg(test)]
 mod source_asset_tests {
-    use super::{fetch_local_branch, local_git, source_asset_mime, source_asset_path_valid};
+    use super::{fetch_local_branch, github_origin_matches, local_git, source_asset_mime, source_asset_path_valid, verified_local_source_path};
 
     #[tokio::test]
     async fn local_source_fetch_advances_tracking_branch_without_checkout() {
@@ -1510,6 +1535,26 @@ mod source_asset_tests {
         );
         assert!(!local.join("manuscript.txt").exists());
         assert!(fetch_local_branch(&local, "untrusted").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn local_source_rejects_wrong_origin_before_reading() {
+        let root = std::env::temp_dir().join(format!("manga-source-origin-{}", uuid::Uuid::new_v4()));
+        let local = root.join("story");
+        std::fs::create_dir_all(&local).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git").arg("-C").arg(&local).args(args).output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        };
+        git(&["init"]);
+        git(&["remote", "add", "origin", "https://github.com/other/story.git"]);
+        std::fs::write(root.join("local-source.json"), serde_json::json!({"repo":"owner/story", "path":local}).to_string()).unwrap();
+        assert!(verified_local_source_path("owner/story", &root).await.unwrap_err().contains("origin"));
+        git(&["remote", "set-url", "origin", "git@github.com:owner/story.git"]);
+        assert_eq!(verified_local_source_path("owner/story", &root).await.unwrap(), Some(local));
+        assert!(github_origin_matches("https://github.com/owner/story.git", "owner/story"));
+        assert!(!github_origin_matches("https://github.com/owner/story-evil", "owner/story"));
         std::fs::remove_dir_all(root).unwrap();
     }
 

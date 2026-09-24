@@ -21,10 +21,11 @@ export function sourceBranch(value = 'main') {
   return value;
 }
 
-function commitFrom(value, branch) {
-  const sha = parseJson(value, 'commit').sha;
-  if (!SHA.test(sha)) throw Error(`story-libraryの${branch} commitが不正です`);
-  return sha;
+export async function fetchSourceHead(repo, token, invokeCall, branch = 'main') {
+  const selectedBranch = sourceBranch(branch);
+  const head = parseJson(await invokeCall('github_get', {repo, path: `commits/${selectedBranch}`, token}), 'commit');
+  if (!SHA.test(head.sha)) throw Error(`story-libraryの${selectedBranch} commitが不正です`);
+  return {sha:head.sha, transport:head.transport === 'local' ? 'local' : 'github'};
 }
 
 export function validateLibraryCatalog(value) {
@@ -70,7 +71,7 @@ export function manifestOutline(manifest) {
 export async function fetchStoryLibrary(repo, token, invokeCall, branch = 'main') {
   if (typeof invokeCall !== 'function') throw Error('GitHub接続が必要です');
   const selectedBranch = sourceBranch(branch);
-  const sha = commitFrom(await invokeCall('github_get', {repo, path: `commits/${selectedBranch}`, token}), selectedBranch);
+  const {sha, transport} = await fetchSourceHead(repo, token, invokeCall, selectedBranch);
   const [catalogText, sourceMapText] = await Promise.all([
     invokeCall('github_file', {repo, path: 'library.json', sha, token}),
     invokeCall('github_file', {repo, path: 'migrations/source-map.json', sha, token}),
@@ -80,7 +81,7 @@ export async function fetchStoryLibrary(repo, token, invokeCall, branch = 'main'
     catalogWorkIds: new Set(catalog.works.map(work => work.id)),
     catalogWorks: catalog.works,
   });
-  return {repo, branch:selectedBranch, sha, catalog, sourceMap};
+  return {repo, branch:selectedBranch, sha, transport, catalog, sourceMap};
 }
 
 export async function fetchStoryLibraryWork(library, workId, token, invokeCall) {

@@ -11,7 +11,9 @@ export function sourceSummary(previous, next) {
   const beforeReferences=referenceEntries(previous),afterReferences=referenceEntries(next);
   const references=changes(beforeReferences,afterReferences,referenceKey,x=>JSON.stringify([x.path,x.hash,x.name,x.description,x.characterId]));
   const structure=JSON.stringify(previous?.manifest)!==JSON.stringify(next.manifest);
-  return {scenes,settings,references,structure,changed:!previous||structure||!!(scenes.length+settings.length+references.length)};
+  // A name-plan may be the only changed file. Its content is read later from this snapshot SHA.
+  const versionChanged=!!previous?.sha&&previous.sha!==next.sha;
+  return {scenes,settings,references,structure,versionChanged,changed:!previous||versionChanged||structure||!!(scenes.length+settings.length+references.length)};
 }
 
 function referenceEntries(snapshot) {

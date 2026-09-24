@@ -54,7 +54,9 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   const branch = options.branch ?? library?.branch ?? previous?.sync?.source_branch ?? 'main';
   if (!['dev','main'].includes(branch)) throw Error('原稿ブランチはdevまたはmainを選んでください');
   const pinnedSha = options.commit ?? library?.sha ?? null;
-  const sha = pinnedSha ?? JSON.parse(await invokeCall('github_get', {repo, path: `commits/${branch}`, token})).sha;
+  const head = pinnedSha ? null : JSON.parse(await invokeCall('github_get', {repo, path: `commits/${branch}`, token}));
+  const sha = pinnedSha ?? head.sha;
+  const transport = options.transport ?? library?.transport ?? (head?.transport === 'local' ? 'local' : 'github');
   if (!/^[0-9a-f]{40}$/i.test(sha)) throw Error('取得commitが不正です');
   const workId = options.workId ?? library?.workId ?? null;
   const entryPath = options.entryPath ?? options.manifestPath ?? library?.entryPath ?? library?.manifestPath ?? '';
@@ -139,7 +141,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     ...(selectedSceneId ? {selectedSceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),
     protocol: {version: 1, ...(model.format ? {format: model.format} : {}), manifest_schema_version: manifest.schema_version ?? model.schema_version},
-    sync: {source_commit: sha, source_branch:branch, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
+    sync: {source_commit: sha, source_branch:branch, transport, manifest_path: manifestFile.path, ...(sourceRoot ? {source_root: sourceRoot} : {}), manifest_sha256: await sha256(manifestText), at: new Date().toISOString()},
     ...(workId ? {library: {repository: repo, branch, commit: sha, workId, root: options.workRoot ?? library?.root ?? null, manifest_path: manifestFile.path, source_root: sourceRoot, format: model.format ?? options.format ?? null}} : {}),
     at: new Date().toISOString(),
   };
