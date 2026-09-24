@@ -87,3 +87,11 @@ test('image-to-image QA is consent gated, reports without edits and rejects stal
   const changed=structuredClone(adopted);changed.panels[0].image='data:image/png;base64,d29ybGQ=';
   await assert.rejects(assertContinuityQACurrent(changed,qa),/変わりました/);
 });
+
+test('oversized continuity is rejected before an image Job is reserved', async () => {
+  const {project,file}=await fileFixture(1);
+  file.plan.panels[0].continuity={hardConstraints:Array.from({length:12},(_,i)=>`${i}:${'長'.repeat(165)}`)};
+  let current=await adoptNameCandidate(project,await createNameCandidate(project,file));
+  await assert.rejects(producePanels({current:()=>current,commit:async next=>{current=next},panelIds:[current.panels[0].id],generate:async()=>{throw Error('should not send')}}),/長すぎます/);
+  assert.equal(current.jobs.filter(job=>job.kind==='generate').length,0);
+});
