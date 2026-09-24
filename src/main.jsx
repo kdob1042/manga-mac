@@ -126,7 +126,8 @@ function App() {
     setSelectedEpisodeIds(loaded.sourceSelection?.episodeIds ?? s?.episodeIds ?? (s?.episodeId ? [s.episodeId] : []));
     showScene(loaded,loaded.sourceSelection?.sceneId);
     try {
-      const saved=JSON.parse(localStorage.getItem(`manga-ui:${lib?.active??loaded.workId}`)??'null');
+      const viewKey=lib?.active??loaded.workId;
+      const saved=viewKey ? JSON.parse(localStorage.getItem(`manga-ui:${viewKey}`)??'null') : null;
       if(saved&&['source','layout','art','finish'].includes(saved.stage)){
         setStage(loaded.panels.length?saved.stage:'source');
         setPage(Math.min(Math.max(0,saved.page||0),Math.max(0,(loaded.layout?.pages?.length??0)-1)));
@@ -139,8 +140,9 @@ function App() {
   async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
   const snapshot = project.snapshots.find(s => s.id === project.active);
   useEffect(()=>{
-    if(!ready)return;
-    try { localStorage.setItem(`manga-ui:${library?.active??project.workId}`,JSON.stringify({stage,page})); }catch{/* View preferences are optional. */}
+    const viewKey=library?.active??project.workId;
+    if(!ready||!viewKey)return;
+    try { localStorage.setItem(`manga-ui:${viewKey}`,JSON.stringify({stage,page})); }catch{/* View preferences are optional. */}
   },[ready,library?.active,project.workId,stage,page]);
   const layout = useMemo(() => project.layout ?? ensureLayout(project).layout, [project]);
   const layoutProject = useMemo(() => project.layout === layout ? project : {...project,layout}, [project,layout]);
@@ -469,6 +471,7 @@ function App() {
 
     <nav className="workflow-nav" aria-label="漫画の制作工程">{[['source','原稿'],['layout','コマ割り編集'],['art','作画'],['finish','仕上げ']].map(([id,label],i)=><button key={id} aria-label={label} aria-pressed={stage===id} disabled={id!=='source'&&!project.panels.length} onClick={()=>{setStage(id);setRect(null);}}><span>{i+1}</span>{label}</button>)}</nav>
     <p className="stage-hint">{stage==='source'?'原稿を選び、漫画にする範囲を確認します。':stage==='layout'?'コマの大きさ・配置・本文の割当を調整します。':stage==='art'?'コマを選んで作画。下の欄から自然な言葉で修正できます。':'書き出しと同じページです。文字と画質を確認して完了にします。'}</p>
+    {medium==='manga'&&stage==='art'&&project.namePlan?.format==='manga-mac/name-plan/v2'&&<section className="source-reader">{draftTools}</section>}
     <StagePane active={medium==='manga'&&stage==='layout'} aria-label="配置の作業"><LayoutEditor project={layoutProject} active={medium==='manga'&&stage==='layout'} current={current} commit={commit} run={run} busy={!!busy} pageIndex={page} setPage={setPage} model={model} selected={selected} onSelect={id=>{setSelected(id);setRect(null);}} cancelled={()=>cancel.current}/></StagePane>
     {medium==='manga' && stage==='finish' && <PageProof panels={panels} snapshots={project.snapshots} localizations={project.localizations} locale={project.output_locale} page={pageData} imageCrops={layout.imageCrops}/>}
     {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}{busy && <div role="status" className="message progress">◌ {busy}<button onClick={() => { cancel.current = true; cancelLLMRequests().catch(() => setError('LLMの停止状態を確認できませんでした')); setNotice('LLMへ停止を要求しました。画像処理は現在のコマが終わったところで停止します'); }}>ここまでで停止</button></div>}
