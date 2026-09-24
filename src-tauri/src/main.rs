@@ -128,6 +128,30 @@ async fn local_git(path: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, Str
     }
     Ok(output.stdout)
 }
+async fn fetch_local_branch(path: &std::path::Path, branch: &str) -> Result<(), String> {
+    if !matches!(branch, "dev" | "main") {
+        return Err("原稿ブランチが不正です".into());
+    }
+    let refspec = format!("+refs/heads/{branch}:refs/remotes/origin/{branch}");
+    let mut command = tokio::process::Command::new("git");
+    command
+        .arg("-C")
+        .arg(path)
+        .args(["fetch", "--no-tags", "--no-recurse-submodules", "origin", &refspec])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "never")
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(Duration::from_secs(60), command.output())
+        .await
+        .map_err(|_| "原稿リポジトリの更新がタイムアウトしました".to_string())?
+        .map_err(|_| "原稿リポジトリの更新を開始できませんでした".to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "origin/{branch} を取得できません。接続またはGitの認証を確認してください"
+        ));
+    }
+    Ok(())
+}
 async fn local_source_blob(path: &std::path::Path, sha: &str, file: &str) -> Result<Vec<u8>, String> {
     local_git(path, &["cat-file", "blob", &format!("{sha}:{file}")]).await
 }
@@ -164,6 +188,7 @@ async fn github_get(repo: String, path: String, token: String, state: State<'_, 
     }
     if let Some(local) = local_source_path(&repo, &state.base)? {
         let branch = path.strip_prefix("commits/").expect("validated path");
+        fetch_local_branch(&local, branch).await?;
         let reference = format!("refs/remotes/origin/{branch}^{{commit}}");
         let output = local_git(&local, &["rev-parse", "--verify", &reference]).await?;
         let sha = String::from_utf8(output).map_err(err)?.trim().to_string();
@@ -1572,7 +1597,47 @@ fn main() {
 
 #[cfg(test)]
 mod source_asset_tests {
-    use super::{source_asset_mime, source_asset_path_valid};
+    use super::{fetch_local_branch, local_git, source_asset_mime, source_asset_path_valid};
+
+    #[tokio::test]
+    async fn local_source_fetch_advances_tracking_branch_without_checkout() {
+        let root = std::env::temp_dir().join(format!("manga-source-fetch-{}", uuid::Uuid::new_v4()));
+        let remote = root.join("remote.git");
+        let seed = root.join("seed");
+        let local = root.join("local");
+        std::fs::create_dir(&root).unwrap();
+        let git = |dir: &std::path::Path, args: &[&str]| {
+            let result = std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+        };
+        git(&root, &["init", "--bare", remote.to_str().unwrap()]);
+        git(&root, &["init", seed.to_str().unwrap()]);
+        git(&seed, &["config", "user.name", "Test"]);
+        git(&seed, &["config", "user.email", "test@example.test"]);
+        git(&seed, &["checkout", "-b", "dev"]);
+        std::fs::write(seed.join("manuscript.txt"), "first").unwrap();
+        git(&seed, &["add", "manuscript.txt"]);
+        git(&seed, &["commit", "-m", "first"]);
+        git(&seed, &["remote", "add", "origin", remote.to_str().unwrap()]);
+        git(&seed, &["push", "origin", "dev"]);
+        git(&root, &["clone", "--no-checkout", remote.to_str().unwrap(), local.to_str().unwrap()]);
+        let old = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"]).await.unwrap();
+        std::fs::write(seed.join("manuscript.txt"), "second").unwrap();
+        git(&seed, &["commit", "-am", "second"]);
+        git(&seed, &["push", "origin", "dev"]);
+        fetch_local_branch(&local, "dev").await.unwrap();
+        let new = local_git(&local, &["rev-parse", "refs/remotes/origin/dev"]).await.unwrap();
+        assert_ne!(old, new);
+        assert_eq!(local_git(&local, &["cat-file", "blob", &format!("{}:manuscript.txt", String::from_utf8_lossy(&new).trim())]).await.unwrap(), b"second");
+        assert!(!local.join("manuscript.txt").exists());
+        assert!(fetch_local_branch(&local, "untrusted").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn source_asset_paths_are_repository_relative_images_only() {

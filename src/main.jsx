@@ -201,7 +201,7 @@ function App() {
   function openImport() {
     setSettings(false);
     setImportOpen(true);
-    if (!libraryCatalog) void run('原稿一覧を読み込み中', () => refreshLibraryCatalog());
+    void run('原稿一覧を読み込み中', () => refreshLibraryCatalog());
   }
   function showScene(p,sceneId){
     const panel=p.panels.find(panel=>panel.sceneId===sceneId||(panel.sourceRefs??[]).some(r=>r.sceneId===sceneId));
@@ -305,8 +305,8 @@ function App() {
       const targetRepo=options.detail?.repo??repo;
       let libraryOptions={branch:sourceBranch,episodeIds:[episode]};
       if(entry?.work_id){
-        const loaded=options.detail??await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,token,call,sourceBranch);
-        const detail=options.detail??await fetchStoryLibraryWork(loaded,entry.work_id,token,call);
+        const loaded=await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,token,call,sourceBranch);
+        const detail=await fetchStoryLibraryWork(loaded,entry.work_id,token,call);
         setLibraryCatalog({...loaded,...detail});
         const available=new Set(detail.outline.map(item=>item.id));
         const requested=(selectedEpisodeIds.length?selectedEpisodeIds:[episode]).filter(id=>available.has(id));
