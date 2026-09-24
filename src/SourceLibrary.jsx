@@ -16,7 +16,7 @@ export default function SourceLibrary({
   return <div className="source-library-form">
     <section aria-label="原稿ライブラリ">
       <h3>原稿ライブラリ</h3>
-      <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · ${catalog.branch??sourceBranch} @ ${catalog.sha.slice(0,8)}` : ''}</p>
+      <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · 確認済み ${catalog.branch??sourceBranch} @ ${catalog.sha.slice(0,8)} · ${catalog.transport==='local'?'ローカル Git':'GitHub API'}` : ''}</p>
       <label>原稿ブランチ
         <select aria-label="原稿ブランチ" disabled={busy} value={sourceBranch} onChange={e=>run('原稿ブランチを変更',()=>onSourceBranch(e.target.value),'原稿ブランチの取得')}>
           {SOURCE_BRANCHES.map(branch=><option key={branch} value={branch}>{branch}</option>)}

@@ -112,6 +112,31 @@ fn local_source_path(repo: &str, app_data: &std::path::Path) -> Result<Option<Pa
         _ => Err("ローカル原稿リポジトリの設定が不足しています".into()),
     }
 }
+fn github_origin_matches(origin: &str, repo: &str) -> bool {
+    let url = origin.trim().trim_end_matches('/');
+    let url = url.strip_suffix(".git").unwrap_or(url);
+    [
+        format!("https://github.com/{repo}"),
+        format!("ssh://git@github.com/{repo}"),
+        format!("git@github.com:{repo}"),
+    ]
+    .iter()
+    .any(|expected| url.eq_ignore_ascii_case(expected))
+}
+async fn verified_local_source_path(
+    repo: &str,
+    app_data: &std::path::Path,
+) -> Result<Option<PathBuf>, String> {
+    let local = local_source_path(repo, app_data)?;
+    if let Some(path) = &local {
+        let origin = String::from_utf8(local_git(path, &["remote", "get-url", "origin"]).await?)
+            .map_err(err)?;
+        if !github_origin_matches(&origin, repo) {
+            return Err("ローカル原稿のoriginが選択したGitHubリポジトリと一致しません".into());
+        }
+    }
+    Ok(local)
+}
 async fn local_git(path: &std::path::Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let output = tokio::process::Command::new("git")
         .arg("-C")
@@ -201,7 +226,7 @@ async fn github_get(
     if !repo_valid(&repo) || !matches!(path.as_str(), "commits/main" | "commits/dev") {
         return Err("Unsupported GitHub operation".into());
     }
-    if let Some(local) = local_source_path(&repo, &state.base)? {
+    if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         let branch = path.strip_prefix("commits/").expect("validated path");
         fetch_local_branch(&local, branch).await?;
         let reference = format!("refs/remotes/origin/{branch}^{{commit}}");
@@ -210,7 +235,7 @@ async fn github_get(
         if sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("ローカル原稿のcommitが不正です".into());
         }
-        return Ok(serde_json::json!({"sha": sha}).to_string());
+        return Ok(serde_json::json!({"sha": sha, "transport": "local"}).to_string());
     }
     github(&repo, &path, &token, false).await
 }
@@ -234,7 +259,7 @@ async fn github_file(
     if !repo_valid(&repo) {
         return Err("Invalid repository".into());
     }
-    if let Some(local) = local_source_path(&repo, &state.base)? {
+    if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         return String::from_utf8(local_source_blob(&local, &sha, &path).await?).map_err(err);
     }
     github(&repo, &format!("contents/{path}?ref={sha}"), &token, true).await
@@ -252,6 +277,66 @@ fn source_asset_path_valid(path: &str) -> bool {
             Some("png" | "jpg" | "jpeg" | "webp")
         )
 }
+fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Result<Vec<u8>, String> {
+    let has_image_signature = source_asset_mime(body).is_some();
+    let first_non_whitespace = body
+        .iter()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace());
+    let media_type_is_json =
+        content_type.is_some_and(|value| value.to_ascii_lowercase().contains("json"));
+    let is_json =
+        !has_image_signature && (media_type_is_json || first_non_whitespace == Some(b'{'));
+    if !is_json {
+        return Ok(body.to_vec());
+    }
+    let response: Value =
+        serde_json::from_slice(body).map_err(|_| "参照画像の応答を読み取れません".to_string())?;
+    if response["encoding"].as_str() != Some("base64") {
+        return Err("参照画像の応答形式が不正です".into());
+    }
+    let content = response["content"]
+        .as_str()
+        .ok_or("参照画像の内容がありません")?;
+    let compact: Vec<_> = content
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    STANDARD
+        .decode(compact)
+        .map_err(|_| "参照画像のbase64が不正です".into())
+}
+#[cfg(test)]
+mod source_asset_tests {
+    use super::*;
+
+    #[test]
+    fn raw_and_contents_json_jpeg_responses_produce_the_same_bytes() {
+        let jpeg = b"\xff\xd8\xffsample";
+        let raw = source_asset_response_bytes(Some("image/jpeg"), jpeg).unwrap();
+        let raw_with_json_media_type =
+            source_asset_response_bytes(Some("application/vnd.github.raw+json"), jpeg).unwrap();
+        let content = STANDARD.encode(jpeg);
+        let json = format!(r#"{{"encoding":"base64","content":"{content}"}}"#);
+        let decoded =
+            source_asset_response_bytes(Some("application/json; charset=utf-8"), json.as_bytes())
+                .unwrap();
+        assert_eq!(raw, jpeg);
+        assert_eq!(raw_with_json_media_type, jpeg);
+        assert_eq!(decoded, jpeg);
+        assert_eq!(source_asset_mime(&decoded), Some("image/jpeg"));
+    }
+
+    #[test]
+    fn malformed_contents_json_is_rejected() {
+        assert!(source_asset_response_bytes(
+            Some("application/json"),
+            br#"{"encoding":"base64","content":"not base64"}"#
+        )
+        .is_err());
+    }
+}
+
 fn source_asset_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
@@ -278,13 +363,12 @@ async fn github_asset(
     {
         return Err("Invalid immutable source asset path".into());
     }
-    let bytes = if let Some(local) = local_source_path(&repo, &state.base)? {
+    let bytes = if let Some(local) = verified_local_source_path(&repo, &state.base).await? {
         local_source_blob(&local, &sha, &path).await?
     } else {
+        let url = format!("https://api.github.com/repos/{repo}/contents/{path}?ref={sha}");
         let mut req = client()?
-            .get(format!(
-                "https://api.github.com/repos/{repo}/contents/{path}?ref={sha}"
-            ))
+            .get(url.as_str())
             .header("Accept", "application/vnd.github.raw+json");
         if !token.is_empty() {
             req = req.bearer_auth(token);
@@ -296,13 +380,70 @@ async fn github_asset(
                 response.status()
             ));
         }
+        // The raw media type normally returns bytes directly. Keep the contents
+        // API JSON/base64 shape as a compatibility fallback for proxies or API
+        // responses that ignore the requested media type.
+        let max_response_bytes = 28 * 1024 * 1024;
         if response
             .content_length()
-            .is_some_and(|size| size > 20 * 1024 * 1024)
+            .is_some_and(|size| size > max_response_bytes)
         {
             return Err("参照画像は20MB以下にしてください".into());
         }
-        response.bytes().await.map_err(err)?.to_vec()
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let body = response.bytes().await.map_err(err)?;
+        if body.len() as u64 > max_response_bytes {
+            return Err("参照画像は20MB以下にしてください".into());
+        }
+        let decoded = source_asset_response_bytes(content_type.as_deref(), &body);
+        if decoded
+            .as_ref()
+            .ok()
+            .and_then(|bytes| source_asset_mime(bytes))
+            .is_some()
+        {
+            decoded?
+        } else {
+            // An intermediary may return a non-image body despite a successful
+            // raw response. Ask for the pinned file's JSON/base64 representation.
+            let mut json_req = client()?
+                .get(url.as_str())
+                .header("Accept", "application/vnd.github+json");
+            if !token.is_empty() {
+                json_req = json_req.bearer_auth(&token);
+            }
+            let json_response = json_req.send().await.map_err(err)?;
+            if !json_response.status().is_success() {
+                return Err(format!(
+                    "GitHub {} — 参照画像の再取得に失敗しました",
+                    json_response.status()
+                ));
+            }
+            if json_response
+                .content_length()
+                .is_some_and(|size| size > max_response_bytes)
+            {
+                return Err("参照画像は20MB以下にしてください".into());
+            }
+            let json_body = json_response.bytes().await.map_err(err)?;
+            if json_body.len() as u64 > max_response_bytes {
+                return Err("参照画像は20MB以下にしてください".into());
+            }
+            let recovered = source_asset_response_bytes(Some("application/json"), &json_body)?;
+            if source_asset_mime(&recovered).is_none() {
+                return Err(format!(
+                    "参照画像の実形式がPNG/JPEG/WebPではありません (commit={}, response_type={}, response_bytes={})",
+                    &sha[..12],
+                    content_type.as_deref().unwrap_or("unknown"),
+                    body.len()
+                ));
+            }
+            recovered
+        }
     };
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("参照画像は20MB以下にしてください".into());
@@ -1439,7 +1580,10 @@ fn main() {
 
 #[cfg(test)]
 mod source_asset_tests {
-    use super::{fetch_local_branch, local_git, source_asset_mime, source_asset_path_valid};
+    use super::{
+        fetch_local_branch, github_origin_matches, local_git, source_asset_mime,
+        source_asset_path_valid, verified_local_source_path,
+    };
 
     #[tokio::test]
     async fn local_source_fetch_advances_tracking_branch_without_checkout() {
@@ -1510,6 +1654,64 @@ mod source_asset_tests {
         );
         assert!(!local.join("manuscript.txt").exists());
         assert!(fetch_local_branch(&local, "untrusted").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn local_source_rejects_wrong_origin_before_reading() {
+        let root =
+            std::env::temp_dir().join(format!("manga-source-origin-{}", uuid::Uuid::new_v4()));
+        let local = root.join("story");
+        std::fs::create_dir_all(&local).unwrap();
+        let git = |args: &[&str]| {
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&local)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        git(&["init"]);
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/other/story.git",
+        ]);
+        std::fs::write(
+            root.join("local-source.json"),
+            serde_json::json!({"repo":"owner/story", "path":local}).to_string(),
+        )
+        .unwrap();
+        assert!(verified_local_source_path("owner/story", &root)
+            .await
+            .unwrap_err()
+            .contains("origin"));
+        git(&[
+            "remote",
+            "set-url",
+            "origin",
+            "git@github.com:owner/story.git",
+        ]);
+        assert_eq!(
+            verified_local_source_path("owner/story", &root)
+                .await
+                .unwrap(),
+            Some(local)
+        );
+        assert!(github_origin_matches(
+            "https://github.com/owner/story.git",
+            "owner/story"
+        ));
+        assert!(!github_origin_matches(
+            "https://github.com/owner/story-evil",
+            "owner/story"
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 

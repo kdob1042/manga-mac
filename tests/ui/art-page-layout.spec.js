@@ -30,7 +30,7 @@ test('art page uses the saved export geometry and selects panels without changin
     const {pagePanels}=await import('/src/layout.js');
     const {pagePNG}=await import('/src/render.js');
     const project=await loadProject(),target=project.layout.pages[i];
-    return pagePNG(pagePanels(project,target),project.snapshots,project.localizations,project.output_locale,target,true,project.layout.imageCrops);
+    return pagePNG(pagePanels(project,target),project.snapshots,project.localizations,project.output_locale,target,true,project.layout.imageCrops,{hideUnplacedCaptions:true});
   },index);
   expect(await proof.getAttribute('src')).toBe(await expected(0));
   await expect(page.getByRole('button',{name:'1コマ目を選択'})).toHaveCount(1);
@@ -57,5 +57,63 @@ test('art page uses the saved export geometry and selects panels without changin
   await page.getByRole('button',{name:'仕上げ',exact:true}).click();
   const final=page.getByRole('img',{name:'書き出しページの確認'});
   await expect(final).toBeVisible();
-  expect(await final.getAttribute('src')).toBe(await expected(1));
+  expect(await final.getAttribute('src')).toBe(await page.evaluate(async()=>{
+    const {loadProject}=await import('/src/bridge.js'),{pagePNG}=await import('/src/render.js'),{pagePanels}=await import('/src/layout.js');
+    const project=await loadProject(),target=project.layout.pages[1];
+    return pagePNG(pagePanels(project,target),project.snapshots,project.localizations,project.output_locale,target,false,project.layout.imageCrops);
+  }));
+  await page.getByRole('button',{name:'作画',exact:true}).first().click();
+  const slot=page.getByTestId('art-slot-5');
+  const before=await slot.getAttribute('points');
+  const baseline=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');return loadProject();});
+  await page.getByTestId('art-handle-1').scrollIntoViewIfNeeded();
+  const handle=await page.getByTestId('art-handle-1').boundingBox();
+  await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x+handle.width/2-8,handle.y+handle.height/2,{steps:3});
+  await expect(slot).not.toHaveAttribute('points',before);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await expect(slot).toHaveAttribute('points',before);
+  await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x+handle.width/2-12,handle.y+handle.height/2,{steps:5});
+  await expect(slot).not.toHaveAttribute('points',before); // the frame follows the pointer before saving
+  await page.mouse.up();
+  await expect(slot).not.toHaveAttribute('points',before);
+  await expect(page.getByRole('button',{name:'作画',exact:true}).first()).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>{const p=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');return loadProject();});return p.layout.pages[1].slots[5].points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ');}).not.toBe(before);
+  const saved=await page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js');return loadProject();});
+  expect(saved.layout.pages[1].slots[5].panelId).toBe('panel-6');
+  expect(saved.layout.pages[0]).toEqual(baseline.layout.pages[0]);
+  expect(saved.layout.pages[2]).toEqual(baseline.layout.pages[2]);
+  expect(saved.panels).toEqual(baseline.panels);
+  await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
+  await page.getByRole('button',{name:'枠をUndo'}).click();
+  await expect(page.getByTestId('layout-slot-5')).toHaveAttribute('points',before);
+});
+
+test('art omits unplaced prose while saved lettering keeps the export appearance',async({page})=>{
+  await page.goto('/');
+  const result=await page.evaluate(async fixture=>{
+    const {pagePNG}=await import('/src/render.js');
+    const {template}=await import('/src/layout.js');
+    const {defaultLettering}=await import('/src/lettering.js');
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=100;
+    const ctx=canvas.getContext('2d');ctx.fillStyle='#0873e6';ctx.fillRect(0,0,100,100);
+    const panel={...fixture.panels[0],image:canvas.toDataURL()};
+    const pg={id:'one',slots:template(1,[panel.id])};
+    const preview=await pagePNG([panel],fixture.snapshots,[],'ja',pg,true,{}, {hideUnplacedCaptions:true});
+    const unfinishedOutput=await pagePNG([panel],fixture.snapshots,[],'ja',pg,false);
+    const savedCaption={...panel,lettering:defaultLettering(panel)};
+    const savedCaptionPreview=await pagePNG([savedCaption],fixture.snapshots,[],'ja',pg,true,{}, {hideUnplacedCaptions:true});
+    const savedCaptionOutput=await pagePNG([savedCaption],fixture.snapshots,[],'ja',pg,false);
+    const lettered={...panel,lettering:{...defaultLettering(panel),mode:'balloons'}};
+    const letteredPreview=await pagePNG([lettered],fixture.snapshots,[],'ja',pg,true,{}, {hideUnplacedCaptions:true});
+    const letteredOutput=await pagePNG([lettered],fixture.snapshots,[],'ja',pg,false);
+    return {preview,unfinishedOutput,savedCaptionPreview,savedCaptionOutput,letteredPreview,letteredOutput};
+  },legacy);
+  expect(result.preview).not.toBe(result.unfinishedOutput);
+  expect(result.savedCaptionPreview).toBe(result.savedCaptionOutput);
+  expect(result.letteredPreview).toBe(result.letteredOutput);
 });

@@ -1,9 +1,11 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {sourceSummary} from '../src/source-sync.js';
 import {syncSource} from '../src/pipeline.js';
-test('import summary reports deletions, settings and image changes but ignores commit-only changes',()=>{
+test('import summary reports content and commit-only changes for pinned name-plan updates',()=>{
  const a={id:'a',sha:'a',manifest:{work:'A'},scenes:[{id:'S1',text:'A'},{id:'S2',text:'B'}],settings:[{id:'V',text:'x'}],references:[{path:'a.png',hash:'a'}]};
- assert.equal(sourceSummary(a,{...a,id:'b',sha:'b'}).changed,false);
+ assert.deepEqual(sourceSummary(a,{...a,id:'b',sha:'b'}).versionChanged,true);
+ assert.equal(sourceSummary(a,{...a,id:'b',sha:'b'}).changed,true);
+ assert.equal(sourceSummary(a,{...a}).changed,false);
  const b={...a,scenes:[{id:'S1',text:'C'}],settings:[{id:'V',text:'y'}],references:[{path:'a.png',hash:'b'}]};
  assert.deepEqual(sourceSummary(a,b).scenes,['変更: S1','削除: S2']);assert.deepEqual(sourceSummary(a,b).settings,['変更: V']);assert.deepEqual(sourceSummary(a,b).references,['変更: a.png']);
  assert.equal(sourceSummary(null,a).changed,true);
@@ -52,7 +54,20 @@ test('imports manuscript while recording a declared image with invalid bytes',as
  const snapshot=await syncSource('owner/story','','P01',null,invoke,{commit:sha,branch:'dev'});
  assert.deepEqual(snapshot.scenes.map(scene=>scene.id),['P01-01']);
  assert.deepEqual(snapshot.references.map(reference=>reference.characterId),['yu']);
- assert.deepEqual(snapshot.unavailableReferences,[{name:'人物B',path:'assets/chihiro.jpg',reason:'invalid_image_format'}]);
+ assert.deepEqual(snapshot.unavailableReferences,[{name:'人物B',path:'assets/chihiro.jpg',reason:'invalid_image_format',diagnostic:'参照画像の実形式がPNG/JPEG/WebPではありません'}]);
+ let retried=false;
+ const recovered=await syncSource('owner/story','','P01',snapshot,async(command,args)=>{
+  if(command==='github_asset'&&args.path==='assets/chihiro.jpg'){
+   retried=true;
+   return {image:'data:image/jpeg;base64,/9j/',hash:'a'.repeat(64),mime:'image/jpeg',size:3};
+  }
+  return invoke(command,args);
+ },{commit:sha,branch:'dev'});
+ assert.equal(retried,true);
+ assert.deepEqual(recovered.references.map(reference=>reference.characterId),['yu','chihiro']);
+ assert.equal(recovered.unavailableReferences,undefined);
+ assert.notEqual(recovered.id,snapshot.id);
+ assert.equal(sourceSummary(snapshot,recovered).changed,true);
  await assert.rejects(syncSource('owner/story','','P01',null,async(command,args)=>{
   if(command==='github_asset')throw Error('connection failed');
   return invoke(command,args);

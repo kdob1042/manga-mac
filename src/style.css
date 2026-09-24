@@ -16,11 +16,16 @@
 .page-proof { display: block; width: min(100%, 800px); margin: 16px auto; }
 .page-proof-frame { position: relative; width: min(100%, 800px); margin: 16px auto; }
 .page-proof-frame > .page-proof { width: 100%; margin: 0; }
-.art-page-targets { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-.art-page-targets polygon { fill: transparent; stroke: transparent; stroke-width: 9; cursor: pointer; pointer-events: all; }
+.art-page-targets { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; touch-action: none; user-select: none; }
+.art-page-targets polygon { fill: transparent; stroke: transparent; stroke-width: 9; cursor: move; pointer-events: all; }
 .art-page-targets polygon.selected { stroke: #2d8a56; stroke-width: 11; }
 .art-page-targets polygon:focus-visible { stroke: #e96e40; stroke-width: 11; outline: none; }
+.art-page-targets .art-frame-edge { stroke: transparent; stroke-width: 40; pointer-events: stroke; cursor: grab; }
+.art-page-targets .art-frame-handle { fill: #2d8a56; stroke: #fff; stroke-width: 7; pointer-events: all; cursor: grab; }
+.art-page-targets .art-frame-corner { fill: #fff; stroke: #2d8a56; stroke-width: 7; pointer-events: all; cursor: crosshair; }
+.art-frame-hint { max-width: 800px; margin: 8px auto; color: #526650; font-size: 12px; }
 .art-panel-source { max-width: 800px; margin: 14px auto; padding: 12px; background: #fff; font-size: 12px; white-space: pre-wrap; }
+.art-lettering-notice { max-width: 800px; margin: 14px auto; color: #607268; font-size: 12px; }
 .art-original-edit { max-width: 500px; margin: 30px auto 70px; padding: 12px; background: #fff; }
 .art-original-edit p { font-size: 12px; color: #526650; }
 .art-original-image { position: relative; width: min(100%, 480px); touch-action: none; user-select: none; cursor: crosshair; }
@@ -51,6 +56,7 @@
 .layout-canvas { display: block; max-width: none; height: auto; touch-action: none; user-select: none; }
 .layout-canvas polygon { cursor: move; }
 .layout-canvas circle { cursor: crosshair; }
+.layout-canvas .edge-handle { cursor: grab; }
 .layout-editor textarea { width: 100%; min-height: 70px; }
 .layout-editor small { display: block; }
 
