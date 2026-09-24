@@ -13,11 +13,78 @@ export function resizeQuadEdge(points,edge,delta){
  if(!length)return result;
  const nx=-ey/length,ny=ex/length;
  const distance=delta[0]*PAGE.width*nx+delta[1]*PAGE.height*ny;
- for(const index of [edge,(edge+1)%4]){
-  result[index][0]+=distance*nx/PAGE.width;
-  result[index][1]+=distance*ny/PAGE.height;
+ // Slide the edge along its neighbours. Translating both corners along the
+ // normal would pull a slanted edge away from the page's top/bottom margin.
+ for(const [index,other] of [[edge,(edge+3)%4],[(edge+1)%4,(edge+2)%4]]){
+  const dx=(points[index][0]-points[other][0])*PAGE.width,dy=(points[index][1]-points[other][1])*PAGE.height;
+  const projection=dx*nx+dy*ny;
+  if(Math.abs(projection)<1e-8)return points.map(point=>[...point]);
+  result[index][0]+=distance*dx/projection/PAGE.width;
+  result[index][1]+=distance*dy/projection/PAGE.height;
  }
  return result;
+}
+
+// Shared by the art proof and layout editor. All tolerances are CSS pixels,
+// independent of page zoom. This function never mutates the saved slot.
+export function dragSlotFrame(slot,{edge=null,vertex=null},delta,{page,width,height,snap=true}){
+ const size=[width,height],original=slot.points,b= bounds(original);
+ const minimum=[Math.min(b.width,24/width),Math.min(b.height,24/height)];
+ const build=d=>{
+  let points=original.map(p=>[...p]),overflow=slot.overflow;
+  if(vertex!==null)points[vertex]=points[vertex].map((v,axis)=>v+d[axis]);
+  else if(edge!==null)points=resizeQuadEdge(original,edge,d);
+  else {
+   const all=[...points,...(overflow?.points??[])];
+   const shift=d.map((v,axis)=>Math.max(-Math.min(...all.map(p=>p[axis])),Math.min(1-Math.max(...all.map(p=>p[axis])),v)));
+   points=points.map(p=>p.map((v,axis)=>v+shift[axis]));
+   if(overflow)overflow={...overflow,points:overflow.points.map(p=>p.map((v,axis)=>v+shift[axis]))};
+  }
+  // Eliminate floating-point spill at an exact page boundary.
+  points=points.map(p=>p.map(v=>Math.abs(v)<1e-10?0:Math.abs(v-1)<1e-10?1:v));
+  return {...slot,points,...(overflow?{overflow}:{})};
+ };
+ const acceptable=value=>{
+  const box=bounds(value.points);
+  return validQuad(value.points)&&box.width>=minimum[0]-1e-9&&box.height>=minimum[1]-1e-9
+   &&value.points.every((p,i)=>Math.hypot(...p.map((v,a)=>(v-value.points[(i+1)%4][a])*size[a]))>=Math.min(16,Math.hypot(...original[i].map((v,a)=>(v-original[(i+1)%4][a])*size[a])))-1e-7)
+   &&(!value.overflow||value.points.every(p=>inside(p,value.overflow.points)));
+ };
+ let d=[...delta],result=build(d);
+ if(!acceptable(result)){
+  let low=0,high=1;
+  for(let i=0;i<40;i++){const t=(low+high)/2;if(acceptable(build(delta.map(v=>v*t))))low=t;else high=t;}
+  d=delta.map(v=>v*low);result=build(d);
+ }
+ const targets=[0,1].map(axis=>[...new Set([0,1,...(page?.slots??[slot]).flatMap(s=>s.points.map(p=>p[axis]))])]);
+ const indices=vertex!==null?[vertex]:edge!==null?[edge,(edge+1)%4]:[0,1,2,3];
+ if(snap){
+  if(edge!==null){
+   // Edge motion has one degree of freedom. Snap the closest endpoint to a
+   // guide without bending the edge or releasing the neighbouring edges.
+   const a=original[edge],b=original[(edge+1)%4],ex=(b[0]-a[0])*PAGE.width,ey=(b[1]-a[1])*PAGE.height,len=Math.hypot(ex,ey);
+   const unit=[-ey/len/PAGE.width,ex/len/PAGE.height],step=build(d.map((v,i)=>v+unit[i]));
+   const options=[];
+   for(const i of indices)for(let axis=0;axis<2;axis++){
+    const slope=step.points[i][axis]-result.points[i][axis];if(Math.abs(slope)<1e-10)continue;
+    for(const target of targets[axis]){
+     const distance=(target-result.points[i][axis])*size[axis];if(Math.abs(distance)>6)continue;
+     const amount=(target-result.points[i][axis])/slope;
+     const candidate=build(d.map((v,j)=>v+amount*unit[j]));
+     const travel=Math.max(...indices.map(k=>Math.hypot(...candidate.points[k].map((v,j)=>(v-result.points[k][j])*size[j]))));
+     if(travel<=8&&acceptable(candidate))options.push({candidate,travel});
+    }
+   }
+   options.sort((a,b)=>a.travel-b.travel);if(options.length)result=options[0].candidate;
+  }else for(let axis=0;axis<2;axis++){
+   const options=indices.flatMap(i=>targets[axis].map(target=>target-result.points[i][axis])).filter(v=>Math.abs(v)*size[axis]<=6).sort((a,b)=>Math.abs(a)-Math.abs(b));
+   for(const shift of options){const next=[...d];next[axis]+=shift;const candidate=build(next);if(acceptable(candidate)){d=next;result=candidate;break;}}
+  }
+ }
+ // Returning to the original guide is a no-op, including Undo history.
+ result.points=result.points.map((p,i)=>p.map((v,axis)=>Math.abs(v-original[i][axis])<1e-10?original[i][axis]:v));
+ const guides=snap?targets.flatMap((values,axis)=>values.filter(value=>indices.some(i=>Math.abs(result.points[i][axis]-value)<1e-8)).map(value=>({axis,value}))):[];
+ return {slot:result,guides};
 }
 export function inside(p,points){return points.every((a,i)=>cross(a,points[(i+1)%4],p)>=-1e-9);}
 export function overlaps(a,b){return ![a,b].some(poly=>poly.some((p,i)=>{const q=poly[(i+1)%4],axis=[-(q[1]-p[1]),q[0]-p[0]],project=v=>v[0]*axis[0]+v[1]*axis[1];const aa=a.map(project),bb=b.map(project);return Math.max(...aa)<=Math.min(...bb)+1e-9||Math.max(...bb)<=Math.min(...aa)+1e-9;}));}

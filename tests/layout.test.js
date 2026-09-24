@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {template,initialLayout,ensureLayout,validateLayout,validQuad,resizeQuadEdge,layoutWarnings,reflowLayout,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
+import {template,initialLayout,ensureLayout,validateLayout,validQuad,resizeQuadEdge,dragSlotFrame,bounds,layoutWarnings,reflowLayout,changeLayout,undoLayout,contentBox,inside} from '../src/layout.js';
 import {validateProposal,adoptLayoutProposal} from '../src/layout-ai.js';
 const panels=Array.from({length:10},(_,i)=>({id:`p${i}`,unitIds:[`u${i}`],image:`image${i}`}));
 const project=()=>ensureLayout({panels,active:'source',jobs:[]});
@@ -49,6 +49,41 @@ test('dragging an edge resizes only its two corners and keeps undoable layout hi
  const changed=changeLayout(p,layout,'枠サイズ調整',{pageIds:[layout.pages[0].id]});
  assert.deepEqual(changed.layout.pages.slice(1),p.layout.pages.slice(1));assert.equal(changed.panels,p.panels);
  assert.deepEqual(undoLayout(changed).layout,p.layout);
+});
+test('slanted edge resize preserves adjacent margin lines instead of translating the corners',()=>{
+ const points=[[.1,0],[.7,0],[.9,1],[.1,1]],next=resizeQuadEdge(points,1,[-.12,.05]);
+ assert.deepEqual(next[0],points[0]);assert.deepEqual(next[3],points[3]);
+ assert.equal(next[1][1],0);assert.equal(next[2][1],1);
+ assert.ok(Math.abs(next[2][0]-next[1][0]-.2)<1e-10);assert.ok(validQuad(next));
+});
+test('frame snapping uses screen distance, neighbouring margins and can be released',()=>{
+ const slot={id:'a',points:[[.1,.1],[.5,.1],[.5,.5],[.1,.5]]};
+ const page={slots:[slot,{id:'b',points:[[.1,.6],[.8,.6],[.8,.9],[.1,.9]]}]};
+ for(const width of [400,800,1200]){
+  const options={page,width,height:width*2260/1600},delta=[.3-4/width,0];
+  const {slot:next,guides}=dragSlotFrame(slot,{edge:1},delta,options);
+  assert.ok(Math.abs(next.points[1][0]-.8)<1e-9);assert.ok(guides.some(g=>g.axis===0&&g.value===.8));
+  assert.equal(next.points[1][1],.1);assert.deepEqual(next.points[0],slot.points[0]);
+  const free=dragSlotFrame(slot,{edge:1},delta,{...options,snap:false}).slot;
+  assert.ok(Math.abs(free.points[1][0]-(.8-4/width))<1e-9);
+ }
+ assert.equal(slot.points[1][0],.5);
+});
+test('extreme frame drags clamp at the page or minimum size and keep overflow with an explicit move',()=>{
+ const slot={id:'a',points:[[.1,.1],[.5,.1],[.5,.5],[.1,.5]]},options={page:{slots:[slot]},width:800,height:1130};
+ const expanded=dragSlotFrame(slot,{edge:1},[10,0],options).slot;
+ assert.equal(expanded.points[1][0],1);assert.ok(validQuad(expanded.points));
+ const tiny=dragSlotFrame(slot,{edge:1},[-10,0],options).slot;
+ assert.ok(validQuad(tiny.points));assert.ok(bounds(tiny.points).width*800>=23.99);
+ assert.deepEqual(tiny.points[0],slot.points[0]);
+ const corner=dragSlotFrame(slot,{vertex:0},[10,10],options).slot;
+ assert.ok(validQuad(corner.points));assert.notDeepEqual(corner.points,slot.points);
+ const overflow={points:[[0,0],[.7,0],[.7,.7],[0,.7]],z:2};
+ const moved=dragSlotFrame({...slot,overflow},{},[.1,.1],options).slot;
+ assert.deepEqual(moved.overflow.points,overflow.points.map(p=>p.map(v=>v+.1)));
+ assert.ok(moved.points.every(p=>inside(p,moved.overflow.points)));
+ const limited=dragSlotFrame({...slot,overflow},{edge:1},[10,0],options).slot;
+ assert.ok(limited.points.every(p=>inside(p,overflow.points)));assert.deepEqual(limited.overflow,overflow);
 });
 test('reflow pulls and pushes panels across every following page without touching artwork or source order',()=>{
  const p=project(),beforePanels=p.panels,beforeJobs=p.jobs;
