@@ -2,6 +2,31 @@ import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 const legacy = JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json', import.meta.url)));
 
+test('page thumbnails use saved asymmetric geometry rather than equal two-column cells', async ({ page }) => {
+  await page.goto('/');
+  await page.evaluate(async fixture => {
+    const {saveProject} = await import('/src/bridge.js');
+    const {initialLayout} = await import('/src/layout.js');
+    fixture.panels = Array.from({length: 3}, (_, i) => ({...fixture.panels[0], id: `thumbnail-${i}`, image: null}));
+    fixture.layout = initialLayout(fixture.panels);
+    fixture.layout.pages[0].slots.forEach((slot, i) => {
+      slot.points = [
+        [[.04,.03],[.96,.03],[.96,.40],[.04,.40]],
+        [[.51,.43],[.96,.43],[.96,.96],[.51,.96]],
+        [[.04,.43],[.49,.43],[.49,.96],[.04,.96]],
+      ][i];
+    });
+    await saveProject(fixture);
+  }, legacy);
+  await page.reload();
+  const panels = page.locator('.thumbnail').first().locator('.mini-page-panel');
+  await expect(panels).toHaveCount(3);
+  const top = await panels.nth(0).boundingBox();
+  const bottom = await panels.nth(1).boundingBox();
+  expect(top.width).toBeGreaterThan(bottom.width * 1.9);
+  expect(top.height).toBeLessThan(bottom.height);
+});
+
 test('adding a page does not leave another page panel selected for finishing', async ({ page }) => {
   await page.goto('/');
   await page.evaluate(async fixture => { await (await import('/src/bridge.js')).saveProject(fixture); }, legacy);
