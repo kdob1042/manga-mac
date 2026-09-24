@@ -252,6 +252,54 @@ fn source_asset_path_valid(path: &str) -> bool {
             Some("png" | "jpg" | "jpeg" | "webp")
         )
 }
+fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Result<Vec<u8>, String> {
+    let is_json = content_type
+        .is_some_and(|value| value.to_ascii_lowercase().contains("json"))
+        || body.first() == Some(&b'{');
+    if !is_json {
+        return Ok(body.to_vec());
+    }
+    let response: Value =
+        serde_json::from_slice(body).map_err(|_| "参照画像の応答を読み取れません".to_string())?;
+    if response["encoding"].as_str() != Some("base64") {
+        return Err("参照画像の応答形式が不正です".into());
+    }
+    let content = response["content"]
+        .as_str()
+        .ok_or("参照画像の内容がありません")?;
+    let compact: Vec<_> = content.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect();
+    STANDARD
+        .decode(compact)
+        .map_err(|_| "参照画像のbase64が不正です".into())
+}
+#[cfg(test)]
+mod source_asset_tests {
+    use super::*;
+
+    #[test]
+    fn raw_and_contents_json_jpeg_responses_produce_the_same_bytes() {
+        let jpeg = b"\xff\xd8\xffsample";
+        let raw = source_asset_response_bytes(Some("image/jpeg"), jpeg).unwrap();
+        let content = STANDARD.encode(jpeg);
+        let json = format!(r#"{{"encoding":"base64","content":"{content}"}}"#);
+        let decoded =
+            source_asset_response_bytes(Some("application/json; charset=utf-8"), json.as_bytes())
+                .unwrap();
+        assert_eq!(raw, jpeg);
+        assert_eq!(decoded, jpeg);
+        assert_eq!(source_asset_mime(&decoded), Some("image/jpeg"));
+    }
+
+    #[test]
+    fn malformed_contents_json_is_rejected() {
+        assert!(source_asset_response_bytes(
+            Some("application/json"),
+            br#"{"encoding":"base64","content":"not base64"}"#
+        )
+        .is_err());
+    }
+}
+
 fn source_asset_mime(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
         Some("image/png")
@@ -296,13 +344,26 @@ async fn github_asset(
                 response.status()
             ));
         }
+        // The raw media type normally returns bytes directly. Keep the contents
+        // API JSON/base64 shape as a compatibility fallback for proxies or API
+        // responses that ignore the requested media type.
+        let max_response_bytes = 28 * 1024 * 1024;
         if response
             .content_length()
-            .is_some_and(|size| size > 20 * 1024 * 1024)
+            .is_some_and(|size| size > max_response_bytes)
         {
             return Err("参照画像は20MB以下にしてください".into());
         }
-        response.bytes().await.map_err(err)?.to_vec()
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string);
+        let body = response.bytes().await.map_err(err)?;
+        if body.len() as u64 > max_response_bytes {
+            return Err("参照画像は20MB以下にしてください".into());
+        }
+        source_asset_response_bytes(content_type.as_deref(), &body)?
     };
     if bytes.len() > 20 * 1024 * 1024 {
         return Err("参照画像は20MB以下にしてください".into());
