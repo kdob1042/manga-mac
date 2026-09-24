@@ -10,6 +10,7 @@ import {
 import { beginJob, finishJob } from './revisions.js';
 import { imageModel } from './media.js';
 import { imageRequest } from './image-input.js';
+import { effectiveContinuity } from './continuity.js';
 import { pagePanels } from './layout.js';
 import { recognizeRegions } from './visual-regions.js';
 
@@ -219,7 +220,7 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
   if(cancelled())break;
   const p=current(),panel=p.panels.find(x=>x.id===original.id);
   if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
-  const previousId=panel.continuity?.previousPanelId;
+  const previousId=effectiveContinuity(panel)?.previousPanelId;
   const previous=previousId && p.panels.find(x=>x.id===previousId);
   const model=imageModel(imageModelId ?? p.mediaDefaults?.image),capacity=model.input.max_references;
   const previousSizeOK=model.adapter_id!=='runway-image'||(previous?.image?.length??0)<=5_000_000;

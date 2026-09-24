@@ -1,5 +1,6 @@
 // The local adapter uses explicit image input; capture metadata alone is not an image.
 import { defaultImageModelId, imageModel, validateImageDimensions, validateImageReferences } from './media.js';
+import { effectiveContinuity } from './continuity.js';
 
 export function generationSize(resolution = [768, 768], modelId = defaultImageModelId) {
   const [width, height] = resolution;
@@ -17,7 +18,7 @@ export function containRect(sourceWidth, sourceHeight, width, height) {
   return { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h, scale };
 }
 export function continuityPrompt(panel) {
-  const c = panel.continuity;
+  const c = effectiveContinuity(panel);
   if (!c || typeof c !== 'object') return '';
   const lines = [];
   if (c.location || c.timeOfDay) lines.push(`Scene: ${[c.location, c.timeOfDay].filter(Boolean).join(', ')}`);

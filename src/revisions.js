@@ -1,6 +1,7 @@
 import { ensureLayout } from './layout.js';
 import { placementKey } from './placement.js';
 import { defaultImageModelId, defaultVideoModelId, imageExecution, imageModel, videoModel } from './media.js';
+import {effectiveContinuity} from './continuity.js';
 // Manga revisions and scene staging are saved separately; keep adopted images immutable.
 export async function digest(bytes) {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -84,7 +85,7 @@ export async function beginJob(project, panel, kind = 'generate', imageModelId =
   const cloud=media?.adapter_id==='runway-image';
   if(cloud&&!project.mediaDefaults?.imageConnection)throw Error('クラウド静止画の接続・予算を登録してください');
   const previous = continuityReferenceId && project.panels.find(p => p.id === continuityReferenceId);
-  if (continuityReferenceId && (panel.continuity?.previousPanelId !== continuityReferenceId || !previous?.image || previous.sceneId !== panel.sceneId)) throw Error('同一場面の採用済み前コマだけを参照できます');
+  if (continuityReferenceId && (effectiveContinuity(panel)?.previousPanelId !== continuityReferenceId || !previous?.image || previous.sceneId !== panel.sceneId)) throw Error('同一場面の採用済み前コマだけを参照できます');
   const continuityReference = previous ? {panelId: previous.id, hash: await imageHash(previous.image)} : null;
   return { ...(cloud?{cloud_connection:project.mediaDefaults.imageConnection}:{}), id: crypto.randomUUID(), panelId: panel.id, kind, scope: { type: 'panel', id: panel.id }, source_revision: panel.snapshotId,
     base_revision: panel.artwork_revision ?? null, ...(media ? { media } : {}), ...(continuityReference ? {continuity_reference: continuityReference} : {}), input_hash_version: 2, input_hash: await inputHash(project, panel, media, 2, continuityReference),

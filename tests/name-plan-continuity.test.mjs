@@ -7,6 +7,7 @@ import {imageRequest} from '../src/image-input.js';
 import {beginJob, finishJob} from '../src/revisions.js';
 import {producePanels} from '../src/production.js';
 import {runContinuityQA,assertContinuityQACurrent} from '../src/continuity-qa.js';
+import {setContinuityOverride,effectiveContinuity} from '../src/continuity.js';
 
 const image = 'data:image/png;base64,aGVsbG8=';
 
@@ -94,4 +95,20 @@ test('oversized continuity is rejected before an image Job is reserved', async (
   let current=await adoptNameCandidate(project,await createNameCandidate(project,file));
   await assert.rejects(producePanels({current:()=>current,commit:async next=>{current=next},panelIds:[current.panels[0].id],generate:async()=>{throw Error('should not send')}}),/長すぎます/);
   assert.equal(current.jobs.filter(job=>job.kind==='generate').length,0);
+});
+
+test('manual state lock takes priority, survives reload and can be removed with Undo history', async () => {
+  const {project,file}=await fileFixture(2);
+  file.plan.panels[1].continuity={previousPanelId:'p1',props:['古いバッグ']};
+  const adopted=await adoptNameCandidate(project,await createNameCandidate(project,file));
+  const target=adopted.panels[1];
+  const locked=setContinuityOverride(adopted,target.id,{previousPanelId:null,characters:[],props:['新しいバッグ'],hardConstraints:['鞄を持つ']});
+  const saved=JSON.parse(JSON.stringify(locked));
+  assert.equal(effectiveContinuity(saved.panels[1]).previousPanelId,null);
+  assert.match(imageRequest({panel:saved.panels[1],references:[],width:768,height:512,seed:1,instruction:''}).prompt,/新しいバッグ/);
+  assert.doesNotMatch(imageRequest({panel:saved.panels[1],references:[],width:768,height:512,seed:1,instruction:''}).prompt,/古いバッグ/);
+  assert.equal(saved.history.at(-1).nameEdit,true);
+  const cleared=setContinuityOverride(saved,target.id,null);
+  assert.equal(effectiveContinuity(cleared.panels[1]).props[0],'古いバッグ');
+  assert.throws(()=>setContinuityOverride(adopted,target.id,{previousPanelId:'future',characters:[],props:[],hardConstraints:[]}),/既出コマ/);
 });
