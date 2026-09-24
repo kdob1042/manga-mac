@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createNameCandidate, createNameFile, adoptNameCandidate, validateV2State, refreshNameMetadata, patchNameLayout, setNameLock, localNamePlan, requiredTextForSource, canFinalizeNameRef, nameReadToken } from '../src/name-v2.js';
-import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA } from '../src/name-v2-ai.js';
+import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA, localNameEditReady, requireLocalNameEdit } from '../src/name-v2-ai.js';
 import { sourceParagraphs, orderedCoverage, sourceDescriptor } from '../contracts/name-plan/source.mjs';
 import { fileFixture, split, leaf } from './name-plan-fixture.mjs';
 
@@ -134,6 +134,15 @@ test('no image input never gets a visual QA pass', async () => {
   const result = await runNameVisualQA({ project: p, pageIds: p.namePlan.pageIds, images: [], ask: async () => { calls++; }, imageCapable: false });
   assert.equal(result.visual, 'not_run'); assert.equal(calls, 0);
 });
+test('adopted-name AI edits require local Ollama and reject cloud providers', () => {
+  assert.equal(localNameEditReady({ provider: 'ollama', connectionId: 'local' }), true);
+  assert.equal(localNameEditReady({ provider: 'openai', connectionId: 'cloud' }), false);
+  assert.equal(localNameEditReady({ provider: 'ollama', connectionId: '' }), false);
+  assert.equal(requireLocalNameEdit({ provider: 'ollama', connectionId: 'local' }), true);
+  assert.throws(() => requireLocalNameEdit({ provider: 'openai', connectionId: 'cloud' }), /Ollama（ローカル）/);
+  assert.throws(() => requireLocalNameEdit({ provider: 'ollama', connectionId: '' }), /Ollamaを設定/);
+});
+
 test('natural language dispatch is local-page scoped, typed and not arbitrary executable output', async () => {
   const f = await fileFixture(2), p = await adoptNameCandidate(f.project, await createNameCandidate(f.project, f.file)), page = p.layout.pages[0];
   let request;
