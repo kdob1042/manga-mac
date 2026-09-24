@@ -59,7 +59,7 @@ test('saved attempts reopen without a connection, rejection restores editor and 
   await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.candidates['saved-1'][1]);
   await page.getByRole('button', { name: '採用せず編集', exact: true }).click();
   await expect(picker.locator('option[value="saved-1"]')).toHaveCount(0);
-  await expect(picker).toHaveValue('');
+  await expect(picker).toHaveCount(0);
   await expect(page.getByTestId('layout-slot-0')).toHaveAttribute('points', expected.adopted[1]);
   expect((await geometry(page)).adopted).toEqual(expected.adopted);
   await page.reload();

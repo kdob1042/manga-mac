@@ -146,7 +146,7 @@ test('page and primary art action fit common window widths',async({page})=>{
   for(const width of [1280,1440,760]){
     await page.setViewportSize({width,height:width===760?800:900});
     const main=await page.locator('main').boundingBox();
-    for(const item of [page.getByRole('region',{name:'作画の実行'}),page.locator('.page')]){
+    for(const item of [page.getByRole('region',{name:'作画の実行'}),page.locator('.page-proof-frame')]){
       const bounds=await item.boundingBox();
       expect(bounds.x).toBeGreaterThanOrEqual(main.x);
       expect(bounds.x+bounds.width).toBeLessThanOrEqual(main.x+main.width+1);

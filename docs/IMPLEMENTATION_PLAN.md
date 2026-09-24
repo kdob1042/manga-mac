@@ -588,4 +588,3 @@ Node／native／ブラウザfixtureとMac上の実原稿・実推論・GUI操作
 診断bundleは許可した段階名・状態・hash・数値だけを保存し、秘密・原稿・人物画像・自由文エラーを含めない。画面上のエラー全文は共有用bundleと分離する。Mac配布成果物へ同じSHAのスクリプトとDMG／app／helper／registry hashのmanifestを添える。通常導入にNode/Pythonを要求しない。手順はINSTALL_MACへ集約する。v2の実LLMによる候補生成、P01、視覚品質とピークメモリは別の実機受入であり、このfixture成功で合格扱いしない。
 
 画像要求の入力hashは新規Jobから`input_hash_version: 2`でobject key順に依存しない値を使う。native JSON保存・回収でのキー整列に耐え、本文・人物・モデル等の実値変更は従来どおり候補採用を拒否する。旧unversioned Jobのhashは書き換えず、送信済みJobのhash版も不変にする。
-
