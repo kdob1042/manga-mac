@@ -1,3 +1,4 @@
+import {isCloudImage,imageConnectionId} from './media.js';
 import NameEditor from './NameEditor.jsx';
 import {produceSourceCandidate} from './production.js';
 import {generatePanel} from './pipeline.js';
@@ -64,7 +65,7 @@ export default function SourceUpdate({project,current,commit,acceptSaved,exclusi
   let candidate=await refresh(c,current.current.jobs.find(j=>j.id===c.id).source_candidate);
   if(!candidate.nameConfirmed)throw Error('作画前にネームを確定してください');
   await patchJob(c.id,c.workId,j=>({...j,source_candidate:candidate}));await stage(c,'drawing');
-  await produceSourceCandidate({current:()=>current.current,commit,opId:c.id,generate:generatePanel,recover:jobId=>{const job=current.current.jobs.find(j=>j.id===jobId);return job?.media?.adapter_id==='runway-image'?call('recover_cloud_image',{jobId,connectionId:current.current.mediaDefaults?.imageConnection}):call('recover_image',{jobId});},cancelled:()=>c.stopped,notify:note=>{c.note=note;redraw();},
+  await produceSourceCandidate({current:()=>current.current,commit,opId:c.id,generate:generatePanel,recover:jobId=>{const job=current.current.jobs.find(j=>j.id===jobId);return isCloudImage(job?.media)?call('recover_cloud_image',{jobId,connectionId:imageConnectionId(current.current,job.media.registry_id)}):call('recover_image',{jobId});},cancelled:()=>c.stopped,notify:note=>{c.note=note;redraw();},
    refresh:async()=>{sameWork(c.workId);const latest=current.current.jobs.find(j=>j.id===c.id).source_candidate;const refreshed=await refresh(c,latest);await patchJob(c.id,c.workId,j=>({...j,source_candidate:refreshed}));},
    imageModelId,panelIds});await stage(c,c.stopped?'stopped':'candidate');if(c.stopped){scheduler.current.release(c.id);c.acquired=false;}
  });}

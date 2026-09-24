@@ -179,6 +179,10 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (!style.image || !style.hash) throw Error('画風参照が不正です');
     refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
   }
+  for(const reference of options.extraReferences??[]){
+    if(!['costume','background','composition'].includes(reference.role)||!reference.image||!reference.hash)throw Error('ネーム資料の役割・画像が不正です');
+    refs.push({...reference,name:`${reference.role}: ${reference.key??reference.id}`});
+  }
   if (options.continuityReference) {
     const previous = options.continuityReference;
     if (!job?.continuity_reference || previous.id !== job.continuity_reference.panelId || previous.sceneId !== panel.sceneId || !previous.image || await imageHash(previous.image) !== job.continuity_reference.hash) throw Error('前コマの採用画像が作画要求の基準版と一致しません');

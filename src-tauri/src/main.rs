@@ -1,13 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod backup_commands;
+mod cloud_image;
 mod live_preview;
 mod llm;
 mod local_video;
 mod media;
+mod media_connections;
+mod openai_image;
 mod policy_transport;
 mod runway;
 pub mod storage;
-mod tapnow;
 mod tripo;
 
 mod compositor;
@@ -25,7 +27,7 @@ struct AppState {
     _workspace_gate: std::fs::File,
     root: PathBuf,
     connections: llm::Connections,
-    tapnow: tapnow::Connection,
+    media_connections: media_connections::Connections,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
@@ -669,20 +671,43 @@ fn video_export(
     Ok(path.to_string_lossy().into_owned())
 }
 #[tauri::command]
-async fn register_image(
-    input: llm::VideoRegistration,
+fn register_image(
+    model_id: String,
+    input: media_connections::Registration,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    state
-        .connections
-        .register_video(
-            input,
-            "runway".into(),
-            "gen4_image".into(),
-            "runway-image".into(),
-        )
-        .await
+    let selected = media::image_model(Some(&model_id))?;
+    if !cloud_image::supports(&selected.adapter_id) {
+        return Err("選択した画像モデルはクラウド接続に対応していません".into());
+    }
+    state.media_connections.register(
+        input,
+        selected.provider,
+        selected.model_id,
+        selected.adapter_id,
+    )
 }
+#[tauri::command]
+fn remove_image(connection_id: String, state: State<AppState>) -> Result<(), String> {
+    state.media_connections.remove(&connection_id)
+}
+#[tauri::command]
+fn media_connection_registered(
+    connection_id: String,
+    model_id: String,
+    state: State<AppState>,
+) -> bool {
+    match (
+        state.media_connections.get(&connection_id),
+        media::image_model(Some(&model_id)),
+    ) {
+        (Ok(c), Ok(m)) => {
+            c.provider == m.provider && c.model == m.model_id && c.adapter_id == m.adapter_id
+        }
+        _ => false,
+    }
+}
+
 #[tauri::command]
 async fn recover_cloud_image(
     job_id: String,
@@ -690,12 +715,12 @@ async fn recover_cloud_image(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _guard = state.engine.lock().await;
-    let connection = state.connections.video_connection(&connection_id)?;
-    runway::collect_image(&state.db, &state.root, &job_id, &connection).await
+    let connection = state.media_connections.get(&connection_id)?;
+    cloud_image::collect(&state.db, &state.root, &job_id, &connection).await
 }
 #[tauri::command]
-async fn register_video(
-    input: llm::VideoRegistration,
+fn register_video(
+    input: media_connections::Registration,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let connection = serde_json::json!({
@@ -707,15 +732,12 @@ async fn register_video(
     if selected.adapter_id != "runway" {
         return Err("選択した動画adapterはまだ接続されていません".into());
     }
-    state
-        .connections
-        .register_video(
-            input,
-            selected.provider,
-            selected.model_id,
-            selected.adapter_id,
-        )
-        .await
+    state.media_connections.register(
+        input,
+        selected.provider,
+        selected.model_id,
+        selected.adapter_id,
+    )
 }
 #[tauri::command]
 fn reuse_video_connection(
@@ -734,7 +756,7 @@ fn reuse_video_connection(
     if selected.adapter_id != "runway" {
         return Err("選択した動画adapterはまだ接続されていません".into());
     }
-    state.connections.reuse_video_connection(
+    state.media_connections.reuse(
         &source_connection_id,
         approved,
         selected.provider,
@@ -745,23 +767,7 @@ fn reuse_video_connection(
 
 #[tauri::command]
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
-    state.connections.remove_video(&connection_id)
-}
-#[tauri::command]
-async fn tapnow_connect(state: State<'_, AppState>) -> Result<Value, String> {
-    tapnow::connect(&state.tapnow).await
-}
-#[tauri::command]
-async fn tapnow_tools(state: State<'_, AppState>) -> Result<Value, String> {
-    tapnow::list_tools(&state.tapnow).await
-}
-#[tauri::command]
-fn tapnow_disconnect(state: State<'_, AppState>) -> Result<(), String> {
-    tapnow::disconnect(&state.tapnow)
-}
-#[tauri::command]
-fn tapnow_status(state: State<'_, AppState>) -> Result<bool, String> {
-    tapnow::connected(&state.tapnow)
+    state.media_connections.remove(&connection_id)
 }
 #[tauri::command]
 async fn register_tripo(
@@ -900,7 +906,7 @@ fn video_job_model(
     state: &AppState,
     job_id: &str,
     connection_id: &str,
-    registered: &llm::VideoConnection,
+    registered: &media_connections::Connection,
     submitting: bool,
 ) -> Result<media::VideoModel, String> {
     let db = state.db.lock().map_err(err)?;
@@ -981,7 +987,7 @@ async fn video_submit(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
-    let connection = state.connections.video_connection(&connection_id)?;
+    let connection = state.media_connections.get(&connection_id)?;
     let selected = video_job_model(&state, &job_id, &connection_id, &connection, true)?;
     let (start_image, end_image) = video_input_images(&state, &job_id)?;
     match selected.adapter_id.as_str() {
@@ -1008,7 +1014,7 @@ async fn video_task(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _guard = state.video.try_lock().map_err(|_| "動画APIの操作中です")?;
-    let connection = state.connections.video_connection(&connection_id)?;
+    let connection = state.media_connections.get(&connection_id)?;
     let selected = video_job_model(&state, &job_id, &connection_id, &connection, false)?;
     if selected.adapter_id != "runway" {
         return Err("選択した動画adapterはまだ接続されていません".into());
@@ -1193,14 +1199,17 @@ async fn generate_media(
             return Err("参照画像のハッシュが一致しません".into());
         }
     }
-    if selected.adapter_id == "runway-image" {
-        runway::image_payload(&request)?;
-        let connection = state.connections.video_connection(
+    if cloud_image::supports(&selected.adapter_id) {
+        cloud_image::payload(&request)?;
+        let connection = state.media_connections.get(
             request["cloud_connection"]
                 .as_str()
                 .ok_or("静止画接続を登録してください")?,
         )?;
-        if connection.adapter_id != "runway-image" {
+        if connection.adapter_id != selected.adapter_id
+            || connection.model != selected.model_id
+            || connection.provider != selected.provider
+        {
             return Err("静止画接続が必要です".into());
         }
     }
@@ -1209,24 +1218,24 @@ async fn generate_media(
         storage::image_recovery::reserve(&mut db, &state.root, &request)?
     };
     request["output"] = destination;
-    if selected.adapter_id == "runway-image" {
-        let connection = state.connections.video_connection(
+    if cloud_image::supports(&selected.adapter_id) {
+        let connection = state.media_connections.get(
             request["cloud_connection"]
                 .as_str()
                 .ok_or("静止画接続を登録してください")?,
         )?;
-        runway::submit_image(&state.db, &request, &connection).await?;
-        // Poll only GET; a stopped/lost request is recovered by its durable task ID.
+        cloud_image::submit(&state.db, &state.root, &request, &connection).await?;
+        // Return saved synchronous receipts immediately; Runway polls only GET by task ID.
         let id = request["job"]["id"].as_str().ok_or("Missing job")?;
         for _ in 0..60 {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-            match runway::collect_image(&state.db, &state.root, id, &connection).await {
+            match cloud_image::collect(&state.db, &state.root, id, &connection).await {
                 Ok(result) => return Ok(result),
                 Err(e)
                     if e.contains("PENDING")
                         || e.contains("RUNNING")
                         || e.contains("THROTTLED") =>
                 {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     continue;
                 }
                 Err(e) => return Err(e),
@@ -1496,7 +1505,7 @@ fn main() {
                 _workspace_gate: workspace_gate,
                 root: dir,
                 connections: llm::Connections::default(),
-                tapnow: tapnow::Connection::default(),
+                media_connections: media_connections::Connections::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
@@ -1537,10 +1546,6 @@ fn main() {
             register_video,
             reuse_video_connection,
             remove_video,
-            tapnow_connect,
-            tapnow_tools,
-            tapnow_disconnect,
-            tapnow_status,
             video_submit,
             register_local_video,
             remove_local_video,
@@ -1567,6 +1572,8 @@ fn main() {
             llm_request,
             generate_image,
             register_image,
+            remove_image,
+            media_connection_registered,
             recover_cloud_image,
             generate_layers,
             recover_image,

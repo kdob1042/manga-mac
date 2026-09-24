@@ -426,6 +426,37 @@ pub(super) fn validate(project: &Value) -> Result<()> {
     }
     Ok(())
 }
+// v3 save boundary only checks structural identities. Editing may leave a page
+// empty or a panel without a frame; completion checks belong to rendering.
+pub fn validate_page_names(project: &Value) -> Result<()> {
+    let Some(episodes) = project.get("nameEpisodes") else { return Ok(()); };
+    for (key, episode) in episodes.as_object().ok_or("Invalid name episodes")? {
+        if episode["format"] != "manga-mac/name-plan/v3"
+            || episode["workId"] != project["workId"]
+            || episode["episodeId"].as_str().is_none_or(|id| key != &serde_json::json!([project["workId"], id]).to_string()) {
+            return Err("Invalid page name identity".into());
+        }
+        let pages = episode["pages"].as_array().ok_or("Invalid name pages")?;
+        let order = episode["pageIds"].as_array().ok_or("Invalid page index")?;
+        if pages.len() != order.len() || pages.len() > 1000 { return Err("Invalid page count".into()); }
+        let mut seen = HashSet::new();
+        for id in order {
+            let id=id.as_str().ok_or("Invalid page ID")?;
+            if !seen.insert(id) || !pages.iter().any(|page| page["id"] == id) { return Err("Invalid page index".into()); }
+        }
+        let mut panels = HashSet::new();
+        for page in pages {
+            let contents=page["panels"].as_array().ok_or("Invalid name panels")?;
+            if contents.len()>16 { return Err("Page has too many panels".into()); }
+            for panel in contents {
+                let id=panel["id"].as_str().ok_or("Invalid name panel ID")?;
+                if !panels.insert(id) { return Err("Duplicate name panel".into()); }
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::super::{hash, load, save_checked, tests::setup};

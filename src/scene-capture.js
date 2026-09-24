@@ -3,7 +3,7 @@ import { digest, imageHash } from './revisions.js';
 // Keep the editable scene and its rendered image independently verifiable. The
 // image is externalized by native storage under the existing `original` key.
 export async function sceneHash(scene) {
-  if (!scene || scene.schemaVersion !== 1) throw Error('撮影する3D構図がありません');
+  if (!scene || ![1,2].includes(scene.schemaVersion)) throw Error('撮影する3D構図がありません');
   const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
   return digest(new TextEncoder().encode(JSON.stringify(canonical(scene))));
@@ -11,7 +11,7 @@ export async function sceneHash(scene) {
 
 export async function recordSceneCapture(project, panelId, png, width, height) {
   const panel = project.panels?.find(p => p.id === panelId);
-  if (!panel?.scene3d || panel.scene3d.schemaVersion !== 1) throw Error('撮影するコマの3D構図がありません');
+  if (!panel?.scene3d || ![1,2].includes(panel.scene3d.schemaVersion)) throw Error('撮影するコマの3D構図がありません');
   if (!Array.isArray(panel.scene3d.objects) || panel.scene3d.objects.length === 0) throw Error('撮影する3D素材を配置してください');
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 64 || height < 64 || width > 4096 || height > 4096) throw Error('撮影寸法が不正です');
   if (typeof png !== 'string' || !png.startsWith('data:image/png;base64,')) throw Error('撮影PNGがありません');

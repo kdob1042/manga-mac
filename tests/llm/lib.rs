@@ -19,3 +19,11 @@ pub mod scene_asset;
 
 #[path = "../../src-tauri/src/compositor.rs"]
 pub mod compositor;
+
+#[path = "../../src-tauri/src/media_connections.rs"]
+pub mod media_connections;
+
+#[path = "../../src-tauri/src/cloud_image.rs"]
+pub mod cloud_image;
+#[path = "../../src-tauri/src/openai_image.rs"]
+pub mod openai_image;

@@ -23,7 +23,8 @@
         "image_edit": true,
         "multi_reference": true,
         "transparent_rgba": false,
-        "text_rendering": false
+        "text_rendering": false,
+        "reference_images": true
       },
       "input": {
         "min_width": 256,
@@ -50,7 +51,9 @@
         "helper_contract": 2,
         "minimum_macos": "14",
         "weights_sha256": "430ba0f94ee0851a7f95c1383527f931afa6219898a51c5aa8e37979e9e4c86a"
-      }
+      },
+      "provider": "media-generation-kit",
+      "requires_connection": false
     },
     {
       "id": "flux-2-klein-4b-q6-local",
@@ -70,7 +73,8 @@
         "image_edit": true,
         "multi_reference": true,
         "transparent_rgba": false,
-        "text_rendering": false
+        "text_rendering": false,
+        "reference_images": true
       },
       "input": {
         "min_width": 256,
@@ -97,7 +101,9 @@
         "helper_contract": 2,
         "minimum_macos": "14",
         "weights_sha256": "ba42005a6d4e6c48430787db98ae8913aced4654682b59d0d0f1d9ccf820fe30"
-      }
+      },
+      "provider": "media-generation-kit",
+      "requires_connection": false
     },
     {
       "id": "qwen-image-layered-q6-local",
@@ -114,7 +120,8 @@
         "image_edit": false,
         "multi_reference": false,
         "transparent_rgba": true,
-        "text_rendering": false
+        "text_rendering": false,
+        "reference_images": false
       },
       "input": {
         "min_width": 256,
@@ -147,7 +154,9 @@
         "codec": "fixture-passed",
         "inference": "not_run"
       },
-      "requires_preparation": true
+      "requires_preparation": true,
+      "provider": "media-generation-kit",
+      "requires_connection": false
     },
     {
       "id": "runway-gen4-image",
@@ -164,7 +173,8 @@
       "capabilities": {
         "text_to_image": true,
         "image_edit": true,
-        "multi_reference": true
+        "multi_reference": true,
+        "reference_images": true
       },
       "input": {
         "min_width": 720,
@@ -187,7 +197,70 @@
       },
       "cost": {
         "credits": 5,
-        "usd_per_credit": 0.01
+        "usd_per_credit": 0.01,
+        "amount": 5,
+        "unit": "credits",
+        "usd_per_unit": 0.01
+      },
+      "provider": "runway",
+      "requires_connection": true
+    },
+    {
+      "id": "openai-gpt-image-2-5",
+      "display_name": "GPT Image 2.5 Sunburst（OpenAI）",
+      "adapter_id": "openai-image",
+      "model_id": "gpt-image-2.5-sunburst",
+      "locality": "cloud",
+      "status": "implemented",
+      "operations": [
+        "generate",
+        "edit",
+        "retake"
+      ],
+      "capabilities": {
+        "text_to_image": true,
+        "image_edit": true,
+        "multi_reference": true,
+        "reference_images": true
+      },
+      "input": {
+        "min_width": 1024,
+        "max_width": 1536,
+        "min_height": 1024,
+        "max_height": 1536,
+        "step": 16,
+        "max_aspect_ratio": 1.5,
+        "steps": 1,
+        "max_references": 8,
+        "max_prompt_characters": 4000,
+        "max_reference_bytes": 3000000
+      },
+      "requires_preparation": false,
+      "output": {
+        "kind": "image",
+        "channels": 3
+      },
+      "validation": {
+        "runtime": "official-api-reviewed",
+        "inference": "not_run"
+      },
+      "cost": {
+        "amount": 1000,
+        "unit": "milliUSD",
+        "usd_per_unit": 0.001,
+        "reservation_only": true,
+        "checked_at": "2026-09-24",
+        "usd_per_million_tokens": {
+          "text_input": 5,
+          "image_input": 8,
+          "output": 30
+        }
+      },
+      "provider": "openai",
+      "requires_connection": true,
+      "request_defaults": {
+        "quality": "medium",
+        "output_format": "png"
       }
     }
   ],
@@ -205,7 +278,10 @@
       ],
       "capabilities": {
         "end_frame": false,
-        "native_audio": false
+        "native_audio": false,
+        "image_to_video": true,
+        "reference_images": false,
+        "video_reference": false
       },
       "input": {
         "durations_sec": [
@@ -255,7 +331,10 @@
       ],
       "capabilities": {
         "end_frame": false,
-        "native_audio": false
+        "native_audio": false,
+        "image_to_video": true,
+        "reference_images": false,
+        "video_reference": false
       },
       "input": {
         "durations_sec": [
@@ -307,7 +386,10 @@
       ],
       "capabilities": {
         "end_frame": true,
-        "native_audio": false
+        "native_audio": false,
+        "image_to_video": true,
+        "reference_images": false,
+        "video_reference": false
       },
       "input": {
         "durations_sec": [
@@ -426,7 +508,10 @@
       "request_profile": "distilled-low-ram-v1",
       "capabilities": {
         "end_frame": false,
-        "native_audio": false
+        "native_audio": false,
+        "image_to_video": true,
+        "reference_images": false,
+        "video_reference": false
       },
       "input": {
         "durations_sec": [
@@ -466,5 +551,23 @@
         "inference": "not_run"
       }
     }
-  ]
+  ],
+  "providers": {
+    "media-generation-kit": {
+      "display_name": "このMac",
+      "transport": "sdk"
+    },
+    "runway": {
+      "display_name": "Runway",
+      "transport": "api"
+    },
+    "ltx-mlx": {
+      "display_name": "このMac",
+      "transport": "cli"
+    },
+    "openai": {
+      "display_name": "OpenAI",
+      "transport": "api"
+    }
+  }
 }

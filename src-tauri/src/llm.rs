@@ -76,29 +76,7 @@ pub struct Connections {
     submitted: Mutex<HashSet<String>>,
     active: Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>,
     cancelled: Mutex<HashSet<String>>,
-    video: Mutex<HashMap<String, Arc<VideoConnection>>>,
     tripo: Mutex<HashMap<String, Arc<TripoConnection>>>,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct VideoRegistration {
-    pub credential: String,
-    pub max_credits: u64,
-    pub approved: bool,
-    #[serde(default)]
-    pub provider: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub adapter_id: Option<String>,
-}
-// Same ephemeral credential owner as LLM connections; no Debug/Serialize.
-pub struct VideoConnection {
-    pub credential: String,
-    pub max_credits: u64,
-    pub provider: String,
-    pub model: String,
-    pub adapter_id: String,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -141,96 +119,6 @@ impl Connections {
             .get(id)
             .map(|c| c.provider == Provider::Ollama)
             .ok_or_else(failure)
-    }
-    pub async fn register_video(
-        &self,
-        input: VideoRegistration,
-        provider: String,
-        model: String,
-        adapter_id: String,
-    ) -> Result<String, String> {
-        if !input.approved
-            || !(1..=6000).contains(&input.max_credits)
-            || input.credential.trim().is_empty()
-            || input.credential.len() > 4096
-            || input.credential.chars().any(char::is_control)
-        {
-            return Err("送信先・モデル・予算を承認し、APIキーを入力してください".into());
-        }
-        PolicyTransport::new("https://api.dev.runwayml.com", false, "").await?;
-        let mut entries = self.video.lock().map_err(|_| failure())?;
-        if entries.len() >= 4 {
-            return Err("不要な動画接続を解除してください".into());
-        }
-        let id = id();
-        entries.insert(
-            id.clone(),
-            Arc::new(VideoConnection {
-                credential: input.credential,
-                max_credits: input.max_credits,
-                provider,
-                model,
-                adapter_id,
-            }),
-        );
-        Ok(id)
-    }
-    pub fn reuse_video_connection(
-        &self,
-        source_id: &str,
-        approved: bool,
-        provider: String,
-        model: String,
-        adapter_id: String,
-    ) -> Result<String, String> {
-        if !approved {
-            return Err("追加する動画モデルの送信先・費用を承認してください".into());
-        }
-        let mut entries = self.video.lock().map_err(|_| failure())?;
-        let source = entries
-            .get(source_id)
-            .cloned()
-            .ok_or("再利用するRunway接続がありません")?;
-        if source.provider != provider || source.adapter_id != adapter_id {
-            return Err("別providerの資格情報を動画モデルへ流用できません".into());
-        }
-        if let Some((id, _)) = entries.iter().find(|(_, value)| {
-            value.provider == provider
-                && value.model == model
-                && value.adapter_id == adapter_id
-                && value.credential == source.credential
-                && value.max_credits == source.max_credits
-        }) {
-            return Ok(id.clone());
-        }
-        if entries.len() >= 8 {
-            return Err("不要な動画接続を解除してください".into());
-        }
-        let id = id();
-        entries.insert(
-            id.clone(),
-            Arc::new(VideoConnection {
-                credential: source.credential.clone(),
-                max_credits: source.max_credits,
-                provider,
-                model,
-                adapter_id,
-            }),
-        );
-        Ok(id)
-    }
-
-    pub fn video_connection(&self, id: &str) -> Result<Arc<VideoConnection>, String> {
-        self.video
-            .lock()
-            .map_err(|_| failure())?
-            .get(id)
-            .cloned()
-            .ok_or("動画接続を登録してください".into())
-    }
-    pub fn remove_video(&self, id: &str) -> Result<(), String> {
-        self.video.lock().map_err(|_| failure())?.remove(id);
-        Ok(())
     }
     pub async fn register_tripo(&self, input: TripoRegistration) -> Result<String, String> {
         if !input.approved

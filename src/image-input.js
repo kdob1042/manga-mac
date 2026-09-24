@@ -39,8 +39,11 @@ export function imageRequest({ panel, references, original, originalHash, width,
   if (original && !/^[0-9a-f]{64}$/.test(originalHash ?? '')) throw Error('元画像のハッシュが必要です');
   const selected = validateImageDimensions(modelId, width, height);
   validateImageReferences(modelId, references);
-  const prompt = `${panel.prompt}${continuityPrompt(panel)}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Preserve identities from the numbered reference images: ${references.map((r, i) => `${i + 1}: ${r.name}`).join(', ')}`;
+  const role={character:'identity',costume:'outfit',background:'background',composition:'composition only',style:'style only',context:'previous panel context'};
+  const prompt = `${panel.prompt}${continuityPrompt(panel)}\n${instruction}\nBlack and white manga illustration. No text, no lettering, no balloons. Numbered references (use each only for its stated role): ${references.map((r, i) => `${i + 1}: ${role[r.role]??'identity'} — ${r.name}`).join(', ')}`;
   if (selected.adapter_id === 'runway-image' && prompt.length + references.length * 12 > 1000) throw Error('Runwayの作画指示が長すぎます。コマ指示・継続状態を短くしてください');
+  if (selected.locality === 'cloud' && references.length + (original ? 1 : 0) > selected.input.max_references) throw Error(`編集元・構図画像を含め参照は最大${selected.input.max_references}枚です`);
+  if (selected.input.max_prompt_characters && [...prompt].length > selected.input.max_prompt_characters) throw Error(`作画指示は参照指定込み${selected.input.max_prompt_characters}文字以内にしてください`);
   return { ...(job?.cloud_connection?{cloud_connection:job.cloud_connection}:{}), job: job ? { id: job.id, input_hash: job.input_hash, base_revision: job.base_revision, source_revision: job.source_revision, scope: job.scope } : null,
     prompt,
     references, original, original_hash: originalHash ?? null, width, height, seed, steps: selected.input.steps,

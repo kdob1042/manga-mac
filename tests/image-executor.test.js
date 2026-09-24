@@ -31,3 +31,17 @@ test('alternate model AND adapter use the same job, execution gate, candidate an
  assert.equal(calls.length,before,'a changed adapter is rejected before submission');
  assert.equal((await migrateProject(p,true)).artworks.length,p.artworks.length);
 });
+
+test('cloud image jobs retain model-specific connections when the current selection changes', async () => {
+ const project=await migrateProject(fixture);
+ project.mediaDefaults={image:'runway-gen4-image',imageConnection:'legacy-runway',imageConnections:{'openai-gpt-image-2-5':'openai-binding'}};
+ const openai=await beginJob(project,project.panels[0],'generate','openai-gpt-image-2-5');
+ assert.equal(openai.cloud_connection,'openai-binding');
+ assert.equal(openai.media.model_id,'gpt-image-2.5-sunburst');
+ assert.equal(openai.cost.currency,'USD');
+ const runway=await beginJob(project,project.panels[0],'generate','runway-gen4-image');
+ assert.equal(runway.cloud_connection,'legacy-runway');
+ assert.equal(runway.cost.currency,'credits');
+ delete project.mediaDefaults.imageConnections;
+ await assert.rejects(()=>beginJob(project,project.panels[0],'generate','openai-gpt-image-2-5'),/接続/);
+});

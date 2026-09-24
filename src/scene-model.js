@@ -1,5 +1,5 @@
 // A saved scene belongs to one manga panel. Coordinates use metres, Y up, radians.
-export const SCENE_VERSION = 1;
+export const SCENE_VERSION = 2;
 const plain = value => value && typeof value === 'object' && !Array.isArray(value);
 const exact = (value, keys) => plain(value) && Object.keys(value).every(key => keys.includes(key));
 const vector = (value, length = 3) => Array.isArray(value) && value.length === length && value.every(n => Number.isFinite(n) && Math.abs(n) <= 10000);
@@ -19,10 +19,10 @@ export function createScene() {
 }
 
 export function validateScene(scene, assetIds) {
-  if (!exact(scene,['schemaVersion','objects','camera','background']) || scene.schemaVersion !== SCENE_VERSION || !Array.isArray(scene.objects) || scene.objects.length > 80 || !exact(scene.camera,['position','target','fov']) || !vector(scene.camera.position) || !vector(scene.camera.target) || scene.camera.position.every((n,i)=>n===scene.camera.target[i]) || !Number.isFinite(scene.camera.fov) || scene.camera.fov < 10 || scene.camera.fov > 120 || typeof scene.background !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(scene.background)) fail();
+  if (!exact(scene,['schemaVersion','objects','camera','background']) || ![1,SCENE_VERSION].includes(scene.schemaVersion) || !Array.isArray(scene.objects) || scene.objects.length > 80 || !exact(scene.camera,['position','target','fov']) || !vector(scene.camera.position) || !vector(scene.camera.target) || scene.camera.position.every((n,i)=>n===scene.camera.target[i]) || !Number.isFinite(scene.camera.fov) || scene.camera.fov < 10 || scene.camera.fov > 120 || typeof scene.background !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(scene.background)) fail();
   const ids = new Set();
   for(const object of scene.objects){
-    if(!exact(object,['id','assetId','position','rotation','scale','pose','contacts','airborne']) || !id(object.id) || ids.has(object.id) || !id(object.assetId) || (assetIds && !assetIds.has(object.assetId)) || !vector(object.position) || !vector(object.rotation) || !vector(object.scale) || object.scale.some(n=>n<=0 || n>100) || (object.airborne!==undefined && typeof object.airborne!=='boolean') || !validPose(object.pose)) fail();
+    if(!exact(object,['id','assetId','characterId','position','rotation','scale','pose','contacts','airborne']) || !id(object.id) || ids.has(object.id) || !id(object.assetId) || (object.characterId!==undefined && (scene.schemaVersion!==2 || !id(object.characterId))) || (assetIds && !assetIds.has(object.assetId)) || !vector(object.position) || !vector(object.rotation) || !vector(object.scale) || object.scale.some(n=>n<=0 || n>100) || (object.airborne!==undefined && typeof object.airborne!=='boolean') || !validPose(object.pose)) fail();
     if(object.contacts!==undefined && (!Array.isArray(object.contacts) || object.contacts.length>16 || object.contacts.some(c=>
       !exact(c,['type','targetId','hand','side','offset','position']) || !['ball_attach','ground_snap','look_at','hand_target','foot_plant'].includes(c.type) ||
       (c.targetId!==undefined&&!id(c.targetId)) || (c.hand!==undefined&&!['left','right'].includes(c.hand)) ||
@@ -68,14 +68,20 @@ export function applySceneOperation(scene, operation, assetIds) {
     case 'camera':
       if(!exact(operation,['type','camera']) || !plain(operation.camera)) fail();
       next={...scene,camera:{...scene.camera,...operation.camera}}; break;
+    case 'assignCharacter':
+      if(!exact(operation,['type','id','characterId']) || !existing || (operation.characterId!==null && !id(operation.characterId)))fail();
+      next={...scene,objects:scene.objects.map(item=>item.id===operation.id?{...item,...(operation.characterId?{characterId:operation.characterId}:{characterId:undefined})}:item)};
+      if(operation.characterId===null)next.objects=next.objects.map(item=>item.id===operation.id?Object.fromEntries(Object.entries(item).filter(([key])=>key!=='characterId')):item);
+      break;
     default: fail();
   }
-  return validateScene(next,assetIds);
+  return validateScene({...next,schemaVersion:SCENE_VERSION},assetIds);
 }
 
 export function updatePanelScene(project,panelId,operation){
   const panel=project.panels.find(item=>item.id===panelId);
   if(!panel) throw Error('対象のコマがありません');
+  if(operation.type==='assignCharacter' && operation.characterId && !panel.characterIds.includes(operation.characterId)) throw Error('このコマにいない人物は割り当てられません');
   const assetIds=new Map((project.sceneAssets??[]).map(asset=>[asset.id,asset]));
   const scene=applySceneOperation(panel.scene3d??createScene(),operation,assetIds);
   const panels=project.panels.map(item=>item.id===panelId?{...item,scene3d:scene}:item);

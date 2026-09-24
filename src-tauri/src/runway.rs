@@ -1,5 +1,8 @@
 //! One official REST adapter. No SDK server, retries, fallback or secret logging.
-use crate::{llm::VideoConnection, media, policy_transport::PolicyTransport, storage};
+use crate::{
+    media, media_connections::Connection as MediaConnection, policy_transport::PolicyTransport,
+    storage,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -484,7 +487,7 @@ pub(crate) fn validate_pending_job(
     Ok(())
 }
 
-async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {
+pub(crate) async fn json_response(mut response: reqwest::Response) -> Result<Value, String> {
     if !response.status().is_success()
         || response.content_length().is_some_and(|n| n > 1024 * 1024)
         || response
@@ -508,11 +511,11 @@ async fn json_response(mut response: reqwest::Response) -> Result<Value, String>
     serde_json::from_slice(&bytes).map_err(|_| failure())
 }
 
-fn request(
+pub(crate) fn request(
     client: &reqwest::Client,
     method: reqwest::Method,
     url: reqwest::Url,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
 ) -> reqwest::RequestBuilder {
     client
         .request(method, url)
@@ -525,7 +528,7 @@ pub async fn submit(
     db: &Mutex<Connection>,
     id: &str,
     connection_id: &str,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
     start_image: &str,
     end_image: Option<&str>,
 ) -> Result<Value, String> {
@@ -604,7 +607,7 @@ fn safe_status(value: &Value, task: &str) -> Result<Value, String> {
 async fn fetch_status(
     db: &Mutex<Connection>,
     id: &str,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
 ) -> Result<Value, String> {
     let task = task_id(db, id)?;
     update(db, id, |_, j| {
@@ -641,14 +644,14 @@ async fn fetch_status(
 pub async fn status(
     db: &Mutex<Connection>,
     id: &str,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
 ) -> Result<Value, String> {
     fetch_status(db, id, connection).await?;
     let db = db.lock().map_err(|_| failure())?;
     Ok(job(&storage::raw_project(&db)?, id)?["remote"].clone())
 }
 
-fn output_url(value: &Value) -> Result<reqwest::Url, String> {
+pub(crate) fn output_url(value: &Value) -> Result<reqwest::Url, String> {
     let outputs = value["output"].as_array().ok_or("動画出力がありません")?;
     if value["status"] != "SUCCEEDED" || outputs.len() != 1 {
         return Err("取得可能な単一動画ではありません".into());
@@ -767,7 +770,7 @@ pub async fn collect(
     db: &Mutex<Connection>,
     root: &Path,
     id: &str,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
 ) -> Result<Value, String> {
     let saved = {
         let db = db.lock().map_err(|_| failure())?;
@@ -843,7 +846,7 @@ async fn collect_response(
 pub async fn cancel(
     db: &Mutex<Connection>,
     id: &str,
-    connection: &VideoConnection,
+    connection: &MediaConnection,
     accept_remote_deletion: bool,
 ) -> Result<Value, String> {
     if !accept_remote_deletion {
@@ -927,123 +930,6 @@ pub fn image_payload(input: &Value) -> Result<Value, String> {
     Ok(
         json!({"model":"gen4_image","promptText":prompt,"ratio":"720:720","seed":input["seed"],"referenceImages":refs}),
     )
-}
-fn image_account(connection: &VideoConnection) -> String {
-    format!("{:x}", Sha256::digest(connection.credential.as_bytes()))
-}
-pub async fn submit_image(
-    db: &Mutex<Connection>,
-    input: &Value,
-    connection: &VideoConnection,
-) -> Result<(), String> {
-    if connection.model != "gen4_image" || connection.adapter_id != "runway-image" {
-        return Err("静止画用の接続を登録してください".into());
-    }
-    let payload = image_payload(input)?;
-    let id = input["job"]["id"].as_str().ok_or("Missing image job")?;
-    let account = image_account(connection);
-    update(db, id, |p, j| {
-        if j.get("remote").is_some() || j["status"] != "running" || j["media"] != input["media"] {
-            return Err("送信済みまたは異なる画像要求です".into());
-        }
-        let used: u64 = p["jobs"]
-            .as_array()
-            .ok_or("Missing jobs")?
-            .iter()
-            .filter(|j| j["remote"]["kind"] == "runway-image")
-            .map(|j| j["remote"]["reserved_credits"].as_u64().unwrap_or(0))
-            .sum();
-        if used.saturating_add(5) > connection.max_credits {
-            return Err("作品の静止画credits上限です".into());
-        }
-        Ok(
-            json!({"kind":"runway-image","account":account,"model":"gen4_image","reserved_credits":5,"destination":input["output"],"status":"SUBMITTING"}),
-        )
-    })?;
-    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/text_to_image")).map_err(|_| failure())?;
-    let client = PolicyTransport::external_client(&url).await?;
-    let response = json_response(
-        request(&client, reqwest::Method::POST, url, connection)
-            .json(&payload)
-            .send()
-            .await
-            .map_err(|_| failure())?,
-    )
-    .await?;
-    let task = response["id"]
-        .as_str()
-        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
-        .ok_or_else(failure)?;
-    update(db, id, |_, j| {
-        let mut remote = j["remote"].clone();
-        remote["task_id"] = json!(task);
-        remote["status"] = json!("PENDING");
-        Ok(remote)
-    })?;
-    Ok(())
-}
-pub async fn collect_image(
-    db: &Mutex<Connection>,
-    root: &Path,
-    id: &str,
-    connection: &VideoConnection,
-) -> Result<Value, String> {
-    let remote = {
-        let db = db.lock().map_err(|_| failure())?;
-        let p = storage::raw_project(&db)?;
-        p["jobs"]
-            .as_array()
-            .ok_or("Missing jobs")?
-            .iter()
-            .find(|j| j["id"] == id)
-            .ok_or("Missing job")?["remote"]
-            .clone()
-    };
-    if remote["kind"] != "runway-image"
-        || remote["account"] != image_account(connection)
-        || connection.model != "gen4_image"
-    {
-        return Err("生成時と同じRunwayキーで静止画接続を登録してください".into());
-    }
-    {
-        let db = db.lock().map_err(|_| failure())?;
-        if let Ok(saved) = storage::image_recovery::recover(&db, root, id) {
-            return Ok(saved);
-        }
-    }
-    let task = remote["task_id"]
-        .as_str()
-        .filter(|s| uuid::Uuid::parse_str(s).is_ok())
-        .ok_or("送信応答が未確定です。自動再送しません")?;
-    let url = reqwest::Url::parse(&format!("{ORIGIN}/v1/tasks/{task}")).map_err(|_| failure())?;
-    let client = PolicyTransport::external_client(&url).await?;
-    let value = json_response(
-        request(&client, reqwest::Method::GET, url, connection)
-            .send()
-            .await
-            .map_err(|_| failure())?,
-    )
-    .await?;
-    if value["status"] != "SUCCEEDED" {
-        return Err(format!(
-            "静止画処理状態: {}。後で保存済み作画を回収してください",
-            value["status"].as_str().unwrap_or("UNKNOWN")
-        ));
-    }
-    let url = output_url(&value)?;
-    let client = PolicyTransport::external_client(&url).await?;
-    let mut response = client.get(url).send().await.map_err(|_| failure())?;
-    if !response.status().is_success() {
-        return Err(failure());
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| failure())? {
-        if bytes.len() + chunk.len() > 24 * 1024 * 1024 {
-            return Err("画像が大きすぎます".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    storage::image_recovery::store_remote(db, root, id, &bytes)
 }
 
 #[cfg(test)]
@@ -1283,7 +1169,7 @@ mod tests {
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .unwrap();
-            let connection = VideoConnection {
+            let connection = MediaConnection {
                 credential: "fixture-secret".into(),
                 max_credits: 60,
                 provider: "runway".into(),
@@ -1469,7 +1355,7 @@ mod tests {
             .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
-        let connection = VideoConnection {
+        let connection = MediaConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
             provider: "runway".into(),
@@ -1597,7 +1483,7 @@ mod tests {
     }
     #[tokio::test]
     async fn task_get_delete_and_error_bodies_keep_credentials_on_api_only() {
-        let connection = VideoConnection {
+        let connection = MediaConnection {
             credential: "fixture-secret".into(),
             max_credits: 60,
             provider: "runway".into(),

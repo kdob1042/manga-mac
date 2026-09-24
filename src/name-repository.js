@@ -2,10 +2,37 @@ import { call } from './bridge.js';
 import { safePath } from './core.js';
 import { FORMAT, MAX_BYTES } from '../contracts/name-plan/schema.mjs';
 import { atomize, selectAtoms, hasEmbeddedSource } from '../contracts/name-plan/source.mjs';
+import { joinEpisodeFiles, PAGE_FORMAT, MAX_PAGE_BYTES } from '../contracts/name-plan/page.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,159}$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const episodes = snapshot => snapshot.episodeIds ?? (snapshot.episodeId ? [snapshot.episodeId] : []);
+
+// Name v3 has no manuscript snapshot dependency. Every file comes from one
+// immutable commit; the caller chooses pages after reading the episode index.
+export async function fetchPageNameIndex({repo,root,episodeId,branch='dev'},token,invokeCall=call) {
+  if(!REPO.test(repo)||!ID.test(episodeId)||!['dev','main'].includes(branch))throw Error('取得する作品・話が不正です');
+  const head=JSON.parse(await invokeCall('github_get',{repo,path:`commits/${branch}`,token}));
+  const sha=head.sha;
+  if(!/^[0-9a-f]{40}$/i.test(sha))throw Error('GitHubのcommitを確定できません');
+  const path=safePath([root,'manga',episodeId,'episode.json'].filter(Boolean).join('/'));
+  const raw=await invokeCall('github_file',{repo,path,sha,token});
+  if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_PAGE_BYTES)throw Error('話の索引が大きすぎます');
+  const manifest=JSON.parse(raw);
+  if(manifest.format!==PAGE_FORMAT||manifest.episodeId!==episodeId)throw Error('話の索引が一致しません');
+  return {repo,root,episodeId,sha,manifest};
+}
+export async function fetchSelectedPageNames(index,selected,token,invokeCall=call) {
+  if(!Array.isArray(selected)||!selected.length||new Set(selected).size!==selected.length||selected.some(id=>!index.manifest.pageIds.includes(id)))throw Error('取込むページを選んでください');
+  const pages={};
+  for(const id of selected){
+    const path=safePath([index.root,'manga',index.episodeId,'pages',`${id}.json`].filter(Boolean).join('/'));
+    const raw=await invokeCall('github_file',{repo:index.repo,path,sha:index.sha,token});
+    if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_PAGE_BYTES)throw Error(`ページ ${id} が大きすぎます`);
+    pages[id]=JSON.parse(raw);
+  }
+  return joinEpisodeFiles(index.manifest,pages);
+}
 
 export function repositoryNamePlanPath(snapshot, episodeId, number = null) {
   if (!REPO.test(snapshot?.repo ?? '') || !/^[0-9a-f]{40}$/i.test(snapshot?.sha ?? '')) throw Error('原稿のGitHub版が確定していません');
