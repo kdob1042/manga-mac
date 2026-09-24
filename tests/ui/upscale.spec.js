@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 const fixture=JSON.parse(readFileSync(new URL('../fixtures/legacy-v1.json',import.meta.url)));
 test('local interpolation candidate adoption, persistence and undo preserve crop and lettering',async({page})=>{
  await page.goto('/');await page.evaluate(async p=>{await(await import('/src/bridge.js')).saveProject(p);},fixture);await page.reload();
- await page.locator('.panel').first().click();
+ await page.locator('.art-page-targets polygon').first().click();
  await page.getByRole('button',{name:'仕上げ',exact:true}).click();
  const before=await page.evaluate(async()=>await(await import('/src/bridge.js')).loadProject());
  await page.getByRole('button',{name:'補間拡大の候補を作る',exact:true}).click();

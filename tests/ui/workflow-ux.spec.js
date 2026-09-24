@@ -20,10 +20,12 @@ test('stages defer expensive views, retain unfinished layout input and collect e
   await openSaved(page);
   await expect(page.getByRole('region',{name:'コマ割り編集'})).toHaveCount(0);
   await expect(page.getByRole('region',{name:'セクションの完了管理'})).toHaveCount(0);
-  expect(await page.evaluate(()=>window.canvasExports)).toBe(0);
+  await expect(page.getByRole('img',{name:'作画ページの確認'})).toBeVisible();
+  const artExports=await page.evaluate(()=>window.canvasExports);
+  expect(artExports).toBeGreaterThan(0);
   await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
   await expect(page.getByTestId('layout-slot-0')).toBeVisible();
-  await expect.poll(()=>page.evaluate(()=>window.canvasExports)).toBeGreaterThan(0);
+  await expect.poll(()=>page.evaluate(()=>window.canvasExports)).toBeGreaterThan(artExports);
   await page.getByText('演出AIでこのページを配置',{exact:true}).click();
   await page.getByLabel('コマ割りの指示',{exact:true}).fill('最初のコマを大きく');
   const rendered=await page.evaluate(()=>window.canvasExports);
@@ -144,7 +146,7 @@ test('page and primary art action fit common window widths',async({page})=>{
   for(const width of [1280,1440,760]){
     await page.setViewportSize({width,height:width===760?800:900});
     const main=await page.locator('main').boundingBox();
-    for(const item of [page.getByRole('region',{name:'作画の実行'}),page.locator('.page')]){
+    for(const item of [page.getByRole('region',{name:'作画の実行'}),page.locator('.page-proof-frame')]){
       const bounds=await item.boundingBox();
       expect(bounds.x).toBeGreaterThanOrEqual(main.x);
       expect(bounds.x+bounds.width).toBeLessThanOrEqual(main.x+main.width+1);
@@ -207,7 +209,7 @@ test('failed project load can retry without starting an empty replacement projec
   await expect(page.getByRole('button',{name:'画面のサンプルを見る'})).toHaveCount(0);
   expect(await page.evaluate(()=>window.saved)).toBe(0);
   await page.getByRole('button',{name:'もう一度読み込む'}).click();
-  await expect(page.locator('.panel')).toHaveCount(fixture.panels.length);
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(fixture.panels.length);
   expect(await page.evaluate(()=>window.saved)).toBe(1); // Existing legacy migration only.
 });
 
@@ -224,7 +226,7 @@ test('source library failure keeps saved artwork editable and offers an independ
     }};
   },fixture);
   await page.goto('/');
-  await expect(page.locator('.panel')).toHaveCount(fixture.panels.length);
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(fixture.panels.length);
   await expect(page.getByRole('button',{name:'接続・人物設定'})).toBeEnabled();
   await expect(page.getByRole('status')).toContainText('保存済み作品は編集できます');
   await page.getByRole('button',{name:'原稿一覧を再読込'}).click();

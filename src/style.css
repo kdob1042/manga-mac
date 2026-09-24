@@ -14,6 +14,17 @@
 .art img { object-fit: contain; }
 
 .page-proof { display: block; width: min(100%, 800px); margin: 16px auto; }
+.page-proof-frame { position: relative; width: min(100%, 800px); margin: 16px auto; }
+.page-proof-frame > .page-proof { width: 100%; margin: 0; }
+.art-page-targets { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.art-page-targets polygon { fill: transparent; stroke: transparent; stroke-width: 9; cursor: pointer; pointer-events: all; }
+.art-page-targets polygon.selected { stroke: #2d8a56; stroke-width: 11; }
+.art-page-targets polygon:focus-visible { stroke: #e96e40; stroke-width: 11; outline: none; }
+.art-panel-source { max-width: 800px; margin: 14px auto; padding: 12px; background: #fff; font-size: 12px; white-space: pre-wrap; }
+.art-original-edit { max-width: 500px; margin: 30px auto 70px; padding: 12px; background: #fff; }
+.art-original-edit p { font-size: 12px; color: #526650; }
+.art-original-image { position: relative; width: min(100%, 480px); touch-action: none; user-select: none; cursor: crosshair; }
+.art-original-image img { display: block; width: 100%; height: auto; }
 
 .video-workspace{padding:24px;max-width:900px;margin:auto}.video-workspace fieldset{display:grid;gap:12px;border:1px solid #d6d9d2;border-radius:8px}.video-workspace label{display:grid;gap:8px}.video-workspace select{padding:10px;max-width:100%}.video-workspace nav{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0}.video-workspace article{padding:12px 0;border-bottom:1px solid #d6d9d2}.video-workspace article button{margin-right:8px}.video-workspace video{display:block;width:100%;max-height:520px;margin:20px 0;background:#111}.video-source{white-space:pre-wrap;font-size:13px;line-height:1.8}
 .video-workspace label:has(>input[type=checkbox]){display:flex;align-items:flex-start;gap:8px;line-height:1.6}.video-workspace input[type=checkbox]{width:auto;flex:none;margin-top:4px}
@@ -45,6 +56,48 @@
 
 .layout-editor input[type="range"] { width: 180px; margin: 0; }
 .layout-editor input[type="checkbox"] { width: auto; }
+.layout-candidate { margin: 16px 0 12px; padding: 14px 18px; border: 1px solid #d5dccf; border-radius: 10px; background: #f8faf6; color: #344b39; font-size: 12px; line-height: 1.6; }
+.layout-candidate > strong { display: block; font-size: 15px; }
+.layout-candidate > p { margin: 6px 0; }
+.layout-candidate .toolbar { position: static; min-height: 0; padding: 8px 0 0; background: transparent; }
+.layout-candidate .toolbar button:first-child:not(:last-child) { font-weight: 600; }
+.layout-candidate.is-preview { margin-bottom: 0; border-color: #86a88b; border-bottom-left-radius: 0; border-bottom-right-radius: 0; background: #eef5ed; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:first-child,
+.layout-editor:has(> .layout-candidate.is-preview) > p,
+.layout-editor:has(> .layout-candidate.is-preview) > details,
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-candidate ~ .toolbar:not(:has(input[aria-label="表示倍率"])),
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-candidate ~ small { display: none; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:has(input[aria-label="表示倍率"]) { position: static; padding: 8px 0; background: transparent; }
+.layout-editor:has(> .layout-candidate.is-preview) > .toolbar:has(input[aria-label="表示倍率"]) > :not(:has(input[aria-label="表示倍率"])) { display: none; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { max-height: none; margin-top: 0; padding: clamp(10px, 3vw, 28px); border: 1px solid #86a88b; border-top: 0; border-radius: 0 0 10px 10px; background: #e7e9e4; }
+.layout-editor:has(> .layout-candidate.is-preview) .layout-canvas { background: #fff; box-shadow: 0 4px 24px #23332821; }
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .composer { display: none; }
+/* Give the pending layout the whole workspace until the user decides. */
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > header { height: 48px; padding: 0 18px; }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > header > :not(.brand):not(:has(> strong)) { display: none; }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workspace { height: calc(100dvh - 48px); }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workspace > aside,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > .toolbar,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workflow-nav,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .stage-hint,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > div:not([hidden]) > .toolbar { display: none; }
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) { padding-bottom: 0; }
+.layout-editor:has(> .layout-candidate.is-preview) { width: 100%; max-width: none; margin: 0; padding: 8px 12px 12px; border-radius: 0; background: transparent; }
+.layout-editor > .layout-candidate.is-preview { position: sticky; top: 0; z-index: 4; width: min(100%, calc((100dvh - 170px) * .708)); margin: 0 auto; padding: 7px 12px; border-radius: 8px 8px 0 0; }
+.layout-candidate.is-preview .candidate-decision { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; }
+.layout-candidate.is-preview .candidate-decision > strong { margin-right: auto; white-space: nowrap; }
+.layout-candidate.is-preview .candidate-decision > span { flex-basis: 100%; }
+.layout-editor > .layout-candidate.is-preview .toolbar { display: flex; flex-wrap: wrap; gap: 6px; min-height: 0; padding: 3px 0; }
+.layout-editor > .layout-candidate.is-preview .toolbar button { padding: 7px 11px; }
+.layout-candidate.is-preview .candidate-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 3px 0 0; }
+.layout-candidate.is-preview .candidate-pager button { padding: 2px 11px; font-size: 18px; line-height: 1.2; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { width: min(100%, calc((100dvh - 170px) * .708)); max-height: none; margin: 0 auto; padding: 10px; overflow: auto; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll .layout-canvas { max-width: 100%; margin: 0 auto; }
+@media (max-width: 760px) {
+  .layout-editor:has(> .layout-candidate.is-preview) { padding: 4px; }
+  .layout-editor > .layout-candidate.is-preview { padding: 6px 8px; }
+  .layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { padding: 4px; }
+}
 .upscale-compare { display: flex; gap: 12px; }
 .upscale-compare figure { margin: 0; width: 45%; }
 .upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }

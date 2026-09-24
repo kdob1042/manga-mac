@@ -25,8 +25,9 @@ test('video planning shares artwork and survives reload without changing manga',
     };
   }), legacy);
   await page.reload();
-  await expect(page.locator('.panel')).toHaveCount(1);
-  const original = await page.locator('.caption').textContent();
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(1);
+  await page.getByRole('button',{name:'1コマ目を選択'}).click();
+  const original = await page.locator('.art-panel-source').textContent();
   await page.getByRole('button', { name: '動画', exact: true }).click();
   await page.getByLabel('原作の場面').selectOption('s');
   await page.getByLabel('開始画像').selectOption({ index: 1 });
@@ -49,7 +50,8 @@ test('video planning shares artwork and survives reload without changing manga',
   await expect(page.getByText('変更した指示を保存すると生成できます。')).toHaveCount(0);
   await page.screenshot({ path: 'test-results/video-planning.png', fullPage: true });
   await page.getByRole('button', { name: '漫画', exact: true }).click();
-  await expect(page.locator('.caption')).toHaveText(original);
+  await page.getByRole('button',{name:'1コマ目を選択'}).click();
+  await expect(page.locator('.art-panel-source')).toHaveText(original);
 });
 
 test('selected manga panels become editable video recipes before any batch submission', async ({ page }) => {

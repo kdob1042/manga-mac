@@ -3,10 +3,11 @@ test('opens a sample, preserves source on reload, and reports unavailable native
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('/');
   await page.getByRole('button', { name: 'サンプルを見る' }).click();
-  await expect(page.locator('.panel')).toHaveCount(4);
-  await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(4);
+  await page.getByRole('button',{name:'2コマ目を選択'}).click();
+  await expect(page.locator('.art-panel-source')).toHaveText('「ここ、空いてる？」');
   await page.reload();
-  await expect(page.locator('.panel')).toHaveCount(4);
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(4);
   await page.screenshot({ path: 'test-results/studio.png', fullPage: true });
   await page.getByRole('button', { name: '接続・人物設定' }).click();
   await page.getByLabel('GitHubリポジトリ', {exact:true}).fill('example/story');
@@ -34,7 +35,8 @@ test('planning connection has no face estimator; keys are ephemeral', async ({ p
 test('switches manga content between Japanese source and shared English localization', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'サンプルを見る' }).click();
-  await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
+  await page.getByRole('button',{name:'2コマ目を選択'}).click();
+  await expect(page.locator('.art-panel-source')).toHaveText('「ここ、空いてる？」');
   await page.evaluate(() => new Promise((resolve, reject) => {
     const open = indexedDB.open('manga-mac', 1);
     open.onerror = () => reject(open.error);
@@ -65,8 +67,9 @@ test('switches manga content between Japanese source and shared English localiza
   }));
   await page.reload();
   await expect(page.getByLabel('作品言語')).toHaveValue('en');
-  await expect(page.locator('.caption').nth(1)).toHaveText('“Is this seat free?”');
+  await page.getByRole('button',{name:'2コマ目を選択'}).click();
+  await expect(page.locator('.art-panel-source')).toHaveText('“Is this seat free?”');
   await expect(page.getByRole('button', { name: '接続・人物設定' })).toBeVisible();
   await page.getByLabel('作品言語').selectOption('ja');
-  await expect(page.locator('.caption').nth(1)).toHaveText('「ここ、空いてる？」');
+  await expect(page.locator('.art-panel-source')).toHaveText('「ここ、空いてる？」');
 });

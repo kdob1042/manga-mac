@@ -56,7 +56,7 @@ test('unknown image UI collects saved output and keeps adopted image across relo
   await page.goto('/');
   // Wait for startup migration before replacing persisted data for recovery.
   // Otherwise its asynchronous save can erase the newly inserted job.
-  await expect(page.locator('.art')).toBeVisible();
+  await expect(page.locator('.art-page-targets polygon').first()).toBeVisible();
   await page.evaluate(async legacy => {
     const { beginJob,imageHash }=await import('/src/revisions.js');
     const { loadProject }=await import('/src/bridge.js');
@@ -67,14 +67,14 @@ test('unknown image UI collects saved output and keeps adopted image across relo
     sessionStorage.setItem('image-receipt',JSON.stringify({job_id:job.id,input_hash:job.input_hash,image,hash:await imageHash(image),context:{version:1,kind:'retake',panel:{...panel,image:null,generation:{width:2,height:2}}}}));
   },legacy);
   await page.reload();
-  await page.locator('.art').click();
+  await page.locator('.art-page-targets polygon').first().click();
   await page.getByRole('button',{name:'保存済み作画を回収する',exact:true}).click();
   await expect(page.getByRole('img',{name:'新しい作画候補',exact:true})).toBeVisible();
-  await expect(page.locator('.art img')).toHaveAttribute('src',legacy.panels[0].image);
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src',legacy.panels[0].image);
   await page.screenshot({path:'test-results/image-recovery-candidate.png',fullPage:true});
   await page.reload();
-  await page.locator('.art').click();
+  await page.locator('.art-page-targets polygon').first().click();
   await expect(page.getByRole('img',{name:'新しい作画候補',exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'保存済み作画を回収する',exact:true})).toHaveCount(0);
-  await expect(page.locator('.art img')).toHaveAttribute('src',legacy.panels[0].image);
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src',legacy.panels[0].image);
 });
