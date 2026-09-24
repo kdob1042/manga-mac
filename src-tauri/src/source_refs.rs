@@ -104,6 +104,7 @@ pub fn validate(project: &Value) -> Result<(), String> {
     }
     panels(project, project)?;
     name_plan::validate(project)?;
+    name_plan::validate_page_names(project)?;
     validate_application(project)
 }
 fn intersects(a: &Value, b: &Value) -> bool {
@@ -237,8 +238,16 @@ pub fn validate_application(p: &Value) -> Result<(), String> {
 }
 pub fn token(project: &Value) -> String {
     let mut content = json!({"active":project["active"],"snapshots":project["snapshots"],"panels":project["panels"],"layout":project["layout"],"sourceApplication":project["sourceApplication"]});
+    if project["nameEpisodes"].is_object() {
+        content["nameEpisodes"] = project["nameEpisodes"].clone();
+        content["nameRevisions"] = project["nameRevisions"].clone();
+        content["activeNameEpisodeId"] = project["activeNameEpisodeId"].clone();
+    }
     if project["namePlan"]["format"] == "manga-mac/name-plan/v2" {
         content["namePlan"] = project["namePlan"].clone();
+    }
+    if project["otherNamePlans"].is_array() {
+        content["otherNamePlans"] = project["otherNamePlans"].clone();
     }
     hash(&content.to_string())
 }

@@ -97,7 +97,7 @@ export async function finishJob(project, job, generated, cancelled = false, cand
   if (!currentJob || currentJob.status !== 'running') throw Error('制作要求は有効ではありません');
   const panel = project.panels.find(p => p.id === job.panelId);
   const hash = await imageHash(generated.image);
-  const valid = !cancelled && !candidateOnly && panel && job.input_hash === await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference);
+  const valid = !cancelled && !candidateOnly && panel && panel.namePlanVersion !== 3 && job.input_hash === await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference);
   const id = `artwork:${job.id}`;
   const result = { ...generated, artwork_revision: id, capture_revision: generated.capture_revision ?? null };
   const artwork = { id, hash, parent_revision: job.base_revision, capture_revision: result.capture_revision, job_id: job.id, panel: result };
@@ -111,10 +111,21 @@ export async function adoptCandidate(project, jobId) {
   const job = project.jobs.find(j => j.id === jobId), panel = project.panels.find(p => p.id === job?.panelId);
   if (job?.placement_key && job.placement_key !== placementKey(project,job.panelId)) throw Error('配置が変わったため、この候補は採用できません');
   const artwork = project.artworks.find(a => a.id === job?.output_revision);
-  if (!job || job.status !== 'candidate' || !panel || !artwork || job.input_hash !== await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error('基準版が変わった候補は採用できません');
-  return { ...project, panels: project.panels.map(p => p.id === panel.id ? structuredClone(artwork.panel) : p),
+  if (!job || job.status !== 'candidate' || !panel || !artwork || (panel.namePlanVersion !== 3 && job.input_hash !== await inputHash(project, panel, job.media ?? null, job.input_hash_version, job.continuity_reference)) || artwork.hash !== await imageHash(artwork.panel.image)) throw Error(panel?.namePlanVersion===3?'候補の対象コマがないか、画像が不正です':'基準版が変わった候補は採用できません');
+  const adopted=panel.namePlanVersion===3?{...panel,image:artwork.panel.image,artwork_revision:artwork.id,capture_revision:artwork.capture_revision??null,status:'complete'}:structuredClone(artwork.panel);
+  return { ...project, panels: project.panels.map(p => p.id === panel.id ? adopted : p),
     history: [...project.history, { panels: project.panels, label: '作画候補を採用', at: new Date().toISOString() }],
     jobs: project.jobs.map(j => j.id === jobId ? { ...j, status: 'complete' } : j) };
+}
+export async function adoptCandidates(project, jobIds) {
+  if (!Array.isArray(jobIds) || new Set(jobIds).size !== jobIds.length) throw Error('採用候補が重複しています');
+  const selected = new Set(), updates = new Map();
+  for (const id of jobIds) {
+    const job=project.jobs.find(item=>item.id===id),panel=project.panels.find(p=>p.id===job?.panelId),artwork=project.artworks.find(a=>a.id===job?.output_revision);
+    if (!panel || !job || job.status!=='candidate' || !artwork || selected.has(panel.id) || artwork.hash!==await imageHash(artwork.panel.image)) throw Error('同じコマに複数候補、または削除済みコマが含まれています');
+    selected.add(panel.id);updates.set(panel.id,panel.namePlanVersion===3?{...panel,image:artwork.panel.image,artwork_revision:artwork.id,capture_revision:artwork.capture_revision??null,status:'complete'}:structuredClone(artwork.panel));
+  }
+  return {...project,panels:project.panels.map(p=>updates.get(p.id)??p),history:[...project.history,{panels:project.panels,label:'作画候補をまとめて採用',at:new Date().toISOString()}],jobs:project.jobs.map(j=>jobIds.includes(j.id)?{...j,status:'complete'}:j)};
 }
 export function abandonJob(project, jobId) {
   const job = project.jobs.find(j => j.id === jobId);

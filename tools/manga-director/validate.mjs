@@ -4,17 +4,15 @@ import {readFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {validateSourceTree, manifestToSourceModel} from '../../contracts/story-source/validate.mjs';
+import {hasEmbeddedSource} from '../../contracts/name-plan/source.mjs';
+import {emptyProject} from '../../src/core.js';
 import {MAX_BYTES} from '../../contracts/name-plan/schema.mjs';
 import {createNameCandidate} from '../../src/name-v2.js';
 
 function argumentsOf(argv) {
-  if (argv.length !== 6 || argv.some((value, index) => index % 2 === 0 && !['--project','--plan','--source-bundle'].includes(value))) {
-    throw Object.assign(Error('使用法: node tools/manga-director/validate.mjs --project PROJECT.json --plan name-plan.json --source-bundle SOURCE.json'), {code:'usage'});
-  }
-  const options = Object.fromEntries([[argv[0],argv[1]],[argv[2],argv[3]],[argv[4],argv[5]]]);
-  if (Object.keys(options).length !== 3 || !options['--project'] || !options['--plan'] || !options['--source-bundle']) {
-    throw Object.assign(Error('project・plan・source-bundleを指定してください'), {code:'usage'});
-  }
+  if (!argv.length || argv.length%2 || argv.some((value,index)=>index%2===0&&!['--project','--plan','--source-bundle'].includes(value))) throw Error('usage: validate.mjs --plan name-001.json [--project PROJECT.json --source-bundle SOURCE.json]');
+  const options=Object.fromEntries(Array.from({length:argv.length/2},(_,i)=>[argv[i*2],argv[i*2+1]]));
+  if(!options['--plan']||Object.keys(options).length!==argv.length/2)throw Error('planを一つ指定してください');
   return options;
 }
 
@@ -25,6 +23,10 @@ async function json(path, maximum = 16 * 1024 * 1024) {
 }
 
 export async function validateInputs({project, plan, bundle}) {
+  if(hasEmbeddedSource(plan)){
+    const candidate=await createNameCandidate(project??emptyProject(),plan);
+    return {ok:true,format:candidate.file.format,sourceScenes:candidate.file.source.scenes.length,panels:candidate.panels.length,pages:candidate.layout.pages.length,diagnostics:candidate.diagnostics};
+  }
   // The production source contract checks declared file coverage and headings.
   if (!bundle || !bundle.manifest || !bundle.files) throw Object.assign(Error('source-bundleにはmanifestとfilesが必要です'), {code:'source'});
   const source = validateSourceTree(bundle?.manifest, bundle?.files);
@@ -51,7 +53,7 @@ async function main() {
   try {
     const options=argumentsOf(process.argv.slice(2));
     const [project,plan,bundle]=await Promise.all([
-      json(options['--project']),json(options['--plan'],MAX_BYTES),json(options['--source-bundle']),
+      options['--project']?json(options['--project']):null,json(options['--plan'],MAX_BYTES),options['--source-bundle']?json(options['--source-bundle']):null,
     ]);
     process.stdout.write(JSON.stringify(await validateInputs({project,plan,bundle}))+'\n');
   } catch (error) {

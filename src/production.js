@@ -7,10 +7,11 @@ import {
   finishDraftLettering,
   reviewDraft,
 } from './draft.js';
-import { beginJob, finishJob } from './revisions.js';
+import { beginJob, finishJob, imageHash } from './revisions.js';
 import { imageModel } from './media.js';
 import { imageRequest } from './image-input.js';
 import { effectiveContinuity } from './continuity.js';
+import {referenceKey} from './page-name.js';
 import { pagePanels } from './layout.js';
 import { recognizeRegions } from './visual-regions.js';
 
@@ -211,28 +212,56 @@ export async function produceSourceCandidate({current,commit,opId,generate,recov
 export async function producePanels({current,commit,panelIds,generate=generatePanel,cancelled=()=>false,notify=()=>{},imageModelId,regenerate=false}){
  const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
  if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
- const selected=targets.filter(p=>regenerate||!p.image);
+ const requested=targets.filter(p=>regenerate||!p.image),missingReferences=[],missingScenes=[];
+ const selected=requested.filter(panel=>{
+  if(panel.namePlanVersion===3)return true;
+  const missing=panel.characterIds.filter(id=>!frozen.characters.find(c=>c.id===id&&c.image&&c.hash));
+  if(!missing.length)return true;
+  missingReferences.push({panelId:panel.id,characterIds:missing.map(id=>frozen.characters.find(c=>c.id===id)?.source?.character_id??id)});
+  return false;
+ });
  for(const panel of selected){
-  if(frozen.jobs.some(j=>j.panelId===panel.id&&['running','unknown','candidate'].includes(j.status)))throw Error('未確定の要求・保存済み候補を先に確認してください');
-  for(const id of panel.characterIds)if(!frozen.characters.find(c=>c.id===id&&c.image&&c.hash))throw Error('人物の参照画像がありません');
+  if(frozen.jobs.some(j=>j.panelId===panel.id&&['running','unknown',...(panel.namePlanVersion===3?[]:['candidate'])].includes(j.status)))throw Error('未確定の要求・保存済み候補を先に確認してください');
  }
  for(const [i,original] of selected.entries()){
   if(cancelled())break;
   const p=current(),panel=p.panels.find(x=>x.id===original.id);
-  if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
+  if(original.namePlanVersion===3){if(p.workId!==frozen.workId||p.activeNameEpisodeId!==frozen.activeNameEpisodeId)throw Error('制作する話が変わりました');if(!panel)continue;}
+  else if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
+  const missing=panel.namePlanVersion===3?panel.characterIds.filter(id=>!p.characters.find(c=>c.id===id&&c.image&&c.hash)):[];
+  if(missing.length){missingReferences.push({panelId:panel.id,characterIds:missing});continue;}
+  if(panel.namePlanVersion===3&&!panel.sceneId){missingScenes.push(panel.id);continue;}
   const previousId=effectiveContinuity(panel)?.previousPanelId;
   const previous=previousId && p.panels.find(x=>x.id===previousId);
   const model=imageModel(imageModelId ?? p.mediaDefaults?.image),capacity=model.input.max_references;
+  const extraReferences=(await Promise.all((panel.referenceKeys??[]).map(async ref=>{
+    const saved=p.nameReferences?.[referenceKey(p.workId,p.activeNameEpisodeId,ref.key,ref.role)];
+    if(!saved)return null;
+    if(saved.role!==ref.role||!saved.image)throw Error(`参照画像 ${ref.key} の登録が不正です`);
+    return {...saved,hash:await imageHash(saved.image),role:ref.role,name:`${ref.role}: ${ref.key}`};
+  }))).filter(Boolean);
+  if(panel.compositionReference){
+    const selection=panel.compositionReference;
+    if(selection.kind!=='capture')throw Error('選んだ構図資料が未対応です');
+    const capture=p.captures?.find(item=>item.id===selection.id&&item.panel_id===panel.id);
+    if(!capture?.original||!capture.image?.hash)throw Error(`構図資料 ${selection.id} の画像がありません`);
+    extraReferences.push({id:capture.id,key:capture.id,name:'Saved 3D composition, camera and pose only',role:'composition',image:capture.original,hash:capture.image.hash});
+  }
   const previousSizeOK=model.adapter_id!=='runway-image'||(previous?.image?.length??0)<=5_000_000;
-  const continuityReference=previous?.image && previous.sceneId===panel.sceneId && p.panels.indexOf(previous)<p.panels.indexOf(panel) && previousSizeOK && panel.characterIds.length+(p.style_references?.length??0)<capacity ? previous : null;
+  const continuityReference=previous?.image && previous.sceneId===panel.sceneId && p.panels.indexOf(previous)<p.panels.indexOf(panel) && previousSizeOK && panel.characterIds.length+(p.style_references?.length??0)+extraReferences.length<capacity ? previous : null;
   // Reject oversized continuity/prompts before persisting a paid or recoverable Job.
-  const references=[...panel.characterIds.map(id=>({name:p.characters.find(c=>c.id===id)?.name??id})),...(p.style_references??[]).map(style=>({name:`Style: ${style.name}`})),...(continuityReference?[{name:'Previous accepted panel: appearance and props only; follow current shot composition'}]:[])];
+  const references=[...panel.characterIds.map(id=>({name:p.characters.find(c=>c.id===id)?.name??id,role:'character'})),...(p.style_references??[]).map(style=>({name:`Style: ${style.name}`,role:'style'})),...extraReferences,...(continuityReference?[{name:'Previous accepted panel: appearance and props only; follow current shot composition',role:'context'}]:[])];
   imageRequest({panel,references,width:model.input.min_width,height:model.input.min_height,seed:0,instruction:'',modelId:model.id});
-  const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId,undefined,continuityReference?.id);
+  const job={...await beginJob(p,panel,panel.image?'retake':'generate',imageModelId,undefined,continuityReference?.id),...(panel.namePlanVersion===3?{input_references:references.map(({role,name,hash})=>({role,name,hash:hash??null})),input_direction:{prompt:panel.prompt,continuity:effectiveContinuity(panel)}}:{})};
   await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
   try{
-   const result=await generate(panel,frozen.characters,null,'',job,null,frozen.style_references??[],null,null,imageModelId,'direct',...(continuityReference ? [{continuityReference}] : []));
+   const generationArgs=[panel,p.characters,null,'',job,null,p.style_references??[],null,null,imageModelId,'direct'];
+   if(panel.namePlanVersion===3||continuityReference)generationArgs.push({...(continuityReference?{continuityReference}:{}),...(panel.namePlanVersion===3?{extraReferences}:{})});
+   const result=await generate(...generationArgs);
    await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
   }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
+ if(missingReferences.length)notify(`参照画像がありません: ${[...new Set(missingReferences.flatMap(item=>item.characterIds))].join('、')}。該当コマは未作画です`);
+ if(missingScenes.length)notify(`場面が未指定のコマ: ${missingScenes.join('、')}。該当コマは未作画です`);
+ return {missingReferences,missingScenes};
 }

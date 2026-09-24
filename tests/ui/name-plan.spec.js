@@ -10,7 +10,7 @@ async function setup(page,openControls=true) {
     await (await import('/src/bridge.js')).saveProject(p);
   });
   await page.reload();if(openControls)await page.getByText('制作する場面・ネーム・保存した原稿',{exact:true}).click();
-  return page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js'),{fileFixture}=await import('/tests/name-plan-fixture.mjs'),{createNameFile}=await import('/src/name-v2.js');const f=await fileFixture(2,'# Scene\n\n彼は手を振る。\n\n「また明日」');return createNameFile(await loadProject(),f.plan,null,{producer:'fixture',model:'',editedBy:[]});});
+  return page.evaluate(async()=>{const {loadProject}=await import('/src/bridge.js'),{fileFixture}=await import('/tests/name-plan-fixture.mjs'),{createNameFile}=await import('/src/name-v2.js');const f=await fileFixture(2,'# Scene\n\n彼は手を振る。\n\n「また明日」');return createNameFile(await loadProject(),f.plan,null,{producer:'fixture',model:'',editedBy:[]},{embedded:false});});
 }
 test('actual UI imports, previews printed text and persists adoption without AI calls',async({page})=>{
   const file=await setup(page);

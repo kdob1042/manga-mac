@@ -77,3 +77,9 @@ test('source candidate generation blocks approval only in its own section',()=>{
  assert.match(completionProblems(p,'a').join(' '),/未確定/);assert.deepEqual(completionProblems(p,'b'),[]);
  p.jobs[0].run.stage='candidate';assert.deepEqual(completionProblems(p,'a'),[]);
 });
+
+test('missing fixed-ID reference skips that panel and still draws other panels',async()=>{
+ let p=fixture();p.panels=p.panels.map(panel=>({...panel,image:null}));p.panels[0].characterIds=['local-yumi'];p.characters=[{id:'local-yumi',name:'由美',source:{character_id:'yumi'},image:null,hash:''}];const sent=[];
+ const result=await producePanels({current:()=>p,commit:async next=>{p=typeof next==='function'?next(p):next;},panelIds:p.panels.map(x=>x.id),generate:async panel=>{sent.push(panel.id);return {...panel,image};}});
+ assert.deepEqual(sent,['p1']);assert.deepEqual(result.missingReferences,[{panelId:'p0',characterIds:['yumi']}]);assert.equal(p.panels[0].image,null);assert.equal(p.panels[1].image,image);assert.equal(p.jobs.length,1);
+});

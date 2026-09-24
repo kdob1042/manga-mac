@@ -15,7 +15,7 @@ export function draftScenes(project, ids = project.draftScope?.sceneIds) {
 }
 
 // A checkpoint is an immutable entry in the existing manga history, not a second workspace.
-const draftFields = ['sourceApplication','panels','layout','layoutHistory','layoutRedo','panelMotions','motionHistory','draftScope','characters','style_references','output_locale','namePlan'];
+const draftFields = ['sourceApplication','panels','layout','layoutHistory','layoutRedo','panelMotions','motionHistory','draftScope','characters','style_references','output_locale','namePlan','otherNamePlans'];
 function checkpoint(project) {
   const state = Object.fromEntries(draftFields.map(key => [key, structuredClone(project[key] ?? (key === 'sourceApplication' ? {version:1,units:[]} : (key === 'draftScope' || key === 'namePlan') ? null : key === 'output_locale' ? 'ja' : []))]));
   return {...state, id:crypto.randomUUID(), draftCheckpoint:true, active:project.active,
@@ -37,7 +37,7 @@ export function startDraft(project, sceneIds, separate = false) {
     return {...project,draftScope:project.draftScope ?? scope};
   }
   assertSwitchable(project);
-  return {...project, history:[...project.history,checkpoint(project)], panels:[],...(project.sourceApplication?{sourceApplication:{version:1,units:[]}}:{}),layout:initialLayout([]),layoutHistory:[],layoutRedo:[],editRedo:[],panelMotions:[],motionHistory:[],draftScope:scope,namePlan:null};
+  return {...project, history:[...project.history,checkpoint(project)], panels:[],...(project.sourceApplication?{sourceApplication:{version:1,units:[]}}:{}),layout:initialLayout([]),layoutHistory:[],layoutRedo:[],editRedo:[],panelMotions:[],motionHistory:[],draftScope:scope,namePlan:null,otherNamePlans:[]};
 }
 export function restoreDraft(project, id) {
   assertSwitchable(project);

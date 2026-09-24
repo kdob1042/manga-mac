@@ -38,10 +38,17 @@ export const planSchema = {
 export const fileSchema = {
   ...obj({
     format: { const: FORMAT }, title: str(300), readingDirection: { const: 'rtl' }, stage: { const: 'name-only' },
-    source: obj({ repo: str(200), workId: id, branch: { enum: ['main', 'dev'] }, commit: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+    source: { anyOf: [obj({ repo: str(200), workId: id, branch: { enum: ['main', 'dev'] }, commit: { type: 'string', pattern: '^[0-9a-f]{40}$' },
       scenes: arr(obj({ id, sha256: { type: 'string', pattern: '^[0-9a-f]{64}$' } }), 1000, 1), selectedAtomIds: ids(),
       settingsHash: { type: 'string', pattern: '^[0-9a-f]{64}$' }, referencesHash: { type: 'string', pattern: '^[0-9a-f]{64}$' } },
       ['repo', 'workId', 'branch', 'scenes', 'selectedAtomIds', 'settingsHash', 'referencesHash']),
+      obj({ kind: { const: 'embedded' }, repo: str(200), workId: id, episodeId: id,
+        number: { type: 'integer', minimum: 1, maximum: 999999 },
+        branch: { enum: ['main', 'dev'] }, commit: { type: 'string', pattern: '^[0-9a-f]{40}$' },
+        scenes: arr(obj({ id, episodeId: id, text: str(MAX_BYTES) }), 1000, 1),
+        selectedAtomIds: ids(), characters: arr(obj({ id, name: str(300) }), 2000),
+      }, ['kind', 'repo', 'workId', 'episodeId', 'number', 'branch', 'scenes', 'selectedAtomIds', 'characters']),
+    ] },
     policyVersion: str(100), provenance: obj({ producer: str(100), model: { type: 'string', maxLength: 200 }, editedBy: arr(str(100), 20) }),
     plan: planSchema,
   }), $defs: { tree },

@@ -1,0 +1,2537 @@
+{
+  "version": 5,
+  "title": "人工fixture",
+  "snapshots": [
+    {
+      "id": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+      "repo": "fixture/stories",
+      "workId": "example",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "episodeId": "P01",
+      "episodeIds": [
+        "P01"
+      ],
+      "embeddedName": true,
+      "scenes": [
+        {
+          "id": "S01",
+          "episodeId": "P01",
+          "text": "# 原文\n\n「人工fixture」",
+          "sourceHash": "ca115fe8d84bc88fd0d99218ffa4f8bfdb1bcc9fc117e6f274cf320dbade860d"
+        }
+      ],
+      "characters": [],
+      "settings": [],
+      "references": [],
+      "sync": {
+        "source_branch": "dev"
+      },
+      "manifest": {
+        "work": {
+          "title": "人工fixture"
+        }
+      }
+    },
+    {
+      "id": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+      "repo": "fixture/stories",
+      "workId": "example",
+      "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "episodeId": "P01",
+      "episodeIds": [
+        "P01"
+      ],
+      "embeddedName": true,
+      "scenes": [
+        {
+          "id": "S01",
+          "episodeId": "P01",
+          "text": "# 原文\n\n「人工fixture」",
+          "sourceHash": "ca115fe8d84bc88fd0d99218ffa4f8bfdb1bcc9fc117e6f274cf320dbade860d"
+        }
+      ],
+      "characters": [],
+      "settings": [],
+      "references": [],
+      "sync": {
+        "source_branch": "dev"
+      },
+      "manifest": {
+        "work": {
+          "title": "人工fixture"
+        }
+      }
+    }
+  ],
+  "active": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+  "panels": [
+    {
+      "id": "np09d335a4d93e:p1:a04ed67a",
+      "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+      "sceneId": "S01",
+      "sourceRefs": [
+        {
+          "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+          "sceneId": "S01",
+          "startCp": 6,
+          "endCp": 17
+        }
+      ],
+      "contextRefs": [],
+      "requiredText": [
+        {
+          "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+          "sceneId": "S01",
+          "startCp": 6,
+          "endCp": 17
+        }
+      ],
+      "unitIds": [],
+      "characterIds": [],
+      "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+      "continuity": null,
+      "nameIntent": "原稿の場面を描く",
+      "namePlanVersion": 2,
+      "image": null,
+      "artwork_revision": null,
+      "capture_revision": null,
+      "status": "planned",
+      "instructions": [],
+      "attempts": 0,
+      "lettering": {
+        "mode": "balloons",
+        "boxes": [
+          {
+            "id": "box:np09d335a4d93e:p1:a04ed67a:0",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "x": 0.05,
+            "y": 0.03,
+            "width": 0.9,
+            "height": 0.55,
+            "kind": "balloon",
+            "shape": "round",
+            "fontSize": 48,
+            "lineHeight": 1.25,
+            "padding": 10,
+            "tail": null
+          }
+        ]
+      },
+      "letteringStatus": "draft",
+      "letteringArtworkRevision": null
+    },
+    {
+      "id": "np75aade12f125:p1:a04ed67a",
+      "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+      "sceneId": "S01",
+      "sourceRefs": [
+        {
+          "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+          "sceneId": "S01",
+          "startCp": 6,
+          "endCp": 17
+        }
+      ],
+      "contextRefs": [],
+      "requiredText": [
+        {
+          "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+          "sceneId": "S01",
+          "startCp": 6,
+          "endCp": 17
+        }
+      ],
+      "unitIds": [],
+      "characterIds": [],
+      "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+      "continuity": null,
+      "nameIntent": "原稿の場面を描く",
+      "namePlanVersion": 2,
+      "image": null,
+      "artwork_revision": null,
+      "capture_revision": null,
+      "status": "planned",
+      "instructions": [],
+      "attempts": 0,
+      "lettering": {
+        "mode": "balloons",
+        "boxes": [
+          {
+            "id": "box:np75aade12f125:p1:a04ed67a:0",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "x": 0.05,
+            "y": 0.03,
+            "width": 0.9,
+            "height": 0.55,
+            "kind": "balloon",
+            "shape": "round",
+            "fontSize": 48,
+            "lineHeight": 1.25,
+            "padding": 10,
+            "tail": null
+          }
+        ]
+      },
+      "letteringStatus": "draft",
+      "letteringArtworkRevision": null
+    }
+  ],
+  "artworks": [],
+  "characters": [],
+  "history": [
+    {
+      "panels": [],
+      "layout": {
+        "version": 1,
+        "pages": [],
+        "knownPanelIds": []
+      },
+      "sourceApplication": {
+        "version": 1,
+        "units": []
+      },
+      "draftScope": null,
+      "namePlan": null,
+      "otherNamePlans": null,
+      "layoutHistory": null,
+      "layoutRedo": null,
+      "panelMotions": null,
+      "motionHistory": null,
+      "nameEdit": true,
+      "edit": true,
+      "after": {
+        "panels": [
+          {
+            "id": "np09d335a4d93e:p1:a04ed67a",
+            "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+            "sceneId": "S01",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+            "continuity": null,
+            "nameIntent": "原稿の場面を描く",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:np09d335a4d93e:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                      "sceneId": "S01",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.55,
+                  "kind": "balloon",
+                  "shape": "round",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "np09d335a4d93e:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                  "panelId": "np09d335a4d93e:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "np09d335a4d93e:p1:a04ed67a"
+          ]
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "draftScope": null,
+        "namePlan": {
+          "format": "manga-mac/name-plan/v2",
+          "status": "adopted",
+          "id": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+          "namespace": "np09d335a4d93e",
+          "file": {
+            "format": "manga-mac/name-plan/v2",
+            "title": "人工fixture",
+            "stage": "name-only",
+            "readingDirection": "rtl",
+            "source": {
+              "kind": "embedded",
+              "repo": "fixture/stories",
+              "workId": "example",
+              "episodeId": "P01",
+              "number": 1,
+              "branch": "dev",
+              "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "scenes": [
+                {
+                  "id": "S01",
+                  "episodeId": "P01",
+                  "text": "# 原文\n\n「人工fixture」"
+                }
+              ],
+              "selectedAtomIds": [
+                "S01:u1:a0"
+              ],
+              "characters": []
+            },
+            "policyVersion": "name-director/2.0.0",
+            "provenance": {
+              "producer": "fixture",
+              "model": "",
+              "editedBy": []
+            },
+            "plan": {
+              "workGoal": {
+                "readerQuestion": "相手はどう応えるか",
+                "emotionalArc": [
+                  "期待",
+                  "反応"
+                ],
+                "payoff": "違いに気づく"
+              },
+              "coverage": [
+                {
+                  "atomId": "S01:u1:a0",
+                  "presentation": "dialogue",
+                  "reason": "原文の意味を保持する"
+                }
+              ],
+              "beats": [
+                {
+                  "id": "b1",
+                  "atomIds": [
+                    "S01:u1:a0"
+                  ],
+                  "function": "setup",
+                  "tempo": "normal",
+                  "readerBefore": "場所を知らない",
+                  "readerAfter": "場所が分かる"
+                }
+              ],
+              "panels": [
+                {
+                  "id": "p1",
+                  "atomIds": [
+                    "S01:u1:a0"
+                  ],
+                  "contextAtomIds": [],
+                  "beatIds": [
+                    "b1"
+                  ],
+                  "characterIds": [],
+                  "role": "standard",
+                  "shot": "medium",
+                  "shotIntent": "原稿の場面を描く",
+                  "prompt": "No text. Follow the source scene.",
+                  "silentReason": "",
+                  "protect": [
+                    "中心の人物"
+                  ],
+                  "gaze": "neutral"
+                }
+              ],
+              "pages": [
+                {
+                  "id": "page1",
+                  "purpose": "位置と反応を伝える",
+                  "entryBeatId": "b1",
+                  "exit": {
+                    "kind": "pause",
+                    "note": "静かに次へ",
+                    "payoffBeatIds": []
+                  },
+                  "tree": {
+                    "type": "leaf",
+                    "panelId": "p1"
+                  }
+                }
+              ]
+            }
+          },
+          "fileHash": "fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+          "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+          "draftId": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+          "panelIds": [
+            "np09d335a4d93e:p1:a04ed67a"
+          ],
+          "pageIds": [
+            "np09d335a4d93e:page1:edf0fdc5"
+          ],
+          "sourcePolicy": [
+            {
+              "atomId": "S01:u1:a0",
+              "source": {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              },
+              "kind": "dialogue",
+              "presentation": "dialogue",
+              "requiredText": [
+                {
+                  "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                  "sceneId": "S01",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "reason": "原文の意味を保持する"
+            }
+          ],
+          "compilerVersion": "name-layout/2.0.0",
+          "profile": {
+            "width": 1600,
+            "height": 2260,
+            "margin": 60,
+            "gutter": 28,
+            "minWidth": 128,
+            "minHeight": 110
+          },
+          "metrics": {
+            "np09d335a4d93e:p1:a04ed67a": {
+              "minWidth": 320,
+              "minHeight": 254.54545454545453
+            }
+          },
+          "compiledLayout": {
+            "version": 1,
+            "pages": [
+              {
+                "id": "np09d335a4d93e:page1:edf0fdc5",
+                "slots": [
+                  {
+                    "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                    "panelId": "np09d335a4d93e:p1:a04ed67a",
+                    "points": [
+                      [
+                        0.0375,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.9734513274
+                      ],
+                      [
+                        0.0375,
+                        0.9734513274
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "knownPanelIds": [
+              "np09d335a4d93e:p1:a04ed67a"
+            ]
+          },
+          "geometryOverride": false,
+          "locks": {
+            "pages": {},
+            "panelPoints": {}
+          },
+          "qa": {
+            "geometry": "validated_separately",
+            "visual": "not_run",
+            "entertainment": "human_review_required",
+            "findings": []
+          },
+          "importedAt": "2026-09-24T09:09:34.453Z"
+        },
+        "otherNamePlans": [],
+        "layoutHistory": [],
+        "layoutRedo": [],
+        "panelMotions": null,
+        "motionHistory": null
+      },
+      "label": "ネーム1を追加",
+      "at": "2026-09-24T09:09:34.455Z"
+    },
+    {
+      "panels": [
+        {
+          "id": "np09d335a4d93e:p1:a04ed67a",
+          "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+          "sceneId": "S01",
+          "sourceRefs": [
+            {
+              "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "contextRefs": [],
+          "requiredText": [
+            {
+              "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "unitIds": [],
+          "characterIds": [],
+          "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+          "continuity": null,
+          "nameIntent": "原稿の場面を描く",
+          "namePlanVersion": 2,
+          "image": null,
+          "artwork_revision": null,
+          "capture_revision": null,
+          "status": "planned",
+          "instructions": [],
+          "attempts": 0,
+          "lettering": {
+            "mode": "balloons",
+            "boxes": [
+              {
+                "id": "box:np09d335a4d93e:p1:a04ed67a:0",
+                "sourceRefs": [
+                  {
+                    "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                    "sceneId": "S01",
+                    "startCp": 6,
+                    "endCp": 17
+                  }
+                ],
+                "x": 0.05,
+                "y": 0.03,
+                "width": 0.9,
+                "height": 0.55,
+                "kind": "balloon",
+                "shape": "round",
+                "fontSize": 48,
+                "lineHeight": 1.25,
+                "padding": 10,
+                "tail": null
+              }
+            ]
+          },
+          "letteringStatus": "draft",
+          "letteringArtworkRevision": null
+        }
+      ],
+      "layout": {
+        "version": 1,
+        "pages": [
+          {
+            "id": "np09d335a4d93e:page1:edf0fdc5",
+            "slots": [
+              {
+                "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                "panelId": "np09d335a4d93e:p1:a04ed67a",
+                "points": [
+                  [
+                    0.0375,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.9734513274
+                  ],
+                  [
+                    0.0375,
+                    0.9734513274
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "knownPanelIds": [
+          "np09d335a4d93e:p1:a04ed67a"
+        ]
+      },
+      "sourceApplication": {
+        "version": 1,
+        "units": []
+      },
+      "draftScope": null,
+      "namePlan": {
+        "format": "manga-mac/name-plan/v2",
+        "status": "adopted",
+        "id": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+        "namespace": "np09d335a4d93e",
+        "file": {
+          "format": "manga-mac/name-plan/v2",
+          "title": "人工fixture",
+          "stage": "name-only",
+          "readingDirection": "rtl",
+          "source": {
+            "kind": "embedded",
+            "repo": "fixture/stories",
+            "workId": "example",
+            "episodeId": "P01",
+            "number": 1,
+            "branch": "dev",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scenes": [
+              {
+                "id": "S01",
+                "episodeId": "P01",
+                "text": "# 原文\n\n「人工fixture」"
+              }
+            ],
+            "selectedAtomIds": [
+              "S01:u1:a0"
+            ],
+            "characters": []
+          },
+          "policyVersion": "name-director/2.0.0",
+          "provenance": {
+            "producer": "fixture",
+            "model": "",
+            "editedBy": []
+          },
+          "plan": {
+            "workGoal": {
+              "readerQuestion": "相手はどう応えるか",
+              "emotionalArc": [
+                "期待",
+                "反応"
+              ],
+              "payoff": "違いに気づく"
+            },
+            "coverage": [
+              {
+                "atomId": "S01:u1:a0",
+                "presentation": "dialogue",
+                "reason": "原文の意味を保持する"
+              }
+            ],
+            "beats": [
+              {
+                "id": "b1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "function": "setup",
+                "tempo": "normal",
+                "readerBefore": "場所を知らない",
+                "readerAfter": "場所が分かる"
+              }
+            ],
+            "panels": [
+              {
+                "id": "p1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "contextAtomIds": [],
+                "beatIds": [
+                  "b1"
+                ],
+                "characterIds": [],
+                "role": "standard",
+                "shot": "medium",
+                "shotIntent": "原稿の場面を描く",
+                "prompt": "No text. Follow the source scene.",
+                "silentReason": "",
+                "protect": [
+                  "中心の人物"
+                ],
+                "gaze": "neutral"
+              }
+            ],
+            "pages": [
+              {
+                "id": "page1",
+                "purpose": "位置と反応を伝える",
+                "entryBeatId": "b1",
+                "exit": {
+                  "kind": "pause",
+                  "note": "静かに次へ",
+                  "payoffBeatIds": []
+                },
+                "tree": {
+                  "type": "leaf",
+                  "panelId": "p1"
+                }
+              }
+            ]
+          }
+        },
+        "fileHash": "fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+        "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+        "draftId": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+        "panelIds": [
+          "np09d335a4d93e:p1:a04ed67a"
+        ],
+        "pageIds": [
+          "np09d335a4d93e:page1:edf0fdc5"
+        ],
+        "sourcePolicy": [
+          {
+            "atomId": "S01:u1:a0",
+            "source": {
+              "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            },
+            "kind": "dialogue",
+            "presentation": "dialogue",
+            "requiredText": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "reason": "原文の意味を保持する"
+          }
+        ],
+        "compilerVersion": "name-layout/2.0.0",
+        "profile": {
+          "width": 1600,
+          "height": 2260,
+          "margin": 60,
+          "gutter": 28,
+          "minWidth": 128,
+          "minHeight": 110
+        },
+        "metrics": {
+          "np09d335a4d93e:p1:a04ed67a": {
+            "minWidth": 320,
+            "minHeight": 254.54545454545453
+          }
+        },
+        "compiledLayout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "np09d335a4d93e:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                  "panelId": "np09d335a4d93e:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "np09d335a4d93e:p1:a04ed67a"
+          ]
+        },
+        "geometryOverride": false,
+        "locks": {
+          "pages": {},
+          "panelPoints": {}
+        },
+        "qa": {
+          "geometry": "validated_separately",
+          "visual": "not_run",
+          "entertainment": "human_review_required",
+          "findings": []
+        },
+        "importedAt": "2026-09-24T09:09:34.453Z"
+      },
+      "otherNamePlans": [],
+      "layoutHistory": [],
+      "layoutRedo": [],
+      "panelMotions": null,
+      "motionHistory": null,
+      "nameEdit": true,
+      "edit": true,
+      "after": {
+        "panels": [
+          {
+            "id": "np09d335a4d93e:p1:a04ed67a",
+            "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+            "sceneId": "S01",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+            "continuity": null,
+            "nameIntent": "原稿の場面を描く",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:np09d335a4d93e:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                      "sceneId": "S01",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.55,
+                  "kind": "balloon",
+                  "shape": "round",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          },
+          {
+            "id": "np75aade12f125:p1:a04ed67a",
+            "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+            "sceneId": "S01",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+            "continuity": null,
+            "nameIntent": "原稿の場面を描く",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:np75aade12f125:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                      "sceneId": "S01",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.55,
+                  "kind": "balloon",
+                  "shape": "round",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "np09d335a4d93e:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                  "panelId": "np09d335a4d93e:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "id": "np75aade12f125:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np75aade12f125:page1:edf0fdc5:np75aade12f125:p1:a04ed67a",
+                  "panelId": "np75aade12f125:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "np09d335a4d93e:p1:a04ed67a",
+            "np75aade12f125:p1:a04ed67a"
+          ]
+        },
+        "sourceApplication": {
+          "version": 1,
+          "units": []
+        },
+        "draftScope": null,
+        "namePlan": {
+          "format": "manga-mac/name-plan/v2",
+          "status": "adopted",
+          "id": "name:308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+          "namespace": "np75aade12f125",
+          "file": {
+            "format": "manga-mac/name-plan/v2",
+            "title": "人工fixture",
+            "stage": "name-only",
+            "readingDirection": "rtl",
+            "source": {
+              "kind": "embedded",
+              "repo": "fixture/stories",
+              "workId": "example",
+              "episodeId": "P01",
+              "number": 2,
+              "branch": "dev",
+              "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "scenes": [
+                {
+                  "id": "S01",
+                  "episodeId": "P01",
+                  "text": "# 原文\n\n「人工fixture」"
+                }
+              ],
+              "selectedAtomIds": [
+                "S01:u1:a0"
+              ],
+              "characters": []
+            },
+            "policyVersion": "name-director/2.0.0",
+            "provenance": {
+              "producer": "fixture",
+              "model": "",
+              "editedBy": []
+            },
+            "plan": {
+              "workGoal": {
+                "readerQuestion": "相手はどう応えるか",
+                "emotionalArc": [
+                  "期待",
+                  "反応"
+                ],
+                "payoff": "違いに気づく"
+              },
+              "coverage": [
+                {
+                  "atomId": "S01:u1:a0",
+                  "presentation": "dialogue",
+                  "reason": "原文の意味を保持する"
+                }
+              ],
+              "beats": [
+                {
+                  "id": "b1",
+                  "atomIds": [
+                    "S01:u1:a0"
+                  ],
+                  "function": "setup",
+                  "tempo": "normal",
+                  "readerBefore": "場所を知らない",
+                  "readerAfter": "場所が分かる"
+                }
+              ],
+              "panels": [
+                {
+                  "id": "p1",
+                  "atomIds": [
+                    "S01:u1:a0"
+                  ],
+                  "contextAtomIds": [],
+                  "beatIds": [
+                    "b1"
+                  ],
+                  "characterIds": [],
+                  "role": "standard",
+                  "shot": "medium",
+                  "shotIntent": "原稿の場面を描く",
+                  "prompt": "No text. Follow the source scene.",
+                  "silentReason": "",
+                  "protect": [
+                    "中心の人物"
+                  ],
+                  "gaze": "neutral"
+                }
+              ],
+              "pages": [
+                {
+                  "id": "page1",
+                  "purpose": "位置と反応を伝える",
+                  "entryBeatId": "b1",
+                  "exit": {
+                    "kind": "pause",
+                    "note": "静かに次へ",
+                    "payoffBeatIds": []
+                  },
+                  "tree": {
+                    "type": "leaf",
+                    "panelId": "p1"
+                  }
+                }
+              ]
+            }
+          },
+          "fileHash": "308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+          "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+          "draftId": "name:308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+          "panelIds": [
+            "np75aade12f125:p1:a04ed67a"
+          ],
+          "pageIds": [
+            "np75aade12f125:page1:edf0fdc5"
+          ],
+          "sourcePolicy": [
+            {
+              "atomId": "S01:u1:a0",
+              "source": {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              },
+              "kind": "dialogue",
+              "presentation": "dialogue",
+              "requiredText": [
+                {
+                  "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                  "sceneId": "S01",
+                  "startCp": 6,
+                  "endCp": 17
+                }
+              ],
+              "reason": "原文の意味を保持する"
+            }
+          ],
+          "compilerVersion": "name-layout/2.0.0",
+          "profile": {
+            "width": 1600,
+            "height": 2260,
+            "margin": 60,
+            "gutter": 28,
+            "minWidth": 128,
+            "minHeight": 110
+          },
+          "metrics": {
+            "np75aade12f125:p1:a04ed67a": {
+              "minWidth": 320,
+              "minHeight": 254.54545454545453
+            }
+          },
+          "compiledLayout": {
+            "version": 1,
+            "pages": [
+              {
+                "id": "np75aade12f125:page1:edf0fdc5",
+                "slots": [
+                  {
+                    "id": "name:np75aade12f125:page1:edf0fdc5:np75aade12f125:p1:a04ed67a",
+                    "panelId": "np75aade12f125:p1:a04ed67a",
+                    "points": [
+                      [
+                        0.0375,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.0265486726
+                      ],
+                      [
+                        0.9625,
+                        0.9734513274
+                      ],
+                      [
+                        0.0375,
+                        0.9734513274
+                      ]
+                    ]
+                  }
+                ]
+              }
+            ],
+            "knownPanelIds": [
+              "np75aade12f125:p1:a04ed67a"
+            ]
+          },
+          "geometryOverride": false,
+          "locks": {
+            "pages": {},
+            "panelPoints": {}
+          },
+          "qa": {
+            "geometry": "validated_separately",
+            "visual": "not_run",
+            "entertainment": "human_review_required",
+            "findings": []
+          },
+          "importedAt": "2026-09-24T09:09:34.458Z"
+        },
+        "otherNamePlans": [
+          {
+            "format": "manga-mac/name-plan/v2",
+            "status": "adopted",
+            "id": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+            "namespace": "np09d335a4d93e",
+            "file": {
+              "format": "manga-mac/name-plan/v2",
+              "title": "人工fixture",
+              "stage": "name-only",
+              "readingDirection": "rtl",
+              "source": {
+                "kind": "embedded",
+                "repo": "fixture/stories",
+                "workId": "example",
+                "episodeId": "P01",
+                "number": 1,
+                "branch": "dev",
+                "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "scenes": [
+                  {
+                    "id": "S01",
+                    "episodeId": "P01",
+                    "text": "# 原文\n\n「人工fixture」"
+                  }
+                ],
+                "selectedAtomIds": [
+                  "S01:u1:a0"
+                ],
+                "characters": []
+              },
+              "policyVersion": "name-director/2.0.0",
+              "provenance": {
+                "producer": "fixture",
+                "model": "",
+                "editedBy": []
+              },
+              "plan": {
+                "workGoal": {
+                  "readerQuestion": "相手はどう応えるか",
+                  "emotionalArc": [
+                    "期待",
+                    "反応"
+                  ],
+                  "payoff": "違いに気づく"
+                },
+                "coverage": [
+                  {
+                    "atomId": "S01:u1:a0",
+                    "presentation": "dialogue",
+                    "reason": "原文の意味を保持する"
+                  }
+                ],
+                "beats": [
+                  {
+                    "id": "b1",
+                    "atomIds": [
+                      "S01:u1:a0"
+                    ],
+                    "function": "setup",
+                    "tempo": "normal",
+                    "readerBefore": "場所を知らない",
+                    "readerAfter": "場所が分かる"
+                  }
+                ],
+                "panels": [
+                  {
+                    "id": "p1",
+                    "atomIds": [
+                      "S01:u1:a0"
+                    ],
+                    "contextAtomIds": [],
+                    "beatIds": [
+                      "b1"
+                    ],
+                    "characterIds": [],
+                    "role": "standard",
+                    "shot": "medium",
+                    "shotIntent": "原稿の場面を描く",
+                    "prompt": "No text. Follow the source scene.",
+                    "silentReason": "",
+                    "protect": [
+                      "中心の人物"
+                    ],
+                    "gaze": "neutral"
+                  }
+                ],
+                "pages": [
+                  {
+                    "id": "page1",
+                    "purpose": "位置と反応を伝える",
+                    "entryBeatId": "b1",
+                    "exit": {
+                      "kind": "pause",
+                      "note": "静かに次へ",
+                      "payoffBeatIds": []
+                    },
+                    "tree": {
+                      "type": "leaf",
+                      "panelId": "p1"
+                    }
+                  }
+                ]
+              }
+            },
+            "fileHash": "fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+            "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+            "draftId": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+            "panelIds": [
+              "np09d335a4d93e:p1:a04ed67a"
+            ],
+            "pageIds": [
+              "np09d335a4d93e:page1:edf0fdc5"
+            ],
+            "sourcePolicy": [
+              {
+                "atomId": "S01:u1:a0",
+                "source": {
+                  "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                  "sceneId": "S01",
+                  "startCp": 6,
+                  "endCp": 17
+                },
+                "kind": "dialogue",
+                "presentation": "dialogue",
+                "requiredText": [
+                  {
+                    "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                    "sceneId": "S01",
+                    "startCp": 6,
+                    "endCp": 17
+                  }
+                ],
+                "reason": "原文の意味を保持する"
+              }
+            ],
+            "compilerVersion": "name-layout/2.0.0",
+            "profile": {
+              "width": 1600,
+              "height": 2260,
+              "margin": 60,
+              "gutter": 28,
+              "minWidth": 128,
+              "minHeight": 110
+            },
+            "metrics": {
+              "np09d335a4d93e:p1:a04ed67a": {
+                "minWidth": 320,
+                "minHeight": 254.54545454545453
+              }
+            },
+            "compiledLayout": {
+              "version": 1,
+              "pages": [
+                {
+                  "id": "np09d335a4d93e:page1:edf0fdc5",
+                  "slots": [
+                    {
+                      "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                      "panelId": "np09d335a4d93e:p1:a04ed67a",
+                      "points": [
+                        [
+                          0.0375,
+                          0.0265486726
+                        ],
+                        [
+                          0.9625,
+                          0.0265486726
+                        ],
+                        [
+                          0.9625,
+                          0.9734513274
+                        ],
+                        [
+                          0.0375,
+                          0.9734513274
+                        ]
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "knownPanelIds": [
+                "np09d335a4d93e:p1:a04ed67a"
+              ]
+            },
+            "geometryOverride": false,
+            "locks": {
+              "pages": {},
+              "panelPoints": {}
+            },
+            "qa": {
+              "geometry": "validated_separately",
+              "visual": "not_run",
+              "entertainment": "human_review_required",
+              "findings": []
+            },
+            "importedAt": "2026-09-24T09:09:34.453Z"
+          }
+        ],
+        "layoutHistory": [],
+        "layoutRedo": [],
+        "panelMotions": null,
+        "motionHistory": null
+      },
+      "label": "ネーム2を追加",
+      "at": "2026-09-24T09:09:34.458Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": "e7c4a878-3c50-4e44-93ac-9700b1776a46",
+      "kind": "name_plan",
+      "status": "complete",
+      "source_revision": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+      "nameCandidate": {
+        "version": 2,
+        "id": "name-candidate:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+        "namespace": "np09d335a4d93e",
+        "file": {
+          "format": "manga-mac/name-plan/v2",
+          "title": "人工fixture",
+          "stage": "name-only",
+          "readingDirection": "rtl",
+          "source": {
+            "kind": "embedded",
+            "repo": "fixture/stories",
+            "workId": "example",
+            "episodeId": "P01",
+            "number": 1,
+            "branch": "dev",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scenes": [
+              {
+                "id": "S01",
+                "episodeId": "P01",
+                "text": "# 原文\n\n「人工fixture」"
+              }
+            ],
+            "selectedAtomIds": [
+              "S01:u1:a0"
+            ],
+            "characters": []
+          },
+          "policyVersion": "name-director/2.0.0",
+          "provenance": {
+            "producer": "fixture",
+            "model": "",
+            "editedBy": []
+          },
+          "plan": {
+            "workGoal": {
+              "readerQuestion": "相手はどう応えるか",
+              "emotionalArc": [
+                "期待",
+                "反応"
+              ],
+              "payoff": "違いに気づく"
+            },
+            "coverage": [
+              {
+                "atomId": "S01:u1:a0",
+                "presentation": "dialogue",
+                "reason": "原文の意味を保持する"
+              }
+            ],
+            "beats": [
+              {
+                "id": "b1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "function": "setup",
+                "tempo": "normal",
+                "readerBefore": "場所を知らない",
+                "readerAfter": "場所が分かる"
+              }
+            ],
+            "panels": [
+              {
+                "id": "p1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "contextAtomIds": [],
+                "beatIds": [
+                  "b1"
+                ],
+                "characterIds": [],
+                "role": "standard",
+                "shot": "medium",
+                "shotIntent": "原稿の場面を描く",
+                "prompt": "No text. Follow the source scene.",
+                "silentReason": "",
+                "protect": [
+                  "中心の人物"
+                ],
+                "gaze": "neutral"
+              }
+            ],
+            "pages": [
+              {
+                "id": "page1",
+                "purpose": "位置と反応を伝える",
+                "entryBeatId": "b1",
+                "exit": {
+                  "kind": "pause",
+                  "note": "静かに次へ",
+                  "payoffBeatIds": []
+                },
+                "tree": {
+                  "type": "leaf",
+                  "panelId": "p1"
+                }
+              }
+            ]
+          }
+        },
+        "fileHash": "fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+        "previous": {
+          "base": "ba59fcab81d90e40e60e25396dce3a29b5bd4215dbaa85a9a683ad01372a827c",
+          "source": {
+            "kind": "embedded",
+            "repo": "fixture/stories",
+            "workId": "example",
+            "episodeId": "P01",
+            "number": 1,
+            "branch": "dev",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scenes": [
+              {
+                "id": "S01",
+                "episodeId": "P01",
+                "text": "# 原文\n\n「人工fixture」"
+              }
+            ],
+            "selectedAtomIds": [
+              "S01:u1:a0"
+            ],
+            "characters": []
+          }
+        },
+        "panels": [
+          {
+            "id": "np09d335a4d93e:p1:a04ed67a",
+            "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+            "sceneId": "S01",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+            "continuity": null,
+            "nameIntent": "原稿の場面を描く",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:np09d335a4d93e:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                      "sceneId": "S01",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.55,
+                  "kind": "balloon",
+                  "shape": "round",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "np09d335a4d93e:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                  "panelId": "np09d335a4d93e:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "np09d335a4d93e:p1:a04ed67a"
+          ]
+        },
+        "sourcePolicy": [
+          {
+            "atomId": "S01:u1:a0",
+            "source": {
+              "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            },
+            "kind": "dialogue",
+            "presentation": "dialogue",
+            "requiredText": [
+              {
+                "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "reason": "原文の意味を保持する"
+          }
+        ],
+        "sourceSnapshot": {
+          "id": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+          "repo": "fixture/stories",
+          "workId": "example",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "episodeId": "P01",
+          "episodeIds": [
+            "P01"
+          ],
+          "embeddedName": true,
+          "scenes": [
+            {
+              "id": "S01",
+              "episodeId": "P01",
+              "text": "# 原文\n\n「人工fixture」"
+            }
+          ],
+          "characters": [],
+          "settings": [],
+          "references": [],
+          "sync": {
+            "source_branch": "dev"
+          },
+          "manifest": {
+            "work": {
+              "title": "人工fixture"
+            }
+          }
+        },
+        "compilerVersion": "name-layout/2.0.0",
+        "profile": {
+          "width": 1600,
+          "height": 2260,
+          "margin": 60,
+          "gutter": 28,
+          "minWidth": 128,
+          "minHeight": 110
+        },
+        "metrics": {
+          "np09d335a4d93e:p1:a04ed67a": {
+            "minWidth": 320,
+            "minHeight": 254.54545454545453
+          }
+        },
+        "diagnostics": [],
+        "qa": {
+          "geometry": "validated_separately",
+          "visual": "not_run",
+          "entertainment": "human_review_required",
+          "findings": []
+        },
+        "status": "candidate"
+      },
+      "at": "2026-09-24T09:09:34.445Z"
+    },
+    {
+      "id": "e2cf492e-b48a-4e4d-bc09-18fa48387f9c",
+      "kind": "name_plan",
+      "status": "complete",
+      "source_revision": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+      "nameCandidate": {
+        "version": 2,
+        "id": "name-candidate:308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+        "namespace": "np75aade12f125",
+        "file": {
+          "format": "manga-mac/name-plan/v2",
+          "title": "人工fixture",
+          "stage": "name-only",
+          "readingDirection": "rtl",
+          "source": {
+            "kind": "embedded",
+            "repo": "fixture/stories",
+            "workId": "example",
+            "episodeId": "P01",
+            "number": 2,
+            "branch": "dev",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scenes": [
+              {
+                "id": "S01",
+                "episodeId": "P01",
+                "text": "# 原文\n\n「人工fixture」"
+              }
+            ],
+            "selectedAtomIds": [
+              "S01:u1:a0"
+            ],
+            "characters": []
+          },
+          "policyVersion": "name-director/2.0.0",
+          "provenance": {
+            "producer": "fixture",
+            "model": "",
+            "editedBy": []
+          },
+          "plan": {
+            "workGoal": {
+              "readerQuestion": "相手はどう応えるか",
+              "emotionalArc": [
+                "期待",
+                "反応"
+              ],
+              "payoff": "違いに気づく"
+            },
+            "coverage": [
+              {
+                "atomId": "S01:u1:a0",
+                "presentation": "dialogue",
+                "reason": "原文の意味を保持する"
+              }
+            ],
+            "beats": [
+              {
+                "id": "b1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "function": "setup",
+                "tempo": "normal",
+                "readerBefore": "場所を知らない",
+                "readerAfter": "場所が分かる"
+              }
+            ],
+            "panels": [
+              {
+                "id": "p1",
+                "atomIds": [
+                  "S01:u1:a0"
+                ],
+                "contextAtomIds": [],
+                "beatIds": [
+                  "b1"
+                ],
+                "characterIds": [],
+                "role": "standard",
+                "shot": "medium",
+                "shotIntent": "原稿の場面を描く",
+                "prompt": "No text. Follow the source scene.",
+                "silentReason": "",
+                "protect": [
+                  "中心の人物"
+                ],
+                "gaze": "neutral"
+              }
+            ],
+            "pages": [
+              {
+                "id": "page1",
+                "purpose": "位置と反応を伝える",
+                "entryBeatId": "b1",
+                "exit": {
+                  "kind": "pause",
+                  "note": "静かに次へ",
+                  "payoffBeatIds": []
+                },
+                "tree": {
+                  "type": "leaf",
+                  "panelId": "p1"
+                }
+              }
+            ]
+          }
+        },
+        "fileHash": "308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+        "previous": {
+          "base": "f4e5387411d714ac1bab23c1a5602c8c9a1bda37ba62e09495e3d0e7b1fc4fa1",
+          "source": {
+            "kind": "embedded",
+            "repo": "fixture/stories",
+            "workId": "example",
+            "episodeId": "P01",
+            "number": 2,
+            "branch": "dev",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "scenes": [
+              {
+                "id": "S01",
+                "episodeId": "P01",
+                "text": "# 原文\n\n「人工fixture」"
+              }
+            ],
+            "selectedAtomIds": [
+              "S01:u1:a0"
+            ],
+            "characters": []
+          }
+        },
+        "panels": [
+          {
+            "id": "np75aade12f125:p1:a04ed67a",
+            "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+            "sceneId": "S01",
+            "sourceRefs": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "contextRefs": [],
+            "requiredText": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "unitIds": [],
+            "characterIds": [],
+            "prompt": "No text. Follow the source scene.\n構図: 原稿の場面を描く\n保護する要素: 中心の人物\n視線: neutral\nNo text, no lettering, no balloons.",
+            "continuity": null,
+            "nameIntent": "原稿の場面を描く",
+            "namePlanVersion": 2,
+            "image": null,
+            "artwork_revision": null,
+            "capture_revision": null,
+            "status": "planned",
+            "instructions": [],
+            "attempts": 0,
+            "lettering": {
+              "mode": "balloons",
+              "boxes": [
+                {
+                  "id": "box:np75aade12f125:p1:a04ed67a:0",
+                  "sourceRefs": [
+                    {
+                      "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                      "sceneId": "S01",
+                      "startCp": 6,
+                      "endCp": 17
+                    }
+                  ],
+                  "x": 0.05,
+                  "y": 0.03,
+                  "width": 0.9,
+                  "height": 0.55,
+                  "kind": "balloon",
+                  "shape": "round",
+                  "fontSize": 48,
+                  "lineHeight": 1.25,
+                  "padding": 10,
+                  "tail": null
+                }
+              ]
+            },
+            "letteringStatus": "draft",
+            "letteringArtworkRevision": null
+          }
+        ],
+        "layout": {
+          "version": 1,
+          "pages": [
+            {
+              "id": "np75aade12f125:page1:edf0fdc5",
+              "slots": [
+                {
+                  "id": "name:np75aade12f125:page1:edf0fdc5:np75aade12f125:p1:a04ed67a",
+                  "panelId": "np75aade12f125:p1:a04ed67a",
+                  "points": [
+                    [
+                      0.0375,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.0265486726
+                    ],
+                    [
+                      0.9625,
+                      0.9734513274
+                    ],
+                    [
+                      0.0375,
+                      0.9734513274
+                    ]
+                  ]
+                }
+              ]
+            }
+          ],
+          "knownPanelIds": [
+            "np75aade12f125:p1:a04ed67a"
+          ]
+        },
+        "sourcePolicy": [
+          {
+            "atomId": "S01:u1:a0",
+            "source": {
+              "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            },
+            "kind": "dialogue",
+            "presentation": "dialogue",
+            "requiredText": [
+              {
+                "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+                "sceneId": "S01",
+                "startCp": 6,
+                "endCp": 17
+              }
+            ],
+            "reason": "原文の意味を保持する"
+          }
+        ],
+        "sourceSnapshot": {
+          "id": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+          "repo": "fixture/stories",
+          "workId": "example",
+          "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "episodeId": "P01",
+          "episodeIds": [
+            "P01"
+          ],
+          "embeddedName": true,
+          "scenes": [
+            {
+              "id": "S01",
+              "episodeId": "P01",
+              "text": "# 原文\n\n「人工fixture」"
+            }
+          ],
+          "characters": [],
+          "settings": [],
+          "references": [],
+          "sync": {
+            "source_branch": "dev"
+          },
+          "manifest": {
+            "work": {
+              "title": "人工fixture"
+            }
+          }
+        },
+        "compilerVersion": "name-layout/2.0.0",
+        "profile": {
+          "width": 1600,
+          "height": 2260,
+          "margin": 60,
+          "gutter": 28,
+          "minWidth": 128,
+          "minHeight": 110
+        },
+        "metrics": {
+          "np75aade12f125:p1:a04ed67a": {
+            "minWidth": 320,
+            "minHeight": 254.54545454545453
+          }
+        },
+        "diagnostics": [],
+        "qa": {
+          "geometry": "validated_separately",
+          "visual": "not_run",
+          "entertainment": "human_review_required",
+          "findings": []
+        },
+        "status": "candidate"
+      },
+      "at": "2026-09-24T09:09:34.456Z"
+    }
+  ],
+  "localizations": [],
+  "output_locale": "ja",
+  "mediaDefaults": {
+    "image": "flux-2-klein-4b-local",
+    "video": "runway-gen4-5"
+  },
+  "videoShots": [],
+  "videoRevisions": [],
+  "videoHistory": [],
+  "workId": "example",
+  "layout": {
+    "version": 1,
+    "pages": [
+      {
+        "id": "np09d335a4d93e:page1:edf0fdc5",
+        "slots": [
+          {
+            "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+            "panelId": "np09d335a4d93e:p1:a04ed67a",
+            "points": [
+              [
+                0.0375,
+                0.0265486726
+              ],
+              [
+                0.9625,
+                0.0265486726
+              ],
+              [
+                0.9625,
+                0.9734513274
+              ],
+              [
+                0.0375,
+                0.9734513274
+              ]
+            ]
+          }
+        ]
+      },
+      {
+        "id": "np75aade12f125:page1:edf0fdc5",
+        "slots": [
+          {
+            "id": "name:np75aade12f125:page1:edf0fdc5:np75aade12f125:p1:a04ed67a",
+            "panelId": "np75aade12f125:p1:a04ed67a",
+            "points": [
+              [
+                0.0375,
+                0.0265486726
+              ],
+              [
+                0.9625,
+                0.0265486726
+              ],
+              [
+                0.9625,
+                0.9734513274
+              ],
+              [
+                0.0375,
+                0.9734513274
+              ]
+            ]
+          }
+        ]
+      }
+    ],
+    "knownPanelIds": [
+      "np09d335a4d93e:p1:a04ed67a",
+      "np75aade12f125:p1:a04ed67a"
+    ]
+  },
+  "sourceApplication": {
+    "version": 1,
+    "units": []
+  },
+  "namePlan": {
+    "format": "manga-mac/name-plan/v2",
+    "status": "adopted",
+    "id": "name:308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+    "namespace": "np75aade12f125",
+    "file": {
+      "format": "manga-mac/name-plan/v2",
+      "title": "人工fixture",
+      "stage": "name-only",
+      "readingDirection": "rtl",
+      "source": {
+        "kind": "embedded",
+        "repo": "fixture/stories",
+        "workId": "example",
+        "episodeId": "P01",
+        "number": 2,
+        "branch": "dev",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "scenes": [
+          {
+            "id": "S01",
+            "episodeId": "P01",
+            "text": "# 原文\n\n「人工fixture」"
+          }
+        ],
+        "selectedAtomIds": [
+          "S01:u1:a0"
+        ],
+        "characters": []
+      },
+      "policyVersion": "name-director/2.0.0",
+      "provenance": {
+        "producer": "fixture",
+        "model": "",
+        "editedBy": []
+      },
+      "plan": {
+        "workGoal": {
+          "readerQuestion": "相手はどう応えるか",
+          "emotionalArc": [
+            "期待",
+            "反応"
+          ],
+          "payoff": "違いに気づく"
+        },
+        "coverage": [
+          {
+            "atomId": "S01:u1:a0",
+            "presentation": "dialogue",
+            "reason": "原文の意味を保持する"
+          }
+        ],
+        "beats": [
+          {
+            "id": "b1",
+            "atomIds": [
+              "S01:u1:a0"
+            ],
+            "function": "setup",
+            "tempo": "normal",
+            "readerBefore": "場所を知らない",
+            "readerAfter": "場所が分かる"
+          }
+        ],
+        "panels": [
+          {
+            "id": "p1",
+            "atomIds": [
+              "S01:u1:a0"
+            ],
+            "contextAtomIds": [],
+            "beatIds": [
+              "b1"
+            ],
+            "characterIds": [],
+            "role": "standard",
+            "shot": "medium",
+            "shotIntent": "原稿の場面を描く",
+            "prompt": "No text. Follow the source scene.",
+            "silentReason": "",
+            "protect": [
+              "中心の人物"
+            ],
+            "gaze": "neutral"
+          }
+        ],
+        "pages": [
+          {
+            "id": "page1",
+            "purpose": "位置と反応を伝える",
+            "entryBeatId": "b1",
+            "exit": {
+              "kind": "pause",
+              "note": "静かに次へ",
+              "payoffBeatIds": []
+            },
+            "tree": {
+              "type": "leaf",
+              "panelId": "p1"
+            }
+          }
+        ]
+      }
+    },
+    "fileHash": "308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+    "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+    "draftId": "name:308a16ff515b418953900127b5a0bc0fb362fd35afa43fe5f60014d495ff420f",
+    "panelIds": [
+      "np75aade12f125:p1:a04ed67a"
+    ],
+    "pageIds": [
+      "np75aade12f125:page1:edf0fdc5"
+    ],
+    "sourcePolicy": [
+      {
+        "atomId": "S01:u1:a0",
+        "source": {
+          "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+          "sceneId": "S01",
+          "startCp": 6,
+          "endCp": 17
+        },
+        "kind": "dialogue",
+        "presentation": "dialogue",
+        "requiredText": [
+          {
+            "snapshotId": "name-source:a1c65d618a40189e9eeaad3a6abc940c4e82259d478b526729c25f2973bfc9a3",
+            "sceneId": "S01",
+            "startCp": 6,
+            "endCp": 17
+          }
+        ],
+        "reason": "原文の意味を保持する"
+      }
+    ],
+    "compilerVersion": "name-layout/2.0.0",
+    "profile": {
+      "width": 1600,
+      "height": 2260,
+      "margin": 60,
+      "gutter": 28,
+      "minWidth": 128,
+      "minHeight": 110
+    },
+    "metrics": {
+      "np75aade12f125:p1:a04ed67a": {
+        "minWidth": 320,
+        "minHeight": 254.54545454545453
+      }
+    },
+    "compiledLayout": {
+      "version": 1,
+      "pages": [
+        {
+          "id": "np75aade12f125:page1:edf0fdc5",
+          "slots": [
+            {
+              "id": "name:np75aade12f125:page1:edf0fdc5:np75aade12f125:p1:a04ed67a",
+              "panelId": "np75aade12f125:p1:a04ed67a",
+              "points": [
+                [
+                  0.0375,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.0265486726
+                ],
+                [
+                  0.9625,
+                  0.9734513274
+                ],
+                [
+                  0.0375,
+                  0.9734513274
+                ]
+              ]
+            }
+          ]
+        }
+      ],
+      "knownPanelIds": [
+        "np75aade12f125:p1:a04ed67a"
+      ]
+    },
+    "geometryOverride": false,
+    "locks": {
+      "pages": {},
+      "panelPoints": {}
+    },
+    "qa": {
+      "geometry": "validated_separately",
+      "visual": "not_run",
+      "entertainment": "human_review_required",
+      "findings": []
+    },
+    "importedAt": "2026-09-24T09:09:34.458Z"
+  },
+  "otherNamePlans": [
+    {
+      "format": "manga-mac/name-plan/v2",
+      "status": "adopted",
+      "id": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+      "namespace": "np09d335a4d93e",
+      "file": {
+        "format": "manga-mac/name-plan/v2",
+        "title": "人工fixture",
+        "stage": "name-only",
+        "readingDirection": "rtl",
+        "source": {
+          "kind": "embedded",
+          "repo": "fixture/stories",
+          "workId": "example",
+          "episodeId": "P01",
+          "number": 1,
+          "branch": "dev",
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "scenes": [
+            {
+              "id": "S01",
+              "episodeId": "P01",
+              "text": "# 原文\n\n「人工fixture」"
+            }
+          ],
+          "selectedAtomIds": [
+            "S01:u1:a0"
+          ],
+          "characters": []
+        },
+        "policyVersion": "name-director/2.0.0",
+        "provenance": {
+          "producer": "fixture",
+          "model": "",
+          "editedBy": []
+        },
+        "plan": {
+          "workGoal": {
+            "readerQuestion": "相手はどう応えるか",
+            "emotionalArc": [
+              "期待",
+              "反応"
+            ],
+            "payoff": "違いに気づく"
+          },
+          "coverage": [
+            {
+              "atomId": "S01:u1:a0",
+              "presentation": "dialogue",
+              "reason": "原文の意味を保持する"
+            }
+          ],
+          "beats": [
+            {
+              "id": "b1",
+              "atomIds": [
+                "S01:u1:a0"
+              ],
+              "function": "setup",
+              "tempo": "normal",
+              "readerBefore": "場所を知らない",
+              "readerAfter": "場所が分かる"
+            }
+          ],
+          "panels": [
+            {
+              "id": "p1",
+              "atomIds": [
+                "S01:u1:a0"
+              ],
+              "contextAtomIds": [],
+              "beatIds": [
+                "b1"
+              ],
+              "characterIds": [],
+              "role": "standard",
+              "shot": "medium",
+              "shotIntent": "原稿の場面を描く",
+              "prompt": "No text. Follow the source scene.",
+              "silentReason": "",
+              "protect": [
+                "中心の人物"
+              ],
+              "gaze": "neutral"
+            }
+          ],
+          "pages": [
+            {
+              "id": "page1",
+              "purpose": "位置と反応を伝える",
+              "entryBeatId": "b1",
+              "exit": {
+                "kind": "pause",
+                "note": "静かに次へ",
+                "payoffBeatIds": []
+              },
+              "tree": {
+                "type": "leaf",
+                "panelId": "p1"
+              }
+            }
+          ]
+        }
+      },
+      "fileHash": "fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+      "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+      "draftId": "name:fdfebe93e4994268db018e460d9409c3a3b65371909f000b67381f0d5742ffd8",
+      "panelIds": [
+        "np09d335a4d93e:p1:a04ed67a"
+      ],
+      "pageIds": [
+        "np09d335a4d93e:page1:edf0fdc5"
+      ],
+      "sourcePolicy": [
+        {
+          "atomId": "S01:u1:a0",
+          "source": {
+            "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+            "sceneId": "S01",
+            "startCp": 6,
+            "endCp": 17
+          },
+          "kind": "dialogue",
+          "presentation": "dialogue",
+          "requiredText": [
+            {
+              "snapshotId": "name-source:887001d2c7d94acfbce63eb8e299ee59e383fe1500e04aae10da34ce206e0bbb",
+              "sceneId": "S01",
+              "startCp": 6,
+              "endCp": 17
+            }
+          ],
+          "reason": "原文の意味を保持する"
+        }
+      ],
+      "compilerVersion": "name-layout/2.0.0",
+      "profile": {
+        "width": 1600,
+        "height": 2260,
+        "margin": 60,
+        "gutter": 28,
+        "minWidth": 128,
+        "minHeight": 110
+      },
+      "metrics": {
+        "np09d335a4d93e:p1:a04ed67a": {
+          "minWidth": 320,
+          "minHeight": 254.54545454545453
+        }
+      },
+      "compiledLayout": {
+        "version": 1,
+        "pages": [
+          {
+            "id": "np09d335a4d93e:page1:edf0fdc5",
+            "slots": [
+              {
+                "id": "name:np09d335a4d93e:page1:edf0fdc5:np09d335a4d93e:p1:a04ed67a",
+                "panelId": "np09d335a4d93e:p1:a04ed67a",
+                "points": [
+                  [
+                    0.0375,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.0265486726
+                  ],
+                  [
+                    0.9625,
+                    0.9734513274
+                  ],
+                  [
+                    0.0375,
+                    0.9734513274
+                  ]
+                ]
+              }
+            ]
+          }
+        ],
+        "knownPanelIds": [
+          "np09d335a4d93e:p1:a04ed67a"
+        ]
+      },
+      "geometryOverride": false,
+      "locks": {
+        "pages": {},
+        "panelPoints": {}
+      },
+      "qa": {
+        "geometry": "validated_separately",
+        "visual": "not_run",
+        "entertainment": "human_review_required",
+        "findings": []
+      },
+      "importedAt": "2026-09-24T09:09:34.453Z"
+    }
+  ],
+  "layoutHistory": [],
+  "layoutRedo": [],
+  "editRedo": [],
+  "sourceDiagnostics": []
+}

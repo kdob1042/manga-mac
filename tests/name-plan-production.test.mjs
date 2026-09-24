@@ -33,8 +33,8 @@ test('unfinished art and missing required text are rejected by finalization',asy
  p.panels=p.panels.map(panel=>({...panel,image:tiny,letteringStatus:'ready'}));p.panels[1].lettering.boxes=[];
  assert.throws(()=>finalizeNameApplication(p),/文字/);
 });
-test('reference updates mark names stale without losing old art or manual geometry',async()=>{
+test('reference updates keep names usable without losing old art or manual geometry',async()=>{
  const p=await draft(),snapshot=p.snapshots.find(snapshot=>snapshot.id===p.active);
  snapshot.characters=[{id:'new',name:'new'}];
- const next=await refreshNameBindings(p);assert.equal(next.namePlan.status,'stale');assert.deepEqual(next.layout,p.layout);
+ const next=await refreshNameBindings(p);assert.equal(next.namePlan.status,'adopted');assert.deepEqual(next.layout,p.layout);
 });

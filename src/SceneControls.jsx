@@ -4,6 +4,8 @@ import {importSceneGlb} from './scene-assets.js';
 import {recordSceneCapture} from './scene-capture.js';
 import {askLLM} from './llm.js';
 import {bounds,PAGE} from './layout.js';
+import {resolvePanelDirection} from '../contracts/name-plan/page.mjs';
+import {episodeKey} from './page-name.js';
 const SceneViewport=lazy(()=>import('./SceneViewport.jsx'));
 const ScenePoseControls=lazy(()=>import('./ScenePoseControls.jsx'));
 
@@ -21,6 +23,7 @@ export default function SceneControls({project,panel,current,commit,run,busy,mod
   const viewport=useRef(null),blank=useMemo(createScene,[]),scene=panel.scene3d??blank;
   const assets=project.sceneAssets??noAssets;
   const chosen=scene.objects.find(item=>item.id===selected)??scene.objects[0];
+  const captures=(project.captures??[]).filter(capture=>capture.panel_id===panel.id&&capture.origin==='three');
   const update=operation=>run('3D構図を保存中',()=>commit(updatePanelScene(current.current,panel.id,operation)));
   const saveCamera=useCallback(camera=>{
     if(!busy)run('カメラを保存中',()=>commit(updatePanelScene(current.current,panel.id,{type:'camera',camera})));
@@ -29,8 +32,11 @@ export default function SceneControls({project,panel,current,commit,run,busy,mod
     if(!model?.connectionId)throw Error('演出AIの接続を設定してください');
     const base=current.current,shot=base.panels.find(item=>item.id===panel.id),before=shot.scene3d??createScene();
     const sceneBefore=JSON.stringify(before),assetBefore=JSON.stringify(base.sceneAssets??[]);
-    const prompt=`対象コマの3D構図に対して一つだけ型付き操作を提案してください。任意コードは出力しません。Yが上、回転はラジアン。操作は add/remove/transform/pose/camera のいずれか。素材一覧: ${JSON.stringify((base.sceneAssets??[]).map(({id,name,kind})=>({id,name,kind})))}。現在のscene3d: ${sceneBefore}。指示: ${instruction}`;
-    const schema={type:'object',properties:{type:{type:'string',enum:['add','remove','transform','pose','camera']},id:{type:'string'},object:{type:'object'},position:{type:'array',items:{type:'number'}},rotation:{type:'array',items:{type:'number'}},scale:{type:'array',items:{type:'number'}},pose:{type:'object'},contacts:{type:'array'},camera:{type:'object'}},required:['type'],additionalProperties:false};
+    const episode=base.nameEpisodes?.[episodeKey(base.workId,base.activeNameEpisodeId)];
+    const pageId=episode?.pageIds.find(id=>episode.pages.find(page=>page.id===id)?.panels.some(item=>item.id===panel.id));
+    const direction=pageId?resolvePanelDirection(episode,pageId,panel.id):null;
+    const prompt=`対象コマの3D構図に対して一つだけ型付き操作を提案してください。任意コードは出力しません。Yが上、回転はラジアン。操作は add/remove/transform/pose/camera/assignCharacter のいずれか。現在のネーム: ${JSON.stringify(direction)}。素材一覧: ${JSON.stringify((base.sceneAssets??[]).map(({id,name,kind})=>({id,name,kind})))}。現在のscene3d: ${sceneBefore}。指示: ${instruction}`;
+    const schema={type:'object',properties:{type:{type:'string',enum:['add','remove','transform','pose','camera','assignCharacter']},id:{type:'string'},characterId:{anyOf:[{type:'string'},{type:'null'}]},object:{type:'object'},position:{type:'array',items:{type:'number'}},rotation:{type:'array',items:{type:'number'}},scale:{type:'array',items:{type:'number'}},pose:{type:'object'},contacts:{type:'array'},camera:{type:'object'}},required:['type'],additionalProperties:false};
     const op=JSON.parse(await askLLM(model,{purpose:'scene',prompt,schema}));
     const latest=current.current;
     if(JSON.stringify(latest.panels.find(item=>item.id===panel.id)?.scene3d??createScene())!==sceneBefore || JSON.stringify(latest.sceneAssets??[])!==assetBefore)throw Error('提案中に構図または素材が変わりました。もう一度指示してください');
@@ -48,6 +54,7 @@ export default function SceneControls({project,panel,current,commit,run,busy,mod
       <label>種類<select aria-label="素材の種類" value={assetKind} onChange={e=>setAssetKind(e.target.value)}><option value="prop">小物</option><option value="character">人物</option><option value="environment">背景</option></select></label>
     </div>
     {!!scene.objects.length&&<div className="scene-actions"><label>配置済み<select aria-label="配置済み3D素材" value={chosen?.id??''} onChange={e=>setSelected(e.target.value)}>{scene.objects.map(item=><option value={item.id} key={item.id}>{assets.find(asset=>asset.id===item.assetId)?.name??item.assetId} · {item.id.slice(0,6)}</option>)}</select></label>{[['translate','移動'],['rotate','回転'],['scale','拡大縮小']].map(([value,label])=><button key={value} aria-pressed={editMode===value} disabled={!!busy} onClick={()=>setEditMode(value)}>{label}</button>)}<button disabled={!!busy} onClick={()=>update({type:'remove',id:chosen.id})}>取り除く</button></div>}
+    {chosen&&<label>この物体の人物<select value={chosen.characterId??''} onChange={e=>update({type:'assignCharacter',id:chosen.id,characterId:e.target.value||null})}><option value="">未割当・背景・小物</option>{panel.characterIds.map(id=><option key={id} value={id}>{project.characters.find(person=>person.id===id)?.name??id}</option>)}{chosen.characterId&&!panel.characterIds.includes(chosen.characterId)&&<option value={chosen.characterId}>現在のコマにはいない人物: {chosen.characterId}</option>}</select></label>}
     {chosen&&<form key={chosen.id+JSON.stringify([chosen.position,chosen.rotation,chosen.scale])} className="scene-transform" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);update({type:'transform',id:chosen.id,position:triplet(form,'p'),rotation:triplet(form,'r').map(n=>n*Math.PI/180),scale:triplet(form,'s')});}}>
       {[["位置 m",'p',chosen.position],["角度 °",'r',chosen.rotation.map(n=>n*180/Math.PI)],["倍率",'s',chosen.scale]].map(([label,prefix,values])=><fieldset key={prefix}><legend>{label}</legend>{values.map((value,i)=><label key={i}>{['X','Y','Z'][i]}<input name={`${prefix}${i}`} aria-label={`${label} ${['X','Y','Z'][i]}`} type="number" step="0.01" defaultValue={Number(value.toFixed(3))}/></label>)}</fieldset>)}
       <button disabled={!!busy}>配置を保存</button>
@@ -62,5 +69,6 @@ export default function SceneControls({project,panel,current,commit,run,busy,mod
         if(JSON.stringify(current.current.panels.find(item=>item.id===panel.id)?.scene3d??createScene())!==shown)throw Error('撮影中に構図が変わりました。再撮影してください');
         await commit(await recordSceneCapture(current.current,panel.id,png,captureWidth,captureHeight));
       })}>構図画像を撮影</button></div>
+    <label>作画に渡す構図資料<select value={panel.compositionReference?.kind==='capture'?panel.compositionReference.id:''} onChange={e=>run('構図資料を選択中',()=>commit({...current.current,panels:current.current.panels.map(item=>item.id===panel.id?{...item,compositionReference:e.target.value?{kind:'capture',id:e.target.value}:null}:item)}))}><option value="">使わない（通常の2D作画）</option>{captures.map(item=><option key={item.id} value={item.id}>{item.id} · {item.at}</option>)}</select></label>
   </section>;
 }

@@ -45,7 +45,7 @@ export async function createAcceptanceFixture() {
       prompt: 'A simple small tree beside a quiet path, clear black ink manga illustration.', silentReason: '', protect: ['木'], gaze: 'neutral' }],
     pages: [{ id: 'page1', purpose: '日本語と作画の保存を確認する', entryBeatId: 'b1', exit: { kind: 'pause', note: '確認終了', payoffBeatIds: [] }, tree: { type: 'leaf', panelId: 'p1' } }],
   };
-  const file = await createNameFile(base, plan, atomIds, { producer: 'acceptance-fixture', model: '', editedBy: [] });
+  const file = await createNameFile(base, plan, atomIds, { producer: 'acceptance-fixture', model: '', editedBy: [] }, {embedded:false});
   return adoptNameCandidate(base, await createNameCandidate(base, file, { namespace: 'acceptance' }));
 }
 

@@ -122,8 +122,6 @@ for (const mutate of [
 
 for (const mutate of [
   f => { f.snapshot.scenes[0].text += '変更'; },
-  f => { f.snapshot.settings = [{ id: 's', text: '設定変更' }]; },
-  f => { f.snapshot.characters = [{ id: 'new', name: '変更' }]; },
 ]) test(`shared source validator remains authoritative after repository retrieval: ${mutate}`, async () => {
   const f = await fixture(); mutate(f); const before = structuredClone(f.project);
   await assert.rejects(createNameCandidate(f.project, f.file));

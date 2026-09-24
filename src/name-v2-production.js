@@ -1,6 +1,8 @@
 import { FORMAT, validateV2State, canFinalizeNameRef, requiredTextForSource, recordNameEdit } from './name-v2.js';
 import { bindSource, sourceParagraphs, intersects, orderedCoverage, clipRefs } from '../contracts/name-plan/source.mjs';
 import { canonical, fail } from '../contracts/name-plan/schema.mjs';
+import { hasEmbeddedSource } from '../contracts/name-plan/source.mjs';
+import { nameSourceSnapshot } from './name-parts.js';
 
 export function nameGenerationSize(points, descriptor, longEdge = 1024) {
   const xs = points.map(point => point[0]), ys = points.map(point => point[1]);
@@ -22,7 +24,7 @@ export function nameGenerationSize(points, descriptor, longEdge = 1024) {
 }
 export function finalizeNameApplication(project) {
   validateV2State(project, { complete: true });
-  const snapshot = project.snapshots.find(snapshot => snapshot.id === project.active), old = project.sourceApplication?.units ?? [];
+  const snapshot = nameSourceSnapshot(project), old = project.sourceApplication?.units ?? [];
   const additions = sourceParagraphs(snapshot).filter(unit => canFinalizeNameRef(project, unit.source)).map(unit => ({ id: `name-source:${snapshot.id}:${unit.id}`, source: unit.source, requiredText: requiredTextForSource(project, unit.source) }));
   const kept = old.filter(unit => !additions.some(next => intersects(next.source, unit.source)));
   for (const unit of old) {
@@ -40,7 +42,7 @@ function contractKey(project) {
 export async function produceNameDraft(args) {
   const { current, commit, cancelled, model, setBusy, setNotice, showProof, generatePanel, askLLM, imageOf, pagePNG, imageModelId } = args;
   const initial = current();
-  if (initial.namePlan?.format !== FORMAT || initial.namePlan.status !== 'adopted' || initial.namePlan.snapshotId !== initial.active) fail('name', '原稿と一致する確定ネームを採用してください');
+  if (initial.namePlan?.format !== FORMAT || initial.namePlan.status !== 'adopted' || (!hasEmbeddedSource(initial.namePlan.file) && initial.namePlan.snapshotId !== initial.active)) fail('name', '制作する確定ネームを選んでください');
   await bindSource(initial.namePlan.file, initial); validateV2State(initial);
   const ids = [...initial.namePlan.panelIds], descriptor = args.resolveModel ? args.resolveModel(imageModelId) : (await import('./media.js')).imageModel(imageModelId ?? initial.mediaDefaults?.image);
   const placements = initial.layout.pages.flatMap(page => page.slots);
@@ -54,7 +56,7 @@ export async function produceNameDraft(args) {
   const frozen = contractKey(current()), changed = () => frozen !== contractKey(current()), stop = () => cancelled() || changed();
   if (stop()) { setNotice('停止しました。確定ネームと保存済み結果は保持しています'); return; }
   const batch = args.generateBatch ?? (await import('./production.js')).producePanels;
-  await batch({ current, commit, panelIds: ids, generate: generatePanel, cancelled: stop, notify: setBusy, imageModelId });
+  const result=await batch({ current, commit, panelIds: ids, generate: generatePanel, cancelled: stop, notify: setBusy, imageModelId });
   if (stop()) { setNotice('停止しました。生成済み画像は保持し、入力が変わった結果は候補のままです'); return; }
   const finish = args.finishText ?? (await import('./draft.js')).finishDraftLettering;
   let recognize = null;
@@ -67,6 +69,10 @@ export async function produceNameDraft(args) {
     check: async (project, id) => { const page = project.layout.pages.find(page => page.slots.some(slot => slot.panelId === id)); await pagePNG(page.slots.map(slot => project.panels.find(panel => panel.id === slot.panelId)).filter(Boolean), project.snapshots, project.localizations ?? [], project.output_locale ?? 'ja', page, true, project.layout.imageCrops); },
   });
   if (stop()) { setNotice('停止しました。作画・文字配置は保存済みです'); return; }
+  if(result?.missingReferences?.length){
+    setNotice(`参照画像がありません: ${[...new Set(result.missingReferences.flatMap(item=>item.characterIds))].join('、')}。他のコマの作画は保存しました。画像を登録して再開できます`);
+    return {state:'missing-references',missingReferences:result.missingReferences};
+  }
   validateV2State(current(), { complete: true });
   const proofs = [];
   for (const pageId of current().namePlan.pageIds) {

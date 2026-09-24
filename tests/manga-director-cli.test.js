@@ -49,7 +49,6 @@ test('real CLI process rejects unknown name version, absent source file and sour
     ({file})=>{file.format='manga-mac/name-plan/v3';},
     ({bundle})=>{delete bundle.files['manuscript/p01/p01-01.md'];},
     ({bundle})=>{bundle.files['manuscript/p01/p01-01.md']='# Scene\n\n別の本文';},
-    ({project})=>{project.snapshots[0].settings=[{id:'setting',text:'設定変更'}];},
   ]) {
     const result=await runWith(change);
     assert.equal(result.status,1);

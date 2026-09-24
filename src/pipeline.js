@@ -172,12 +172,16 @@ export async function generatePanel(panel, characters, original = null, instruct
   if (job?.media && job.media.model_id !== selected.model_id) throw Error('保存済み作画要求の画像モデルを変更できません');
   const refs = panel.characterIds.map(id => {
     const c = characters.find(c => c.id === id);
-    if (!c?.image || !c?.hash) throw Error(`人物 ${c?.name ?? id} の正本画像がありません`);
+    if (!c?.image || !c?.hash) throw Error(`人物 ${c?.source?.character_id ?? id}（${c?.name ?? id}）の参照画像がありません`);
     return { id, name: c.name, hash: c.hash, image: c.image, role:'character' };
   });
   for (const style of styles) {
     if (!style.image || !style.hash) throw Error('画風参照が不正です');
     refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
+  }
+  for(const reference of options.extraReferences??[]){
+    if(!['costume','background','composition'].includes(reference.role)||!reference.image||!reference.hash)throw Error('ネーム資料の役割・画像が不正です');
+    refs.push({...reference,name:`${reference.role}: ${reference.key??reference.id}`});
   }
   if (options.continuityReference) {
     const previous = options.continuityReference;
