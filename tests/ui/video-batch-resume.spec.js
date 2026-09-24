@@ -72,7 +72,7 @@ async function showVideo(page) {
 }
 
 async function registerConnection(page) {
-  await page.getByText('動画API接続', { exact: true }).click();
+  await page.getByText('動画生成の設定', { exact: true }).click();
   await page.getByLabel('Runway APIキー', { exact: true }).fill('fixture-only-key');
   await page.getByLabel('この送信先・モデル・送信内容・予算内での生成を許可する').check();
   await page.getByRole('button', { name: '接続を登録する', exact: true }).click();

@@ -297,7 +297,7 @@ V-Bでは動画をRustのサイズ制限付き不変ファイルへ保存し、�
 
 ### Runway接続と復旧
 
-Rustの`runway.rs`で公式RESTだけを呼び出す。既存Connectionsへ動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
+Rustの`runway.rs`で公式RESTだけを呼び出す。media_connections.rsへ画像・動画用のメモリ限定credentialを保持し、既存PolicyTransportのDNS固定/private-address拒否/no-proxy/no-redirectを利用する。演出LLMの設定とは独立し、動画の案は既存askLLMと原文対応検証を再利用する。Node/Python常駐プロセスや二つ目の汎用ジョブ台帳を追加しない。
 
 APIは`https://api.dev.runwayml.com/v1/image_to_video`と`X-Runway-Version: 2024-11-06`を共有し、model/duration/ratio/request profileは保存済みmanifestとregistryから解決する。Gen系mapperは従来の`promptImage`文字列と`outputFormat:mp4`を維持する。Seedance mapperは検証済みPNGを`promptImage:[{uri,position:first},{uri,position:last}]`へ変換し、開始画像のみならfirst 1件だけを送る。Seedanceへ`lastFrame`、`outputFormat`、別`resolution`を混ぜず、無音契約のため`audio:false`を明示する。開始／終端画像はRustで既存作画/固定撮影から再解決し、実bytes・hash・寸法・順序を照合する。[公式入力仕様](https://docs.dev.runwayml.com/assets/inputs/)を基に、アプリ独自上限はencoded Data URI 5MB以下・PNG/8192px以下を維持し、モデル別aspectと登録ratioを適用する。自動cropや任意model ID・任意endpoint・任意JSON mapperは使わない。
 
@@ -447,10 +447,10 @@ JSとRustで値を検証。Live Manga v2にも同じトリミングを渡す。�
 
 画像と動画の生成先は、UIが直接選択した登録済みモデルを作品設定と生成要求へ固定する。共通のモデル定義は`src/media-registry.json`に置き、`status: "implemented"`の項目だけを`src/media.js`から選択肢として公開する。未実装モデル名を先にUIへ表示して利用可能に見せない。
 
-実装済みadapterは次の3系統。利用可能なモデルと操作はregistryから取得する。
+実装済みの生成先は次のとおり。利用可能なモデルと操作はregistryから取得する。
 
 - ローカル画像: `media-generation-kit` / FLUX.2 klein 4B（通常・6-bit）と分解専用Qwen Image Layered。通常作画と分解の選択肢を分け、対応寸法・操作を検査する。候補／採用／Undo／receipt復旧は既存経路を使う。
-- クラウド画像: `runway-image` / Gen-4 Image。送信許可・費用予約・task IDを既存Jobへ保存する。対応操作と制限は末尾の原稿制作節で定義する。
+- クラウド画像: OpenAI GPT Image 2.5 Sunburst（`openai-image`）とRunway Gen-4 Image（`runway-image`）。送信許可・費用予約・結果receiptを既存Jobへ保存する。API固有の要求は各adapter、共通の送信予約・結果回収は`cloud_image.rs`が担当する。
 - 動画: `runway` provider / Runway Gen-4.5・Gen-4 Turbo・Seedance 2.5（外部、無音・既存Runway REST adapter）。provider adapterは1本だけとし、model ID・request profile・対応尺・比率・入力aspect・prompt上限・終端画像能力・料金式をregistryで固定する。同じRunway資格情報はnativeメモリ内のモデル別bindingへ明示承認して再利用できるが、旧Jobは保存済みmodel/bindingを正本として回収する。モデル切替時に不適合な尺・ratio・終端・promptを自動修正せず、理由を表示して新しい送信を停止する。
 
 UIからnativeへ渡す生成入口は`src/media-runtime.js`へ集約し、画像は`generate_image`、動画は既存の`video_submit`／`video_task`へ送る。nativeの`src-tauri/src/media.rs`は同じregistryを読み、任意のmodel/provider/adapter/endpoint、未実装項目、対応外の寸法・操作を送信前に拒否する。cloud fallbackや旧Jobの現在選択モデルへの付替えは行わない。旧画像Jobは保存された入力・recoveryを、旧動画Jobはmanifestの接続・モデルを正本としてそのまま復旧する。
@@ -459,23 +459,24 @@ Jevは演出・分類等の既存LLM接続として保持するが、画像・�
 
 受入では、registryと要求の一致、任意名の拒否、既存Jobのモデル固定、candidate／adopt／Undo／unknown復旧の維持をNodeで確認する。Rust／Swiftの実機ビルドとMac内FLUXの視覚・性能、Runwayの有料送信は別のMac環境で検証し、Linuxのfixture成功で代替しない。
 
-### TapNow 接続の契約確認（#291、2026-09-24）
+### 画像・動画の設定と手動接続（#336）
 
-TapNow公式のMCP接続先は `mcp.tapnow.ai`、OAuth issuerは `oauth.tapnow.ai`。公開設定では `mcp.tools.read`／`mcp.tools.invoke` とS256認可を確認した。2026-09-24にユーザーがMCP Inspectorで認証し、`tools/list` の14件の定義を取得した（生成操作なし）。全定義のJSONを確認し、次の契約を記録した。Inspectorの認証要求には `mcp.tools.read` と `mcp.tools.invoke` の両方が含まれたが、これだけでは独立したnativeクライアントへのread単独付与や登録成功を保証しない。
+画面はregistryのprovider単位でモデルをまとめ、対応する参照入力を表示する。APIキーは手動で登録し、`media_connections.rs`の起動中メモリだけに保持する。登録・登録状態確認はローカル操作であり、認証検証やテスト生成を呼ばない。モデルと送信先をnativeで固定し、別providerのキーを流用しない。作品に保存する接続情報は不透明なIDだけ。終了時にキーは破棄され、再起動後に使う場合は再登録する。秘密は作品、バックアップ、ログ、Gitへ保存しない。
 
-| 操作 | 入力と制約 | 状態・成果物 | 現状 |
-| --- | --- | --- | --- |
-| `create_hero_image` | `prompt` 必須、1〜2000文字。`model` は `fast`（既定）／`quality`／`artistic`、比率は `1:1`／`16:9`／`9:16`／`4:3`／`3:4`／`3:2`／`2:3`。参照画像ID・既存コマ編集の入力なし | 説明上は `node_ids` と `project_id` を返す | テキストからの生成候補。費用上限不明で送信不可 |
-| `create_hero_video` | `prompt` 必須、1〜2000文字。`model` は `draft`／`fast`／`quality`、`duration` は5／10秒、比率は `16:9`／`9:16`／`1:1`／`4:3`／`3:4`。任意の `image_id` と必要時の `project_id` による始端画像、終端画像・音声の入力なし | 説明上は `node_ids` と `project_id` を返す | テキスト動画／単一画像からの動画候補。費用上限不明で送信不可 |
-| `upload_image` | URL入力 `image_url` 必須。ローカルファイルの直接送信入力なし | 説明上は画像IDとproject IDを返す | 既存作品の画像を渡すには外部URL化の安全な経路が別途必要 |
-| `get_production_result` | `node_ids` 1〜20件必須、`project_id` は任意だが生成時に返れば渡す | 説明上は `generating`／`done`／`failed`、成功時 `media_url` と `media_type`。`task_id` は照会キーではない | 生成後の照会候補。実応答と再起動後の回収は未検証 |
+TapNowの接続確認UI、OAuth/MCP処理、検証スクリプトは本体から除去する。検証経緯はVALIDATIONとIssue #291 / #303の履歴を参照し、現在の生成機能とは分ける。未対応providerの接続試験を制作画面へ追加しない。
 
-14件の中に費用見積りtoolはなく、各toolに`outputSchema`はない。キャンセルtoolも確認できない。モデルのtier別・尺別Tapies上限、送信後の実応答構造、URLの有効期間、再起動後の再認証と回収は未検証。`upload_image`を経由した参照画像編集、終端フレーム、任意寸法を対応済みに含めない。
+| 生成先 | 参照入力 | 実行・回収 |
+| --- | --- | --- |
+| OpenAI GPT Image 2.5 Sunburst | 人物・画風・構図・編集元の合計8枚まで。各3MB以下。番号付き参照の順序を保持し、編集元は最後 | 参照なしはImages generations、参照ありはJSONのImages edits。同期PNG応答を既存の不変artifactとreceiptへ保存 |
+| Runway Gen-4 Image | 編集元込み3枚まで、720×720 | 既存text_to_image → 保存済みtask IDのGET → PNG receipt |
+| Runway動画 | 開始画像。Seedance 2.5は対応コマ間の終端画像も可。独立した人物参照や動画参照は送らない | 既存image_to_videoとtask照会・回収 |
+| ローカル画像・動画 | 各registryの対応入力 | 既存MGK / LTXの実行経路 |
 
-`scripts/tapnow-mcp-probe.mjs` は公開OAuth設定を確認する。認可済みのBearerを環境から渡した場合だけ読み取り専用の `tools/list` を呼ぶ。Macアプリの「TapNow接続（ツール確認）」はnative OAuth登録（`application_type: native`）、PKCE、ループバック認証、起動中だけのトークン保持を行い、`mcp.tools.read` と `mcp.tools.invoke` の権限でMCP初期化・`tools/list` まで成功してから接続済みにする。認証先は公式URLに固定し、任意のURLやtokenを作品へ保存しない。Macアプリで両スコープの認証と `tools/list` 14件の取得を確認した。分離した検証アプリから `create_hero_video` を `draft`・5秒・16:9・1件で呼ぶと `insufficient_balance`、`No generation jobs were submitted` が返った。サーバーは必要Tapies数を返さないため、動画の生成成功・結果照会・モデル別費用は未確認。TapNow画面の追加チャージ下限は500 Tapies／5 USDだが、この額で要求を満たす保証はない。送信・照会の成功実応答とモデル別費用を確認した後、入力制約と照会結果の成功・失敗・処理中の解釈を固定する。モデル・設定別Tapiesの送信前上限を検証できるまでは製品の有料要求を開始しない。確認できるまでTapNowを `media-registry.json` へ `implemented` として載せず、画像・動画の生成先として表示しない。対応できる操作が分かった段階で、画像は既存 `generate_image`、動画は既存 `video_submit`／`video_task` とJob・receiptへadapterを接続する。既存Runway画像／動画とローカルMGKの実装は引き続き使用する。
+OpenAIは公式モデルID`gpt-image-2.5-sunburst`を固定し、品質medium・PNG・不透明背景・1枚を要求する。アプリの対応寸法は1024〜1536px・16px刻み、指示は4000文字以内。seedはAPIへ送らず、同じseedによる再現性を保証しない。[公式画像生成ガイド](https://developers.openai.com/api/docs/guides/image-generation)、[Images edits](https://developers.openai.com/api/reference/resources/images/methods/edit)、[モデル](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst)に基づく。
 
+OpenAIの料金は従量制のため1要求あたり1 USDを仮予約する。これはAPIの厳密な請求上限ではないと画面に明示する。応答usageがあれば未キャッシュ単価（text input 5 / image input 8 / output 30 USD per million tokens）で参考額を記録し、仮予約額を上回る場合は次回の累計判定へ反映する。失敗・unknownの予約枠は自動で返却しない。
 
-2026-09-24の実アプリ検証では、登録時に `grant_types: [authorization_code]` だけを明示するとTapNowが `invalid_client_metadata` を返した。read単独scopeおよびread・invoke両スコープで `grant_types` と `response_types` を省いた公開登録はHTTP 201で成功した。TapNowは登録応答で認可コードと更新トークンのgrantを返すが、アプリは更新トークンを保存せず、接続中のアクセストークンだけを使う。
+共通のSQLite送信markerを外部POST前に確定し、同じJobを再POSTしない。OpenAIは同期APIのため、応答画像が保存できなかった要求を後からtask照会することはできない。保存済みreceiptのみ回収でき、未保存なら結果不明を明示して止める。Runwayは従来どおり同じキー・保存モデルのtask IDからGETで回収する。現在選択中のモデルへ古いJobを付け替えない。
 
 ## Tripo生成GLBの取込み
 
@@ -560,7 +561,7 @@ Compositorの同一sessionを引き続き使う。推論後にprocess instance/d
 
 ネームを明示確定してから単コマ／選択バッチ／不足分の作画を開始する。モデル・参照・panel IDを固定し、生成と再開で枠を作り直さない。画像Job／receiptを再利用し、結果不明時は再送せず回収する。既存の採用画像に対する再作画は候補とし、明示採用を必要とする。別の制作変更で確定ネームの基準が古くなった場合は、その候補を保持して停止する。
 
-クラウド静止画の初期adapterはRunway gen4_image、720×720、原画像込み参照最大3枚。公開仕様はRunwayのtext_to_image APIおよびpricing。1枚5 credits、登録した累積上限で送信前に制限する。資格情報はnativeの起動中メモリ、Jobには不透明接続ID・入力hash・費用予約・task IDを保存する。POSTは再試行しない。同じ資格情報を再登録してGET回収でき、PNGとreceiptを不変ファイルとして原子的に公開する。実API出力・画質・請求額は実機受入と分ける。
+Runwayクラウド静止画adapterはgen4_image、720×720、原画像込み参照最大3枚。公開仕様はRunwayのtext_to_image APIおよびpricing。1枚5 credits、登録した累積上限で送信前に制限する。資格情報はnativeの起動中メモリ、Jobには不透明接続ID・入力hash・費用予約・task IDを保存する。POSTは再試行しない。同じ資格情報を再登録してGET回収でき、PNGとreceiptを不変ファイルとして原子的に公開する。実API出力・画質・請求額は実機受入と分ける。
 
 既存Compositorの操作権を外部GUI操作へ渡し、返却時に同じsession/documentと対象コマを照合して結果を候補へ回収する。撮影原本はAI洗練またはAIを呼ばない編集へ分岐できる。
 

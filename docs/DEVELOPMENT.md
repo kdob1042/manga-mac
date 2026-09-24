@@ -13,6 +13,7 @@
 | 原稿更新案のネーム・セクション完了 | `src/NameEditor.jsx`、`src/name-edit.js`、`src/section-completion.js` | 原稿からセクション完了まで |
 | ネームAI・GitHub / JSON取込 | `src/NamePlanControls.jsx`、`src/name-repository.js`、`src/name-v2.js`、`contracts/name-plan/`、`tools/manga-director/validate.mjs`（診断のみ） | 23、[受渡し手順](NAME_PLAN_IMPORT.md) |
 | モデル選択・生成境界 | `src/media.js`、`src/media-runtime.js`、`src/image-executor.js`、`src-tauri/src/media.rs` | 18 |
+| APIキー・クラウド画像 | `src/CloudImageSettings.jsx`、`src-tauri/src/media_connections.rs`、`src-tauri/src/cloud_image.rs`、`src-tauri/src/openai_image.rs`、`src-tauri/src/runway.rs` | 18 |
 | レイヤー・Compositor | `src/compositor.js`、`src/layered.js`、`src/layer-edit.js`、`src-tauri/src/compositor.rs` | 18の関連節 |
 | コマ・画像配置・文字 | `src/layout.js`、`src/layout-ai.js`、`src/render.js`、`src/PageProof.jsx`、`src/lettering.js`、`src/LetteringControls.jsx` | 8、16 |
 | ページ出力・解像度確認 | `src/ExportControls.jsx`、`src/export.js`、`src/output.js` | 8 |

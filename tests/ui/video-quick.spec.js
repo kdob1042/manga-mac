@@ -27,7 +27,7 @@ test('a configured panel submits its image and source without opening the video 
   }, fixture);
   await page.goto('/');
   await page.getByRole('button', { name: '動画', exact: true }).click();
-  await page.getByText('動画API接続', { exact: true }).click();
+  await page.getByText('動画生成の設定', { exact: true }).click();
   await page.getByLabel('Runway APIキー', { exact: true }).fill('fixture-key');
   await page.getByLabel('この送信先・モデル・送信内容・予算内での生成を許可する').check();
   await page.getByRole('button', { name: '接続を登録する', exact: true }).click();

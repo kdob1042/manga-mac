@@ -34,7 +34,7 @@ test('local registration routes only to MLX and stores a candidate before explic
   }, legacy);
   await page.goto('/');
   await page.getByRole('button', { name: '動画', exact: true }).click();
-  await page.getByText('動画API接続', { exact: true }).click();
+  await page.getByText('動画生成の設定', { exact: true }).click();
   await page.getByLabel('動画の生成先', { exact: true }).selectOption('ltx-2-5-mlx-local');
   await page.getByLabel('LTX実行ファイル', { exact: true }).fill('/fixture/bin/ltx-2-mlx');
   await page.getByLabel('LTXモデルフォルダ', { exact: true }).fill('/fixture/models/ltx-2.5-mlx-q4');
@@ -107,7 +107,7 @@ test('three local batch recipes use the shared runtime sequentially and recover 
   }, initial);
   await page.goto('/');
   await page.getByRole('button', { name: '動画', exact: true }).click();
-  await page.getByText('動画API接続', { exact: true }).click();
+  await page.getByText('動画生成の設定', { exact: true }).click();
   await page.getByLabel('LTX実行ファイル', { exact: true }).fill('/fixture/bin/ltx-2-mlx');
   await page.getByLabel('LTXモデルフォルダ', { exact: true }).fill('/fixture/models');
   await page.getByLabel('FFmpeg実行ファイル', { exact: true }).fill('/fixture/bin/ffmpeg');

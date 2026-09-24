@@ -8,7 +8,7 @@ test('the public registry exposes only implemented adapters and freezes defaults
   assert.equal(defaultImageModelId, 'flux-2-klein-4b-local');
   assert.equal(defaultVideoModelId, 'runway-gen4-5');
   assert.ok(imageModels.length >= 2);
-  assert.ok(imageModels.every(model => ['media-generation-kit','runway-image'].includes(model.adapter_id)));
+  assert.ok(imageModels.every(model => ['media-generation-kit','runway-image','openai-image'].includes(model.adapter_id)));
   assert.equal(videoModels.length,4);
   assert.ok(videoModels.every(model=>['runway', 'ltx-mlx'].includes(model.adapter_id)));
   assert.deepEqual(videoModels.filter(model=>model.provider==='runway').map(model=>model.model_id),['gen4.5','gen4_turbo','seedance2_5']);
@@ -84,4 +84,16 @@ test('local video uses one registered preset with no cloud billing or end frame'
   for (const patch of [{ duration: 4 }, { ratio: '960:960' }, { endFrame: true }, { prompt: 'x'.repeat(1001) }]) {
     assert.throws(() => validateVideoModelRequest(model.id, { duration: 5, ratio: '512:512', prompt: 'Camera moves', ...patch }));
   }
+});
+
+test('OpenAI selection preserves input order and counts the editing source against the limit', () => {
+  const id='openai-gpt-image-2-5', selected=imageModel(id);
+  assert.equal(selected.model_id,'gpt-image-2.5-sunburst');
+  assert.equal(selected.requires_preparation,false);
+  assert.equal(selected.cost.reservation_only,true);
+  assert.deepEqual(generationSize([768,768],id),[1024,1024]);
+  const ref={name:'hero',image:'data:image/png;base64,YQ==',hash:'a'.repeat(64)};
+  const input={panel:{prompt:'scene'},references:Array(8).fill(ref),width:1024,height:1024,seed:1,instruction:'',modelId:id};
+  assert.deepEqual(imageRequest(input).references,input.references);
+  assert.throws(()=>imageRequest({...input,original:ref.image,originalHash:ref.hash}),/最大8枚/);
 });

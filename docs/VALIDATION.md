@@ -1,5 +1,19 @@
 > 以下のBlender試験記録は旧版の履歴です。現行版ではBlender連携を削除し、3Dステージの実機受入に置き換えます。
 
+## 2026-09-24 #336 画像・動画の整理とOpenAI画像2.5
+
+基点dev: `56b48a5e2fe980850c981ad0223f273c51db278b`。TapNow接続検証UI/OAuth/MCP probeを除去し、画像・動画のメモリ限定接続とクラウド画像のJob/receipt処理を分離。追加モデルはOpenAI GPT Image 2.5 Sunburst。以下はLinuxの実装・fixture検証であり、有料API成功・Mac実機受入ではない。
+
+- `npm test`: 435 passed。モデル別画像接続、旧Runway接続IDとの保存互換、編集元を含むOpenAI参照上限を確認。
+- `npm run build`: pass（既存の500kB chunk警告あり）。
+- 関連Playwright: production-workflow / video / local-video / video-batch-resume / video-quickで12 passed。OpenAI・Runwayキーの手動登録／切替／解除・作品への秘密非保存を追加し、production-workflow 2 passed（計13 distinct cases）。
+- Rust 1.98.1 `cargo test --locked --manifest-path tests/llm/Cargo.toml`: 125 passed、既存の外部依存3件ignored。後続の料金定義集約後、OpenAI関連3件を再実行しpass。
+- `cargo clippy --locked --manifest-path tests/llm/Cargo.toml --all-targets -- -D warnings`、`cargo fmt`、`git diff --check`: pass。
+- 送信markerの永続化、予算超過・同一Job再予約拒否、同期APIのunknown非照会、OpenAI/Runway receiptの同一保存経路を確認。キーの値を保存/表示する型を作らず、追跡対象から実キー形式を検出せず、ローカル資格情報のGit除外を確認（既存sampleの公開証明書は秘密鍵ではない）。
+- 未実施: Tauri/SwiftのMacビルド、実OpenAI/Runway有料生成、画質・実請求額、Mac GUIでの採用・Undo・再起動。APIキーはこの検証に使用していない。
+
+以降のTapNow記録は削除した接続検証の過去履歴として保持する。
+
 ## 2026-09-24 TapNow Mac接続の実機確認
 
 - 起点は `dev` `bf98b58ed7fbcb34f00262cdaa48bfe973c28db7`。分離したApple Silicon検証アプリで接続を確認した。
