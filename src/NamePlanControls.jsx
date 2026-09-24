@@ -8,6 +8,28 @@ import { importNamePlan } from './name-import.js';
 import { askLLM } from './llm.js';
 import { fetchRepositoryNamePlan, validateRepositoryNameTarget } from './name-repository.js';
 import { pagePNG } from './render.js';
+import {runContinuityQA,assertContinuityQACurrent} from './continuity-qa.js';
+import {effectiveContinuity,setContinuityOverride} from './continuity.js';
+
+function ContinuityEditor({panel,project,disabled,onSave}) {
+  const [draft,setDraft]=useState(()=>({...(effectiveContinuity(panel)??{}),characters:panel.characterIds.map(id=>({id,holding:[],...structuredClone(effectiveContinuity(panel)?.characters?.find(c=>c.id===id)??{})})),props:[...(effectiveContinuity(panel)?.props??[])],hardConstraints:[...(effectiveContinuity(panel)?.hardConstraints??[])]}));
+  const split=text=>text.split(/[、,\n]/).map(x=>x.trim()).filter(Boolean);
+  const peers=project.panels.slice(0,project.panels.findIndex(p=>p.id===panel.id)).filter(p=>p.sceneId===panel.sceneId);
+  const updateCharacter=(id,key,value)=>setDraft(old=>({...old,characters:panel.characterIds.map(characterId=>({...old.characters.find(c=>c.id===characterId),id:characterId,...(characterId===id?{[key]:value}:{})}))}));
+  return <div className="continuity-editor"><strong>{panel.id}</strong>
+    <label>前コマ参照<select disabled={disabled} value={draft.previousPanelId??''} onChange={e=>setDraft(old=>({...old,previousPanelId:e.target.value||null}))}><option value="">なし</option>{peers.map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select></label>
+    {panel.characterIds.map(id=>{const c=draft.characters.find(c=>c.id===id)??{id};return <div key={id}><strong>{project.characters.find(x=>x.id===id)?.name??id}</strong>
+      <label>衣装<input disabled={disabled} maxLength={200} value={c.costume??''} onChange={e=>updateCharacter(id,'costume',e.target.value)}/></label>
+      <label>見た目・汗・傷<input disabled={disabled} maxLength={200} value={c.visualState??''} onChange={e=>updateCharacter(id,'visualState',e.target.value)}/></label>
+      <label>感情・表情<input disabled={disabled} maxLength={200} value={c.emotion??''} onChange={e=>updateCharacter(id,'emotion',e.target.value)}/></label>
+      <label>持ち物<input disabled={disabled} value={(c.holding??[]).join('、')} onChange={e=>updateCharacter(id,'holding',split(e.target.value))}/></label>
+    </div>})}
+    <label>小道具<input disabled={disabled} value={draft.props.join('、')} onChange={e=>setDraft(old=>({...old,props:split(e.target.value)}))}/></label>
+    <label>守る状態（1行に1件）<textarea disabled={disabled} value={draft.hardConstraints.join('\n')} onChange={e=>setDraft(old=>({...old,hardConstraints:e.target.value.split('\n').map(x=>x.trim()).filter(Boolean)}))}/></label>
+    <button disabled={disabled} onClick={()=>onSave(draft)}>この状態を固定</button>{panel.continuityOverride&&<button disabled={disabled} onClick={()=>onSave(null)}>固定を解除</button>}
+    <small>次の作画・再作画から反映します。既存画像は変更しません。</small>
+  </div>;
+}
 
 // Reuses the existing draft, Job, renderer, connection and atomic writer boundaries.
 export default function NamePlanControls({project,current,commit,run,busy,model,sceneIds,onSwitch,cancelled=()=>false,sourceToken='',episodeId=''}) {
@@ -98,6 +120,16 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
       await commit({...current.current,namePlan:{...current.current.namePlan,qa}});setMessage('AIの指摘を保存しました。内容は自動変更していません。');
     });
   }
+  async function continuityQA(panelId) {
+    await safeRun('連続コマの画像を確認',async()=>{
+      if(!visionConsent||!model?.visualEditing||candidate)throw Error('画像入力対応と送信内容を確認してください');
+      const qa=await runContinuityQA({project:current.current,panelId,imageCapable:true,ask:args=>askLLM(model,args)});
+      await assertContinuityQACurrent(current.current,qa);
+      await commit({...current.current,namePlan:{...current.current.namePlan,continuityQA:{...(current.current.namePlan.continuityQA??{}),[panelId]:qa}}});
+      setMessage('連続コマの見た目を検査しました。指摘だけを保存し、画像は変更していません。');
+    });
+  }
+  const continuityPairs=(page?.slots??[]).map(slot=>project.panels.find(panel=>panel.id===slot.panelId)).filter(panel=>panel?.image&&effectiveContinuity(panel)?.previousPanelId&&project.panels.some(previous=>previous.id===effectiveContinuity(panel).previousPanelId&&previous.image&&previous.sceneId===panel.sceneId));
   const findings=candidate?.qa?.findings??name?.qa?.findings??[];
   return <section className="name-plan-controls" aria-label="ネームAIと保存ネーム">
     <h4>{name?'ネームを編集':candidates.length?'ネーム候補を確認':'ネームを読み込む'}</h4>
@@ -132,13 +164,19 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
       <label>表示幅<select aria-label="ネーム表示幅" value={width} onChange={e=>setWidth(Number(e.target.value))}>{[375,430,1024].map(w=><option key={w} value={w}>{w}px</option>)}</select></label>
       {preview&&<div className="name-proof-scroll"><img src={preview} alt="実際のコマ枠と掲載文字による仮ネーム" style={{width,maxWidth:'none',height:'auto'}}/></div>}
       {name&&!candidate&&page&&<>
+        <details><summary>コマの衣装・持ち物・表情を固定</summary>{page.slots.map(slot=>project.panels.find(p=>p.id===slot.panelId)).filter(Boolean).map(panel=><ContinuityEditor key={`${panel.id}:${JSON.stringify(panel.continuityOverride??null)}`} panel={panel} project={project} disabled={busy||name.status==='stale'} onSave={value=>safeRun('作画状態を固定',()=>commit(setContinuityOverride(current.current,panel.id,value)))}/>)}</details>
         <label><input type="checkbox" aria-label="このネームページを固定" checked={!!name.locks?.pages?.[page.id]} disabled={busy} onChange={e=>safeRun('ページ固定を変更',()=>commit(setNameLock(current.current,page.id,e.target.checked)))}/>このページを固定</label>
         <label>このページの修正指示<textarea aria-label="ネームの局所修正指示" value={instruction} onChange={e=>setInstruction(e.target.value)} disabled={busy} placeholder="3コマ目を大きく／右上を2分割／このページだけ再配置"/></label>
         <small>{editConnected?'設定済みAIで現在ページだけを解釈します。OllamaでもクラウドAIでも利用できます。':'AI未接続でも手動編集とネーム取込は使えます。'}</small>
         <button disabled={busy||!editConnected||!instruction.trim()||name.status==='stale'} onClick={()=>safeRun('局所編集案を作成',async()=>setEdit(await proposeNameEdit(current.current,page.id,instruction,(prompt,schema)=>askLLM(model,{purpose:'edit',prompt,schema})) ))}>AIで修正案を作る</button>
         {edit&&<div><p>{edit.reason}（{edit.kind}）</p><button disabled={busy} onClick={()=>edit.kind==='replan'?generate(pageAtomSelection(current.current,edit.pageId),edit.instruction,{localEdit:true}):safeRun('編集案を採用',async()=>{await commit(await applyNameEdit(current.current,edit));setEdit(null);setPreview(null);})}>{edit.kind==='replan'?'このページだけ再構成':'編集案を適用'}</button><button onClick={()=>setEdit(null)}>見送る</button></div>}
-        <label><input type="checkbox" checked={visionConsent} onChange={e=>setVisionConsent(e.target.checked)} disabled={busy}/>選択ページ画像を設定済み画像対応AIへ送り、指摘だけを受け取る</label>
+        <label><input type="checkbox" checked={visionConsent} onChange={e=>setVisionConsent(e.target.checked)} disabled={busy}/>選択ページまたは連続コマ画像を設定済み画像対応AIへ送り、指摘だけを受け取る</label>
         <button disabled={busy||!connected||!visionConsent||!model?.visualEditing||name.status==='stale'} onClick={visualQA}>読者視点でページを検査</button>
+        {continuityPairs.length>0&&<details><summary>連続コマの見た目を確認</summary>{continuityPairs.map(panel=>{
+          const qa=name.continuityQA?.[panel.id],previous=project.panels.find(p=>p.id===effectiveContinuity(panel).previousPanelId);
+          const currentQA=qa&&qa.panelRevision===(panel.artwork_revision??null)&&qa.previousRevision===(previous?.artwork_revision??null)&&qa.base;
+          return <div key={panel.id}><button disabled={busy||!connected||!visionConsent||!model?.visualEditing||name.status==='stale'} onClick={()=>continuityQA(panel.id)}>{panel.id} の前後画像を検査</button>{currentQA&&<small>指摘 {qa.findings.length}件 · 未承認</small>}{currentQA&&qa.findings.map((finding,i)=><p key={i}>{finding.severity}: {finding.evidence} → {finding.suggestion}</p>)}</div>;
+        })}</details>}
       </>}
     </div>}
     {findings.length>0&&<details><summary>演出・視覚の注意（{findings.length}件）</summary>{findings.map((finding,i)=><p key={i}>{finding.message??finding.evidence} {finding.suggestion??''}</p>)}</details>}

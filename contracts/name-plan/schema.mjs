@@ -19,12 +19,18 @@ const tree = {
     obj({ type: { enum: ['row', 'column'] }, children: arr({ $ref: '#/$defs/tree' }, 16, 2), weights: arr({ type: 'number', exclusiveMinimum: 0, maximum: 1000 }, 16, 2), slant: { type: 'number', minimum: -.2, maximum: .2 } }, ['type', 'children', 'weights']),
   ],
 };
+// Optional production guidance. Older name-plan/v2 files remain valid.
+const continuity = obj({
+  location: str(160), timeOfDay: str(80), storyIntent: str(500), previousPanelId: id,
+  characters: arr(obj({ id, costume: str(200), visualState: str(200), emotion: str(200), holding: arr(str(100), 8) }, ['id']), 32),
+  props: arr(str(120), 16), spatial: str(300), hardConstraints: arr(str(180), 12),
+}, []);
 export const planSchema = {
   ...obj({
     workGoal: obj({ readerQuestion: str(2000), emotionalArc: arr(str(300), 24, 1), payoff: str(2000) }),
     coverage: arr(obj({ atomId: id, presentation: { enum: PRESENTATIONS }, reason: str(1000), speakerId: { anyOf: [id, { type: 'null' }] } }, ['atomId', 'presentation', 'reason']), LIMITS.atoms, 1),
     beats: arr(obj({ id, atomIds: ids(), function: { enum: FUNCTIONS }, tempo: { enum: TEMPOS }, readerBefore: str(), readerAfter: str() }), LIMITS.atoms, 1),
-    panels: arr(obj({ id, atomIds: ids(), contextAtomIds: ids(), beatIds: ids(), characterIds: ids(32), role: { enum: ROLES }, shot: { enum: ['wide', 'medium', 'close', 'detail', 'pov'] }, shotIntent: str(4000), prompt: str(20000), silentReason: { type: 'string', maxLength: 1000 }, protect: arr(str(120), 12), gaze: { enum: ['left', 'right', 'neutral'] } }), LIMITS.panels, 1),
+    panels: arr(obj({ id, atomIds: ids(), contextAtomIds: ids(), beatIds: ids(), characterIds: ids(32), role: { enum: ROLES }, shot: { enum: ['wide', 'medium', 'close', 'detail', 'pov'] }, shotIntent: str(4000), prompt: str(20000), silentReason: { type: 'string', maxLength: 1000 }, protect: arr(str(120), 12), gaze: { enum: ['left', 'right', 'neutral'] }, continuity }, ['id', 'atomIds', 'contextAtomIds', 'beatIds', 'characterIds', 'role', 'shot', 'shotIntent', 'prompt', 'silentReason', 'protect', 'gaze']), LIMITS.panels, 1),
     pages: arr(obj({ id, purpose: str(), entryBeatId: id, exit: obj({ kind: { enum: ['hook', 'resolution', 'pause', 'transition'] }, note: str(), payoffBeatIds: ids(24) }), tree: { $ref: '#/$defs/tree' } }), LIMITS.pages, 1),
   }),
   $defs: { tree },
@@ -115,10 +121,19 @@ export function validatePlan(plan, atoms, characterIds, contextAtoms = atoms) {
     unique(beat.atomIds, '$.beats.atomIds');
     if (beat.atomIds.some((id, i) => i && rank.get(id) <= rank.get(beat.atomIds[i - 1]))) fail('beat', 'beatの原稿順が不正です');
   }
+  const priorPanels = new Map();
   for (const panel of plan.panels) {
     for (const key of ['atomIds', 'contextAtomIds', 'beatIds', 'characterIds']) unique(panel[key], `$.panels.${panel.id}.${key}`);
     if (panel.contextAtomIds.some(id => !atomMap.has(id)) || panel.beatIds.some(id => !beatIds.has(id)) || !panel.beatIds.length || panel.characterIds.some(id => !allowed.has(id))) fail('reference', 'コマの原稿・人物・beat参照が不正です');
     if (!panel.atomIds.length && (!panel.contextAtomIds.length || !panel.silentReason.trim())) fail('silent', '無言の追加コマには文脈と挿入理由が必要です');
+    const sceneId = atomMap.get(panel.atomIds[0] ?? panel.contextAtomIds[0])?.source?.sceneId;
+    const continuity = panel.continuity;
+    if (continuity) {
+      const characterIds = new Set(panel.characterIds);
+      if (continuity.characters?.some(character => !characterIds.has(character.id)) || new Set((continuity.characters ?? []).map(character => character.id)).size !== (continuity.characters ?? []).length) fail('continuity_character', '状態の人物はそのコマの登場人物に限ります', panel.id);
+      if (continuity.previousPanelId && priorPanels.get(continuity.previousPanelId) !== sceneId) fail('continuity_previous', '前コマは同じ場面の既出コマを指定してください', panel.id);
+    }
+    priorPanels.set(panel.id, sceneId);
   }
   let allLeaves = [];
   for (const page of plan.pages) {

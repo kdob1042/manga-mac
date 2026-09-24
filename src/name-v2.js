@@ -42,7 +42,8 @@ function portableCharacterPlan(project, snapshot, plan) {
   };
   const portable = structuredClone(plan);
   if (!Array.isArray(portable?.panels)) return portable;
-  portable.panels = portable.panels.map(panel => ({ ...panel, characterIds: Array.isArray(panel.characterIds) ? panel.characterIds.map(sourceIdFor) : panel.characterIds }));
+  portable.panels = portable.panels.map(panel => ({ ...panel, characterIds: Array.isArray(panel.characterIds) ? panel.characterIds.map(sourceIdFor) : panel.characterIds,
+    ...(panel.continuity?.characters ? {continuity: {...panel.continuity, characters: panel.continuity.characters.map(character => ({...character, id: sourceIdFor(character.id)}))}} : {}) }));
   return portable;
 }
 export async function nameReadToken(project) {
@@ -53,7 +54,7 @@ export function localNamePlan(file, namespace) {
   const panelIds = Object.fromEntries(file.plan.panels.map(panel => [panel.id, `${namespace}:${panel.id.slice(0, 100)}:${shortHash(panel.id)}`]));
   const pageIds = Object.fromEntries(file.plan.pages.map(page => [page.id, `${namespace}:${page.id.slice(0, 100)}:${shortHash(page.id)}`]));
   const tree = node => node.type === 'leaf' ? { ...node, panelId: panelIds[node.panelId] } : { ...node, children: node.children.map(tree) };
-  return { ...structuredClone(file.plan), panels: file.plan.panels.map(panel => ({ ...panel, id: panelIds[panel.id] })), pages: file.plan.pages.map(page => ({ ...page, id: pageIds[page.id], tree: tree(page.tree) })) };
+  return { ...structuredClone(file.plan), panels: file.plan.panels.map(panel => ({ ...panel, id: panelIds[panel.id], ...(panel.continuity?.previousPanelId ? {continuity: {...panel.continuity, previousPanelId: panelIds[panel.continuity.previousPanelId]}} : {}) })), pages: file.plan.pages.map(page => ({ ...page, id: pageIds[page.id], tree: tree(page.tree) })) };
 }
 function boxesFor(panel, atoms, coverage) {
   const shown = panel.atomIds.map(id => ({ atom: atoms.get(id), entry: coverage.get(id) })).filter(({ entry }) => printed(entry.presentation));
@@ -84,7 +85,10 @@ export async function createNameCandidate(project, raw, { textMetrics, profile, 
     const basis = refs[0] ?? contextRefs[0];
     const requiredText = panel.atomIds.filter(id => printed(validated.coverage.get(id).presentation)).map(id => ({ ...validated.atomMap.get(id).source }));
     const lettering = boxesFor(panel, validated.atomMap, validated.coverage);
-    return { id: panel.id, snapshotId: bound.snapshot.id, sceneId: basis.sceneId, sourceRefs: refs, contextRefs, requiredText, unitIds: [], characterIds: projectCharacterIds(project, bound.snapshot, panel.characterIds), prompt: `${panel.prompt}\n構図: ${panel.shotIntent}\n保護する要素: ${panel.protect.join('、')}\n視線: ${panel.gaze}\nNo text, no lettering, no balloons.`, nameIntent: panel.shotIntent, namePlanVersion: 2, image: null, artwork_revision: null, capture_revision: null, status: 'planned', instructions: [], attempts: 0, lettering, letteringStatus: 'draft', letteringArtworkRevision: null };
+    const characterIds = projectCharacterIds(project, bound.snapshot, panel.characterIds);
+    const continuity = panel.continuity ? structuredClone(panel.continuity) : null;
+    if (continuity?.characters) continuity.characters = continuity.characters.map(character => ({...character, id: characterIds[panel.characterIds.indexOf(character.id)]}));
+    return { id: panel.id, snapshotId: bound.snapshot.id, sceneId: basis.sceneId, sourceRefs: refs, contextRefs, requiredText, unitIds: [], characterIds, prompt: `${panel.prompt}\n構図: ${panel.shotIntent}\n保護する要素: ${panel.protect.join('、')}\n視線: ${panel.gaze}\nNo text, no lettering, no balloons.`, continuity, nameIntent: panel.shotIntent, namePlanVersion: 2, image: null, artwork_revision: null, capture_revision: null, status: 'planned', instructions: [], attempts: 0, lettering, letteringStatus: 'draft', letteringArtworkRevision: null };
   });
   const sourcePolicy = bound.atoms.map(atom => {
     const entry = validated.coverage.get(atom.id);

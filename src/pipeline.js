@@ -170,6 +170,12 @@ export async function generatePanel(panel, characters, original = null, instruct
     if (!style.image || !style.hash) throw Error('画風参照が不正です');
     refs.push({ id: style.id, name: `Style: ${style.name}`, hash: style.hash, image: style.image, role: 'style' });
   }
+  if (options.continuityReference) {
+    const previous = options.continuityReference;
+    if (!job?.continuity_reference || previous.id !== job.continuity_reference.panelId || previous.sceneId !== panel.sceneId || !previous.image || await imageHash(previous.image) !== job.continuity_reference.hash) throw Error('前コマの採用画像が作画要求の基準版と一致しません');
+    if (refs.length >= selected.input.max_references) throw Error('前コマ参照を含める参照画像の空きがありません');
+    refs.push({id: previous.id, name: 'Previous accepted panel: appearance and props only; follow current shot composition', hash: job.continuity_reference.hash, image: previous.image, role: 'context'});
+  }
   let source = original, mapping = null;
   if (inputMode !== 'direct' && !source && (panel.scene3d || panel.shot_binding) && !capture) throw Error('構図の撮影原本が必要です');
   if (!source && capture) {

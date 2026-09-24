@@ -8,6 +8,9 @@ import {
   reviewDraft,
 } from './draft.js';
 import { beginJob, finishJob } from './revisions.js';
+import { imageModel } from './media.js';
+import { imageRequest } from './image-input.js';
+import { effectiveContinuity } from './continuity.js';
 import { pagePanels } from './layout.js';
 import { recognizeRegions } from './visual-regions.js';
 
@@ -217,10 +220,18 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
   if(cancelled())break;
   const p=current(),panel=p.panels.find(x=>x.id===original.id);
   if(p.workId!==frozen.workId||p.active!==frozen.active||JSON.stringify(panel)!==JSON.stringify(original)||JSON.stringify(p.characters)!==JSON.stringify(frozen.characters)||JSON.stringify(p.style_references)!==JSON.stringify(frozen.style_references))throw Error('作画入力が変わったため残りのバッチを停止しました');
-  const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId);
+  const previousId=effectiveContinuity(panel)?.previousPanelId;
+  const previous=previousId && p.panels.find(x=>x.id===previousId);
+  const model=imageModel(imageModelId ?? p.mediaDefaults?.image),capacity=model.input.max_references;
+  const previousSizeOK=model.adapter_id!=='runway-image'||(previous?.image?.length??0)<=5_000_000;
+  const continuityReference=previous?.image && previous.sceneId===panel.sceneId && p.panels.indexOf(previous)<p.panels.indexOf(panel) && previousSizeOK && panel.characterIds.length+(p.style_references?.length??0)<capacity ? previous : null;
+  // Reject oversized continuity/prompts before persisting a paid or recoverable Job.
+  const references=[...panel.characterIds.map(id=>({name:p.characters.find(c=>c.id===id)?.name??id})),...(p.style_references??[]).map(style=>({name:`Style: ${style.name}`})),...(continuityReference?[{name:'Previous accepted panel: appearance and props only; follow current shot composition'}]:[])];
+  imageRequest({panel,references,width:model.input.min_width,height:model.input.min_height,seed:0,instruction:'',modelId:model.id});
+  const job=await beginJob(p,panel,panel.image?'retake':'generate',imageModelId,undefined,continuityReference?.id);
   await commit({...p,jobs:[...p.jobs,job]});notify(`${i+1}/${selected.length} コマを作画中`);
   try{
-   const result=await generate(panel,frozen.characters,null,'',job,null,frozen.style_references??[],null,null,imageModelId,'direct');
+   const result=await generate(panel,frozen.characters,null,'',job,null,frozen.style_references??[],null,null,imageModelId,'direct',...(continuityReference ? [{continuityReference}] : []));
    await commit(await finishJob(current(),job,result,cancelled(),!!panel.image));
   }catch(e){await commit(latest=>({...latest,jobs:latest.jobs.map(j=>j.id===job.id?{...j,status:'unknown'}:j)}));throw e;}
  }
