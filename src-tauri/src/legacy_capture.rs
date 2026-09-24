@@ -3,7 +3,9 @@
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::Path;
-fn error() -> String { "保存済み撮影画像を確認できませんでした".into() }
+fn error() -> String {
+    "保存済み撮影画像を確認できませんでした".into()
+}
 fn hash(path: &Path) -> Result<String, String> {
     use std::io::Read;
     let mut file = std::fs::File::open(path).map_err(|_| error())?;

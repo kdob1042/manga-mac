@@ -100,9 +100,18 @@ fn allowed_manifest(manifest: &Value) -> Result<(), String> {
         return Err("生成指示が不正です".into());
     }
     let source = manifest["source"].as_object().ok_or("生成元がありません")?;
-    let character = source.get("character_id").and_then(Value::as_str).is_some_and(|id| !id.is_empty());
-    let asset = source.get("asset_kind").and_then(Value::as_str).is_some_and(|kind| matches!(kind, "prop" | "environment"))
-        && source.get("asset_name").and_then(Value::as_str).is_some_and(|name| !name.trim().is_empty() && name.len() <= 100);
+    let character = source
+        .get("character_id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty());
+    let asset = source
+        .get("asset_kind")
+        .and_then(Value::as_str)
+        .is_some_and(|kind| matches!(kind, "prop" | "environment"))
+        && source
+            .get("asset_name")
+            .and_then(Value::as_str)
+            .is_some_and(|name| !name.trim().is_empty() && name.len() <= 100);
     if (character == asset) || source.get("snapshot_id").and_then(Value::as_str).is_none() {
         return Err("生成元の人物・原稿版がありません".into());
     }
@@ -400,7 +409,9 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
         return Err("Tripo出力先が許可できないネットワークです".into());
     }
     let verified_directory = scene_asset::directory(assets.parent().ok_or_else(failure)?)?;
-    if verified_directory != assets { return Err(failure()); }
+    if verified_directory != assets {
+        return Err(failure());
+    }
     let client = reqwest::Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
@@ -451,7 +462,14 @@ async fn download_model(url: &str, assets: &Path, task: &str) -> Result<Value, S
 }
 fn asset_path(assets: &Path, file: &str) -> Result<PathBuf, String> {
     let hash = file.strip_suffix(".glb").ok_or_else(failure)?;
-    scene_asset::verified_path(assets.parent().ok_or_else(failure)?, file, hash, std::fs::metadata(assets.join(file)).map_err(|_| failure())?.len())
+    scene_asset::verified_path(
+        assets.parent().ok_or_else(failure)?,
+        file,
+        hash,
+        std::fs::metadata(assets.join(file))
+            .map_err(|_| failure())?
+            .len(),
+    )
 }
 pub async fn collect(
     db: &Mutex<Connection>,

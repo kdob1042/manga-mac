@@ -141,9 +141,15 @@ fn relative(path: &str) -> bool {
 fn allowed(path: &str) -> bool {
     relative(path)
         && (path == "manga.sqlite3"
-            || ["artifacts/", "media/", "scene-assets/", "blender/", "image-results/"]
-                .iter()
-                .any(|prefix| path.starts_with(prefix)))
+            || [
+                "artifacts/",
+                "media/",
+                "scene-assets/",
+                "blender/",
+                "image-results/",
+            ]
+            .iter()
+            .any(|prefix| path.starts_with(prefix)))
 }
 fn inventory(root: &Path, dir: &Path, files: &mut BTreeMap<String, Entry>) -> Result<()> {
     if !fs::symlink_metadata(dir).map_err(err)?.file_type().is_dir() {
@@ -284,7 +290,9 @@ fn validate_project(project: &Value, root: &Path) -> Result<()> {
                     .as_str()
                     .ok_or("撮影画像のhashがありません")?;
                 if expected.len() != 64
-                    || !expected.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                    || !expected
+                        .bytes()
+                        .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
                 {
                     return Err("撮影画像のhashが不正です".into());
                 }
@@ -296,10 +304,17 @@ fn validate_project(project: &Value, root: &Path) -> Result<()> {
                 {
                     return Err("3D撮影画像が欠損・変更されています".into());
                 }
-                for asset in capture["assets"].as_array().ok_or("3D素材一覧がありません")? {
+                for asset in capture["assets"]
+                    .as_array()
+                    .ok_or("3D素材一覧がありません")?
+                {
                     let hash = asset["hash"].as_str().ok_or("3D素材のhashがありません")?;
-                    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-                        || digest(&root.join("scene-assets").join(format!("{hash}.glb")))?.hash != hash
+                    if hash.len() != 64
+                        || !hash
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+                        || digest(&root.join("scene-assets").join(format!("{hash}.glb")))?.hash
+                            != hash
                     {
                         return Err("3D素材が欠損・変更されています".into());
                     }
@@ -451,7 +466,13 @@ pub fn prepare(db: &Connection, root: &Path, target: &Path, id: &str, at: u64) -
                 .map_err(err)?;
             }
         }
-        for name in ["artifacts", "media", "scene-assets", "blender", "image-results"] {
+        for name in [
+            "artifacts",
+            "media",
+            "scene-assets",
+            "blender",
+            "image-results",
+        ] {
             let source = root.join(name);
             if source.exists() {
                 copy_tree(&source, &target.join(name))?;
@@ -710,7 +731,10 @@ mod tests {
             json!(target.join("blender/fixture/checkpoint.blend"))
         );
         assert_eq!(session["binary"], "");
-        assert_eq!(fs::read(target.join("scene-assets/sample.glb")).unwrap(), b"saved scene asset");
+        assert_eq!(
+            fs::read(target.join("scene-assets/sample.glb")).unwrap(),
+            b"saved scene asset"
+        );
         super::super::verify_video(&target, &artifact).unwrap();
         fs::write(
             root.join("media")

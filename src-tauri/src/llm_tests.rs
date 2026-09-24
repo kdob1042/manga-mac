@@ -301,9 +301,21 @@ fn old_direction_actions_are_rejected_without_blender() {
 
 #[test]
 fn scene_operations_accept_only_typed_edits() {
-    assert!(validate_output(Purpose::Scene, &json!({"type":"camera","camera":{"fov":40}})).is_ok());
-    assert!(validate_output(Purpose::Scene, &json!({"type":"transform","id":"actor","position":[1,0,2]})).is_ok());
-    assert!(validate_output(Purpose::Scene, &json!({"type":"camera","camera":{},"code":"run()"})).is_err());
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"camera","camera":{"fov":40}})
+    )
+    .is_ok());
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"transform","id":"actor","position":[1,0,2]})
+    )
+    .is_ok());
+    assert!(validate_output(
+        Purpose::Scene,
+        &json!({"type":"camera","camera":{},"code":"run()"})
+    )
+    .is_err());
     assert!(validate_output(Purpose::Scene, &json!({"type":"python","code":"run()"})).is_err());
     assert!(validate_output(Purpose::Scene, &json!({"type":"remove"})).is_err());
 }

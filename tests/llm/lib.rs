@@ -14,5 +14,8 @@ pub mod storage;
 #[path = "../../src-tauri/src/media.rs"]
 pub mod media;
 
+#[path = "../../src-tauri/src/scene_asset.rs"]
+pub mod scene_asset;
+
 #[path = "../../src-tauri/src/compositor.rs"]
 pub mod compositor;

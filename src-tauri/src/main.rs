@@ -9,9 +9,9 @@ mod runway;
 pub mod storage;
 mod tripo;
 
+mod compositor;
 mod legacy_capture;
 mod scene_asset;
-mod compositor;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -535,7 +535,13 @@ async fn tripo_task(
     match action.as_str() {
         "status" => tripo::status(&state.db, &job_id, &connection).await,
         "collect" => {
-            tripo::collect(&state.db, &job_id, &connection, &state.root.join("scene-assets")).await
+            tripo::collect(
+                &state.db,
+                &job_id,
+                &connection,
+                &state.root.join("scene-assets"),
+            )
+            .await
         }
         _ => Err("未対応のTripo操作です".into()),
     }
@@ -675,10 +681,7 @@ async fn local_video_submit(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let _video = state.video.try_lock().map_err(|_| "動画処理中です")?;
-    let _engine = state
-        .engine
-        .try_lock()
-        .map_err(|_| "他のAI処理中です")?;
+    let _engine = state.engine.try_lock().map_err(|_| "他のAI処理中です")?;
     let config = state
         .local_video
         .lock()

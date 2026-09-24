@@ -2,24 +2,28 @@ import React, {forwardRef, useEffect, useImperativeHandle, useRef, useState} fro
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {TransformControls} from 'three/addons/controls/TransformControls.js';
 import {resolveSceneAsset} from './scene-assets.js';
 import {applyActorPose, inspectRig, resolveSceneContacts} from './scene-pose.js';
 
 // GLB resolution is performed only when the shot workspace is opened. Each
 // rebuild disposes the old render graph and the renderer is never kept hidden.
-const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,onRigInfo},ref){
-  const host=useRef(null), runtime=useRef(null), callback=useRef(onCamera),rigCallback=useRef(onRigInfo), [error,setError]=useState('');
+const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,onRigInfo,selectedObjectId,editMode='translate',onTransform},ref){
+  const host=useRef(null), runtime=useRef(null), callback=useRef(onCamera),rigCallback=useRef(onRigInfo),transformCallback=useRef(onTransform),selection=useRef({selectedObjectId,editMode}), [error,setError]=useState('');
   callback.current=onCamera;
   rigCallback.current=onRigInfo;
+  transformCallback.current=onTransform;
+  selection.current={selectedObjectId,editMode};
   useImperativeHandle(ref,()=>({capture:async({width=768,height=768}={})=>{
     const state=runtime.current;
     if(!state || state.loading) throw Error('3D素材の読み込みが完了していません');
     if(state.error) throw Error(state.error);
     if(!Number.isInteger(width)||!Number.isInteger(height)||width<64||height<64||width>4096||height>4096)throw Error('撮影サイズは64〜4096pxです');
-    const {renderer,camera,world}=state,oldSize=new THREE.Vector2(),oldRatio=renderer.getPixelRatio();
+    const {renderer,camera,world,transform}=state,oldSize=new THREE.Vector2(),oldRatio=renderer.getPixelRatio();
     renderer.getSize(oldSize);
-    try{renderer.setPixelRatio(1);renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();renderer.render(world,camera);return renderer.domElement.toDataURL('image/png');}
-    finally{renderer.setPixelRatio(oldRatio);renderer.setSize(oldSize.x,oldSize.y,false);camera.aspect=oldSize.x/oldSize.y;camera.updateProjectionMatrix();renderer.render(world,camera);}
+    const wasVisible=transform?.getHelper().visible;
+    try{if(transform)transform.getHelper().visible=false;renderer.setPixelRatio(1);renderer.setSize(width,height,false);camera.aspect=width/height;camera.updateProjectionMatrix();renderer.render(world,camera);return renderer.domElement.toDataURL('image/png');}
+    finally{if(transform)transform.getHelper().visible=wasVisible;renderer.setPixelRatio(oldRatio);renderer.setSize(oldSize.x,oldSize.y,false);camera.aspect=oldSize.x/oldSize.y;camera.updateProjectionMatrix();renderer.render(world,camera);}
   }}),[]);
   useEffect(()=>{
     if(!host.current)return;
@@ -36,13 +40,26 @@ const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,
     const ambient=new THREE.HemisphereLight(0xffffff,0x9da6b2,2.1);world.add(ambient);
     const sunlight=new THREE.DirectionalLight(0xffffff,2.5);sunlight.position.set(4,9,5);world.add(sunlight);
     const floor=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0xd5d9dd,roughness:1}));floor.rotation.x=-Math.PI/2;floor.position.y=-.008;world.add(floor);
-    const instances=new Map(),loading={renderer,camera,world,loading:true,error:null}; runtime.current=loading;
+    const instances=new Map(),loading={renderer,camera,world,instances,loading:true,error:null}; runtime.current=loading;
     rigCallback.current?.({});
     let disposed=false;
     const resize=()=>{if(disposed)return;renderer.setSize(Math.max(container.clientWidth,320),Math.max(container.clientHeight,260));camera.aspect=renderer.domElement.width/renderer.domElement.height;camera.updateProjectionMatrix();};
     const render=()=>{if(!disposed && !document.hidden)renderer.render(world,camera);};
     const observer=new ResizeObserver(()=>{resize();render();});observer.observe(container);
     controls.addEventListener('change',render);
+    const transform=new TransformControls(camera,renderer.domElement);
+    world.add(transform.getHelper());
+    loading.transform=transform;
+    transform.addEventListener('change',render);
+    transform.addEventListener('dragging-changed',event=>{
+      controls.enabled=!event.value;
+      if(!event.value && transform.object){
+        const instance=transform.object;
+        transformCallback.current?.(selection.current.selectedObjectId,{
+          position:instance.position.toArray(),rotation:[instance.rotation.x,instance.rotation.y,instance.rotation.z],scale:instance.scale.toArray()
+        });
+      }
+    });
     document.addEventListener('visibilitychange',render);
     render();
     const stop=()=>{if(disposed||!callback.current)return;const position=camera.position.toArray(),target=controls.target.toArray();
@@ -68,12 +85,20 @@ const SceneViewport=forwardRef(function SceneViewport({scene,assets=[],onCamera,
       const diagnostics=resolveSceneContacts(instances,scene.objects);
       const failed=diagnostics.find(result=>!result.applied);
       if(failed)throw Error(`接触位置を解決できません (${failed.id}: ${failed.reason})`);
+      const current=selection.current;transform.setMode(current.editMode);
+      if(current.selectedObjectId && instances.has(current.selectedObjectId))transform.attach(instances.get(current.selectedObjectId));
       loading.loading=false;setError('');rigCallback.current?.(info);render();
     }).catch(e=>{if(disposed)return;loading.error=e.message??String(e);loading.loading=false;setError(loading.error);});
-    return ()=>{disposed=true;observer.disconnect();controls.removeEventListener('end',stop);controls.removeEventListener('change',render);document.removeEventListener('visibilitychange',render);controls.dispose();runtime.current=null;
+    return ()=>{disposed=true;observer.disconnect();controls.removeEventListener('end',stop);controls.removeEventListener('change',render);document.removeEventListener('visibilitychange',render);transform.detach();transform.dispose();controls.dispose();runtime.current=null;
       world.traverse(node=>{node.geometry?.dispose();if(node.material){for(const material of (Array.isArray(node.material)?node.material:[node.material])){for(const value of Object.values(material))if(value?.isTexture)value.dispose();material.dispose();}}});
       renderer.dispose();renderer.domElement.remove();};
   },[scene,assets]);
+  useEffect(()=>{const state=runtime.current;if(!state?.transform || state.loading)return;
+    state.transform.setMode(editMode);
+    const object=state.instances.get(selectedObjectId);
+    if(object)state.transform.attach(object);else state.transform.detach();
+    if(!document.hidden)state.renderer.render(state.world,state.camera);
+  },[selectedObjectId,editMode,scene]);
   return <div className="scene-viewport" role="img" aria-label="3D構図のプレビュー" ref={host}>{error&&<p role="alert" className="scene-viewport-error">{error}</p>}</div>;
 });
 export default SceneViewport;

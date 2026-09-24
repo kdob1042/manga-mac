@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { recordSceneCapture, verifySceneCapture } from '../src/scene-capture.js';
+import { imageRequest } from '../src/image-input.js';
 
 const pngHeader = Buffer.alloc(36);
 Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(pngHeader);
@@ -33,4 +34,17 @@ test('modified scene or altered image cannot be passed to image generation', asy
   await assert.rejects(verifySceneCapture({ ...panel, scene3d: { ...scene, camera: { fov: 80 } } }, capture), /撮り直し/);
   await assert.rejects(verifySceneCapture(panel, { ...capture, original: `${png}tamper` }), /撮り直し/);
   await assert.rejects(recordSceneCapture(base, 'p', 'data:image/jpeg;base64,AAAA', 768, 512), /PNG/);
+});
+
+test('the saved render bytes, not just capture metadata, become the image model input', async () => {
+  const base = { panels: [{ id: 'p', snapshotId: 'script1', scene3d: scene, prompt: 'two players' }], sceneAssets, captures: [] };
+  const captured = await recordSceneCapture(base, 'p', png, 768, 512);
+  const panel = captured.panels[0], capture = captured.captures[0];
+  const original = await verifySceneCapture(panel, capture);
+  const request = imageRequest({ panel, references: [], original, originalHash: capture.image.hash,
+    width: 768, height: 512, seed: 1, instruction: '', capture });
+  assert.equal(request.original, png);
+  assert.equal(request.original_hash, capture.image.hash);
+  assert.equal(request.capture.id, capture.id);
+  assert.equal(request.capture.checkpoint_hash, capture.scene_hash);
 });

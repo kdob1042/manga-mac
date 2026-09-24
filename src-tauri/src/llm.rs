@@ -788,10 +788,16 @@ fn validate_output(purpose: Purpose, value: &Value) -> Result<(), String> {
             if op.keys().any(|key| !allowed.contains(&key.as_str())) {
                 return Err(failure());
             }
-            for required in if kind == "add" { &["object"][..] } else if kind == "camera" {
+            for required in if kind == "add" {
+                &["object"][..]
+            } else if kind == "camera" {
                 &["camera"][..]
-            } else { &["id"][..] } {
-                if !op.contains_key(*required) { return Err(failure()); }
+            } else {
+                &["id"][..]
+            } {
+                if !op.contains_key(*required) {
+                    return Err(failure());
+                }
             }
         }
 
