@@ -19,24 +19,19 @@ test('registers a second source and switches through isolated persisted works',a
   }};
  });
  await page.goto('/');
- await expect(page.getByLabel('登録済み作品',{exact:true})).toHaveValue('primary');
- await page.getByRole('button',{name:'作品を追加',exact:true}).click();
+ await expect(page.getByRole('button',{name:'原稿を開く',exact:true})).toHaveCount(1);
+ await expect(page.getByRole('button',{name:'作品を追加',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('navigation',{name:'漫画の制作工程'})).toHaveCount(0);
+ await expect(page.locator('.workspace aside')).toBeHidden();
+ await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
+ await page.getByText('旧形式の原稿を登録').click();
+ await page.getByRole('button',{name:'独立したリポジトリを追加'}).click();
  await page.getByLabel('作品表示名').fill('作品B');await page.getByLabel('追加するGitHubリポジトリ').fill('owner/b');
  await page.getByLabel('最初の話ID').fill('P02');await page.getByRole('button',{name:'登録する',exact:true}).click();
+ await page.getByRole('button',{name:'閉じる',exact:true}).click();
  await expect(page.getByLabel('登録済み作品',{exact:true}).locator('option')).toHaveCount(2);
- await page.getByLabel('作品言語').selectOption('en');
- await page.getByLabel('登録済み作品',{exact:true}).selectOption('second');
- await expect(page.getByLabel('登録済み作品',{exact:true})).toHaveValue('second');
- await expect(page.getByLabel('作品言語')).toHaveValue('ja');
- await page.getByRole('button',{name:'接続・人物設定'}).click();
- await expect(page.getByLabel('GitHubリポジトリ',{exact:true})).toHaveValue('owner/b');
- await expect(page.getByLabel('話ID',{exact:true})).toHaveValue('P02');
- await page.getByLabel('読み取り専用トークン').fill('ephemeral');
  await page.getByLabel('登録済み作品',{exact:true}).selectOption('primary');
- await expect(page.getByLabel('作品言語')).toHaveValue('en');
- await page.getByRole('button',{name:'接続・人物設定'}).click();
- await expect(page.getByLabel('読み取り専用トークン')).toHaveValue('');
- await expect(page.getByLabel('GitHubリポジトリ',{exact:true})).toHaveValue('owner/a');
+ await expect(page.getByLabel('登録済み作品',{exact:true})).toHaveValue('primary');
 });
 
 
@@ -54,6 +49,7 @@ test('story-library work entry supports work to second episode to second scene i
    {id:'P02',title:'第二話',scenes:[{id:'P02-01',path:'manuscript/p02/p02-01.md'},{id:'P02-02',path:'manuscript/p02/p02-02.md'}]}
   ],settings:[],characters:[]};
   let entry={id:'primary',name:'原稿ライブラリ',repo,episode:'P01'};
+  window.registrationCalls=0;
   window.__TAURI_INTERNALS__={invoke:async(command,args)=>{
       if (command === 'acceptance_context') return null;
    if(command==='source_library')return {active:'primary',entries:[entry]};
@@ -61,6 +57,7 @@ test('story-library work entry supports work to second episode to second scene i
    if(command==='save_project'){localStorage.setItem('story-library-project',args.data);return;}
    if(command==='backup_status')return {config:null,status:{last_success:0},restored:[],active:'primary'};
    if(command==='source_register'){
+    window.registrationCalls++;
     entry={...entry,id:args.id??entry.id,name:args.name,repo:args.repo,episode:args.episode,
      work_id:args.workId,work_root:args.workRoot,manifest_path:args.manifestPath,
      catalog_commit:args.catalogCommit,scene:args.scene,format:args.format};
@@ -84,15 +81,13 @@ test('story-library work entry supports work to second episode to second scene i
   }};
  });
  await page.goto('/');
- await page.getByRole('button',{name:'接続・人物設定'}).click();
- await page.getByLabel('読み取り専用トークン').fill('ephemeral');
- await page.getByRole('button',{name:'閉じる',exact:true}).click();
- await page.getByRole('button',{name:'一覧を更新',exact:true}).click();
+ await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
  await page.getByLabel('原稿ライブラリの作品').selectOption('work-a');
  await page.getByLabel('話を選ぶ').selectOption('P02');
  await page.getByRole('button',{name:'閲覧中だけ',exact:true}).click();
  await page.getByLabel('原稿ライブラリのシーン').selectOption('P02-02');
- await page.getByRole('button',{name:'原稿の更新を確認',exact:true}).click();
+ expect(await page.evaluate(()=>window.registrationCalls)).toBe(0);
+ await page.getByRole('button',{name:'変更を確認',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('P02-02');
  await page.getByRole('button',{name:'取り込む',exact:true}).click();
  await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('story-library-project'))?.snapshots.at(-1)?.selectedSceneId)).toBe('P02-02');

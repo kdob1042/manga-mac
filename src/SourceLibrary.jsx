@@ -7,23 +7,13 @@ export default function SourceLibrary({
   catalog, selectedWorkId, selectedEpisodeId, selectedSceneId,
   selectedEpisodeIds=[], sourceBranch='main',
   onRefreshCatalog, onSelectWork, onSelectEpisode, onSelectScene,
-  onToggleImportEpisode, onSelectAllEpisodes, onSourceBranch, onCheckSource,
+  onToggleImportEpisode, onSelectAllEpisodes, onSourceBranch, onConfirmImport,
 }) {
   const [adding,setAdding]=useState(false),[name,setName]=useState(''),[newRepo,setNewRepo]=useState(''),[newEpisode,setNewEpisode]=useState('P01');
   const works=catalog?.catalog ? availableStoryWorks(catalog.catalog, 'manga') : [];
   const outline=catalog?.outline ?? [];
   const selectedEpisode=outline.find(item=>item.id===selectedEpisodeId);
-  async function open(id) { await commit(current.current); await call('backup_open',{workspace:id}); }
-  return <div>
-    <section aria-label="作品の管理">
-      <label>制作データを選ぶ
-        <select aria-label="登録済み作品" disabled={busy} value={library.active} onChange={e=>run('作品を開き直します',()=>open(e.target.value))}>
-          {!library.entries.some(e=>e.id===library.active)&&<option value={library.active}>未接続の作品</option>}
-          {library.entries.map(e=><option key={e.id} value={e.id}>{e.name}{e.work_id ? ` · ${e.work_id}` : ` · ${e.repo}`}</option>)}
-        </select>
-      </label>
-      <small>作品の切替時は保存して再起動します。</small>
-    </section>
+  return <div className="source-library-form">
     <section aria-label="原稿ライブラリ">
       <h3>原稿ライブラリ</h3>
       <p>接続先: <code>{DEFAULT_STORY_LIBRARY_REPO}</code>{catalog ? ` · ${catalog.branch??sourceBranch} @ ${catalog.sha.slice(0,8)}` : ''}</p>
@@ -32,8 +22,7 @@ export default function SourceLibrary({
           {SOURCE_BRANCHES.map(branch=><option key={branch} value={branch}>{branch}</option>)}
         </select>
       </label>
-      <button disabled={busy} onClick={()=>run('原稿一覧を更新中',onRefreshCatalog)}>一覧を更新</button>
-      {!catalog&&<small>接続・人物設定でトークンを登録してから更新してください。</small>}
+      {!catalog&&<button disabled={busy} onClick={()=>run('原稿一覧を読み込み中',onRefreshCatalog)}>原稿一覧を再試行</button>}
       {!!catalog&&<label>作品を選ぶ
         <select aria-label="原稿ライブラリの作品" disabled={busy} value={selectedWorkId||''} onChange={e=>run('作品を読み込み中',()=>onSelectWork(e.target.value))}>
           <option value="" disabled>作品を選択</option>
@@ -57,11 +46,11 @@ export default function SourceLibrary({
           {selectedEpisode.scenes.map(scene=><option key={scene.id} value={scene.id}>{scene.title} · {scene.id}</option>)}
         </select>
       </label>}
-      {onCheckSource&&<button className="primary full" disabled={busy} onClick={onCheckSource}>原稿の更新を確認</button>}
-      {!!catalog?.work&&<small>{sourceBranch}の差分を確認してから取り込みます。</small>}
+      <button className="primary full" disabled={busy||!catalog?.work||!selectedEpisodeIds.length} onClick={onConfirmImport}>変更を確認</button>
+      {!!catalog?.work&&<small>{sourceBranch}の差分を表示します。確認後に取り込むまで制作中の原稿は変わりません。</small>}
     </section>
-    <section aria-label="旧形式の作品登録">
-      <button disabled={busy} onClick={()=>setAdding(!adding)}>作品を追加</button>
+    <details aria-label="旧形式の作品登録"><summary>旧形式の原稿を登録</summary><section>
+      <button disabled={busy} onClick={()=>setAdding(!adding)}>独立したリポジトリを追加</button>
       {adding&&<div>
         <label>作品表示名<input value={name} onChange={e=>setName(e.target.value)}/></label>
         <label>追加するGitHubリポジトリ<input value={newRepo} onChange={e=>setNewRepo(e.target.value)} placeholder="owner/repository"/></label>
@@ -72,6 +61,6 @@ export default function SourceLibrary({
           setLibrary({...library,entries:result.entries,active:result.id});setAdding(false);setName('');setNewRepo('');setNewEpisode('P01');
         })}>登録する</button>
       </div>}
-    </section>
+    </section></details>
   </div>;
 }

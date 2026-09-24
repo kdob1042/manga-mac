@@ -35,7 +35,7 @@ async function setup(page) {
 async function connect(page,vision=false){await page.getByRole('button',{name:'接続・人物設定'}).click();await page.getByRole('button',{name:'接続をテスト',exact:true}).click();if(vision)await page.getByLabel('対象認識・文字配置に作画画像をこの接続へ送る').check();await page.getByRole('button',{name:'閉じる',exact:true}).click();}
 
 test('selected-scene draft retains old manuscript; saved edit comparison survives restart without connection',async({page})=>{
- await setup(page);await connect(page);await page.getByLabel('制作方法',{exact:true}).selectOption('direct');
+ await setup(page);await connect(page);await page.getByRole('button',{name:'原稿',exact:true}).click();
  await page.getByText('制作する場面・保存した原稿',{exact:true}).click();await page.getByRole('group',{name:'制作する場面',exact:true}).getByLabel('a',{exact:true}).uncheck();await page.getByLabel('既存原稿を残して別の初稿を作る').check();
  await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();await expect(page.getByRole('img',{name:'書き出しページの確認'})).toBeVisible();
  expect(await page.evaluate(()=>window.saved.panels.map(p=>p.sceneId))).toEqual(['b']);expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='generate_image').length)).toBe(1);
@@ -43,7 +43,7 @@ test('selected-scene draft retains old manuscript; saved edit comparison survive
  await page.reload();await page.getByText(/保存した編集候補（1件）/).click();await page.getByRole('button',{name:'変更前後を比較',exact:true}).click();await expect(page.getByRole('img',{name:'編集候補のページ',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'候補を開く',exact:true}).click();await page.getByRole('button',{name:'この編集を適用',exact:true}).click();await expect.poll(()=>page.evaluate(()=>Object.values(window.saved.layout.imageCrops??{})[0]?.zoom)).toBe(1.2);
  expect(await page.evaluate(()=>window.calls.filter(c=>c.command==='llm_request').length)).toBe(0);
- await page.getByText('制作する場面・保存した原稿',{exact:true}).click();const id=await page.evaluate(()=>window.saved.history.find(h=>h.draftCheckpoint).id);await page.getByLabel('保存した原稿',{exact:true}).selectOption(id);
+ await page.getByRole('button',{name:'原稿',exact:true}).click();await page.getByText('制作する場面・保存した原稿',{exact:true}).click();const id=await page.evaluate(()=>window.saved.history.find(h=>h.draftCheckpoint).id);await page.getByLabel('保存した原稿',{exact:true}).selectOption(id);
  await expect.poll(()=>page.evaluate(()=>window.saved.panels[0].id)).toBe('old-panel');expect(await page.evaluate(()=>window.saved.history.filter(h=>h.draftCheckpoint).at(-1).panels[0].sceneId)).toBe('b');
  await page.screenshot({path:'test-results/draft-checkpoints.png',fullPage:true});
 });

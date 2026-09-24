@@ -51,7 +51,9 @@ test('production opens its GUI and waits for visual confirmation without backgro
   await page.getByRole('button',{name:'接続をテスト',exact:true}).click();
   await expect(page.getByText('接続を登録済み（この起動中のみ）')).toBeVisible();
   await page.getByRole('button',{name:'閉じる',exact:true}).click();
-  await page.getByLabel('制作方法',{exact:true}).selectOption('blender');
+  await page.getByRole('button',{name:'原稿',exact:true}).click();
+  await page.getByText('初稿の作画方法',{exact:true}).click();
+  await page.locator('.production-option').getByLabel('制作方法',{exact:true}).selectOption('blender');
   await page.getByRole('button',{name:'✧ 漫画にする',exact:true}).click();
   await expect(page.getByRole('alert').filter({hasText:'候補保存・採用してから続行'})).toBeVisible();
   const calls=await page.evaluate(()=>window.nativeCalls);

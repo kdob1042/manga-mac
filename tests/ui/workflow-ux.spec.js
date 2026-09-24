@@ -135,7 +135,8 @@ test('library retry restores the saved work and second episode before importing 
   await expect(page.getByLabel('話ID',{exact:true})).toHaveValue('P02');
   await page.getByRole('button',{name:'閉じる',exact:true}).click();
   await page.getByRole('button',{name:'原稿一覧を再読込'}).click();
-  await page.getByRole('button',{name:'原稿の更新を確認',exact:true}).click();
+  await page.getByRole('button',{name:'原稿',exact:true}).click();
+  await page.getByRole('button',{name:'更新を確認',exact:true}).click();
   await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('P02-02');
   await page.getByRole('button',{name:'取り込む',exact:true}).click();
   await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
