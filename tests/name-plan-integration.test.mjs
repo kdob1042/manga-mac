@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createNameCandidate, createNameFile, adoptNameCandidate, validateV2State, refreshNameMetadata, patchNameLayout, setNameLock, localNamePlan, requiredTextForSource, canFinalizeNameRef, nameReadToken } from '../src/name-v2.js';
-import { generateNameCandidate, proposeNameEdit, applyNameEdit, runNameVisualQA } from '../src/name-v2-ai.js';
+import { generateNameCandidate, proposeNameEdit, applyNameEdit, pageAtomSelection, runNameVisualQA } from '../src/name-v2-ai.js';
 import { sourceParagraphs, orderedCoverage, sourceDescriptor } from '../contracts/name-plan/source.mjs';
 import { fileFixture, split, leaf } from './name-plan-fixture.mjs';
 
@@ -134,10 +134,22 @@ test('no image input never gets a visual QA pass', async () => {
   const result = await runNameVisualQA({ project: p, pageIds: p.namePlan.pageIds, images: [], ask: async () => { calls++; }, imageCapable: false });
   assert.equal(result.visual, 'not_run'); assert.equal(calls, 0);
 });
-test('natural language dispatch is typed and scoped, not arbitrary executable output', async () => {
+test('natural language dispatch is local-page scoped, typed and not arbitrary executable output', async () => {
   const f = await fileFixture(2), p = await adoptNameCandidate(f.project, await createNameCandidate(f.project, f.file)), page = p.layout.pages[0];
-  const proposal = await proposeNameEdit(p, page.id, 'このページ固定', async () => ({ kind: 'lock', reason: '固定要求', locked: true }));
+  let request;
+  const proposal = await proposeNameEdit(p, page.id, 'このページ固定', async (prompt) => {
+    request=JSON.parse(prompt);
+    return { kind: 'lock', reason: '固定要求', locked: true };
+  });
+  assert.equal(request.role,'manga-mac/page-edit-interpreter');
+  assert.equal(request.page.id,page.id);
+  assert.equal(request.currentLayout.id,page.id);
+  assert.ok(request.constraints.some(item=>item.includes('別ページ')));
+  assert.deepEqual(pageAtomSelection(p,page.id),f.atoms.map(atom=>atom.id));
   const next = await applyNameEdit(p, proposal); assert.deepEqual(next.namePlan.locks.pages[page.id], page);
+  const replan=await proposeNameEdit(p,page.id,'右上を2分割',async()=>({kind:'replan',reason:'明示されたコマ分割'}));
+  assert.equal(replan.pageId,page.id);
+  await assert.rejects(()=>applyNameEdit(p,replan),/再ネーム候補/);
   await assert.rejects(() => proposeNameEdit(p, page.id, 'x', async () => ({ kind: 'shell', reason: 'x', command: 'no' })), /形式/);
 });
 
