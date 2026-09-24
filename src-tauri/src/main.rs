@@ -255,9 +255,10 @@ fn source_asset_path_valid(path: &str) -> bool {
 fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Result<Vec<u8>, String> {
     let has_image_signature = source_asset_mime(body).is_some();
     let first_non_whitespace = body.iter().copied().find(|byte| !byte.is_ascii_whitespace());
+    let media_type_is_json = content_type
+        .is_some_and(|value| value.to_ascii_lowercase().contains("json"));
     let is_json = !has_image_signature
-        && (content_type.is_some_and(|value| value.to_ascii_lowercase().contains("json"))
-            || first_non_whitespace == Some(b'{'));
+        && (media_type_is_json || first_non_whitespace == Some(b'{'));
     if !is_json {
         return Ok(body.to_vec());
     }
@@ -269,7 +270,10 @@ fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Resul
     let content = response["content"]
         .as_str()
         .ok_or("参照画像の内容がありません")?;
-    let compact: Vec<_> = content.bytes().filter(|byte| !byte.is_ascii_whitespace()).collect();
+    let compact: Vec<_> = content
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
     STANDARD
         .decode(compact)
         .map_err(|_| "参照画像のbase64が不正です".into())
