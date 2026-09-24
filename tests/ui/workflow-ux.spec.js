@@ -94,6 +94,23 @@ test('source sidebar moves between episodes and focuses the matching manuscript 
   expect(saved.snapshots[0].scenes.find(scene=>scene.id==='S02').text).toBe('第二話の本文');
 });
 
+test('source selection action remains visible while reading a long manuscript',async({page})=>{
+  await page.goto('/');
+  await page.evaluate(async data=>{await(await import('/src/bridge.js')).saveProject(data);},savedWork);
+  await page.reload();
+  await page.getByRole('button',{name:'原稿',exact:true}).click();
+  const toolbar=page.getByRole('region',{name:'原稿',exact:true}).locator('.toolbar');
+  await expect(toolbar.getByRole('button',{name:'選択箇所を漫画に反映'})).toBeVisible();
+  await page.addStyleTag({content:'.source-manuscript article { min-height: 1600px; }'});
+  const main=page.locator('main');
+  const toolbarOffset=await toolbar.evaluate(el=>{const scroller=el.closest('main');return el.getBoundingClientRect().top-scroller.getBoundingClientRect().top+scroller.scrollTop;});
+  await main.evaluate((el,offset)=>{el.scrollTop=offset+500;},toolbarOffset);
+  await expect.poll(()=>main.evaluate(el=>el.scrollTop)).toBeGreaterThan(toolbarOffset+400);
+  const bounds=await toolbar.boundingBox(),viewport=await main.boundingBox();
+  expect(bounds.y-viewport.y).toBeGreaterThanOrEqual(0);
+  expect(bounds.y-viewport.y).toBeLessThan(20);
+});
+
 test('initial import restores keyboard focus and keeps the action inside narrow windows',async({page})=>{
   for(const width of [1280,1440,760]){
     await page.setViewportSize({width,height:width===760?800:900});
