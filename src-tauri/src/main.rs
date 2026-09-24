@@ -6,6 +6,7 @@ mod local_video;
 mod media;
 mod policy_transport;
 mod runway;
+mod tapnow;
 pub mod storage;
 mod tripo;
 
@@ -24,6 +25,7 @@ struct AppState {
     _workspace_gate: std::fs::File,
     root: PathBuf,
     connections: llm::Connections,
+    tapnow: tapnow::Connection,
     db: Mutex<rusqlite::Connection>,
     engine: tokio::sync::Mutex<()>,
     video: tokio::sync::Mutex<()>,
@@ -603,6 +605,22 @@ fn reuse_video_connection(
 #[tauri::command]
 fn remove_video(connection_id: String, state: State<AppState>) -> Result<(), String> {
     state.connections.remove_video(&connection_id)
+}
+#[tauri::command]
+async fn tapnow_connect(state: State<'_, AppState>) -> Result<Value, String> {
+    tapnow::connect(&state.tapnow).await
+}
+#[tauri::command]
+async fn tapnow_tools(state: State<'_, AppState>) -> Result<Value, String> {
+    tapnow::list_tools(&state.tapnow).await
+}
+#[tauri::command]
+fn tapnow_disconnect(state: State<'_, AppState>) -> Result<(), String> {
+    tapnow::disconnect(&state.tapnow)
+}
+#[tauri::command]
+fn tapnow_status(state: State<'_, AppState>) -> Result<bool, String> {
+    tapnow::connected(&state.tapnow)
 }
 #[tauri::command]
 async fn register_tripo(
@@ -1337,6 +1355,7 @@ fn main() {
                 _workspace_gate: workspace_gate,
                 root: dir,
                 connections: llm::Connections::default(),
+                tapnow: tapnow::Connection::default(),
                 db: Mutex::new(db),
                 engine: tokio::sync::Mutex::new(()),
                 video: tokio::sync::Mutex::new(()),
@@ -1377,6 +1396,10 @@ fn main() {
             register_video,
             reuse_video_connection,
             remove_video,
+            tapnow_connect,
+            tapnow_tools,
+            tapnow_disconnect,
+            tapnow_status,
             video_submit,
             register_local_video,
             remove_local_video,
@@ -1520,3 +1543,4 @@ mod source_asset_tests {
         assert_eq!(source_asset_mime(b"<svg></svg>"), None);
     }
 }
+
