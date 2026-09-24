@@ -45,6 +45,7 @@ test('only manual GitHub checks run; preview is ephemeral and adoption/failure p
  await page.evaluate(()=>window.currentHead='d'.repeat(40));
  await page.getByRole('button',{name:'取り込む',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toHaveCount(0);
+ await expect(page.getByRole('alert')).toContainText('確認後に原稿ブランチが更新されました');
  expect(await page.evaluate(()=>localStorage.getItem('saved'))).toBe(saved);
  await page.getByRole('button',{name:'GitHub側の更新を確認'}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('dddddddd');

@@ -24,4 +24,7 @@ test('redacts all untrusted error details while retaining known native codes and
   assert.ok(!report.diagnostic.includes('https://'));
   assert.equal(sourceConnectionError(Error('GitHub 429')).kind,'limit');
   assert.equal(sourceConnectionError(Error('origin/dev を取得できません。接続またはGitの認証を確認してください')).kind,'auth');
+  const wrongOrigin=sourceConnectionError(Error('ローカル原稿のoriginが選択したGitHubリポジトリと一致しません'));
+  assert.equal(wrongOrigin.kind,'origin');assert.equal(wrongOrigin.action,'settings');
+  assert.equal(JSON.parse(wrongOrigin.diagnostic).technical,'Local Git origin mismatch');
 });
