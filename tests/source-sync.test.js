@@ -35,6 +35,30 @@ test('story-source/v1 sync reads declared paths from one pinned commit',async()=
  assert.equal(calls.find(call=>call.command==='github_asset').args.path,'assets/yu.png');
 });
 
+test('imports manuscript while recording a declared image with invalid bytes',async()=>{
+ const sha='e'.repeat(40);
+ const manifest={format:'story-source/v1',work:{title:'作品'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'}]}],settings:[],characters:[
+  {id:'yu',name:'人物A',image:'assets/yu.png'},
+  {id:'chihiro',name:'人物B',image:'assets/chihiro.jpg'},
+ ]};
+ const invoke=async(command,args)=>{
+  if(command==='github_file')return args.path==='manifest.json'?JSON.stringify(manifest):'# 第一場面\n\n本文';
+  if(command==='github_asset'){
+   if(args.path==='assets/chihiro.jpg')throw Error('参照画像の実形式がPNG/JPEG/WebPではありません');
+   return {image:'data:image/png;base64,AAAA',hash:'f'.repeat(64),mime:'image/png',size:4};
+  }
+  throw Error(command);
+ };
+ const snapshot=await syncSource('owner/story','','P01',null,invoke,{commit:sha,branch:'dev'});
+ assert.deepEqual(snapshot.scenes.map(scene=>scene.id),['P01-01']);
+ assert.deepEqual(snapshot.references.map(reference=>reference.characterId),['yu']);
+ assert.deepEqual(snapshot.unavailableReferences,[{name:'人物B',path:'assets/chihiro.jpg',reason:'invalid_image_format'}]);
+ await assert.rejects(syncSource('owner/story','','P01',null,async(command,args)=>{
+  if(command==='github_asset')throw Error('connection failed');
+  return invoke(command,args);
+ },{commit:sha,branch:'dev'}),/connection failed/);
+});
+
 test('legacy source entrypoint still resolves declared paths from the work root',async()=>{
  const manifest={format:'story-source/v1',work:{title:'source root'},episodes:[{id:'P01',title:'第一話',scenes:[{id:'P01-01',path:'manuscript/p01/p01-01.md'}]}],settings:[],characters:[]};
  const paths=[];

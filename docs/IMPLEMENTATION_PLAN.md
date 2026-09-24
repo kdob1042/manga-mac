@@ -94,7 +94,7 @@ flowchart TB
 
 共通契約の形式正本は `contracts/story-source/` に置き、manga-macの `source-protocol.js` はこのvalidatorを読み取り時に利用する。story-source/v1は同一commitのmanifest・本文・設定・人物画像を取得する単一正本で、旧schema 1/4は既存snapshotを保持する読み取りadapterとして残す。人物は固定IDを優先し、旧形式でIDがない場合の名前対応付けが複数候補になるときは推測せず失敗する。
 
-同期入口はmanifestを手動確認したときだけ読み取り、未対応形式・危険なpath・見出し不整合・宣言画像の取得失敗では現在のsnapshot、漫画、保存データを変更しない。manifestの差分はscene・setting・人物ID/path・画像hashとして表示し、commitだけの変更は「更新なし」とする。`work.json` を優先し、旧 `manifest.json` / `source/manifest.json` は読み取り可能にする。manifest内のpathは常に作品root相対の正本として保持し、repositoryや作品名から構造を推測しない。
+同期入口はmanifestを手動確認したときだけ読み取り、未対応形式・危険なpath・見出し不整合・宣言画像の通信失敗や欠損では現在のsnapshot、漫画、保存データを変更しない。宣言画像の実バイト列がPNG/JPEG/WebPでない場合に限り、その画像を人物参照へ登録せず `snapshot.unavailableReferences` に人物名・path・理由を記録し、差分確認と取込後の画面で警告する。代替画像は推測しない。manifestの差分はscene・setting・人物ID/path・画像hashとして表示し、commitだけの変更は「更新なし」とする。`work.json` を優先し、旧 `manifest.json` / `source/manifest.json` は読み取り可能にする。manifest内のpathは常に作品root相対の正本として保持し、repositoryや作品名から構造を推測しない。
 
 場面は任意の `tags: ["駅", "再会"]` を保持する。最大64個・各80 Unicode scalar、非文字列や空白のみを拒否し原値を変えない。原manifestをsnapshot.manifest、正規化した本文/設定/参照をsnapshot.scenes/settings/referencesへ保存する。snapshot.protocolは解釈版、snapshot.syncは実取得commit・manifest原文SHA-256・日時を持つ。旧snapshotのcontractは履歴として保持するが新規仕様解決に使わない。画像のsafePath・実形式・20MB上限・SHA-256は既存Rust境界で確認し、明示取込み時だけ人物参照へ反映する。
 
@@ -112,7 +112,7 @@ flowchart TB
 
 ### 原稿の手動取込み（#107）
 
-GitHubへの更新確認は取込み画面の「変更を確認」または原稿工程の「更新を確認」の明示操作のみ。起動時・定期の自動確認は行わない。場面／設定／参照画像の追加・変更・削除とmanifest変更の概要を一時表示し、「取り込む」で同一commitの不変SourceSnapshotをactiveにする。未取込みの候補はメモリ内だけに保持し、再起動・対象作品／話変更で破棄する。確認失敗・保存失敗では既存正本と漫画を維持する。旧snapshotは既存漫画の出所・履歴として保持し、最新正本はactiveの1版とする。漫画への反映状態のdiffとは別処理である。
+原稿の更新確認は取込み画面の「変更を確認」または原稿工程の「更新を確認」の明示操作のみ。起動時・定期の自動確認は行わない。通常はGitHub APIを使用する。アプリデータの `local-source.json` にrepoと絶対pathを明示した作品だけは、原稿一覧の読み込み・変更確認時にアプリが選択ブランチを `origin` からfetchし、ローカルGitの `origin/dev` または `origin/main` をcommitへ解決する。取得に失敗した場合は保存済みsnapshotと漫画を維持してエラーを表示し、古い追跡refで更新なしと判定しない。`git cat-file` で本文と画像を同じcommitから読み取り、作業ツリーには依存しない。アプリはpull・pushを実行しない。場面／設定／参照画像の追加・変更・削除とmanifest変更の概要を一時表示し、「取り込む」で同一commitの不変SourceSnapshotをactiveにする。未取込みの候補はメモリ内だけに保持し、再起動・対象作品／話変更で破棄する。確認失敗・保存失敗では既存正本と漫画を維持する。旧snapshotは既存漫画の出所・履歴として保持し、最新正本はactiveの1版とする。漫画への反映状態のdiffとは別処理である。
 
 ### 原稿範囲と漫画への反映（#114 確定契約・段階実装）
 

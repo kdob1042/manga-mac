@@ -108,13 +108,24 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     settings.push({ ...s, text });
   }
   const references = [];
+  const unavailableReferences = [];
   for (const declaration of referenceDeclarations(model, settings)) {
     let asset;
     try {
       asset = await invokeCall('github_asset', {repo, path: sourcePath(sourceRoot, declaration.path), sha, token});
     } catch (error) {
-      if (!legacySourceRoot) throw error;
-      asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+      if (legacySourceRoot) {
+        try {
+          asset = await invokeCall('github_asset', {repo, path: sourcePath(legacySourceRoot, declaration.path), sha, token});
+        } catch (fallbackError) {
+          error = fallbackError;
+        }
+      }
+      if (!asset) {
+        if (!String(error?.message ?? error).includes('参照画像の実形式がPNG/JPEG/WebPではありません')) throw error;
+        unavailableReferences.push({name:declaration.name,path:declaration.path,reason:'invalid_image_format'});
+        continue;
+      }
     }
     references.push({ ...declaration, ...asset });
   }
@@ -123,6 +134,7 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
   const snapshot = {
     id: workId ? `${repo}@${sha}:${workId}:${scope}${sceneSuffix}` : `${repo}@${sha}:${scope}${sceneSuffix}`,
     repo, sha, episodeId: episodeIds[0], episodeIds, manifest, scenes, settings, references,
+    ...(unavailableReferences.length ? {unavailableReferences} : {}),
     ...(workId ? {workId} : {}),
     ...(selectedSceneId ? {selectedSceneId} : {}),
     ...(model.characters ? {characters: model.characters} : {}),

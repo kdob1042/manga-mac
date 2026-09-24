@@ -41,7 +41,7 @@ export default function SourceLibrary({
         <button type="button" onClick={()=>onSelectAllEpisodes(true)}>全話</button>
         <small>次回の取込対象: {selectedEpisodeIds.length}話</small>
       </fieldset>}
-      {!!selectedEpisode&&<label>シーンを選ぶ
+      {!!selectedEpisode&&<label>閲覧するシーン
         <select aria-label="原稿ライブラリのシーン" disabled={busy} value={selectedSceneId||''} onChange={e=>run('シーンを選択中',()=>onSelectScene(e.target.value))}>
           {selectedEpisode.scenes.map(scene=><option key={scene.id} value={scene.id}>{scene.title} · {scene.id}</option>)}
         </select>

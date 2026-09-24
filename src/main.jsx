@@ -136,6 +136,9 @@ function App() {
   function commit(p) { return writer.current.commit(p); }
   async function run(label, fn) { if (lock.current) return; lock.current = true; setBusy(label); setError(''); setNotice(''); cancel.current = false; try { await fn(); } catch (e) { setError(e.message ?? String(e)); } finally { setBusy(''); lock.current = false; } }
   const snapshot = project.snapshots.find(s => s.id === project.active);
+  const unavailableReferenceMessage = source => source?.unavailableReferences?.length
+    ? `原稿の参照画像${source.unavailableReferences.length}件は画像形式が不正なため取り込めませんでした（${source.unavailableReferences.map(item=>item.name).join('、')}）。原稿本文と他の参照画像は取り込めます。`
+    : '';
   useEffect(()=>{
     const viewKey=library?.active??project.workId;
     if(!ready||!viewKey)return;
@@ -173,8 +176,9 @@ function App() {
   async function refreshLibraryCatalog(branch=sourceBranch) {
     const loaded = await fetchStoryLibrary(DEFAULT_STORY_LIBRARY_REPO, token, call, branch);
     const entry = library?.entries.find(item => item.id === library.active);
-    const workId = entry?.work_id ?? current.current.workId ?? '';
-    if (workId) {
+    const workId = entry?.work_id ?? current.current.sourceSelection?.workId ?? current.current.workId ?? '';
+    const savedWork = findLibraryWork(loaded.catalog, workId);
+    if (savedWork && savedWork.formats.includes('manga') && ['imported', 'verified'].includes(savedWork.importStatus)) {
       const detail = await fetchStoryLibraryWork(loaded, workId, token, call);
       setLibraryCatalog({...loaded,...detail});
       setSelectedWorkId(workId);
@@ -187,13 +191,14 @@ function App() {
       setSelectedEpisodeIds(kept.length ? kept : [browse]);
     } else {
       setLibraryCatalog(loaded);
+      setSelectedWorkId('');
     }
     setNotice(`原稿一覧を読み込みました（${loaded.catalog.works.length}作品、${loaded.branch} @${loaded.sha.slice(0,8)}）。`);
   }
   function openImport() {
     setSettings(false);
     setImportOpen(true);
-    if (!libraryCatalog) void run('原稿一覧を読み込み中', () => refreshLibraryCatalog());
+    void run('原稿一覧を読み込み中', () => refreshLibraryCatalog());
   }
   function showScene(p,sceneId){
     const panel=p.panels.find(panel=>panel.sceneId===sceneId||(panel.sourceRefs??[]).some(r=>r.sceneId===sceneId));
@@ -297,13 +302,12 @@ function App() {
       const targetRepo=options.detail?.repo??repo;
       let libraryOptions={branch:sourceBranch,episodeIds:[episode]};
       if(entry?.work_id){
-        const loaded=options.detail??await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,token,call,sourceBranch);
-        const detail=options.detail??await fetchStoryLibraryWork(loaded,entry.work_id,token,call);
+        const loaded=await fetchStoryLibrary(entry.repo||DEFAULT_STORY_LIBRARY_REPO,token,call,sourceBranch);
+        const detail=await fetchStoryLibraryWork(loaded,entry.work_id,token,call);
         setLibraryCatalog({...loaded,...detail});
         const available=new Set(detail.outline.map(item=>item.id));
         const requested=(selectedEpisodeIds.length?selectedEpisodeIds:[episode]).filter(id=>available.has(id));
         if(!requested.length||requested.length!==(selectedEpisodeIds.length?selectedEpisodeIds:[episode]).length)throw Error('取り込む話を選び直してください');
-        const selectedScene=requested.length===1&&requested[0]===episode ? (selectedSceneId||entry.scene) : null;
         if(!options.detail){
           const saved=await call('source_register',{
             name:detail.work.title,repo:detail.repo,episode,id:entry.id,workId:entry.work_id,workRoot:detail.work.root,
@@ -313,7 +317,7 @@ function App() {
         }
         libraryOptions={
           commit:detail.sha,branch:sourceBranch,workId:entry.work_id,workRoot:detail.work.root,sourceRoot:detail.sourceRoot,
-          manifestPath:detail.entryPath,episodeIds:requested,...(selectedScene?{sceneId:selectedScene}:{}),format:detail.work.manuscriptFormat,
+          manifestPath:detail.entryPath,episodeIds:requested,format:detail.work.manuscriptFormat,
         };
       } else if(library && entry) {
         const saved=await call('source_register',{name:entry.name,repo:entry.repo,episode,id:entry.id});
@@ -345,7 +349,7 @@ function App() {
       ...(pending.workId ? {workId:pending.workId,sourceSelection:{workId:pending.workId,episodeId:browseEpisode,sceneId:browseScene,episodeIds:pendingEpisodes,branch:sourceBranch}} : {}),
     });
     setSelectedEpisodeIds(pendingEpisodes);
-    setNotice(`原作と基準画${pending.references.length}件を取り込みました。${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
+    setNotice(`原作と基準画${pending.references.length}件を取り込みました。${pending.unavailableReferences?.length ? `形式が不正な基準画${pending.unavailableReferences.length}件は除外しました。` : ''}${affected.length ? `${affected.length}場面に変更があります。既存の原稿を残す場合は「別の初稿を作る」を選んでください。` : '「漫画にする」で制作できます。'}`); setPending(null);
   }
   async function produce() {
     return produceDraft({ finalizeSource:async()=>{const saved=await finalizeProducedSource(current.current,call);const p=typeof saved==='string'?JSON.parse(saved):saved;current.current=p;setProject(p);}, current: () => current.current, commit, cancelled: () => cancel.current, model, productionMode: 'direct', imageModelId,
@@ -459,7 +463,8 @@ function App() {
     {stage==='finish' && panels.length>0 && <label className="finish-panel-select">仕上げるコマ<select aria-label="仕上げるコマ" value={selected??''} onChange={e=>{setSelected(e.target.value||null);setRect(null);}}><option value="">コマを選ぶ</option>{panels.map((p,i)=><option value={p.id} key={p.id}>{i+1}コマ目 · {p.sceneId}</option>)}</select></label>}
     {medium==='manga' && stage==='finish' && <PageProof panels={panels} snapshots={project.snapshots} localizations={project.localizations} locale={project.output_locale} page={pageData} imageCrops={layout.imageCrops}/>}
     {error && <div role="alert" className="message error">{error}</div>}{notice && <div role="status" className="message">{notice}</div>}{busy && <div role="status" className="message progress">◌ {busy}<button onClick={() => { cancel.current = true; cancelLLMRequests().catch(() => setError('LLMの停止状態を確認できませんでした')); setNotice('LLMへ停止を要求しました。画像処理は現在のコマが終わったところで停止します'); }}>ここまでで停止</button></div>}
-    {pending && <section className="message" aria-label="原稿の取込差分"><strong>差分あり · 原稿 {pending.sha.slice(0,8)}</strong><p>取り込むまで現在の正本と漫画は変わりません。</p>{['scenes','settings','references'].map((key,i)=><div key={key}><strong>{['場面','設定','人物・参照画像'][i]}</strong><ul>{sourceSummary(snapshot,pending)[key].map(item=><li key={item}>{item}</li>)}</ul></div>)}{sourceSummary(snapshot,pending).structure&&<p>作品情報・原稿構成に変更があります。</p>}<button disabled={!!busy} onClick={() => run('原稿を取り込み中', applySync)}>取り込む</button><button disabled={!!busy} onClick={() => {setPending(null);setNotice('取込みを見送りました');}}>後で</button></section>}
+    {pending && <section className="message" aria-label="原稿の取込差分"><strong>差分あり · 原稿 {pending.sha.slice(0,8)}</strong><p>取り込むまで現在の正本と漫画は変わりません。</p>{unavailableReferenceMessage(pending)&&<p role="alert" className="message error">{unavailableReferenceMessage(pending)}</p>}{['scenes','settings','references'].map((key,i)=><div key={key}><strong>{['場面','設定','人物・参照画像'][i]}</strong><ul>{sourceSummary(snapshot,pending)[key].map(item=><li key={item}>{item}</li>)}</ul></div>)}{sourceSummary(snapshot,pending).structure&&<p>作品情報・原稿構成に変更があります。</p>}<button disabled={!!busy} onClick={() => run('原稿を取り込み中', applySync)}>取り込む</button><button disabled={!!busy} onClick={() => {setPending(null);setNotice('取込みを見送りました');}}>後で</button></section>}
+    {snapshot && unavailableReferenceMessage(snapshot) && <p role="alert" className="message error">{unavailableReferenceMessage(snapshot)}</p>}
     <StagePane active={medium==='manga'&&stage==='source'} aria-label="原稿の作業">{snapshot&&<>{draftTools}<section className="source-reader" aria-label="原稿と漫画への反映状態"><h2>原稿と漫画への反映状態</h2><SourceUpdate active={medium==='manga'&&stage==='source'} project={project} busy={!!busy} current={current} commit={commit} acceptSaved={p=>{current.current=p;setProject(p);}} run={run} model={model} imageModelId={imageModelId} cancelled={()=>cancel.current} exclusive={fn=>writer.current.exclusive(fn)}/></section><ContentReplan project={project} current={current} commit={commit} run={run} busy={!!busy} model={model}/></>}</StagePane>
     <section hidden={!!pending || (project.panels.length>0 ? stage!=='art' : stage!=='source')} className="art-workspace"><div>{!panels.length ? (snapshot ? <div className="welcome"><h1>{project.panels.length?'このページは空です':'原稿を取り込みました'}</h1><p>{project.panels.length?'コマ割り編集で枠とコマを割り当ててください。':'原稿の範囲を選んで漫画に反映するか、「漫画にする」で初稿を作れます。'}</p>{project.panels.length>0&&<button onClick={()=>setStage('layout')}>コマ割り編集へ</button>}</div> : <div className="welcome"><button className="primary" onClick={openImport}>原稿を開く</button></div>) : <div className="page"><div className="panel-grid">{panels.map((p, i) => <article key={p.id} tabIndex={0} role="button" aria-label={`${i+1}コマ目を選択`} aria-pressed={selected===p.id} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setSelected(p.id);setRect(null);}}} className={`panel ${selected === p.id ? 'selected' : ''}`} onClick={() => { if (selected !== p.id) { setSelected(p.id); setRect(null); } }}><div className="art" onPointerDown={e => { if (busy || !p.image) return; setSelected(p.id); drag.current = point(e); e.currentTarget.setPointerCapture(e.pointerId); setRect(null); }} onPointerUp={e => { if (!drag.current) return; const end = point(e), start = drag.current; drag.current = null; const r = [Math.min(start[0], end[0]), Math.min(start[1], end[1]), Math.abs(end[0] - start[0]), Math.abs(end[1] - start[1])]; if (r[2] > .01 && r[3] > .01) setRect(r); }}>{p.image ? <img draggable="false" src={p.image} alt={`コマ ${i + 1}`}/> : <div className="placeholder"><span>0{i + 1}</span><p>作画を待っています</p></div>}{selected === p.id && rect && <div className="region" style={{ left: `${rect[0] * 100}%`, top: `${rect[1] * 100}%`, width: `${rect[2] * 100}%`, height: `${rect[3] * 100}%` }}/>}</div><div className={`caption ${project.output_locale === 'en' && !project.localizations.some(item => item.locale === 'en' && item.snapshot_id === p.snapshotId) ? 'missing-translation' : ''}`}>{panelText(p)}</div><div className="panel-meta">{p.sceneId} · {p.status === 'review' ? '見た目の確認待ち' : '演出計画'}</div></article>)}</div><div className="folio">{page + 1}</div></div>}
     </div></section>
