@@ -53,7 +53,7 @@ function checkFileMap(files, path, issues) {
   });
 }
 
-export function validateSourceMap(sourceMap, { catalogWorkIds = null } = {}) {
+export function validateSourceMap(sourceMap, { catalogWorkIds = null, catalogWorks = null } = {}) {
   const issues = [];
   if (!checkObject(sourceMap, '$', ['format', 'authority', 'entries'], ['notes'], issues)) {
     throw new LibraryValidationError(issues);
@@ -64,8 +64,9 @@ export function validateSourceMap(sourceMap, { catalogWorkIds = null } = {}) {
   if (!AUTHORITIES.includes(sourceMap.authority)) {
     issue(issues, '$.authority', 'INVALID_AUTHORITY', 'authorityが不正です');
   }
-  if (sourceMap.authority !== 'origin') {
-    issue(issues, '$.authority', 'PREMATURE_CUTOVER', '最終増分反映とM7受入までは origin を正本にします');
+  if (sourceMap.authority === 'library' &&
+      (!Array.isArray(catalogWorks) || !catalogWorks.every(work => work.authority === 'library' && work.importStatus === 'verified'))) {
+    issue(issues, '$.authority', 'PREMATURE_CUTOVER', '全作品の検証完了前にlibraryを正本にできません');
   }
   if (!Array.isArray(sourceMap.entries)) {
     issue(issues, '$.entries', 'INVALID_ENTRIES', 'entriesは配列です');
