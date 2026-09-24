@@ -238,11 +238,11 @@ test('changing stages preserves unsaved panel motion and finishing choices',asyn
   await page.getByRole('button',{name:'1コマ目を選択'}).focus();
   await page.keyboard.press('Enter');
   const motion=page.getByRole('region',{name:'コマの動画'});
-  await motion.getByText('このコマを動かす',{exact:true}).click();
-  await motion.getByLabel('動きの指示',{exact:true}).fill('ゆっくり振り返る');
+  await motion.getByText('動きの指示を調整・動画を割り当てる',{exact:true}).click();
+  await motion.getByLabel('動きの指示を上書き（任意）').fill('ゆっくり振り返る');
   await page.getByRole('button',{name:'コマ割り編集',exact:true}).click();
   await page.getByRole('button',{name:'作画',exact:true}).click();
-  await expect(motion.getByRole('textbox',{name:'動きの指示',exact:true})).toHaveValue('ゆっくり振り返る');
+  await expect(motion.getByRole('textbox',{name:'動きの指示を上書き（任意）'})).toHaveValue('ゆっくり振り返る');
   await page.getByRole('button',{name:'仕上げ',exact:true}).click();
   await page.getByLabel('高解像度化の倍率',{exact:true}).selectOption('4');
   await page.getByRole('button',{name:'作画',exact:true}).click();

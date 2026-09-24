@@ -1,5 +1,28 @@
 import { sourceForPanel } from './core.js';
-import { beginVideoJob, createVideoShot, validateVideoFrame, videoManifest } from './video.js';
+import { beginVideoJob, createVideoShot, videoFrameDimensions, validateVideoFrame, videoManifest } from './video.js';
+import { videoModel, videoEstimateCredits, validateVideoModelRequest } from './media.js';
+
+export function panelVideoDefaults(project, panelId, modelId) {
+  const selected = videoModel(modelId), panel = project.panels.find(item => item.id === panelId);
+  const artwork = adoptedArtwork(project, panel);
+  if (!artwork) return { valid: false, reason: '採用済み作画版が必要です' };
+  let dimensions;
+  try { dimensions = videoFrameDimensions(artwork.panel.image); }
+  catch (error) { return { valid: false, reason: error.message }; }
+  const ratio = selected.input.ratios.find(value => {
+    const [width, height] = value.split(':').map(Number);
+    return dimensions.width * height === dimensions.height * width;
+  });
+  if (!ratio) return { valid: false, reason: '選択モデルはこの作画画像の縦横比に対応していません。画像の無断切り抜きは行いません' };
+  const duration = selected.input.default_duration_sec ?? selected.input.durations_sec[0];
+  let recipe;
+  try { recipe = panelVideoRecipe(project, panelId, ratio); }
+  catch (error) { return { valid: false, reason: error.message }; }
+  if (!recipe.valid) return recipe;
+  try { validateVideoModelRequest(modelId, { ratio, duration, prompt: 'subtle motion', aspect: dimensions.width / dimensions.height }); }
+  catch (error) { return { valid: false, reason: error.message }; }
+  return { ...recipe, ratio, duration, estimate: selected.locality === 'local' ? null : videoEstimateCredits(modelId, duration, ratio) };
+}
 
 function adoptedArtwork(project, panel) {
   return project.artworks?.find(artwork => artwork.id === panel?.artwork_revision
