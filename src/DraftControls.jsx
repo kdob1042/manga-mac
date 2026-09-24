@@ -11,8 +11,8 @@ export default function DraftControls({project,current,commit,run,busy,onSwitch,
   const selectedIds=new Set(ids),allSelected=ids.length===snapshot.scenes.length;
   const saved=project.history.filter(h=>h.draftCheckpoint);
   return <div className="draft-controls">
-    {!project.namePlan&&<button className="primary full" disabled={busy} onClick={()=>{detailsRef.current.open=true;setNameOpened(true);}}>コマ割りを準備</button>}
-    <details ref={detailsRef} onToggle={e=>{if(e.currentTarget.open)setNameOpened(true);}}><summary>制作する場面・保存した原稿</summary>
+    {!project.namePlan&&<button className="primary full" disabled={busy} onClick={()=>{detailsRef.current.open=true;setNameOpened(true);}}>ネームを確認</button>}
+    <details ref={detailsRef} onToggle={e=>{if(e.currentTarget.open)setNameOpened(true);}}><summary>制作する場面・ネーム・保存した原稿</summary>
       <fieldset disabled={busy}><legend>制作する場面</legend>
         {snapshot.scenes.length>1&&<label><input type="checkbox" checked={allSelected} ref={node=>{if(node)node.indeterminate=ids.length>0&&!allSelected;}} onChange={e=>setSelection(e.target.checked?snapshot.scenes.map(s=>s.id):[])}/>すべての場面（{ids.length}/{snapshot.scenes.length}）</label>}
         {snapshot.scenes.map(scene=><label key={scene.id}><input type="checkbox" aria-label={scene.id} checked={selectedIds.has(scene.id)} onChange={e=>setSelection(e.target.checked?snapshot.scenes.filter(s=>s.id===scene.id||selectedIds.has(s.id)).map(s=>s.id):ids.filter(id=>id!==scene.id))}/>{scene.title?`${scene.title} · ${scene.id}`:scene.id}</label>)}

@@ -31,7 +31,7 @@ async function setup(page) {
     localStorage.setItem('repository-name-file', JSON.stringify(f.file));
   });
   await page.reload();
-  await page.getByText('制作する場面・保存した原稿', { exact: true }).click();
+  await page.getByText('制作する場面・ネーム・保存した原稿', { exact: true }).click();
 }
 
 test('repository button stages the real name candidate and only explicit adoption changes panels', async ({ page }) => {
@@ -51,7 +51,7 @@ test('repository button stages the real name candidate and only explicit adoptio
   expect(adopted.jobs.some(j => ['generate', 'retake', 'video'].includes(j.kind))).toBe(false);
   expect(await page.evaluate(() => window.repositoryCalls.length)).toBe(1);
   await page.reload();
-  await page.getByText('制作する場面・保存した原稿', { exact: true }).click();
+  await page.getByText('制作する場面・ネーム・保存した原稿', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'このネームで制作', exact: true })).toBeVisible();
   expect(await page.evaluate(() => window.repositoryCalls)).toEqual([]);
 });
