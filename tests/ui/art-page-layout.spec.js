@@ -10,10 +10,13 @@ test('art page uses the saved export geometry and selects panels without changin
     const {template}=await import('/src/layout.js');
     const canvas=document.createElement('canvas');canvas.width=canvas.height=100;
     const ctx=canvas.getContext('2d');ctx.fillStyle='#89aacc';ctx.fillRect(0,0,100,100);
-    fixture.panels=Array.from({length:7},(_,i)=>({...fixture.panels[0],id:`panel-${i}`,image:canvas.toDataURL()}));
+    fixture.panels=Array.from({length:10},(_,i)=>({...fixture.panels[0],id:`panel-${i}`,image:i===8?null:canvas.toDataURL()}));
+    const mixed=template(3,fixture.panels.slice(7).map(p=>p.id));
+    mixed[0].points[0][0]+=.03;
     fixture.layout={version:1,knownPanelIds:fixture.panels.map(p=>p.id),pages:[
       {id:'full',slots:template(1,['panel-0'])},
-      {id:'six',slots:template(6,fixture.panels.slice(1).map(p=>p.id))},
+      {id:'six',slots:template(6,fixture.panels.slice(1,7).map(p=>p.id))},
+      {id:'mixed',slots:mixed},
     ]};
     fixture.history=[];fixture.jobs=[];
     await saveProject(fixture);
@@ -31,6 +34,11 @@ test('art page uses the saved export geometry and selects panels without changin
   },index);
   expect(await proof.getAttribute('src')).toBe(await expected(0));
   await expect(page.getByRole('button',{name:'1コマ目を選択'})).toHaveCount(1);
+  await page.locator('.thumbnail').nth(2).click();
+  await expect(page.getByRole('button',{name:/コマ目を選択/})).toHaveCount(3);
+  await expect.poll(()=>proof.getAttribute('src')).toBe(await expected(2));
+  await page.getByRole('button',{name:'2コマ目を選択'}).click();
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveCount(0);
   await page.locator('.thumbnail').nth(1).click();
   await expect(page.getByRole('button',{name:'6コマ目を選択'})).toBeVisible();
   await expect.poll(()=>proof.getAttribute('src')).toBe(await expected(1));

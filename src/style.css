@@ -72,6 +72,32 @@
 .layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { max-height: none; margin-top: 0; padding: clamp(10px, 3vw, 28px); border: 1px solid #86a88b; border-top: 0; border-radius: 0 0 10px 10px; background: #e7e9e4; }
 .layout-editor:has(> .layout-candidate.is-preview) .layout-canvas { background: #fff; box-shadow: 0 4px 24px #23332821; }
 .workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .composer { display: none; }
+/* Give the pending layout the whole workspace until the user decides. */
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > header { height: 48px; padding: 0 18px; }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > header > :not(.brand):not(:has(> strong)) { display: none; }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workspace { height: calc(100dvh - 48px); }
+.app:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workspace > aside,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > .toolbar,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .workflow-nav,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) .stage-hint,
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) > div:not([hidden]) > .toolbar { display: none; }
+.workspace main:has(section[aria-label="配置の作業"]:not([hidden]) .layout-candidate.is-preview) { padding-bottom: 0; }
+.layout-editor:has(> .layout-candidate.is-preview) { width: 100%; max-width: none; margin: 0; padding: 8px 12px 12px; border-radius: 0; background: transparent; }
+.layout-editor > .layout-candidate.is-preview { position: sticky; top: 0; z-index: 4; width: min(100%, 800px, calc((100dvh - 170px) * .708)); margin: 0 auto; padding: 7px 12px; border-radius: 8px 8px 0 0; }
+.layout-candidate.is-preview .candidate-decision { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; }
+.layout-candidate.is-preview .candidate-decision > strong { margin-right: auto; white-space: nowrap; }
+.layout-candidate.is-preview .candidate-decision > span { flex-basis: 100%; }
+.layout-editor > .layout-candidate.is-preview .toolbar { display: flex; flex-wrap: wrap; gap: 6px; min-height: 0; padding: 3px 0; }
+.layout-editor > .layout-candidate.is-preview .toolbar button { padding: 7px 11px; }
+.layout-candidate.is-preview .candidate-pager { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 3px 0 0; }
+.layout-candidate.is-preview .candidate-pager button { padding: 2px 11px; font-size: 18px; line-height: 1.2; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { width: min(100%, 800px, calc((100dvh - 170px) * .708)); max-height: none; margin: 0 auto; padding: 10px; overflow: auto; }
+.layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll .layout-canvas { max-width: 100%; margin: 0 auto; }
+@media (max-width: 760px) {
+  .layout-editor:has(> .layout-candidate.is-preview) { padding: 4px; }
+  .layout-editor > .layout-candidate.is-preview { padding: 6px 8px; }
+  .layout-editor:has(> .layout-candidate.is-preview) > .layout-scroll { padding: 4px; }
+}
 .upscale-compare { display: flex; gap: 12px; }
 .upscale-compare figure { margin: 0; width: 45%; }
 .upscale-compare img { display: block; width: 100%; max-height: 360px; object-fit: contain; }
