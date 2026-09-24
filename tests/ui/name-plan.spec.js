@@ -16,8 +16,8 @@ test('actual UI imports, previews printed text and persists adoption without AI 
   const file=await setup(page);
   await page.getByLabel('ネームJSONを取り込む',{exact:true}).setInputFiles({name:'name.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(file))});
   await expect(page.getByRole('button',{name:'このネーム候補を採用',exact:true})).toBeVisible();
-  await page.getByRole('button',{name:'実文字入り仮ネームを確認'}).click();
   await expect(page.getByAltText('実際のコマ枠と掲載文字による仮ネーム')).toBeVisible();
+  await expect(page.getByRole('button',{name:'プレビューを更新',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'このネーム候補を採用',exact:true}).click();
   await expect(page.getByRole('button',{name:'このネームで制作',exact:true})).toBeVisible();
   const p=await page.evaluate(async()=>JSON.parse(JSON.stringify(await (await import('/src/bridge.js')).loadProject())));
@@ -64,6 +64,7 @@ test('name controls load on first expansion and retain the draft when closed',as
   expect(requests).toEqual([]);
   const disclosure=page.getByText('制作する場面・ネーム・保存した原稿',{exact:true});
   await disclosure.click();
+  await page.getByText('ネームがない場合の代替生成',{exact:true}).click();
   const instruction=page.getByLabel('ネームの演出指示',{exact:true});
   await instruction.fill('最後の表情に一拍。');
   expect(requests.length).toBeGreaterThan(0);
