@@ -340,7 +340,7 @@ async fn github_asset(
     } else {
         let url = format!("https://api.github.com/repos/{repo}/contents/{path}?ref={sha}");
         let mut req = client()?
-            .get(&url)
+            .get(url.as_str())
             .header("Accept", "application/vnd.github.raw+json");
         if !token.is_empty() {
             req = req.bearer_auth(token);
@@ -383,7 +383,7 @@ async fn github_asset(
             // An intermediary may return a non-image body despite a successful
             // raw response. Ask for the pinned file's JSON/base64 representation.
             let mut json_req = client()?
-                .get(&url)
+                .get(url.as_str())
                 .header("Accept", "application/vnd.github+json");
             if !token.is_empty() {
                 json_req = json_req.bearer_auth(&token);
