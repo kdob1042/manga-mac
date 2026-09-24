@@ -253,9 +253,11 @@ fn source_asset_path_valid(path: &str) -> bool {
         )
 }
 fn source_asset_response_bytes(content_type: Option<&str>, body: &[u8]) -> Result<Vec<u8>, String> {
-    let is_json = content_type
-        .is_some_and(|value| value.to_ascii_lowercase().contains("json"))
-        || body.first() == Some(&b'{');
+    let has_image_signature = source_asset_mime(body).is_some();
+    let first_non_whitespace = body.iter().copied().find(|byte| !byte.is_ascii_whitespace());
+    let is_json = !has_image_signature
+        && (content_type.is_some_and(|value| value.to_ascii_lowercase().contains("json"))
+            || first_non_whitespace == Some(b'{'));
     if !is_json {
         return Ok(body.to_vec());
     }
@@ -280,12 +282,15 @@ mod source_asset_tests {
     fn raw_and_contents_json_jpeg_responses_produce_the_same_bytes() {
         let jpeg = b"\xff\xd8\xffsample";
         let raw = source_asset_response_bytes(Some("image/jpeg"), jpeg).unwrap();
+        let raw_with_json_media_type =
+            source_asset_response_bytes(Some("application/vnd.github.raw+json"), jpeg).unwrap();
         let content = STANDARD.encode(jpeg);
         let json = format!(r#"{{"encoding":"base64","content":"{content}"}}"#);
         let decoded =
             source_asset_response_bytes(Some("application/json; charset=utf-8"), json.as_bytes())
                 .unwrap();
         assert_eq!(raw, jpeg);
+        assert_eq!(raw_with_json_media_type, jpeg);
         assert_eq!(decoded, jpeg);
         assert_eq!(source_asset_mime(&decoded), Some("image/jpeg"));
     }
