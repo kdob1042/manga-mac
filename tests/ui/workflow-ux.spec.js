@@ -86,7 +86,7 @@ test('failed project load can retry without starting an empty replacement projec
   await expect(page.getByRole('button',{name:'画面のサンプルを見る'})).toHaveCount(0);
   expect(await page.evaluate(()=>window.saved)).toBe(0);
   await page.getByRole('button',{name:'もう一度読み込む'}).click();
-  await expect(page.locator('.panel')).toHaveCount(fixture.panels.length);
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(fixture.panels.length);
   expect(await page.evaluate(()=>window.saved)).toBe(1); // Existing legacy migration only.
 });
 
@@ -103,7 +103,7 @@ test('source library failure keeps saved artwork editable and offers an independ
     }};
   },fixture);
   await page.goto('/');
-  await expect(page.locator('.panel')).toHaveCount(fixture.panels.length);
+  await expect(page.locator('.art-page-targets polygon')).toHaveCount(fixture.panels.length);
   await expect(page.getByRole('button',{name:'接続・人物設定'})).toBeEnabled();
   await expect(page.getByRole('status')).toContainText('保存済み作品は編集できます');
   await page.getByRole('button',{name:'原稿一覧を再読込'}).click();

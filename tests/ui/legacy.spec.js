@@ -27,12 +27,14 @@ test('LEGACY-01 reload, Undo images, and byte-identical PNG/CBZ page content', a
   expect(provenance.sources[0].sha).toBe(fixture.snapshots[0].sha);
   expect(provenance.panels[0].unitIds).toEqual(fixture.panels[0].unitIds);
   await page.reload();
-  await expect(page.locator('.caption')).toContainText('「原文です」');
-  await expect(page.locator('.art img')).toHaveAttribute('src', fixture.panels[0].image);
+  await page.getByRole('button',{name:'1コマ目を選択'}).click();
+  await expect(page.locator('.art-panel-source')).toContainText('「原文です」');
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src', fixture.panels[0].image);
   await page.getByRole('button', { name: '元に戻す' }).click();
   // commit updates the visible image only after saveProject has completed.
-  await expect(page.locator('.art img')).toHaveAttribute('src', fixture.history[0].panels[0].image);
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src', fixture.history[0].panels[0].image);
   await page.reload();
-  await expect(page.locator('.art img')).toHaveAttribute('src', fixture.history[0].panels[0].image);
+  await page.getByRole('button',{name:'1コマ目を選択'}).click();
+  await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src', fixture.history[0].panels[0].image);
   await page.screenshot({ path: 'test-results/legacy-migrated.png', fullPage: true });
 });

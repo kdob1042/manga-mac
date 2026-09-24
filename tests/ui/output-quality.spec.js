@@ -7,7 +7,7 @@ async function openSaved(page) {
   await page.goto('/');
   await page.evaluate(async data=>{await (await import('/src/bridge.js')).saveProject(data);},fixture);
   await page.reload();
-  await expect(page.locator('.panel').first()).toBeVisible();
+  await expect(page.locator('.art-page-targets polygon').first()).toBeVisible();
 }
 
 test('PNG and CBZ render at chosen dimensions and leave source, artwork, placement and jobs unchanged',async({page})=>{
@@ -47,7 +47,7 @@ test('export width survives closing menu; resolution warning opens the affected 
 
 test('adjacent artwork mounts only on demand and closes without leaving hidden reference images',async({page})=>{
   await openSaved(page);
-  await page.locator('.panel').first().click();
+  await page.locator('.art-page-targets polygon').first().click();
   await expect(page.getByRole('img',{name:'選択中のコマ',exact:true})).toHaveCount(0);
   await page.getByText('前後のコマ・人物参照',{exact:true}).click();
   await expect(page.getByRole('img',{name:'選択中のコマ',exact:true})).toBeVisible();

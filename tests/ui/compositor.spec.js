@@ -11,17 +11,17 @@ test('external editor candidate can be adopted and reopened without Compositor i
   p.jobs.push(job);
   await saveProject(await finishCompositor(p,job,{bundle,image:panel.image,upstream_revision:compositorRevision,state:{document:bundle.manifest.documentID,revision:3,owner:'app',layers:bundle.manifest.layers}}));
  },fixture);
- await page.reload();await page.locator('.panel').first().click();
+ await page.reload();await page.locator('.art-page-targets polygon').first().click();
  await expect(page.getByRole('button',{name:'この候補を採用',exact:true})).toBeVisible();
  await page.getByRole('button',{name:'この候補を採用',exact:true}).click();
  await expect.poll(()=>page.evaluate(async()=>{
   const saved=await(await import('/src/bridge.js')).loadProject();
   return saved.panels[0].compositor?.bundle?.manifest?.version;
  })).toBe(8);
- await page.reload();await page.locator('.panel').first().click();
+ await page.reload();await page.locator('.art-page-targets polygon').first().click();
  const saved=await page.evaluate(async()=>await(await import('/src/bridge.js')).loadProject());
  expect(saved.panels[0].compositor.bundle.manifest.version).toBe(8);
  await page.getByText('外部レイヤー編集（Compositor）',{exact:true}).click();
  await expect(page.getByRole('button',{name:'レイヤー編集を始める',exact:true})).toBeDisabled();
- await expect(page.locator('.art img').first()).toHaveAttribute('src',fixture.panels[0].image);
+ await expect(page.getByRole('img',{name:'部分修正する元画像'})).toHaveAttribute('src',fixture.panels[0].image);
 });
