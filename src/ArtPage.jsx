@@ -1,10 +1,48 @@
-import React, {useRef} from 'react';
+import React, {useEffect,useRef,useState} from 'react';
 import PageProof from './PageProof.jsx';
+import {inside,resizeQuadEdge,validQuad} from './layout.js';
 
 // The page uses the export renderer; region edits still address the original image.
-export default function ArtPage({project, page, panels, selected, onSelect, rect, onRect, busy, sourceText}) {
+export default function ArtPage({project, page, panels, selected, onSelect, onResize, rect, onRect, busy, sourceText}) {
   const drag = useRef(null);
+  const frame = useRef(null),frameDraft=useRef(null),svg=useRef(null);
+  const [draft,setDraft]=useState(null);
   const chosen = panels.find(panel => panel.id === selected);
+  const displayed=page.slots.map(slot=>draft?.id===slot.id?{...slot,points:draft.points}:slot);
+  function cancelFrame(){frame.current=null;frameDraft.current=null;setDraft(null);}
+  useEffect(()=>{cancelFrame();},[page.id,project.layout]);
+  useEffect(()=>{const key=event=>{if(event.key==='Escape')cancelFrame();};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);},[]);
+  function framePoint(event){
+    const box=svg.current.getBoundingClientRect();
+    return [(event.clientX-box.left)/box.width,(event.clientY-box.top)/box.height];
+  }
+  function startFrame(event,slot,{edge=null,vertex=null}={}){
+    if(busy||event.button!==0)return;
+    event.preventDefault();event.stopPropagation();onSelect(slot.panelId);
+    frame.current={pointer:event.pointerId,slot,edge,vertex,start:framePoint(event)};
+    frameDraft.current=null;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+  function moveFrame(event){
+    const gesture=frame.current;if(!gesture||gesture.pointer!==event.pointerId)return;
+    const at=framePoint(event);let points=gesture.slot.points.map(point=>[...point]);
+    if(gesture.vertex!==null)points[gesture.vertex]=at;
+    else if(gesture.edge!==null)points=resizeQuadEdge(points,gesture.edge,[at[0]-gesture.start[0],at[1]-gesture.start[1]]);
+    else {
+      const all=[...points,...(gesture.slot.overflow?.points??[])];
+      const dx=Math.max(-Math.min(...all.map(p=>p[0])),Math.min(1-Math.max(...all.map(p=>p[0])),at[0]-gesture.start[0]));
+      const dy=Math.max(-Math.min(...all.map(p=>p[1])),Math.min(1-Math.max(...all.map(p=>p[1])),at[1]-gesture.start[1]));
+      points.forEach(point=>{point[0]+=dx;point[1]+=dy;});
+    }
+    if(!validQuad(points)||(gesture.slot.overflow&&!points.every(point=>inside(point,gesture.slot.overflow.points))))return;
+    frameDraft.current=points;setDraft({id:gesture.slot.id,points});
+  }
+  function endFrame(event){
+    if(!frame.current||frame.current.pointer!==event.pointerId)return;
+    const gesture=frame.current,points=frameDraft.current;
+    cancelFrame();
+    if(points&&JSON.stringify(points)!==JSON.stringify(gesture.slot.points))onResize(gesture.slot.id,points);
+  }
   function point(event) {
     const box = event.currentTarget.getBoundingClientRect();
     return [Math.max(0, Math.min(1, (event.clientX-box.left)/box.width)),
@@ -13,19 +51,23 @@ export default function ArtPage({project, page, panels, selected, onSelect, rect
   return <section className="art-page-workspace" aria-label="作画ページ">
     <PageProof panels={panels} snapshots={project.snapshots} localizations={project.localizations}
       locale={project.output_locale} page={page} imageCrops={project.layout?.imageCrops} draft>
-      <svg className="art-page-targets" viewBox="0 0 1600 2260" aria-label="ページのコマを選択">
-        {page.slots.map((slot, index) => slot.panelId && <polygon key={slot.id}
-          points={slot.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')}
-          role="button" tabIndex={0} aria-label={`${index+1}コマ目を選択`}
-          aria-pressed={selected===slot.panelId}
-          className={selected===slot.panelId?'selected':''}
-          onClick={()=>onSelect(slot.panelId)}
-          onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(slot.panelId);}}}/>) }
+      <svg ref={svg} className="art-page-targets" viewBox="0 0 1600 2260" aria-label="ページのコマを選択・ドラッグで枠を調整" onPointerMove={moveFrame} onPointerUp={endFrame} onPointerCancel={cancelFrame} onLostPointerCapture={()=>{if(frame.current)cancelFrame();}}>
+        {displayed.map((shape,index)=>{const slot=page.slots[index],active=selected===slot.panelId;return slot.panelId && <polygon key={slot.id} data-testid={`art-slot-${index}`} points={shape.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')}
+            role="button" tabIndex={0} aria-label={`${index+1}コマ目を選択`}
+            aria-pressed={active} className={active?'selected':''}
+            onPointerDown={event=>startFrame(event,slot)}
+            onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(slot.panelId);}}}/>;})}
+        {displayed.map((shape,index)=>{const slot=page.slots[index];return selected===slot.panelId&&slot.panelId&&shape.points.map((point,edge)=>{const next=shape.points[(edge+1)%4];return <g key={`${slot.id}-${edge}`}>
+            <line data-testid={`art-edge-${edge}`} className="art-frame-edge" x1={point[0]*1600} y1={point[1]*2260} x2={next[0]*1600} y2={next[1]*2260} onPointerDown={event=>startFrame(event,slot,{edge})}/>
+            <circle className="art-frame-handle" data-testid={`art-handle-${edge}`} cx={(point[0]+next[0])*800} cy={(point[1]+next[1])*1130} r="24" onPointerDown={event=>startFrame(event,slot,{edge})}/>
+            <circle className="art-frame-corner" cx={point[0]*1600} cy={point[1]*2260} r="24" onPointerDown={event=>startFrame(event,slot,{vertex:edge})}/>
+          </g>;});})}
       </svg>
     </PageProof>
+    {chosen && <p className="art-frame-hint">コマの辺をドラッグして大きさを調整。中をドラッグすると移動、角をドラッグすると形を変更。Escで取消。</p>}
     {chosen && sourceText && <p className="art-panel-source">{sourceText}</p>}
     {chosen?.image && <div className="art-original-edit">
-      <p>部分修正する場合は元画像上をドラッグして範囲を指定</p>
+      <p>画像の中身を部分修正する範囲は、この元画像上をドラッグして指定します。</p>
       <div className="art-original-image" onPointerDown={event=>{
         if(busy || event.button!==0)return;
         drag.current=point(event);onRect(null);event.currentTarget.setPointerCapture(event.pointerId);

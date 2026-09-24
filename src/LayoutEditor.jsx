@@ -1,5 +1,5 @@
 import React, {useEffect,useMemo,useRef,useState} from 'react';
-import {template,validQuad,changeLayout,undoLayout,layoutWarnings,pagePanels,bounds,PAGE,layoutSplice,applyLayoutSplices,reflowLayoutInterval,artPoints,inside} from './layout.js';
+import {template,validQuad,resizeQuadEdge,changeLayout,undoLayout,layoutWarnings,pagePanels,bounds,PAGE,layoutSplice,applyLayoutSplices,reflowLayoutInterval,artPoints,inside} from './layout.js';
 import {defaultCrop,containCrop,coverCrop,cropRect,panCrop} from './image-crop.js';
 import { imageOf } from './canvas-image.js';
 import { pagePNG } from './render.js';
@@ -41,6 +41,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     return()=>{stopped=true;};
   },[visible,candidate?.jobId,base,previewing,project.snapshots,project.localizations,project.output_locale]);
   useEffect(()=>{setDraft(null);draftRef.current=null;setActive(null);gesture.current=null;setPreviewPageOffset(null);},[pageIndex,project.layout]);
+  useEffect(()=>{if(visible&&selected){const slot=project.layout.pages[pageIndex]?.slots.find(s=>s.panelId===selected);if(slot)setActive(slot.id);}},[visible,selected,pageIndex,project.layout]);
   useEffect(()=>{setDraft(null);draftRef.current=null;setActive(null);gesture.current=null;setPreviewPageOffset(null);setImageMode(false);if(candidate?.jobId)setZoom(100);},[candidate?.jobId]);
   useEffect(()=>{
     if(!visible)return;
@@ -58,9 +59,9 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     return [dx,dy];
   }
   function containsHome(home,overflow){return home.every(p=>inside(p,overflow));}
-  function start(e,slot,{vertex=null,overflow=false}={}){if(busy||previewing||e.button!==0)return;e.preventDefault();e.stopPropagation();setActive(slot.id);onSelect?.(slot.panelId);
+  function start(e,slot,{vertex=null,edge=null,overflow=false}={}){if(busy||previewing||e.button!==0)return;e.preventDefault();e.stopPropagation();setActive(slot.id);onSelect?.(slot.panelId);
     if(imageMode && (!slot.panelId || !dimensions[slot.panelId]))return;
-    gesture.current={pointer:e.pointerId,start:position(e),slot:structuredClone(slot),vertex,overflow,base:project.layout,imageMode};e.currentTarget.setPointerCapture(e.pointerId);}
+    gesture.current={pointer:e.pointerId,start:position(e),slot:structuredClone(slot),vertex,edge,overflow,base:project.layout,imageMode};e.currentTarget.setPointerCapture(e.pointerId);}
   function move(e){const g=gesture.current;if(!g||g.pointer!==e.pointerId)return;const at=position(e);
     if(g.imageMode){const points=artPoints(g.slot),b=bounds(points),box={x:b.x*PAGE.width,y:b.y*PAGE.height,width:b.width*PAGE.width,height:b.height*PAGE.height},crop=coverCrop(g.base.imageCrops?.[g.slot.panelId]);
       if(!crop)return;
@@ -75,9 +76,10 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
       if(!validQuad(overflow)||!containsHome(home,overflow))return;
       target.overflow={...g.slot.overflow,points:overflow};
     } else {
-      const points=g.slot.points.map(p=>[...p]);
+      let points=g.slot.points.map(p=>[...p]);
       let overflow=g.slot.overflow?.points.map(p=>[...p]);
       if(g.vertex!==null){points[g.vertex]=at.map(v=>Math.max(0,Math.min(1,v)));}
+      else if(g.edge!==null)points=resizeQuadEdge(points,g.edge,[at[0]-g.start[0],at[1]-g.start[1]]);
       else {const together=overflow?[...points,...overflow]:points;const [dx,dy]=clampDelta(together,at[0]-g.start[0],at[1]-g.start[1]);points.forEach(p=>{p[0]+=dx;p[1]+=dy;});overflow?.forEach(p=>{p[0]+=dx;p[1]+=dy;});}
       if(!validQuad(points)||(overflow&&(!validQuad(overflow)||!containsHome(points,overflow))))return;
       target.points=points;if(overflow)target.overflow={...g.slot.overflow,points:overflow};
@@ -118,7 +120,7 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
   }
   return <section className="layout-editor" aria-label="コマ割り編集">
     <div className="toolbar"><strong>コマ割り編集</strong><button disabled={busy||previewing||!project.layoutHistory?.length} onClick={()=>run('枠を戻す',()=>commit(undoLayout(current.current)))}>枠をUndo</button><button disabled={busy||previewing||!project.layoutRedo?.length} onClick={()=>run('枠をやり直す',()=>commit(undoLayout(current.current,true)))}>枠をRedo</button><button disabled={busy||previewing} onClick={()=>run('ページ追加',async()=>{const p=current.current,at=p.layout.pages.length?pageIndex+1:0;await commitSplices(p,[layoutSplice(p,at,0,[{id:crypto.randomUUID(),slots:template(count)}])],'ページ追加');setPage(at);})}>ページ追加</button><button disabled={busy||previewing||!page} onClick={()=>run('ページ削除',async()=>{const p=current.current;await commitSplices(p,[layoutSplice(p,pageIndex,1,[])],'ページ削除');setPage(Math.max(0,pageIndex-1));})}>このページを外す</button></div>
-    {!previewing&&<p>コマを選び、四隅をドラッグして変形。枠内をドラッグすると全体を移動します。Escで取消。絵や本文は変更しません。枠破りでは、従来のコマ割りを描いたうえに、ホーム枠の外へ出る作画だけが隣の上に乗ります。破線ははみ出し範囲です。</p>}
+    {!previewing&&<p>コマを選び、辺の丸い取っ手をドラッグして幅・高さを微調整。四隅で形を変え、枠内で全体を移動します。Escで取消。絵や本文は変更しません。枠破りの破線は、隣のコマへ重ねる作画範囲です。</p>}
     <details ref={proposalDetails}><summary>{localNameMode?'AIでこのページを修正':'演出AIでこのページを配置'}</summary><p>{localNameMode?'取り込んだネームと現在のページを基準に、表示ページだけの配置案を作ります。採用するまで現在の配置は変わりません。':'提案が返ると、このキャンバスを仮の配置に切り替えます。採用するまで作品の配置は変わりません。'}</p>{!localNameMode&&<label><input type="checkbox" checked={whole} onChange={e=>setWhole(e.target.checked)}/>全ページを対象（ページ分割・6コマ配置も変更）</label>}<textarea aria-label="コマ割りの指示" value={instruction} onChange={e=>setInstruction(e.target.value)} placeholder={localNameMode?'3コマ目を大きく／このページだけ再配置':'最初のコマを横長の大ゴマに。最後の境界を斜めに'}/><button disabled={busy||!page||!model.connectionId||(localNameMode&&!nameEditReady)} onClick={()=>run(localNameMode?'AIで配置修正を提案中':'AIコマ割りを提案中',propose)}>{localNameMode?'修正案を作る':'コマ割りを提案'}</button>{localNameMode&&!nameEditReady?<small>設定済みのAI接続を使って現在ページだけを修正します。Ollama／クラウド共通です。手動ドラッグ編集はそのまま使えます。</small>:!model.connectionId&&<small>接続・人物設定でAIを登録してください。Ollama／クラウド共通です。</small>}</details>
     {candidates.length>0&&!previewing&&<label>保存したコマ割り候補<select aria-label="保存したコマ割り候補" disabled={busy} value={candidate?.jobId??''} onChange={event=>{setCandidateSelection({pageId:page?.id,jobId:event.target.value||null});setPreviewPageOffset(null);setCandidateError('');}}><option value="">採用済みの配置を表示</option>{candidates.map(value=><option key={value.jobId} value={value.jobId}>{value.range?.label??'対象不明'} · {value.reason}{value.invalidReason?'（確認不可）':value.base!==base?'（旧版）':''}</option>)}</select></label>}
     {candidate&&<div className={`layout-candidate ${previewing?'is-preview':''}`} role="status">
@@ -142,7 +144,13 @@ export default function LayoutEditor({project,current,commit,run,busy,pageIndex,
     {canvasPage&&<div className="layout-scroll"><svg ref={svg} className="layout-canvas" role={previewing?'img':undefined} aria-label={previewing?'AIコマ割り候補（未採用）':'採用済みのコマ割り'} viewBox="0 0 1600 2260" style={{width:`${zoom}%`}} onPointerMove={move} onPointerUp={end} onPointerCancel={cancelDrag} onLostPointerCapture={()=>{if(gesture.current)cancelDrag();}}>
       <rect width="1600" height="2260" fill="white"/>{previewing?(candidateImage&&<image href={candidateImage} width="1600" height="2260"/>):(preview&&<image href={preview} width="1600" height="2260"/>)}
       {canvasPage.slots.map((s,i)=>s.overflow&&<polygon key={`overflow-${s.id}`} data-testid={`overflow-slot-${i}`} points={s.overflow.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')} fill="transparent" stroke="#2a6fdb" strokeWidth="4" strokeDasharray="12 8" onPointerDown={e=>!imageMode&&start(e,s,{overflow:true})}/>)}
-      {canvasPage.slots.map((s,i)=><g key={s.id}><polygon data-testid={`layout-slot-${i}`} points={s.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')} fill="transparent" stroke={active===s.id?'#e96e40':'#555'} strokeWidth="5" onPointerDown={e=>start(e,s)}/><text x={s.points[0][0]*1600+12} y={s.points[0][1]*2260+35} pointerEvents="none" fill="#b34f29" fontSize="28">{i+1}</text>{!previewing&&!imageMode&&active===s.id&&s.points.map(([x,y],j)=><circle data-testid={`vertex-${j}`} key={j} cx={x*1600} cy={y*2260} r="19" fill="#fff" stroke="#e96e40" strokeWidth="7" onPointerDown={e=>start(e,s,{vertex:j})}/>)}{!previewing&&!imageMode&&active===s.id&&s.overflow?.points.map(([x,y],j)=><circle data-testid={`overflow-vertex-${j}`} key={`o${j}`} cx={x*1600} cy={y*2260} r="19" fill="#fff" stroke="#2a6fdb" strokeWidth="7" onPointerDown={e=>start(e,s,{vertex:j,overflow:true})}/>)}</g>)}
+      {canvasPage.slots.map((s,i)=><g key={s.id}>
+        <polygon data-testid={`layout-slot-${i}`} points={s.points.map(([x,y])=>`${x*1600},${y*2260}`).join(' ')} fill="transparent" stroke={active===s.id?'#e96e40':'#555'} strokeWidth="5" onPointerDown={e=>start(e,s)}/>
+        <text x={s.points[0][0]*1600+12} y={s.points[0][1]*2260+35} pointerEvents="none" fill="#b34f29" fontSize="28">{i+1}</text>
+        {!previewing&&!imageMode&&active===s.id&&s.points.map(([x,y],j)=><circle data-testid={`vertex-${j}`} key={j} cx={x*1600} cy={y*2260} r="19" fill="#fff" stroke="#e96e40" strokeWidth="7" onPointerDown={e=>start(e,s,{vertex:j})}/>)}
+        {!previewing&&!imageMode&&active===s.id&&s.points.map((point,j)=>{const next=s.points[(j+1)%4];return <circle className="edge-handle" data-testid={`edge-${j}`} key={`e${j}`} cx={(point[0]+next[0])*800} cy={(point[1]+next[1])*1130} r="18" fill="#e96e40" stroke="#fff" strokeWidth="6" onPointerDown={e=>start(e,s,{edge:j})}/>;})}
+        {!previewing&&!imageMode&&active===s.id&&s.overflow?.points.map(([x,y],j)=><circle data-testid={`overflow-vertex-${j}`} key={`o${j}`} cx={x*1600} cy={y*2260} r="19" fill="#fff" stroke="#2a6fdb" strokeWidth="7" onPointerDown={e=>start(e,s,{vertex:j,overflow:true})}/>)}
+      </g>)}
     </svg></div>}
     {slot&&!previewing&&<label>選択枠のコマ<select aria-label="選択枠のコマ" disabled={busy} value={slot.panelId??''} onChange={e=>update(l=>{const value=e.target.value||null; l.pages.forEach(p=>p.slots.forEach(s=>{if(value&&s.panelId===value)s.panelId=null;}));l.pages[pageIndex].slots.find(s=>s.id===slot.id).panelId=value;},'コマ割当を移動',{pageIds:project.layout.pages.filter(p=>p.id===page.id||p.slots.some(s=>s.panelId===e.target.value)).map(p=>p.id)})}><option value="">未割当</option>{project.panels.map(p=><option key={p.id} value={p.id}>{p.id}</option>)}</select><small>既存コマを選ぶと元の枠から移動します。絵や原文は保持します。</small></label>}
     {slot&&!previewing&&!imageMode&&<div className="toolbar"><button aria-pressed={!!slot.overflow} disabled={busy} onClick={()=>update(l=>{const s=l.pages[pageIndex].slots.find(s=>s.id===slot.id);if(s.overflow)delete s.overflow;else s.overflow={points:structuredClone(s.points)};},slot.overflow?'枠破りを解除':'枠破り')}>枠破り</button>{slot.overflow&&<label>重ね順<input aria-label="重ね順" type="number" min="0" max="15" disabled={busy} value={slot.overflow.z??0} onChange={e=>update(l=>{const s=l.pages[pageIndex].slots.find(s=>s.id===slot.id);if(!s.overflow)return;s.overflow={...s.overflow,z:Math.max(0,Math.min(15,Math.floor(Number(e.target.value)||0)))};},'はみ出しの重ね順')}/></label>}</div>}
