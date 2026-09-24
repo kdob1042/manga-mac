@@ -1464,7 +1464,10 @@ fn main() {
 
 #[cfg(test)]
 mod source_asset_tests {
-    use super::{fetch_local_branch, github_origin_matches, local_git, source_asset_mime, source_asset_path_valid, verified_local_source_path};
+    use super::{
+        fetch_local_branch, github_origin_matches, local_git, source_asset_mime,
+        source_asset_path_valid, verified_local_source_path,
+    };
 
     #[tokio::test]
     async fn local_source_fetch_advances_tracking_branch_without_checkout() {
@@ -1540,21 +1543,59 @@ mod source_asset_tests {
 
     #[tokio::test]
     async fn local_source_rejects_wrong_origin_before_reading() {
-        let root = std::env::temp_dir().join(format!("manga-source-origin-{}", uuid::Uuid::new_v4()));
+        let root =
+            std::env::temp_dir().join(format!("manga-source-origin-{}", uuid::Uuid::new_v4()));
         let local = root.join("story");
         std::fs::create_dir_all(&local).unwrap();
         let git = |args: &[&str]| {
-            let output = std::process::Command::new("git").arg("-C").arg(&local).args(args).output().unwrap();
-            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let output = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&local)
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         };
         git(&["init"]);
-        git(&["remote", "add", "origin", "https://github.com/other/story.git"]);
-        std::fs::write(root.join("local-source.json"), serde_json::json!({"repo":"owner/story", "path":local}).to_string()).unwrap();
-        assert!(verified_local_source_path("owner/story", &root).await.unwrap_err().contains("origin"));
-        git(&["remote", "set-url", "origin", "git@github.com:owner/story.git"]);
-        assert_eq!(verified_local_source_path("owner/story", &root).await.unwrap(), Some(local));
-        assert!(github_origin_matches("https://github.com/owner/story.git", "owner/story"));
-        assert!(!github_origin_matches("https://github.com/owner/story-evil", "owner/story"));
+        git(&[
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/other/story.git",
+        ]);
+        std::fs::write(
+            root.join("local-source.json"),
+            serde_json::json!({"repo":"owner/story", "path":local}).to_string(),
+        )
+        .unwrap();
+        assert!(verified_local_source_path("owner/story", &root)
+            .await
+            .unwrap_err()
+            .contains("origin"));
+        git(&[
+            "remote",
+            "set-url",
+            "origin",
+            "git@github.com:owner/story.git",
+        ]);
+        assert_eq!(
+            verified_local_source_path("owner/story", &root)
+                .await
+                .unwrap(),
+            Some(local)
+        );
+        assert!(github_origin_matches(
+            "https://github.com/owner/story.git",
+            "owner/story"
+        ));
+        assert!(!github_origin_matches(
+            "https://github.com/owner/story-evil",
+            "owner/story"
+        ));
         std::fs::remove_dir_all(root).unwrap();
     }
 
