@@ -90,10 +90,10 @@ test('story-library work entry supports work to second episode to second scene i
  await page.getByRole('button',{name:'変更を確認',exact:true}).click();
  await expect(page.getByRole('region',{name:'原稿の取込差分'})).toContainText('P02-02');
  await page.getByRole('button',{name:'取り込む',exact:true}).click();
- await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('story-library-project'))?.snapshots.at(-1)?.selectedSceneId)).toBe('P02-02');
+ await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('story-library-project'))?.sourceSelection?.sceneId)).toBe('P02-02');
  const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('story-library-project')));
- expect(saved.snapshots.at(-1).selectedSceneId).toBe('P02-02');
+ expect(saved.sourceSelection.sceneId).toBe('P02-02');
  expect(saved.snapshots.at(-1).sync.manifest_path).toBe('works/work-a/work.json');
- expect(saved.snapshots.at(-1).scenes.map(scene=>scene.id)).toEqual(['P02-02']);
- expect(saved.snapshots.at(-1).scenes[0].text).toContain('本文22');
+ expect(saved.snapshots.at(-1).scenes.map(scene=>scene.id)).toEqual(['P02-01','P02-02']);
+ expect(saved.snapshots.at(-1).scenes[1].text).toContain('本文22');
 });
