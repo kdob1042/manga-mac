@@ -7,6 +7,7 @@ import { protocolLabel } from "./source-protocol";
 import { call } from "./bridge";
 import { download } from "./export.js";
 import CloudImageSettings from './CloudImageSettings.jsx';
+import TapNowSettings from './TapNowSettings.jsx';
 import {imageModels,imageModel} from './media.js';
 export default function SettingsPanel({
   setSettings,
@@ -116,6 +117,7 @@ export default function SettingsPanel({
     })}>画像モデルを準備する</button>
     <small>必要なモデルだけ、この操作でダウンロードします。</small>
     <CloudImageSettings current={current} commit={commit} run={run} busy={!!busy}/>
+    <TapNowSettings busy={busy} run={run}/>
     <h3>Blenderで撮影する</h3>
     <BlenderSettings project={project} current={current} commit={commit} disabled={!!busy} run={run} notify={setNotice} />
     <BackupSettings disabled={!!busy || !ready} />
