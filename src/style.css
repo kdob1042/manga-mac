@@ -25,6 +25,7 @@
 .art-page-targets .art-frame-corner { fill: #fff; stroke: #2d8a56; stroke-width: 7; pointer-events: all; cursor: crosshair; }
 .art-frame-hint { max-width: 800px; margin: 8px auto; color: #526650; font-size: 12px; }
 .art-panel-source { max-width: 800px; margin: 14px auto; padding: 12px; background: #fff; font-size: 12px; white-space: pre-wrap; }
+.art-lettering-notice { max-width: 800px; margin: 14px auto; color: #607268; font-size: 12px; }
 .art-original-edit { max-width: 500px; margin: 30px auto 70px; padding: 12px; background: #fff; }
 .art-original-edit p { font-size: 12px; color: #526650; }
 .art-original-image { position: relative; width: min(100%, 480px); touch-action: none; user-select: none; cursor: crosshair; }
