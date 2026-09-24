@@ -71,7 +71,8 @@ export async function syncSource(repo, token, episodeId, previous, invokeCall = 
     && (previous.workId ?? null) === workId && (!entryPath || previous.sync?.manifest_path === entryPath)
     && (previous.sync?.source_branch ?? 'main') === branch
     && (previous.selectedSceneId ?? null) === (selectedSceneId ?? null)
-    && Array.isArray(previous.references) && previous.protocol?.version === 1) return previous;
+    && Array.isArray(previous.references) && !previous.unavailableReferences?.length
+    && previous.protocol?.version === 1) return previous;
   const manifestFile = await readManifest(repo, sha, token, invokeCall, entryPath);
   const manifestText = manifestFile.text;
   const manifest = JSON.parse(manifestText);
