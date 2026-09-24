@@ -86,7 +86,7 @@ test('source sidebar moves between episodes and focuses the matching manuscript 
   await expect(navigation).toContainText('第二話');
   await expect(navigation.getByRole('button',{name:'S02へ移動'})).toContainText('再会');
   await navigation.getByRole('button',{name:'S02へ移動'}).click();
-  const row=page.locator('.source-manuscript [data-source-scenes]').filter({hasText:'第二話の本文'}).first();
+  const row=page.getByRole('region',{name:'原稿',exact:true}).locator('[data-source-scenes]').filter({hasText:'第二話の本文'}).first();
   await expect(row).toBeFocused();
   await expect(navigation.getByRole('button',{name:'S02へ移動'})).toHaveAttribute('aria-current','location');
   await expect.poll(()=>page.locator('main').evaluate(el=>el.scrollTop)).toBeGreaterThan(0);
