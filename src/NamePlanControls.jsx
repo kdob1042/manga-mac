@@ -28,7 +28,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   const candidateCurrent=useRef(displayProject);candidateCurrent.current=displayProject;
   const pages=candidate?candidate.layout.pages:name?project.layout.pages.filter(page=>name.pageIds.includes(page.id)):[];
   const page=pages[Math.min(pageIndex,Math.max(0,pages.length-1))];
-  const connected=!!model?.connectionId,editConnected=model?.provider==='ollama'&&connected;
+  const connected=!!model?.connectionId,editConnected=connected;
   const fallbackAvailable=!name&&!candidates.length;
   const safeRun=(label,fn)=>run(label,async()=>{setMessage('');await fn();});
   const clear=()=>{setPreview(null);setEdit(null);onSwitch?.();};
@@ -65,8 +65,7 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
   async function generate(ids=selected,customInstruction=instruction,{localEdit=false}={}) {
     await safeRun(localEdit?'局所ネーム候補を生成':'ネーム候補を生成',async()=>{
       if(!ids.length)throw Error('制作する文章を選んでください');
-      if(localEdit&&model?.provider!=='ollama')throw Error('局所編集はOllama（ローカル）を接続してください');
-      if(localEdit&&!model?.connectionId)throw Error('局所編集に使うOllamaを設定から接続してください');
+      if(localEdit&&!model?.connectionId)throw Error('局所編集に使うAI接続を設定してください');
       const candidate=await generateNameCandidate({current:()=>current.current,commit,ask:askLLM,model,selectedAtomIds:ids,instruction:customInstruction,cancelled,notify:setMessage});
       if(candidate){const j=current.current.jobs.find(j=>j.nameCandidate?.id===candidate.id);setChosen(j?.id??'');setPageIndex(0);setPreview(null);setEdit(null);}
     });
@@ -135,8 +134,8 @@ export default function NamePlanControls({project,current,commit,run,busy,model,
       {name&&!candidate&&page&&<>
         <label><input type="checkbox" aria-label="このネームページを固定" checked={!!name.locks?.pages?.[page.id]} disabled={busy} onChange={e=>safeRun('ページ固定を変更',()=>commit(setNameLock(current.current,page.id,e.target.checked)))}/>このページを固定</label>
         <label>このページの修正指示<textarea aria-label="ネームの局所修正指示" value={instruction} onChange={e=>setInstruction(e.target.value)} disabled={busy} placeholder="3コマ目を大きく／右上を2分割／このページだけ再配置"/></label>
-        <small>{editConnected?'Ollama（ローカル）で現在ページだけを解釈します。':'局所AI修正はOllama（ローカル）専用です。未接続でも手動編集とネーム取込は使えます。'}</small>
-        <button disabled={busy||!editConnected||!instruction.trim()||name.status==='stale'} onClick={()=>safeRun('局所編集案を作成',async()=>setEdit(await proposeNameEdit(current.current,page.id,instruction,(prompt,schema)=>askLLM(model,{purpose:'edit',prompt,schema})) ))}>ローカルAIで修正案を作る</button>
+        <small>{editConnected?'設定済みAIで現在ページだけを解釈します。OllamaでもクラウドAIでも利用できます。':'AI未接続でも手動編集とネーム取込は使えます。'}</small>
+        <button disabled={busy||!editConnected||!instruction.trim()||name.status==='stale'} onClick={()=>safeRun('局所編集案を作成',async()=>setEdit(await proposeNameEdit(current.current,page.id,instruction,(prompt,schema)=>askLLM(model,{purpose:'edit',prompt,schema})) ))}>AIで修正案を作る</button>
         {edit&&<div><p>{edit.reason}（{edit.kind}）</p><button disabled={busy} onClick={()=>edit.kind==='replan'?generate(pageAtomSelection(current.current,edit.pageId),edit.instruction,{localEdit:true}):safeRun('編集案を採用',async()=>{await commit(await applyNameEdit(current.current,edit));setEdit(null);setPreview(null);})}>{edit.kind==='replan'?'このページだけ再構成':'編集案を適用'}</button><button onClick={()=>setEdit(null)}>見送る</button></div>}
         <label><input type="checkbox" checked={visionConsent} onChange={e=>setVisionConsent(e.target.checked)} disabled={busy}/>選択ページ画像を設定済み画像対応AIへ送り、指摘だけを受け取る</label>
         <button disabled={busy||!connected||!visionConsent||!model?.visualEditing||name.status==='stale'} onClick={visualQA}>読者視点でページを検査</button>
