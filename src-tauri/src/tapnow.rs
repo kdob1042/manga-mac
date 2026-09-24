@@ -79,7 +79,8 @@ pub async fn connect(connection: &Connection) -> Result<Value, String> {
     let state = uuid::Uuid::new_v4().to_string();
     let registration = http.post(auth["registration_endpoint"].as_str().unwrap())
         .json(&json!({"client_name":"Manga Mac", "application_type":"native", "redirect_uris":[redirect],
-            "grant_types":["authorization_code"], "response_types":["code"], "token_endpoint_auth_method":"none"}))
+            "grant_types":["authorization_code"], "response_types":["code"], "token_endpoint_auth_method":"none",
+            "scope":"mcp.tools.read"}))
         .send().await.map_err(|_| "TapNowへアプリを登録できません")?;
     if !registration.status().is_success() {
         return Err(format!("TapNowがMacアプリのOAuth登録を受け付けません (HTTP {})。生成は行っていません", registration.status()));
