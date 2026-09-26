@@ -50,6 +50,16 @@ test('empty placeholders use existing references; another work or repo is never 
   assert.deepEqual(adoptNamePages(project,episode,episode.pageIds).panels[0].characterIds,['yumi']);
   project.characters[1].source.repo=repo;project.characters[1].source.scope=`${repo}#another-work`;
   assert.deepEqual(adoptNamePages(project,episode,episode.pageIds).panels[0].characterIds,['yumi']);
+  project.characters=[{id:'yumi',name:'由美子',image,hash,source:{repo:'other/repo',scope:'other/repo#example',character_id:'yumi'}}];
+  assert.throws(()=>adoptNamePages(project,episode,episode.pageIds),/衝突/);
+});
+
+test('reference import never reuses an unrelated same-name manual character',async()=>{
+  const {episode,project}=await example();
+  project.characters=[{id:'unrelated',name:'由美子',image,hash}];
+  const result=adoptRepositoryNamePages(project,episode,episode.pageIds,referenceImport());
+  assert.equal(result.characters.length,2);assert.notEqual(result.panels[0].characterIds[0],'unrelated');
+  assert.deepEqual(result.characters[0],project.characters[0]);
 });
 
 test('page reference transport freezes commit, reads only needed declared images and never manuscript',async()=>{

@@ -15,13 +15,15 @@ function characterBindings(project, episode) {
   const repo = project.nameRepositories?.[key(episode)]?.repo
     ?? project.snapshots?.find(snapshot=>snapshot.id===project.active && snapshot.workId===episode.workId)?.repo;
   for (const person of episode.characters) {
-    const exact = characters.find(character=>character.id===person.id);
+    const exact = characters.find(character=>character.id===person.id && (!character.source
+      || (repo && character.source.repo===repo && character.source.scope===`${repo}#${episode.workId}`)));
     const sources = repo ? characters.filter(character=>character.source?.repo===repo
       && character.source?.scope===`${repo}#${episode.workId}` && character.source?.character_id===person.id) : [];
     if (sources.length>1) throw Error(`人物 ${person.id} の原稿参照が重複しています`);
     const target = exact?.image && exact?.hash ? exact : sources[0] ?? exact;
     if (target) bindings.set(person.id,target.id);
     else {
+      if(characters.some(character=>character.id===person.id))throw Error(`人物 ${person.id} のIDが別の原稿参照と衝突しています`);
       characters.push({...person,image:null,hash:''});
       bindings.set(person.id,person.id);
     }

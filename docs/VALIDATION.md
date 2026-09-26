@@ -716,7 +716,7 @@ head `f7ef799` で、単一の明示焦点距離を利用者の指示全体か�
 
 - 対象: dev `fd8b782445a1a615938161397ebf4348509dac14` を起点とするPR #340。
 - 原因: v3のportable人物IDが旧取込みのsource人物IDに対応付かず、画像なし人物が追加される。ページ取得もwork.jsonの宣言画像を取得していなかった。
-- 共通JS試験: 449件成功。既存source人物との対応、別作品・repoの分離、固定commitでの必要画像取得、再取込み、参照不足の生成前停止を含む。
+- 共通JS試験: 450件成功。既存source人物との対応、別作品・repoの分離とID衝突の拒否、同名の手動人物を誤結合しないこと、固定commitでの必要画像取得、再取込み、参照不足の生成前停止を含む。
 - UI fixture試験: 手登録なしのGitHub取得・候補採用・再読込みが成功。全体102件中97件成功、5件失敗。失敗したname-embedded 1件、source-library 3件、workflow-ux 1件は変更前devでも同じ5件が失敗することを照合した。
 - Web production build: 成功。Mac aarch64のapp bundle build: 成功。Rust targetは正本のsrc-tauri/targetを使用した。
 - Mac実機の自動取込み・実作画、完成ページの確認は未完了。起動中アプリの終了に対する承認を待っている。UI fixture成功を実機受入済みとは扱わない。
