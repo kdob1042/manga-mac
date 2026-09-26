@@ -147,7 +147,7 @@ export function referenceDeclarations(model, settings) {
   return references;
 }
 
-export function mergeSourceReferences(characters, references, repo, snapshotId, scope = repo) {
+export function mergeSourceReferences(characters, references, repo, snapshotId, scope = repo, {matchByName=true}={}) {
   const next = characters.map(character => ({ ...character }));
   for (const reference of references) {
     const characterId = reference.characterId ?? reference.id ?? null;
@@ -157,7 +157,8 @@ export function mergeSourceReferences(characters, references, repo, snapshotId, 
       const sourceScope = character.source?.scope ?? character.source?.repo;
       return sourceScope === scope && character.source?.repo === repo && character.source?.path === reference.path;
     });
-    if (index < 0) {
+    if(index<0&&!matchByName&&characterId)index=next.findIndex(character=>character.id===characterId&&!character.source);
+    if (index < 0 && matchByName) {
       const candidates = next.filter(character => character.name === reference.name && !character.source);
       if (candidates.length > 1) throw Error(`人物「${reference.name}」の正本候補が複数あるため自動対応付けできません`);
       if (candidates.length === 1) index = next.indexOf(candidates[0]);

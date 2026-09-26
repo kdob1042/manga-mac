@@ -213,6 +213,8 @@ export async function producePanels({current,commit,panelIds,generate=generatePa
  const frozen=structuredClone(current()),unique=[...new Set(panelIds)],targets=unique.map(id=>frozen.panels.find(p=>p.id===id));
  if(targets.some(p=>!p)||!targets.length)throw Error('作画するコマを選んでください');
  const requested=targets.filter(p=>regenerate||!p.image),missingReferences=[],missingScenes=[];
+ const incomplete=requested.filter(panel=>panel.namePlanVersion===3).flatMap(panel=>panel.characterIds.filter(id=>!frozen.characters.find(c=>c.id===id&&c.image&&c.hash)));
+ if(incomplete.length)throw Error(`参照画像がありません: ${[...new Set(incomplete)].join('、')}。GitHubからページを再取得して人物参照を確認してください`);
  const selected=requested.filter(panel=>{
   if(panel.namePlanVersion===3)return true;
   const missing=panel.characterIds.filter(id=>!frozen.characters.find(c=>c.id===id&&c.image&&c.hash));

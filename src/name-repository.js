@@ -3,6 +3,8 @@ import { safePath } from './core.js';
 import { FORMAT, MAX_BYTES } from '../contracts/name-plan/schema.mjs';
 import { atomize, selectAtoms, hasEmbeddedSource } from '../contracts/name-plan/source.mjs';
 import { joinEpisodeFiles, PAGE_FORMAT, MAX_PAGE_BYTES } from '../contracts/name-plan/page.mjs';
+import { normalizeSourceManifest } from './source-protocol.js';
+import { joinWorkPath, workEntryPath } from '../contracts/story-library/paths.mjs';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9:_-]{0,159}$/;
 const REPO = /^[\w.-]+\/[\w.-]+$/;
@@ -32,6 +34,26 @@ export async function fetchSelectedPageNames(index,selected,token,invokeCall=cal
     pages[id]=JSON.parse(raw);
   }
   return joinEpisodeFiles(index.manifest,pages);
+}
+
+// Fetch references at the pages' immutable commit without importing manuscript.
+export async function fetchPageNameReferences(index,episode,token,invokeCall=call) {
+  const {repo,root,sha}=index;
+  if(!REPO.test(repo)||!/^[0-9a-f]{40}$/i.test(sha))throw Error('人物参照の取得版が不正です');
+  if(root!==`works/${episode.workId}`)throw Error('人物参照の作品IDが一致しません');
+  const raw=await invokeCall('github_file',{repo,path:workEntryPath(root),sha,token});
+  if(typeof raw!=='string'||new TextEncoder().encode(raw).length>MAX_PAGE_BYTES)throw Error('作品の索引が大きすぎます');
+  const model=normalizeSourceManifest(JSON.parse(raw));
+  const needed=new Set(episode.pages.flatMap(page=>page.panels.flatMap(panel=>panel.characters.map(person=>person.characterId))));
+  const references=[];
+  for(const id of needed){
+    const declaration=model.references?.find(reference=>reference.characterId===id);
+    if(!declaration)throw Error(`人物 ${id} の参照画像がwork.jsonで宣言されていません`);
+    const asset=await invokeCall('github_asset',{repo,path:joinWorkPath(root,declaration.path),sha,token});
+    if(!asset?.image||!/^[0-9a-f]{64}$/.test(asset.hash??''))throw Error(`人物 ${id} の参照画像を確認できません`);
+    references.push({...declaration,...asset});
+  }
+  return {repo,root,sha,references};
 }
 
 export function repositoryNamePlanPath(snapshot, episodeId, number = null) {

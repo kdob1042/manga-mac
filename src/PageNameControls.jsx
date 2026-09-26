@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import { PAGE_FORMAT, affectedByAppearance, editPageList, editNamePage, joinEpisodeFiles, splitEpisodeFiles } from '../contracts/name-plan/page.mjs';
-import { adoptNamePages, commitNameEpisode, editProjectNamePage, editProjectNameScene, restoreProjectNameRevision, saveNameRevision, episodeKey, referenceKey, registerNameReference } from './page-name.js';
-import {fetchPageNameIndex,fetchSelectedPageNames} from './name-repository.js';
+import { adoptNamePages, adoptRepositoryNamePages, commitNameEpisode, editProjectNamePage, editProjectNameScene, restoreProjectNameRevision, saveNameRevision, episodeKey, referenceKey, registerNameReference } from './page-name.js';
+import {fetchPageNameIndex,fetchSelectedPageNames,fetchPageNameReferences} from './name-repository.js';
 import {proposePageEdit} from './page-name-ai.js';
 import {askLLM} from './llm.js';
 import CharacterReferences from './CharacterReferences.jsx';
@@ -15,6 +15,7 @@ const download = (name, value) => {
 };
 export default function PageNameControls({project,current,commit,run,busy,onAdopt,token='',model=null}) {
   const [candidate,setCandidate]=useState(null),[chosen,setChosen]=useState([]),[positions,setPositions]=useState({});
+  const [candidateReferences,setCandidateReferences]=useState(null);
   const [selectedPage,setSelectedPage]=useState(''),[revision,setRevision]=useState('');
   const [notice,setNotice]=useState('');
   const [instruction,setInstruction]=useState(''),[proposal,setProposal]=useState(null);
@@ -50,7 +51,7 @@ export default function PageNameControls({project,current,commit,run,busy,onAdop
     const base=current.current;
     if(base.workId && incoming.workId!==base.workId)throw Error('別作品のページは取り込めません');
     if(current.current!==base)throw Error('読み込み中に作品が変わりました');
-    setCandidate(incoming);setChosen([...incoming.pageIds]);setPositions({});setNotice('採用するページと、追加ページの位置を確認してください');
+    setCandidateReferences(null);setCandidate(incoming);setChosen([...incoming.pageIds]);setPositions({});setNotice('採用するページと、追加ページの位置を確認してください');
   }
   const target=candidate&&project.nameEpisodes?.[episodeKey(candidate.workId, candidate.episodeId)];
   const change=(panelId,operation)=>pending(()=>commit(editProjectNamePage(current.current,active.episodeId,pageId,[{panelId,...operation}])));
@@ -70,7 +71,7 @@ export default function PageNameControls({project,current,commit,run,busy,onAdop
       <label>話ID<input value={episodeId} onChange={e=>setEpisodeId(e.target.value)}/></label>
       <button disabled={busy} onClick={()=>run('GitHubの話索引を取得中',async()=>{const index=await fetchPageNameIndex({repo:repository,root:workRoot,episodeId},token);setRemote(index);setRemotePages([]);setNotice(`${index.sha.slice(0,8)} の話索引を取得しました`);})}>ページ一覧を取得</button>
       {remote&&<><p>{remote.sha.slice(0,8)} · {remote.manifest.pageIds.length}ページ。取得するページを選んでください。</p>{remote.manifest.pageIds.map(id=><label key={id}><input type="checkbox" checked={remotePages.includes(id)} onChange={e=>setRemotePages(previous=>e.target.checked?[...previous,id]:previous.filter(value=>value!==id))}/>{id}</label>)}
-        <button disabled={busy||!remotePages.length} onClick={()=>run('選択ページを取得中',async()=>{const loaded=await fetchSelectedPageNames(remote,remotePages,token);setCandidate(loaded);setChosen([...loaded.pageIds]);setPositions({});setNotice('採用するページを確認してください');})}>選択ページを読み込む</button></>}
+        <button disabled={busy||!remotePages.length} onClick={()=>run('選択ページ・人物参照を取得中',async()=>{const loaded=await fetchSelectedPageNames(remote,remotePages,token);const references=await fetchPageNameReferences(remote,loaded,token);setCandidateReferences(references);setCandidate(loaded);setChosen([...loaded.pageIds]);setPositions({});setNotice(`採用するページを確認してください。人物参照${references.references.length}件も同じ版から取得しました`);})}>選択ページを読み込む</button></>}
     </details>
     <label>episode.json と対象ページのJSONを選ぶ<input type="file" multiple accept=".json,application/json" disabled={busy} onChange={e=>{const files=[...e.target.files];e.target.value='';run('ページネームを読み込み中',()=>readFiles(files));}}/></label>
     {candidate&&<div><h4>取込み候補 · {candidate.episodeId}</h4>
@@ -83,7 +84,8 @@ export default function PageNameControls({project,current,commit,run,busy,onAdop
       <button disabled={busy||!chosen.length} onClick={()=>pending(async()=>{
         const before=current.current,newIds=candidate.pageIds.filter(id=>chosen.includes(id)&&!target?.pageIds.includes(id));
         const positionsFor=Object.fromEntries(newIds.map((id,i)=>[id,positions[id]??(target?.pageIds.length??0)+i]));
-        const next=adoptNamePages(before,candidate,candidate.pageIds.filter(id=>chosen.includes(id)),{positions:positionsFor});await commit(next);setCandidate(null);onAdopt?.();
+        const selected=candidate.pageIds.filter(id=>chosen.includes(id));
+        const next=candidateReferences?adoptRepositoryNamePages(before,candidate,selected,candidateReferences,{positions:positionsFor}):adoptNamePages(before,candidate,selected,{positions:positionsFor});await commit(next);setCandidate(null);setCandidateReferences(null);onAdopt?.();
       })}>選択ページを採用</button><button onClick={()=>setCandidate(null)}>見送る</button>
     </div>}
     {active&&<>
