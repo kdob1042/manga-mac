@@ -17,6 +17,8 @@ test('empty app imports two names without a manuscript and registers an image by
  await expect(page.getByText('参照画像がありません。この人物を描くコマの作画時に必要です。',{exact:true})).toBeVisible();
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');
  await page.getByLabel('yumiの参照画像',{exact:true}).setInputFiles({name:'yumi.png',mimeType:'image/png',buffer:png});
+ await expect(page.getByText('参照画像がありません。この人物を描くコマの作画時に必要です。',{exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('ネームJSONを取り込む',{exact:true})).toBeEnabled();
  await page.getByLabel('ネームJSONを取り込む',{exact:true}).setInputFiles(upload(files[1]));
  await page.getByRole('button',{name:'このネーム候補を採用',exact:true}).click();
  await expect(page.getByLabel('採用したネーム',{exact:true}).locator('option')).toHaveCount(2);

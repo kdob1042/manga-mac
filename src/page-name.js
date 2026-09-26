@@ -1,5 +1,6 @@
 import { adoptPages, editNamePage, editNameScene, nameRevision, restoreNameRevision, validateEpisode } from '../contracts/name-plan/page.mjs';
 import { validateLayout } from './layout.js';
+import { mergeSourceReferences } from './source-protocol.js';
 
 const copy = value => structuredClone(value);
 export const episodeKey = (workId, episodeId) => JSON.stringify([workId, episodeId]);
@@ -8,10 +9,33 @@ const key = episode => episodeKey(episode.workId, episode.episodeId);
 const productionKeys=['status','artwork_revision','capture_revision','scene3d','shot_binding','compositionReference','generation','generationResolution','instructions','attempts','layer_state','candidateRevision'];
 const production = panel => Object.fromEntries(productionKeys.filter(field=>Object.hasOwn(panel,field)).map(field=>[field,copy(panel[field])]));
 
+// Portable names keep story IDs; only the production projection uses local IDs.
+function characterBindings(project, episode) {
+  const characters = [...(project.characters ?? [])], bindings = new Map();
+  const repo = project.nameRepositories?.[key(episode)]?.repo
+    ?? project.snapshots?.find(snapshot=>snapshot.id===project.active && snapshot.workId===episode.workId)?.repo;
+  for (const person of episode.characters) {
+    const exact = characters.find(character=>character.id===person.id && (!character.source
+      || (repo && character.source.repo===repo && character.source.scope===`${repo}#${episode.workId}`)));
+    const sources = repo ? characters.filter(character=>character.source?.repo===repo
+      && character.source?.scope===`${repo}#${episode.workId}` && character.source?.character_id===person.id) : [];
+    if (sources.length>1) throw Error(`人物 ${person.id} の原稿参照が重複しています`);
+    const target = exact?.image && exact?.hash ? exact : sources[0] ?? exact;
+    if (target) bindings.set(person.id,target.id);
+    else {
+      if(characters.some(character=>character.id===person.id))throw Error(`人物 ${person.id} のIDが別の原稿参照と衝突しています`);
+      characters.push({...person,image:null,hash:''});
+      bindings.set(person.id,person.id);
+    }
+  }
+  return {characters,bindings};
+}
+
 // Preserve artwork and jobs under their fixed panel IDs, even while a panel is absent.
 export function projectNameEpisode(project, episode) {
   validateEpisode(episode);
   if (project.workId && project.workId !== episode.workId) throw Error('別作品のネームです');
+  const {characters,bindings}=characterBindings(project,episode);
   const stored = { ...(project.panelProduction ?? {}) };
   for (const panel of project.panels ?? []) stored[panel.id] = production(panel);
   const panels = episode.pageIds.flatMap(id => episode.pages.find(page => page.id === id).panels).map(panel => {
@@ -21,10 +45,10 @@ export function projectNameEpisode(project, episode) {
     const { sourceRefs, contextRefs, requiredText, lettering, continuity, continuityOverride, ...other } = previous;
     const scene=episode.scenes.find(item=>item.id===panel.sceneId);
     const visual={location:scene?.location??'',timeOfDay:scene?.timeOfDay??'',props:scene?.props??[],spatial:scene?.spatial??'',hardConstraints:scene?.hardConstraints??[],
-      previousPanelId:panel.previousPanelId??null,characters:panel.characters.map(character=>({id:character.characterId,costume:scene?.appearances?.find(a=>a.id===character.appearanceId)?.costume??'',visualState:character.visualState??'',emotion:character.emotion??'',holding:character.holding??[]}))};
+      previousPanelId:panel.previousPanelId??null,characters:panel.characters.map(character=>({id:bindings.get(character.characterId),costume:scene?.appearances?.find(a=>a.id===character.appearanceId)?.costume??'',visualState:character.visualState??'',emotion:character.emotion??'',holding:character.holding??[]}))};
     const referenceKeys=[...(scene?.backgroundReferenceKey?[{key:scene.backgroundReferenceKey,role:'background'}]:[]),...panel.characters.flatMap(character=>{
       const appearance=scene?.appearances?.find(item=>item.id===character.appearanceId);
-      return appearance?.referenceKey?[{key:appearance.referenceKey,role:'costume',characterId:character.characterId}]:[];
+      return appearance?.referenceKey?[{key:appearance.referenceKey,role:'costume',characterId:bindings.get(character.characterId)}]:[];
     })];
     const shown = panel.texts.filter(entry => entry.text.trim());
     const boxes = shown.map((entry, index) => ({ id: `custom:${entry.id}`, text: entry.text,
@@ -33,7 +57,7 @@ export function projectNameEpisode(project, episode) {
       kind: entry.kind === 'narration' ? 'narration' : entry.kind === 'thought' ? 'thought' : 'balloon',
       ...(entry.kind === 'narration' ? {shape:'rect'} : {}), ...(entry.style ?? {}) }));
     return { ...other, id: panel.id, namePlanVersion: 3, snapshotId: null, sceneId: panel.sceneId,
-      sourceRefs: [], contextRefs: [], requiredText: [], unitIds: [], characterIds: panel.characters.map(c => c.characterId),
+      sourceRefs: [], contextRefs: [], requiredText: [], unitIds: [], characterIds: panel.characters.map(c => bindings.get(c.characterId)),
       prompt: panel.prompt ?? '', nameIntent: panel.shotIntent ?? '', continuity:visual, continuityOverride:null, referenceKeys, image: live?.image ?? artwork?.panel?.image ?? null,
       status: previous.status ?? 'planned', instructions: previous.instructions ?? [], attempts: previous.attempts ?? 0,
       lettering: { mode: 'balloons', boxes } };
@@ -44,8 +68,6 @@ export function projectNameEpisode(project, episode) {
       panelId: panel.id, points: copy(panel.frame.points), ...(panel.frame.overflow ? { overflow: copy(panel.frame.overflow) } : {}) })),...(page.emptyFrames??[]).map(frame=>({...copy(frame),panelId:null}))] };
   }), knownPanelIds: panels.map(panel => panel.id), imageCrops: copy(project.layout?.imageCrops ?? {}) };
   validateLayout(layout, panels);
-  const characters = [...(project.characters ?? [])];
-  for (const person of episode.characters) if (!characters.some(c => c.id === person.id)) characters.push({ ...person, id: person.id, image: null, hash: '' });
   const legacyNamePlans = project.legacyNamePlans ?? [project.namePlan,...(project.otherNamePlans??[])].filter(Boolean);
   return { ...project, workId: episode.workId, title: episode.title, characters, panels, layout,
     legacyNamePlans, namePlan: null, otherNamePlans: [], sourceApplication:{version:1,units:[]}, panelProduction: stored, activeNameEpisodeId: episode.episodeId };
@@ -66,6 +88,16 @@ export function adoptNamePages(project, incoming, selected, options) {
     ...copy(incoming), pageIds: incoming.pageIds.filter(pageId => selected.includes(pageId)),
     pages: incoming.pages.filter(page => selected.includes(page.id)) };
   return commitNameEpisode(project, validateEpisode(episode), 'ページ取込み');
+}
+
+export function adoptRepositoryNamePages(project,incoming,selected,referenceImport,options) {
+  if(!referenceImport?.repo||!referenceImport.sha||!Array.isArray(referenceImport.references))throw Error('人物参照の取得版がありません');
+  if(project.workId&&project.workId!==incoming.workId)throw Error('別作品のネームです');
+  const scope=`${referenceImport.repo}#${incoming.workId}`;
+  const characters=mergeSourceReferences(project.characters??[],referenceImport.references,referenceImport.repo,
+    `${referenceImport.repo}@${referenceImport.sha}:${incoming.workId}:${incoming.episodeId}`,scope,{matchByName:false});
+  return adoptNamePages({...project,characters,nameRepositories:{...(project.nameRepositories??{}),
+    [key(incoming)]:{repo:referenceImport.repo,root:referenceImport.root,sha:referenceImport.sha}}},incoming,selected,options);
 }
 
 export function editProjectNamePage(project, episodeId, pageId, operations) {
