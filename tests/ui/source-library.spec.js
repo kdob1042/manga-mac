@@ -19,11 +19,11 @@ test('registers a second source and switches through isolated persisted works',a
   }};
  });
  await page.goto('/');
- await expect(page.getByRole('button',{name:'原稿を開く',exact:true})).toHaveCount(1);
+ await expect(page.getByRole('button',{name:'GitHubのネームを開く',exact:true})).toHaveCount(1);
  await expect(page.getByRole('button',{name:'作品を追加',exact:true})).toHaveCount(0);
  await expect(page.getByRole('navigation',{name:'漫画の制作工程'})).toHaveCount(0);
  await expect(page.locator('.workspace aside')).toBeHidden();
- await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
+ await page.getByRole('button',{name:'GitHubのネームを開く',exact:true}).click();
  await page.getByText('旧形式の原稿を登録').click();
  await page.getByRole('button',{name:'独立したリポジトリを追加'}).click();
  await page.getByLabel('作品表示名').fill('作品B');await page.getByLabel('追加するGitHubリポジトリ').fill('owner/b');
@@ -81,7 +81,7 @@ test('story-library work entry supports work to second episode to second scene i
   }};
  });
  await page.goto('/');
- await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
+ await page.getByRole('button',{name:'GitHubのネームを開く',exact:true}).click();
  await page.getByLabel('原稿ライブラリの作品').selectOption('work-a');
  await page.getByLabel('話を選ぶ').selectOption('P02');
  await page.getByRole('button',{name:'閲覧中だけ',exact:true}).click();
@@ -128,7 +128,7 @@ test('source recovery distinguishes unsupported and auth failures without losing
   }};
  });
  await page.goto('/');
- await page.getByRole('button',{name:'原稿を開く',exact:true}).click();
+ await page.getByRole('button',{name:'GitHubのネームを開く',exact:true}).click();
  const diagnostic=page.getByRole('alert',{name:'原稿接続の診断'});
  await expect(diagnostic).toContainText('この環境では原稿を取得できません');
  await diagnostic.getByText('技術的な詳細と診断').click();

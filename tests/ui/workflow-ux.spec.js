@@ -122,7 +122,7 @@ test('initial import restores keyboard focus and keeps the action inside narrow 
   for(const width of [1280,1440,760]){
     await page.setViewportSize({width,height:width===760?800:900});
     await page.goto('/');
-    const open=page.getByRole('main').getByRole('button',{name:'原稿を開く'});
+    const open=page.getByRole('main').getByRole('button',{name:'GitHubのネームを開く',exact:true});
     await expect(open).toBeVisible();
     await page.screenshot({path:`test-results/entry-${width}.png`});
     await open.focus();await page.keyboard.press('Enter');
